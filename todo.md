@@ -8,3 +8,5 @@
 - [ ] اختبار تدفقات التطبيق المستهدف وتوثيقها قبل أول checkpoint نهائي
 - [ ] تقييم واستبدال طبقات Manus OAuth وtRPC وDrizzle بما يتوافق مع Supabase وSupabase Auth
 - [x] رفع مشروع mobile-system-starter فقط إلى مستودع Kisok_react_app دون تضمين مشروع تجربة Expo/Ignite
+- [x] إضافة شرح Ignite المختصر إلى مشروع mobile-system-starter
+- [x] مراجعة ملف .env.local قبل أي رفع جديد إلى المستودع العام
