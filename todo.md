@@ -7,4 +7,4 @@
 - [ ] إنشاء شعار وهوية بصرية نهائية بعد تحديد اسم وفكرة النظام
 - [ ] اختبار تدفقات التطبيق المستهدف وتوثيقها قبل أول checkpoint نهائي
 - [ ] تقييم واستبدال طبقات Manus OAuth وtRPC وDrizzle بما يتوافق مع Supabase وSupabase Auth
-- [ ] رفع مشروع mobile-system-starter فقط إلى مستودع Kisok_react_app دون تضمين مشروع تجربة Expo/Ignite
+- [x] رفع مشروع mobile-system-starter فقط إلى مستودع Kisok_react_app دون تضمين مشروع تجربة Expo/Ignite
