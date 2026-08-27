@@ -52,6 +52,7 @@ app-example
 # Logs
 logs
 *.log
+.manus-logs/
 
 # OS
 Thumbs.db
