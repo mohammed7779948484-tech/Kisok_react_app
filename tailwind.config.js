@@ -86,5 +86,8 @@ module.exports = {
       xl: "1280px",
     },
   },
-  plugins: [],
+  // Required by React Native Reusables: its CLI lists tailwindcss-animate among
+  // the core dependencies, and the primitives' enter/exit animation classes
+  // resolve through it. Verified against @react-native-reusables/cli 0.7.1.
+  plugins: [require("tailwindcss-animate")],
 };

@@ -1,0 +1,99 @@
+name: Android E2E
+
+# TIERED CI, like the Android build.
+#
+# This boots an emulator, installs a debug build and drives the real UI with
+# Maestro. It is minutes of runtime, so it runs only when asked: add the `e2e`
+# label to a pull request, or dispatch it manually. Paying that cost on a docs
+# change would train everyone to ignore the result.
+on:
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  maestro:
+    name: Maestro flows
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'e2e')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      MAESTRO_APP_ID: com.kisok.kiosk
+      EXPO_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+      EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+      EXPO_PUBLIC_ENVIRONMENT: local
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Expo prebuild (Android)
+        run: npx --yes expo prebuild --platform android --no-install --clean
+
+      - name: Assemble debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      # KVM must be enabled or the emulator falls back to software rendering and
+      # times out. This is the documented setup for the emulator runner action.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # A tablet profile, because that is the deployment target: a phone-sized
+      # emulator would not exercise the landscape layouts at all.
+      - name: Run Maestro flows on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_tablet
+          ram-size: 4096M
+          disable-animations: true
+          script: |
+            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+            maestro test .maestro/flows --format junit --output maestro-report.xml
+
+      - name: Upload Maestro report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-report
+          path: |
+            maestro-report.xml
+            ~/.maestro/tests/**
+          retention-days: 7
+          if-no-files-found: warn

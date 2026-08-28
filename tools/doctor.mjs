@@ -19,7 +19,31 @@ import fs from "node:fs";
  * wrong: it would have silently swallowed a genuine SDK mismatch.
  */
 const NETWORK_FAILURE =
-  /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|fetch failed|getaddrinfo|Host not in allowlist|network (?:error|timeout)|request to .* failed|certificate/i;
+  /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|fetch failed|getaddrinfo|Host not in|network (?:error|timeout)|request to .* failed|certificate|is not valid JSON|Unable to fetch compatibility data|unexpected server response/i;
+
+/**
+ * Checks that CANNOT run without reaching a remote service.
+ *
+ * A network error alone is not enough to excuse a failure: expo-doctor can fail
+ * a real check and hit a flaky service in the same run, and excusing everything
+ * because "network" appeared somewhere in the output is how a genuine SDK
+ * mismatch gets swallowed. So a run is only inconclusive when EVERY failing
+ * check is one of these AND the output shows a transport problem. Anything else
+ * — a version mismatch, a bad config field — fails, as it should.
+ */
+const NETWORK_DEPENDENT_CHECKS = new Set([
+  "Check Expo config (app.json/ app.config.js) schema",
+  "Validate packages against React Native Directory package metadata",
+]);
+
+/** The checks expo-doctor reported as failed, taken from its `✖` lines. */
+function failedChecks(output) {
+  return output
+    .split(/\r?\n/)
+    .filter((line) => line.trimStart().startsWith("✖"))
+    .map((line) => line.replace(/^\s*✖\s*/, "").trim())
+    .filter(Boolean);
+}
 
 const result = spawnSync("npx", ["--yes", "expo-doctor"], { encoding: "utf8" });
 const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
@@ -37,15 +61,21 @@ if (result.status === 0) {
   process.exit(0);
 }
 
-if (NETWORK_FAILURE.test(output)) {
+const failed = failedChecks(output);
+const onlyNetworkChecksFailed =
+  failed.length > 0 && failed.every((check) => NETWORK_DEPENDENT_CHECKS.has(check));
+
+if (NETWORK_FAILURE.test(output) && onlyNetworkChecksFailed) {
   console.warn(
-    "\nexpo-doctor could not reach Expo, so its result says nothing about this project. " +
-      "Treating as inconclusive rather than failing.\n",
+    "\nexpo-doctor could not reach the services these checks depend on, so their result " +
+      "says nothing about this project. Treating as inconclusive rather than failing.\n" +
+      `Affected: ${failed.join("; ")}\n`,
   );
   summarise(
     "Expo doctor",
-    "**Inconclusive** — could not reach Expo's compatibility service. This does not " +
-      "indicate a problem with the project.\n\n```\n" +
+    "**Inconclusive** — could not reach Expo's compatibility services. This does not " +
+      `indicate a problem with the project.\n\nAffected checks: ${failed.join("; ")}\n\n` +
+      "```\n" +
       output.trim() +
       "\n```",
   );

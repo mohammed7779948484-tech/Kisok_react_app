@@ -1,0 +1,16 @@
+# The one flow that is true today: with no stored session the app boots through
+# the startup screen and lands on sign-in without crashing. It needs no account,
+# no seeded data and no network.
+#
+# It selects by testID, not by the visible copy — see .maestro/README.md.
+# Everything else waits for the feature it tests.
+appId: ${MAESTRO_APP_ID}
+name: Smoke — app launches to sign-in
+---
+- launchApp:
+    clearState: true
+# Generous timeout: a cold start on a store tablet is slower than a dev machine.
+- extendedWaitUntil:
+    visible:
+      id: "sign-in-submit"
+    timeout: 30000
