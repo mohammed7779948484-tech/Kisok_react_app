@@ -1,7 +1,7 @@
 # Foundation status
 
 Tracks the state of the Golden `main` foundation. **Feature work is tracked in
-each feature's own `features/<name>/TODO.md`**, not here — a shared task file
+each feature's own `features/<name>/docs/todo.md`**, not here — a shared task file
 would be edited by every agent and conflict constantly.
 
 The starter-era task list this replaces described a generic mobile template and
@@ -69,7 +69,7 @@ no longer had any relationship to the repository.
 
 **Generator**
 
-- [x] Generator with `--role`, `--layers`, `--realtime`, `--no-route`, `--dry-run`
+- [x] Generator with `--role`, `--with`, `--screen`, `--dry-run`, `--force`
 - [x] Generated code compiles, lints, formats, and passes its own tests
 - [x] `TODO.md` generated for every feature
 - [x] `pnpm generate:smoke` verifies all of the above in CI

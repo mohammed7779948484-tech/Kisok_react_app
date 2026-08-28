@@ -1,94 +1,103 @@
 # Implementing a feature
 
-The path from nothing to a reviewable PR.
+The path from nothing to a reviewable PR. This is the summary; the executable
+version is the **`feature-delivery`** skill, which is what an agent should load
+before building anything.
+
+There is exactly one feature workflow. If another document describes a different
+one, that document is stale — `pnpm check:docs` exists to catch that.
 
 ## 1. Understand before you generate
 
-- Read [`AGENTS.md`](../AGENTS.md).
+- Read [`AGENTS.md`](../AGENTS.md) and the rules in `.claude/rules/`.
 - Read the product behaviour in
   [`KISOK_FLUTTER_PRODUCT_REFERENCE.md`](../KISOK_FLUTTER_PRODUCT_REFERENCE.md) —
   for _behaviour_, never for data contracts.
 - Read the migrations your feature will touch. This is the step most likely to be
   skipped and most likely to cause rework.
 
-## 2. Generate the slice
+## 2. Generate the workspace
 
 ```bash
 pnpm generate feature catalog --role=customer
 ```
 
-Common variations:
+That creates `index.ts` and `docs/` — and deliberately nothing else. The
+generator does not guess the shape of your feature, because Cart, Checkout and a
+domain-only feature are not shaped like Catalog, and deleting generated
+placeholder code is worse than never generating it.
+
+## 3. Write the brief, then the plan
+
+`docs/brief.md` — **what** the feature does and how you will know it is done:
+objective, user-visible behaviour, acceptance criteria, scope, explicit
+out-of-scope, evidence.
+
+`docs/plan.md` — **how**, using the `kisok-feature-plan` skill: research
+synthesis, design decisions, the data contract from the migrations, the exact
+generator commands, the test strategy, rounds of atomic tasks, risks.
+
+The plan decides the shape. Only then do you generate the rest:
 
 ```bash
-# Cart: local state, no route of its own, no server data
-pnpm generate feature cart --role=customer --layers=state,components,screens,tests --no-route
-
-# Preparation board: needs live order updates
-pnpm generate feature preparation --role=preparation --realtime
-
-# See the plan without writing anything
-pnpm generate feature search --role=customer --dry-run
+pnpm generate schema catalog catalog-response
+pnpm generate query  catalog products
+pnpm generate screen catalog product-detail --role=customer
+pnpm generate component catalog price-badge --screen=product-detail
+pnpm generate route  catalog index --role=customer
 ```
 
-Full options in [`docs/generator.md`](../docs/generator.md).
+Options in [`docs/generator.md`](./generator.md), or `pnpm generate --help`.
 
-## 3. Turn the TODO into a real plan
+## 4. Work in atomic, verified tasks
 
-`features/<name>/TODO.md` is a template, not a plan. Before writing code, fill in:
+Every task is one unit:
 
-- the concrete user stories
-- the **actual** RPCs, tables, and payload shapes, checked against the migration
-- the screens and components you will build
-- which states apply, and which genuinely do not
-
-This file is your working memory. If your session is interrupted or your context
-is compacted, it is what lets you resume without re-deriving everything.
-
-## 4. Write the schema first
-
-Replace the placeholder Zod schema with the real payload shape, from the
-migration. This anchors everything downstream — the api return type, the query
-hook, the component props.
-
-## 5. Test, then implement
-
-Where behaviour is testable, write the failing test first and **confirm it fails
-for the right reason**. Then implement. See [testing.md](./testing.md).
-
-Work outward: schema → api → query hook → screen → components.
-
-## 6. Verify for real
-
-```bash
-pnpm verify    # typecheck, lint, format, test, generator smoke test
+```
+RED → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → TASK GATE
 ```
 
-Then actually look at it:
+Confirm the RED failure is the behaviour being missing — not a typo or a bad
+import. Then the smallest implementation that passes. Then the directly affected
+checks. Then read your own diff for anything unrelated.
+
+Record the evidence in `docs/worklog.md` under the task ID and set the gate to
+`PASS` or `FAIL`. **A task is done only at `PASS`, and the next task does not
+start until its dependencies have passed.** When a gate fails, fix it in that
+task — compensating in a later layer hides the original defect and produces code
+nobody can safely change later.
+
+Group tasks into rounds; at a round gate, review the whole accumulated diff, not
+just the last task.
+
+## 5. Verify for real
 
 ```bash
-pnpm web       # open the screen; resize narrow and wide
+pnpm verify    # typecheck, lint, format, tests, db:verify, generator smoke
+pnpm web       # then actually look at it
 ```
 
 TypeScript compiling is not evidence that a screen works. Open it, interact with
-it, check portrait and landscape, and check a narrow width.
+it, and check landscape and portrait at the tablet sizes.
 
 If the change touches native configuration, verify on an Android device — or say
-explicitly in the PR that you did not.
+explicitly in the PR that you did not. If it warrants device-level coverage, see
+[`.maestro/README.md`](../.maestro/README.md) and the `kisok-maestro-e2e` skill.
 
-## 7. Update the TODO with evidence
+## 6. Review, audit, then PR
 
-Tick a box only when there is something behind it: a test name, a command you
-ran, a screen state you looked at, the migration you checked. An unticked box
-with a note is far more useful to the next agent than a ticked one that is a
-guess.
+- **Independent code review** with fresh context (`code-reviewer` +
+  `kisok-code-review`). Findings go in `docs/review.md`.
+- Remediate, then **re-run the reviewer** on the same scope.
+- **Quality audit** (`quality-auditor`) — a different question: was this
+  delivered as promised, and is the evidence real?
+- Set the feature gate, then open the PR using the template.
 
-## 8. Open the PR
+## Evidence, not assertions
 
-- Keep it focused on one feature.
-- **List every shared file you touched** (`core/`, `components/`, config) and why.
-  Aim for zero.
-- Say what you verified and what you did not.
-- Check the Definition of Done in [`AGENTS.md`](../AGENTS.md).
+Tick nothing without something behind it: a test name, a command and its output,
+a screen state you looked at, the migration you checked. An unticked box with a
+note is far more useful to the next agent than a ticked one that is a guess.
 
 ## Working alongside other agents
 

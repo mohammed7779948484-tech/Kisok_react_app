@@ -11,6 +11,7 @@ here for detail.
 | [state-management.md](./state-management.md)     | Server state vs client state, persistence, errors, logging  |
 | [testing.md](./testing.md)                       | The testing stack, utilities, and TDD workflow              |
 | [feature-workflow.md](./feature-workflow.md)     | Start-to-PR walkthrough for a new feature                   |
+| [agent-harness.md](./agent-harness.md)           | Skills, subagents, and the task/round/feature gates         |
 | [environment.md](./environment.md)               | Setup, environment variables, secret policy                 |
 | [code-standards.md](./code-standards.md)         | Naming, file layout, TypeScript conventions                 |
 | [ci.md](./ci.md)                                 | What CI runs and why it is tiered                           |

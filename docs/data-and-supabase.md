@@ -96,10 +96,10 @@ Validation is what turns that into something the rest of the feature can trust:
 ```ts
 // features/catalog/api/catalog-api.ts
 import { callRpc } from "@/core/supabase";
-import { catalogSnapshotSchema } from "../schemas/catalog-schema";
+import { catalogSnapshotSchema } from "../model/catalog-snapshot.schema";
 
 export async function fetchCatalog() {
-  return callRpc("get_customer_catalog", {}, catalogSnapshotSchema);
+  return callRpc("get_customer_catalog", catalogSnapshotSchema);
 }
 ```
 

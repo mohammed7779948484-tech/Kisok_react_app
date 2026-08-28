@@ -59,7 +59,7 @@ TODO.md      The agent's working memory for this feature.
 api/         The only place that calls Supabase.
 queries/     TanStack Query hooks and query keys.
 state/       Zustand store for client-owned state.
-schemas/     Zod schemas validating RPC payloads.
+model/       Types, Zod schemas, pure rules and selectors. No IO.
 components/  Presentational, feature-private.
 screens/     Composed screens.
 __tests__/   Colocated tests.

@@ -36,13 +36,18 @@ contract from it. In particular there is no `Flavor` — the model is
   migration, stop and say so.
 - **No prices, payments, delivery, shipping, public signup, or social login.**
   These are deliberate product boundaries.
-- **Use `pnpm generate` for new feature code.** `feature` scaffolds a slice;
-  `query`, `mutation`, `store`, `screen`, `component`, `schema`, `realtime` and
-  `route` add one piece each. Do not hand-roll a feature directory.
+- **Use `pnpm generate` for new feature code.** `feature` creates a WORKSPACE —
+  `index.ts` plus `docs/` — and nothing else, because planning decides the shape.
+  `schema`, `query`, `mutation`, `store`, `component`, `screen`, `realtime` and
+  `route` then add one piece each. Do not hand-roll a feature directory.
+- **Load the `feature-delivery` skill before building a feature.** It carries the
+  workflow: research, brief, plan, atomic TDD tasks, and the task/round/feature
+  gates. See [`docs/agent-harness.md`](./docs/agent-harness.md).
 - **Never call Supabase inside an `onAuthStateChange` callback.** The client
   holds a lock there; it can deadlock the app.
-- **Read `features/<name>/TODO.md` first**, expand it into a real plan, and keep
-  it updated with evidence as you work.
+- **Feature control documents live in `features/<name>/docs/`** — `brief.md`
+  (what), `plan.md` (how), `todo.md` (state and gates), `worklog.md` (evidence),
+  `review.md` (independent findings). Keep them current as you work.
 
 ## Commands
 
@@ -54,7 +59,9 @@ pnpm typecheck          # tsc --noEmit
 pnpm lint               # eslint (also enforces architecture boundaries)
 pnpm format:check       # prettier
 pnpm test               # jest + @testing-library/react-native
-pnpm generate feature <n> --role=customer   # scaffold a feature vertical slice
+pnpm generate feature <n> --role=customer   # a feature WORKSPACE (docs + index)
+pnpm generate --help    # every capability; add pieces once the plan says so
+pnpm check:docs         # fail on docs describing a workflow we no longer have
 pnpm db:verify          # prove database.types.ts matches the migrations
 pnpm verify             # everything CI runs — do this before opening a PR
 ```

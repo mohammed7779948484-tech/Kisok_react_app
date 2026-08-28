@@ -13,16 +13,17 @@ conflict.
 
 ```
 features/<name>/
-├── index.ts     Public API — the only thing importable from outside
-├── TODO.md      Working memory: plan, progress, evidence
-├── api/         The ONLY place that calls Supabase
-├── queries/     TanStack Query hooks and query keys
-├── state/       Zustand store, client-owned state only
-├── schemas/     Zod schemas for RPC payloads
-├── components/  Presentational, feature-private
-├── screens/     Composed screens
-└── __tests__/   Colocated tests
+├── index.ts        Public API — the only thing importable from outside
+├── docs/           brief, plan, todo, worklog, review
+├── model/          Types, Zod schemas, pure rules — no IO
+├── api/            The ONLY place that calls Supabase
+├── queries/        TanStack Query hooks and query keys
+├── state/          Zustand store, client-owned state only
+├── screens/<name>/ A screen, its test, and its own components/
+└── components/     UI shared by several screens in this feature
 ```
+
+Tests live beside what they protect. Generate only what the feature needs.
 
 ## Rules
 

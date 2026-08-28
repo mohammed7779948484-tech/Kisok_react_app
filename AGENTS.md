@@ -82,15 +82,17 @@ Full rationale: [`docs/architecture.md`](./docs/architecture.md).
 ```
 features/<name>/
 ├── index.ts          Public API — the ONLY thing others may import
-├── TODO.md           Your working memory for this feature
+├── docs/             brief, plan, todo, worklog, review
+├── model/            Types, Zod schemas, pure rules — no IO
 ├── api/              The only place that calls Supabase
 ├── queries/          TanStack Query hooks + query keys
 ├── state/            Zustand store (client-owned state only)
-├── schemas/          Zod schemas validating RPC payloads
-├── components/       Presentational, feature-private
-├── screens/          Composed screens
-└── __tests__/        Colocated tests
+├── screens/<name>/   A screen, its test, and its own components/
+└── components/       UI shared by several screens in this feature
 ```
+
+Generate only what the feature needs. Empty architectural folders are not free:
+they teach the next agent that this is the expected shape.
 
 ### The five boundary rules
 
@@ -200,25 +202,32 @@ Inspect everything at `/ui-lab` in a dev build. Details:
 pnpm generate feature catalog --role=customer
 ```
 
-The generator is composable — a feature is assembled from capabilities
-(`schema`, `query`, `mutation`, `store`, `component`, `screen`, `realtime`,
-`route`), so it fits a read-heavy catalog, a local-state cart, a mutation-heavy
-checkout and a Realtime board equally well. Add pieces later with
-`pnpm generate query catalog product-detail`.
+That creates a **workspace** — `index.ts` and the five control documents in
+`docs/` — and nothing else. The generator does not guess the shape of a feature,
+because a local-state cart and a read-heavy catalog are not shaped alike, and
+deleting generated placeholder code is worse than never generating it.
 
-Then:
+**Load the `feature-delivery` skill** before you start; it carries the full
+workflow. In outline:
 
-1. **Read `features/catalog/TODO.md`** and expand it into a concrete plan.
-2. **Read the relevant migration** and write the Zod schema for the real payload.
-3. **Write failing tests first** where the behaviour is testable. Confirm they
-   fail for the _intended_ reason.
-4. **Implement.** Do not weaken a test to make it pass.
-5. **Update the TODO as you go**, with evidence — a test name, a command, a
-   screen and state you actually looked at.
-6. **`pnpm verify`.**
-7. Open a focused PR.
+1. **Research** — what the migrations actually offer, what the product should do,
+   what the design system already has. Delegate these in parallel.
+2. **`docs/brief.md`** — what, and how you will know it is done.
+3. **`docs/plan.md`** — how, with the `kisok-feature-plan` skill. The plan names
+   the feature's shape and therefore which capabilities to generate.
+4. **Generate what the plan calls for**: `pnpm generate query catalog products`,
+   `pnpm generate screen catalog product-detail --role=customer`, and so on.
+5. **Work in atomic tasks**, each one
+   `RED → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → TASK GATE`.
+   A task is done only at `PASS`, and the next task waits for its dependencies.
+   Record evidence in `docs/worklog.md` — a checkmark with no command output is
+   not evidence.
+6. **Round gates**, then the **feature gate**: `pnpm verify`, runtime evidence,
+   independent code review, remediation, re-review, quality audit.
+7. Open a focused PR using the template.
 
 Full walkthrough: [`docs/feature-workflow.md`](./docs/feature-workflow.md).
+The harness — skills, subagents, gates: [`docs/agent-harness.md`](./docs/agent-harness.md).
 Generator reference: [`docs/generator.md`](./docs/generator.md).
 
 ### Changing the architecture
@@ -239,7 +248,7 @@ A feature is done when **all** of these are true:
 
 **Product**
 
-- [ ] Every user story in the TODO is implemented
+- [ ] Every acceptance criterion in `docs/brief.md` is implemented
 - [ ] Loading, empty, error, and retry states exist
 - [ ] No forbidden scope introduced (prices, payments, signup, …)
 
@@ -267,10 +276,15 @@ A feature is done when **all** of these are true:
 
 **Verification**
 
-- [ ] `pnpm verify` passes
-- [ ] Screen opened in a browser and interacted with
+- [ ] `pnpm verify` passes — after the final change, not before it
+- [ ] Every task gate, round gate and the feature gate is `PASS`
+- [ ] Screen opened in a browser and interacted with, at the tablet sizes
 - [ ] Android verified, or explicitly noted as unverified
-- [ ] `TODO.md` updated with evidence; nothing ticked without it
+- [ ] `docs/worklog.md` carries real command output per task; nothing ticked
+      without it
+- [ ] Independent code review done, findings dispositioned, blocking findings
+      re-reviewed
+- [ ] Quality audit done
 
 **Reliability**
 

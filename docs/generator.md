@@ -69,27 +69,74 @@ pnpm generate route catalog search --role=customer
 
 ## What you get
 
-`pnpm generate feature catalog --role=customer`:
+`pnpm generate feature catalog --role=customer` creates a **workspace**, and
+nothing else:
 
 ```
 features/catalog/
-├── index.ts                          public API — the only external surface
-├── TODO.md                           your working memory for this feature
-├── schemas/catalog-schema.ts         Zod validation for one payload
-├── api/fetch-catalog.ts              the ONLY place that calls Supabase
-├── queries/keys.ts                   feature-local query keys
-├── queries/use-catalog.ts            TanStack Query hook
-├── components/catalog.tsx            presentational, feature-private
-├── screens/catalog-screen.tsx        loading / error / content
-└── __tests__/
-    ├── catalog-schema.test.ts
-    └── catalog-screen.test.tsx
-app/(customer)/catalog.tsx            thin route
+├── index.ts        public API — the only external surface
+└── docs/
+    ├── brief.md    WHAT: objective, acceptance criteria, scope
+    ├── plan.md     HOW: contracts, decisions, rounds and tasks
+    ├── todo.md     execution state and gates
+    ├── worklog.md  evidence per task
+    └── review.md   independent review findings
 ```
+
+This is deliberate. The old default generated a schema, a query, a component, a
+screen and a route — which quietly assumed every feature is a read-heavy routed
+screen. Cart is local state, Checkout is a mutation state machine, and a
+domain-only feature has no UI at all; each of those began by deleting files.
+
+Plan first, then generate what the plan calls for:
+
+```bash
+pnpm generate schema catalog catalog-response
+pnpm generate query  catalog products
+pnpm generate screen catalog product-detail --role=customer
+pnpm generate component catalog price-badge --screen=product-detail
+pnpm generate route  catalog index --role=customer
+```
+
+Which fills in the anatomy:
+
+```
+features/catalog/
+├── index.ts
+├── docs/
+├── model/                            pure domain: types, schemas, rules — no IO
+│   ├── catalog-response.schema.ts
+│   └── catalog-response.schema.test.ts
+├── api/fetch-products.ts             the ONLY place that calls Supabase
+├── queries/
+│   ├── keys.ts                       feature-local query keys
+│   └── use-products.ts               TanStack Query hook
+├── state/                            Zustand stores, when the feature owns state
+├── screens/product-detail/           a screen owns a directory
+│   ├── product-detail-screen.tsx
+│   ├── product-detail-screen.test.tsx
+│   └── components/price-badge.tsx    private to THIS screen
+└── components/                       shared by several screens in this feature
+app/(customer)/index.tsx              thin route
+```
+
+Tests sit beside the code they protect, not in a `__tests__` bucket — a
+colocated test gets updated when its subject changes; a distant one rots.
 
 The generated code is not filler. It compiles, lints without warnings, is
 Prettier-formatted, and its tests pass immediately — so `pnpm verify` is green
 before you have written a line, and stays a meaningful signal while you work.
+
+## Where a component belongs
+
+Ownership follows the nearest stable consumer, and the generator can put it
+there directly rather than making you move it afterwards:
+
+| Used by                        | Command                                                               | Lands in                             |
+| ------------------------------ | --------------------------------------------------------------------- | ------------------------------------ |
+| One screen                     | `pnpm generate component catalog price-badge --screen=product-detail` | `screens/product-detail/components/` |
+| Several screens in the feature | `pnpm generate component catalog product-card`                        | `features/catalog/components/`       |
+| Several features               | not generated — see `kisok-design-system` before promoting            | `components/`                        |
 
 ## No central files to edit
 
@@ -107,7 +154,7 @@ It appends only when the export is missing, never reorders, and never rewrites
 existing lines — and reports it:
 
 ```
-  + features/catalog/screens/search-screen.tsx
+  + features/catalog/screens/search/search-screen.tsx
   + app/(customer)/search.tsx
   ~ features/catalog/index.ts — added SearchScreen
 ```
@@ -117,14 +164,26 @@ disk unless you pass `--force`.
 
 **If you extend the generator, do not break this.** The smoke test asserts it.
 
+## Nothing is written unless everything is valid
+
+The generator runs PLAN → RENDER → FORMAT/PARSE → VALIDATE → WRITE, and it is
+all-or-nothing. A template whose output cannot be parsed aborts the request; a
+plan that would write outside the feature is rejected; a write that fails
+part-way is rolled back, directories included.
+
+A half-generated feature that does not compile, mixed in with files that do, is
+the worst possible outcome — there is no clean way back from it. The smoke test
+corrupts a real template and asserts nothing reaches disk.
+
 ## After generating
 
-1. **Read `features/<feature>/TODO.md`** and expand it into a real plan.
+1. **Fill in `features/<feature>/docs/brief.md`** — what, and how you will know
+   it is done.
 2. **Read the migration** for the contract you are about to use.
-3. Replace the placeholder Zod schema with the real payload shape.
-4. Write the failing tests, then implement.
-5. Export what other features need from `index.ts`.
-6. Keep the TODO updated **with evidence**.
+3. Write `docs/plan.md` with the `kisok-feature-plan` skill.
+4. Replace the placeholder Zod schema with the real payload shape.
+5. Write the failing test, then implement — one atomic task at a time.
+6. Keep `docs/todo.md` and `docs/worklog.md` current, **with evidence**.
 7. `pnpm verify`.
 
 See [feature-workflow.md](./feature-workflow.md).

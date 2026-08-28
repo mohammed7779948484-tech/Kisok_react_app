@@ -8,9 +8,14 @@ paths:
 `pnpm generate <capability> <feature> [name]` scaffolds feature code. It exists
 to stop agents from re-inventing (or hallucinating) the architecture.
 
-Capabilities: `feature` (the shell + orchestrator), `schema`, `query`,
-`mutation`, `store`, `component`, `screen`, `realtime`, `route`. Each is
-independent and feature-local; `feature --with=a,b,c` composes them.
+Capabilities: `feature` (a minimal workspace — `index.ts` plus `docs/`),
+`schema` (into `model/`), `query`, `mutation`, `store`, `component`, `screen`,
+`realtime`, `route`. Each is independent and feature-local; `feature --with=a,b,c`
+composes them. `feature` alone generates NO implementation code on purpose —
+planning decides the shape.
+
+Writing is atomic: PLAN → RENDER → FORMAT/PARSE → VALIDATE → WRITE. If any
+planned file is invalid, nothing is written.
 
 ## How it works
 
@@ -30,16 +35,19 @@ independent and feature-local; `feature --with=a,b,c` composes them.
 
 ## Rules for changing templates
 
-- **Run `pnpm generate:smoke` after every change.** It generates four materially
-  different feature shapes (read-heavy, local-state-heavy, mutation-heavy,
-  realtime) plus follow-up capabilities, and proves the output typechecks, lints
-  with zero warnings, is formatted, and passes its own tests. A template that
-  merely looks right is worthless — every future feature inherits its output.
+- **Run `pnpm generate:smoke` after every change.** It generates six materially
+  different feature shapes (workspace-only, pure model, read-heavy,
+  local-state-heavy, mutation-heavy, realtime) plus follow-up capabilities, and
+  proves the output typechecks, lints with zero warnings, is formatted, and
+  passes its own tests. It also corrupts a template deliberately and asserts
+  that nothing is written. A template that merely looks right is worthless —
+  every future feature inherits its output.
 - **Keep templates neutral.** Do not bias them toward one feature shape. A
   capability that only makes sense for a list is the wrong abstraction; the
   generator has to serve a cart and a checkout as well as a catalog.
 - Generated code must **encode the architecture**: Supabase only in `api/`,
-  query keys feature-local, a public API in `index.ts`, `TODO.md` always present.
+  query keys feature-local, a public API in `index.ts`, the `docs/` control
+  documents always present, tests colocated with their subject.
 - Comments in templates should be **precise and few**. They exist to prevent a
   specific mistake, not to narrate. Delete a comment that no longer prevents
   anything.

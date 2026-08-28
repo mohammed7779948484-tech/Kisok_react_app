@@ -5,18 +5,32 @@ break the foundation — without needing any secret.
 
 ## Every PR — `.github/workflows/ci.yml`
 
-| Job            | What it proves                                                                                                    |
-| -------------- | ----------------------------------------------------------------------------------------------------------------- |
-| **verify**     | typecheck, lint (including the architecture boundaries), formatting, the test suite, and the generator smoke test |
-| **web-export** | `expo export --platform web` still bundles — the preview workflow agents depend on                                |
-| **doctor**     | `expo-doctor` dependency alignment (advisory, non-blocking)                                                       |
+| Job            | What it proves                                                                                                                                                                        |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **verify**     | typecheck, lint (including the architecture boundaries), formatting, the test suite, documentation freshness, the database types against the migrations, and the generator smoke test |
+| **web-export** | `expo export --platform web` still bundles — the preview workflow agents depend on                                                                                                    |
+| **doctor**     | `expo-doctor` dependency alignment                                                                                                                                                    |
 
-The doctor job captures its report into the job summary and **always
-succeeds**. It compares against Expo's hosted compatibility manifest, so it goes
-red for reasons outside a PR's control — a network hiccup, or Expo publishing a
-patch release an hour earlier. `continue-on-error` alone is not enough there:
-the check run still reports failure, and a check that is permanently red teaches
-everyone to ignore red. Read its findings in the job summary.
+### The two checks that could quietly become theatre
+
+Both of these could pass without proving anything, so both are built to tell the
+difference between "checked and fine" and "could not check".
+
+**`db:verify`** applies the migrations to a throwaway PostgreSQL and compares
+the committed database types against the result. Locally, a machine without
+PostgreSQL reports `SKIPPED` and exits 0 — no reason to block a commit. In CI
+that leniency would be dangerous: if the runner stopped shipping PostgreSQL the
+job would go permanently green while verifying nothing. So CI sets
+`KISOK_DB_VERIFY_REQUIRED=1` and "could not run" becomes a failure. A mismatch
+fails in both modes.
+
+**`expo-doctor`** compares against Expo's hosted compatibility service, so it
+can fail for reasons outside a PR's control. `tools/doctor.mjs` treats a run as
+inconclusive only when **every** failing check is one that cannot run without a
+remote service, and the output shows a transport problem. A real version
+mismatch still fails, even when unrelated network noise appears in the same run
+— excusing everything because "network" appeared somewhere is how a genuine SDK
+mismatch gets swallowed.
 
 Locally, `pnpm verify` runs the same checks as the `verify` job.
 
@@ -29,6 +43,15 @@ slower than the fast tier and most changes do not need it.
 **Request it for anything touching native configuration** — `app.config.ts`
 plugins, SDK or dependency versions, permissions, or a new dependency with native
 code.
+
+## On request — `.github/workflows/android-e2e.yml`
+
+Maestro flows against a tablet-profile emulator, gated on the **`e2e`** label. It
+prebuilds, assembles a debug APK, boots the emulator and runs `.maestro/flows`.
+
+Minutes of runtime, so it is not on every PR: paying that on a docs change
+trains everyone to ignore the result. See [`.maestro/README.md`](../.maestro/README.md)
+for when a feature actually deserves a flow.
 
 ## Design notes
 
