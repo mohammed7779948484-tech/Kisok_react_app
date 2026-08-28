@@ -4,7 +4,7 @@ filename: fetch-NAME.ts
 ---
 import { AppError } from "@/core/errors";
 <% if (props.withSchema) { -%>
-import type { <%= props.pascalCaseName %> } from "../schemas/<%= props.kebabCaseName %>-schema";
+import type { <%= props.pascalCaseName %> } from "../model/<%= props.kebabCaseName %>.schema";
 <% } -%>
 
 /**
@@ -23,7 +23,7 @@ export async function fetch<%= props.pascalCaseName %>(): Promise<unknown> {
   // TODO: implement. Replace the throw below with a real call, e.g.
   //
   //   import { callRpc } from "@/core/supabase";
-  //   import { <%= props.withSchema ? props.camelCaseName + "Schema" : "yourSchema" %> } from "../schemas/<%= props.kebabCaseName %>-schema";
+  //   import { <%= props.withSchema ? props.camelCaseName + "Schema" : "yourSchema" %> } from "../model/<%= props.kebabCaseName %>.schema";
   //   return callRpc("get_customer_catalog", {}, <%= props.withSchema ? props.camelCaseName + "Schema" : "yourSchema" %>);
   //
   // Reads available to this client (see docs/data-and-supabase.md):
@@ -38,7 +38,7 @@ export async function fetch<%= props.pascalCaseName %>(): Promise<unknown> {
     kind: "unknown",
     userMessage: "This isn't available yet.",
     technicalMessage:
-      "fetch<%= props.pascalCaseName %> is not implemented — see features/<%= props.feature %>/TODO.md",
+      "fetch<%= props.pascalCaseName %> is not implemented — see features/<%= props.feature %>/docs/todo.md",
     code: "NOT_IMPLEMENTED",
   });
 }

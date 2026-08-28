@@ -1,10 +1,13 @@
 ---
-destinationDir: features/<%= props.feature %>/__tests__
-filename: NAME-schema.test.ts
+destinationDir: features/<%= props.feature %>/model
+filename: NAME.schema.test.ts
 ---
-import { <%= props.camelCaseName %>Schema } from "../schemas/<%= props.kebabCaseName %>-schema";
+import { <%= props.camelCaseName %>Schema } from "./<%= props.kebabCaseName %>.schema";
 
 /**
+ * Colocated with the schema it protects: the test is right there when the
+ * schema changes, instead of in a __tests__ bucket nobody opens.
+ *
  * Schema tests are the cheapest guard against a backend contract change.
  * Extend these as you replace the placeholder fields with the real ones.
  */

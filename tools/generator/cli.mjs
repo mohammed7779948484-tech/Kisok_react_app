@@ -9,8 +9,15 @@ import {
   ROLES,
   buildProps,
   planCapability,
+  routeDirForRole,
 } from "./capabilities.mjs";
-import { ensureFeatureExport, formatFiles, writeFiles } from "./render.mjs";
+import {
+  GeneratorError,
+  ensureFeatureExport,
+  formatFiles,
+  validatePlan,
+  writeFiles,
+} from "./render.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -26,38 +33,54 @@ ${Object.entries(CAPABILITIES)
 
 Options
   --role=<${ROLES.join("|")}>   Which experience owns this. Decides the route group. Default: shared.
-  --with=<a,b,c>                For \`feature\` only: capabilities to generate.
-                                Default: ${DEFAULT_WITH.join(",")}.
+  --with=<a,b,c>                For \`feature\` only: also generate these.
+                                Default: nothing — a workspace, no assumed shape.
                                 Available: ${FEATURE_CAPABILITIES.join(", ")}.
+  --screen=<name>               For \`component\` only: make it private to that
+                                screen instead of shared across the feature.
   --dry-run                     Print the plan without writing anything.
   --force                       Overwrite existing files.
 
+Feature anatomy
+
+  features/<feature>/
+    index.ts        public API — the only thing outsiders may import
+    docs/           brief, plan, todo, worklog, review
+    model/          types, Zod schemas, pure rules — no IO
+    api/            the ONLY place Supabase may be called
+    queries/        TanStack Query hooks + key factory
+    state/          Zustand stores
+    screens/<name>/ the screen, its test, and its own components/
+    components/     UI shared by several screens in this feature
+
 Examples
-  # A read-heavy feature
+  # Start here. Creates a workspace and nothing else; planning decides the shape.
   pnpm generate feature catalog --role=customer
 
-  # Local state only, surfaced as a sheet rather than its own route
-  pnpm generate feature cart --role=customer --with=store,component,screen
+  # Then add exactly what the plan calls for.
+  pnpm generate schema catalog catalog-response
+  pnpm generate query  catalog products
+  pnpm generate screen catalog product-detail --role=customer
+  pnpm generate component catalog price-badge --screen=product-detail
+  pnpm generate route  catalog index --role=customer
 
-  # Live operational data
-  pnpm generate feature preparation --role=preparation --with=schema,query,realtime,screen,route
+  # Or, when the shape is already known, compose it in one go.
+  pnpm generate feature cart --role=customer --with=store,component
+  pnpm generate feature preparation --role=preparation \\
+    --with=schema,query,realtime,screen,route
 
-  # Add one piece to an existing feature later
-  pnpm generate query catalog product-detail
-  pnpm generate mutation checkout submit-order
-  pnpm generate store cart lines
-
-After generating, open features/<feature>/TODO.md and work through it.
+After generating a feature, fill in docs/brief.md, then docs/plan.md.
 `;
 
 function parseArgs(argv) {
   const positional = [];
-  const options = { role: "shared", with: null, dryRun: false, force: false };
+  const options = { role: "shared", with: null, screen: null, dryRun: false, force: false };
 
   for (const arg of argv) {
     if (arg === "--dry-run") options.dryRun = true;
     else if (arg === "--force") options.force = true;
     else if (arg.startsWith("--role=")) options.role = arg.slice("--role=".length);
+    else if (arg.startsWith("--screen=")) options.screen = arg.slice("--screen=".length);
     else if (arg.startsWith("--with="))
       options.with = arg
         .slice("--with=".length)
@@ -80,20 +103,26 @@ function parseArgs(argv) {
  */
 export function planRequest({ capability, feature, name, options }) {
   if (!CAPABILITIES[capability]) {
-    throw new Error(
+    throw new GeneratorError(
       `Unknown capability "${capability}". Available: ${Object.keys(CAPABILITIES).join(", ")}.`,
     );
   }
-  if (!feature) throw new Error(`\`${capability}\` needs a feature name.`);
+  if (!feature) throw new GeneratorError(`\`${capability}\` needs a feature name.`);
 
   if (capability !== "feature" && options.with) {
-    throw new Error("--with only applies to `pnpm generate feature`.");
+    throw new GeneratorError("--with only applies to `pnpm generate feature`.");
+  }
+  if (options.screen && capability !== "component") {
+    throw new GeneratorError(
+      "--screen only applies to `pnpm generate component`. A screen-local component " +
+        "lives beside its screen; everything else is already feature-local.",
+    );
   }
 
   const requested = options.with ?? DEFAULT_WITH;
   const unknown = requested.filter((entry) => !FEATURE_CAPABILITIES.includes(entry));
   if (unknown.length > 0) {
-    throw new Error(
+    throw new GeneratorError(
       `Unknown --with value(s): ${unknown.join(", ")}. Available: ${FEATURE_CAPABILITIES.join(", ")}.`,
     );
   }
@@ -101,7 +130,7 @@ export function planRequest({ capability, feature, name, options }) {
   const capabilities = capability === "feature" ? ["feature", ...requested] : [capability];
 
   if (capabilities.includes("realtime") && options.role === "customer") {
-    throw new Error(
+    throw new GeneratorError(
       "Realtime is not available to the customer experience.\n" +
         "Only `public.orders` is published, and RLS gives a customer session no rows on it, " +
         "so the subscription would never fire. Use --role=preparation, or drop `realtime`.",
@@ -115,6 +144,7 @@ export function planRequest({ capability, feature, name, options }) {
     withQuery: capabilities.includes("query"),
     withStore: capabilities.includes("store"),
     withScreen: capabilities.includes("screen"),
+    screen: options.screen,
   };
 
   const files = [];
@@ -140,8 +170,21 @@ export function planRequest({ capability, feature, name, options }) {
   });
 }
 
+/**
+ * PLAN → RENDER → FORMAT/PARSE → VALIDATE → WRITE.
+ *
+ * Nothing reaches the repository until every planned file has rendered, parsed
+ * and passed validation. A failure at any step throws, and the working tree is
+ * exactly as it was.
+ */
 export async function run(request, { root = ROOT } = {}) {
-  const files = await formatFiles(planRequest(request));
+  const planned = planRequest(request);
+  const formatted = await formatFiles(planned);
+  const files = validatePlan(formatted, {
+    feature: request.feature,
+    routeDir: routeDirForRole(request.options.role),
+  });
+
   const result = writeFiles(files, {
     root,
     force: request.options.force,
@@ -199,12 +242,14 @@ async function main() {
   let step = 1;
 
   if (request.capability === "feature") {
+    console.log(`  ${step++}. Fill in features/${request.feature}/docs/brief.md — what and why.`);
     console.log(
-      `  ${step++}. Read features/${request.feature}/TODO.md and turn it into a real plan.`,
+      `  ${step++}. Research, then write docs/plan.md with the kisok-feature-plan skill.`,
     );
-    console.log(`  ${step++}. Write the failing tests first where the behaviour is testable.`);
+    console.log(`  ${step++}. Generate the capabilities that plan calls for.`);
   } else {
-    console.log(`  ${step++}. Update features/${request.feature}/TODO.md.`);
+    console.log(`  ${step++}. Update features/${request.feature}/docs/todo.md.`);
+    console.log(`  ${step++}. Write the failing test first where the behaviour is testable.`);
   }
 
   console.log(`  ${step}. Run: pnpm verify\n`);

@@ -12,11 +12,11 @@ filename: index.ts
  * Export the minimum another feature genuinely needs. A small public surface is
  * what lets several agents work in parallel without conflicting.
  *
- * Generating more capabilities later will NOT edit this file — add their exports
- * yourself, so the generator never fights your changes.
+ * Generating a screen later appends its export here; nothing else is edited for
+ * you, so the generator never fights your changes.
  */
 <% if (props.withScreen) { -%>
-export { <%= props.pascalCaseName %>Screen } from "./screens/<%= props.kebabCaseName %>-screen";
+export { <%= props.pascalCaseName %>Screen } from "./screens/<%= props.kebabCaseName %>/<%= props.kebabCaseName %>-screen";
 <% } else { -%>
 export {};
 <% } -%>

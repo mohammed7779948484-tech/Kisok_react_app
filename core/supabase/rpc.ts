@@ -27,9 +27,9 @@ export type DbFunctions = Database["public"]["Functions"];
  * compiles. Adding an argument to the function in a migration turns the
  * two-argument form back on, and every call site fails to compile until updated.
  */
-type RpcInvocation<Name extends keyof DbFunctions, Parsed> = [
-  DbFunctions[Name]["Args"],
-] extends [never]
+type RpcInvocation<Name extends keyof DbFunctions, Parsed> = [DbFunctions[Name]["Args"]] extends [
+  never,
+]
   ? [schema: ZodType<Parsed>]
   : [args: DbFunctions[Name]["Args"], schema: ZodType<Parsed>];
 

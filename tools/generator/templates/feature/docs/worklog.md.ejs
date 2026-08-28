@@ -1,0 +1,37 @@
+---
+destinationDir: features/<%= props.feature %>/docs
+filename: worklog.md
+---
+# <%= props.pascalCaseName %> — worklog
+
+Evidence, by task ID. A checkmark with no command output is not evidence.
+
+Append entries; do not rewrite history. If a gate failed and was then fixed,
+both belong here — a task that failed twice is a signal worth keeping.
+
+## Template
+
+```
+### T01 — <objective>
+
+RED
+  $ <command>
+  <the failure, and why it is the RIGHT failure>
+
+GREEN
+  $ <command>
+  <pass>
+
+AFFECTED CHECKS
+  $ <typecheck / lint / focused tests>
+  <result>
+
+DIFF
+  <files touched, and anything surprising>
+
+GATE: PASS | FAIL
+```
+
+## Entries
+
+_None yet._

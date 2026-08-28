@@ -26,13 +26,39 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..")
  */
 const SHAPES = [
   {
+    // The new default: a workspace and nothing else. No API, no UI, no route.
+    label: "workspace only (the default)",
+    request: { capability: "feature", feature: "smoke-bare", options: { role: "shared" } },
+    expect: ["features/smoke-bare/index.ts", "docs/brief.md", "docs/plan.md", "docs/todo.md"],
+    reject: ["api/", "queries/", "screens/", "state/", "model/", "app/"],
+  },
+  {
+    // Domain only: rules and contracts, no IO and no screen.
+    label: "pure model (domain-only)",
+    request: {
+      capability: "feature",
+      feature: "smoke-model",
+      options: { role: "shared", with: ["schema"] },
+    },
+    expect: ["model/smoke-model.schema.ts", "model/smoke-model.schema.test.ts"],
+    reject: ["api/", "queries/", "screens/", "app/"],
+  },
+  {
     label: "read-heavy (Catalog)",
-    request: { capability: "feature", feature: "smoke-read", options: { role: "customer" } },
+    request: {
+      capability: "feature",
+      feature: "smoke-read",
+      options: {
+        role: "customer",
+        with: ["schema", "query", "component", "screen", "route"],
+      },
+    },
     expect: [
-      "schemas/",
+      "model/smoke-read.schema.ts",
       "api/fetch-",
       "queries/use-",
-      "screens/",
+      "screens/smoke-read/smoke-read-screen.tsx",
+      "screens/smoke-read/smoke-read-screen.test.tsx",
       "components/",
       "app/(customer)/",
     ],
@@ -44,7 +70,7 @@ const SHAPES = [
       feature: "smoke-state",
       options: { role: "customer", with: ["store", "component", "screen"] },
     },
-    expect: ["state/", "components/", "screens/"],
+    expect: ["state/", "components/", "screens/smoke-state/smoke-state-screen.tsx"],
     reject: ["api/", "queries/", "app/"],
   },
   {
@@ -79,14 +105,30 @@ const SHAPES = [
 const FOLLOW_UPS = [
   { capability: "query", feature: "smoke-read", name: "product-detail" },
   { capability: "mutation", feature: "smoke-read", name: "refresh-catalog" },
+  // Feature-wide component: reused by more than one screen in this feature.
   { capability: "component", feature: "smoke-read", name: "product-card" },
   { capability: "screen", feature: "smoke-read", name: "search" },
+  // Screen-local component: private to one screen, generated in place rather
+  // than created at feature level and moved by hand afterwards.
+  {
+    capability: "component",
+    feature: "smoke-read",
+    name: "search-filter",
+    screen: "search",
+  },
   // The documented "add a route later" flow. Its screen must be generated AND
   // exported from the feature's public API, or the route will not compile.
   { capability: "route", feature: "smoke-read", name: "detail" },
 ];
 
-const SCRATCH_FEATURES = ["smoke-read", "smoke-state", "smoke-write", "smoke-live"];
+const SCRATCH_FEATURES = [
+  "smoke-bare",
+  "smoke-model",
+  "smoke-read",
+  "smoke-state",
+  "smoke-write",
+  "smoke-live",
+];
 
 let failures = 0;
 
@@ -179,7 +221,7 @@ check("a route also brings the screen it renders", () => {
     options: { role: "customer" },
   }).map((file) => file.destination);
 
-  assert.ok(destinations.some((d) => d.includes("screens/detail-screen.tsx")));
+  assert.ok(destinations.some((d) => d.includes("screens/detail/detail-screen.tsx")));
   assert.ok(destinations.includes("app/(customer)/detail.tsx"));
 });
 check("rejects an unknown capability", () =>
@@ -220,13 +262,69 @@ check("rejects an unknown role", () =>
     /Unknown --role/,
   ),
 );
-check("always emits a TODO and a public API for a feature", () => {
+check("a feature is a workspace by default: public API plus control documents", () => {
   const destinations = planRequest({
     capability: "feature",
     feature: "bare",
-    options: { role: "shared", with: [] },
+    options: { role: "shared" },
   }).map((file) => file.destination);
-  assert.deepEqual(destinations.sort(), ["features/bare/TODO.md", "features/bare/index.ts"]);
+
+  assert.deepEqual(destinations.sort(), [
+    "features/bare/docs/brief.md",
+    "features/bare/docs/plan.md",
+    "features/bare/docs/review.md",
+    "features/bare/docs/todo.md",
+    "features/bare/docs/worklog.md",
+    "features/bare/index.ts",
+  ]);
+});
+check("a component is feature-wide by default and screen-local with --screen", () => {
+  const wide = planRequest({
+    capability: "component",
+    feature: "solo",
+    name: "chip",
+    options: { role: "customer" },
+  }).map((file) => file.destination);
+  assert.deepEqual(wide, ["features/solo/components/chip.tsx"]);
+
+  const local = planRequest({
+    capability: "component",
+    feature: "solo",
+    name: "chip",
+    options: { role: "customer", screen: "detail" },
+  }).map((file) => file.destination);
+  assert.deepEqual(local, ["features/solo/screens/detail/components/chip.tsx"]);
+});
+check("rejects --screen on anything but a component", () =>
+  assert.throws(
+    () =>
+      planRequest({
+        capability: "screen",
+        feature: "x",
+        name: "y",
+        options: { role: "customer", screen: "z" },
+      }),
+    /--screen only applies/,
+  ),
+);
+check("tests are colocated with the code they protect", () => {
+  const destinations = planRequest({
+    capability: "feature",
+    feature: "colo",
+    options: { role: "customer", with: ["schema", "query", "screen"] },
+  }).map((file) => file.destination);
+
+  for (const test of destinations.filter((d) => /\.test\.tsx?$/.test(d))) {
+    assert.ok(
+      !test.includes("__tests__"),
+      `${test} is in a __tests__ bucket instead of beside its subject`,
+    );
+    const subject = test.replace(/\.test\.(tsx?)$/, ".$1");
+    assert.ok(
+      destinations.includes(subject),
+      `${test} has no colocated subject (expected ${subject})`,
+    );
+  }
 });
 check("leaves no unrendered template syntax and ends every file with a newline", () => {
   for (const shape of SHAPES) {
@@ -242,6 +340,10 @@ check("touches no shared file beyond one route per screen", () => {
     for (const file of planRequest(shape.request)) {
       const inFeature = file.destination.startsWith(`features/${shape.request.feature}/`);
       const isRoute = /^app\/(\([a-z]+\)\/)?[a-z0-9-]+\.tsx$/.test(file.destination);
+      assert.ok(
+        !/^(components|core|app)\/.*(index|registry|keys)\.ts$/.test(file.destination),
+        `${file.destination} looks like a shared registry edit`,
+      );
       assert.ok(
         inFeature || isRoute,
         `${file.destination} is outside the feature and is not a route file`,
@@ -302,8 +404,8 @@ try {
     console.log(`  generated ${result.written.length} files — ${shape.label}`);
   }
 
-  for (const followUp of FOLLOW_UPS) {
-    const result = await run({ ...followUp, options: { role: "customer" } });
+  for (const { screen, ...followUp } of FOLLOW_UPS) {
+    const result = await run({ ...followUp, options: { role: "customer", screen } });
     for (const file of result.written) writtenPaths.add(file);
     assert.ok(result.written.length > 0, `follow-up ${followUp.capability} wrote nothing`);
   }
@@ -365,4 +467,60 @@ try {
 }
 
 cleanUp();
-console.log("  ok  cleaned up\n\nKISOK generator smoke test passed\n");
+console.log("  ok  cleaned up");
+
+// ---------------------------------------------------------------------------
+// Atomicity: a broken template must leave the repository EXACTLY as it was.
+//
+// This is the failure mode that used to be tolerated — a template that produced
+// unparseable output was warned about and written anyway, leaving a feature
+// directory half generated and not compiling, with no clean way back.
+// ---------------------------------------------------------------------------
+console.log("\natomicity");
+
+const BROKEN_FEATURE = "smoke-atomic";
+const brokenTemplate = path.join(ROOT, "tools/generator/templates/model/schema.ts.ejs");
+const originalTemplate = fs.readFileSync(brokenTemplate, "utf8");
+
+try {
+  // Valid EJS, invalid TypeScript: it renders fine and then cannot be parsed.
+  fs.writeFileSync(brokenTemplate, `${originalTemplate}\nexport const = ;;; broken(\n`, "utf8");
+
+  let threw = null;
+  try {
+    await run({
+      capability: "feature",
+      feature: BROKEN_FEATURE,
+      options: { role: "shared", with: ["schema"] },
+    });
+  } catch (error) {
+    threw = error;
+  }
+
+  check("a template that produces invalid syntax aborts the request", () => {
+    assert.ok(threw, "the generator accepted a template that produces invalid syntax");
+    assert.match(threw.message, /NOTHING was written/);
+  });
+
+  check("no partial feature is left behind", () => {
+    const featureDir = path.join(ROOT, "features", BROKEN_FEATURE);
+    assert.ok(
+      !fs.existsSync(featureDir),
+      `${featureDir} exists — a failed generation wrote a partial feature`,
+    );
+  });
+} finally {
+  fs.writeFileSync(brokenTemplate, originalTemplate, "utf8");
+  fs.rmSync(path.join(ROOT, "features", BROKEN_FEATURE), { recursive: true, force: true });
+}
+
+check("the template was restored", () =>
+  assert.equal(fs.readFileSync(brokenTemplate, "utf8"), originalTemplate),
+);
+
+if (failures > 0) {
+  console.error(`\n${failures} generator check(s) failed.\n`);
+  process.exit(1);
+}
+
+console.log("\nKISOK generator smoke test passed\n");

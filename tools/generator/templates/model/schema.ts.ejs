@@ -1,11 +1,14 @@
 ---
-destinationDir: features/<%= props.feature %>/schemas
-filename: NAME-schema.ts
+destinationDir: features/<%= props.feature %>/model
+filename: NAME.schema.ts
 ---
 import { z } from "zod";
 
 /**
  * Runtime shape of one payload this feature reads or writes.
+ *
+ * Lives in `model/` — the feature's pure domain layer: types, schemas, rules,
+ * selectors. Nothing here performs IO, so it is the cheapest code to test.
  *
  * Every KISOK RPC returns `jsonb`, which Supabase types as the wide `Json`
  * union — so validating here is what turns an untyped payload into something

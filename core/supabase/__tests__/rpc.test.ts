@@ -71,9 +71,7 @@ describe("callRpc", () => {
       rpc: { get_customer_catalog: () => ({ data: [{ id: "not-a-uuid" }], error: null }) },
     });
 
-    const failure = await callRpc("get_customer_catalog", schema).catch(
-      (error: unknown) => error,
-    );
+    const failure = await callRpc("get_customer_catalog", schema).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(AppError);
     expect(failure).toMatchObject({ kind: "server", code: "RPC_SCHEMA_MISMATCH" });

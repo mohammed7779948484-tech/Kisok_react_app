@@ -101,14 +101,27 @@ export function caseProps(input) {
   };
 }
 
+/** A generation request that was rejected before anything was written. */
+export class GeneratorError extends Error {
+  name = "GeneratorError";
+}
+
 /**
  * Format generated files with the project's own Prettier config.
  *
  * Templates cannot reliably produce formatted output — line length depends on
  * the name being interpolated — so the generator formats what it writes.
+ *
+ * A file Prettier cannot PARSE is a template bug that would put broken code in
+ * someone's feature directory. This used to warn and write the file anyway,
+ * which is the worst outcome: a half-generated feature that does not compile,
+ * mixed in with files that do, and no clean way back. Now it aborts the whole
+ * request — every failure at once, so a broken template is fixed in one pass.
  */
 export async function formatFiles(files) {
-  return Promise.all(
+  const failures = [];
+
+  const formatted = await Promise.all(
     files.map(async (file) => {
       const config = await prettier.resolveConfig(file.destination);
       try {
@@ -118,40 +131,151 @@ export async function formatFiles(files) {
         });
         return { ...file, contents };
       } catch (error) {
-        // A template producing unparseable output is a bug worth seeing, but it
-        // should not stop the rest of the files from being written.
-        console.warn(`Could not format ${file.destination}: ${error.message}`);
+        failures.push(`  ${file.destination}\n    from ${file.template}\n    ${error.message}`);
         return file;
       }
     }),
   );
+
+  if (failures.length > 0) {
+    throw new GeneratorError(
+      `${failures.length} generated file(s) could not be parsed, so NOTHING was written:\n\n` +
+        `${failures.join("\n\n")}\n\n` +
+        `Fix the template, then re-run. No partial output was left behind.`,
+    );
+  }
+
+  return formatted;
 }
 
 /**
- * Write planned files.
+ * Reject a plan that would write somewhere it should not, before writing.
+ *
+ * The invariant this protects is what lets several agents generate in parallel:
+ * a capability writes inside its own feature, and the single exception is one
+ * Expo Router file. Nothing may touch a shared registry, a barrel, or another
+ * feature. Enforced here rather than left to template review, because a
+ * front-matter typo is otherwise invisible until it lands in someone's branch.
+ */
+export function validatePlan(files, { feature, routeDir }) {
+  const problems = [];
+  const featureDir = `features/${feature}/`;
+  const seen = new Set();
+
+  for (const file of files) {
+    const destination = file.destination.split(path.sep).join("/");
+
+    if (destination.includes("..")) {
+      problems.push(`${destination} escapes the project root.`);
+      continue;
+    }
+    if (seen.has(destination)) {
+      problems.push(`${destination} is planned twice.`);
+      continue;
+    }
+    seen.add(destination);
+
+    if (file.contents.trim().length === 0) {
+      problems.push(`${destination} would be empty.`);
+    }
+
+    const insideFeature = destination.startsWith(featureDir);
+    const isRoute = routeDir && destination.startsWith(`${routeDir}/`);
+    if (!insideFeature && !isRoute) {
+      problems.push(
+        `${destination} is outside features/${feature}/ and is not a route. ` +
+          `Generated code must stay feature-local.`,
+      );
+    }
+  }
+
+  if (problems.length > 0) {
+    throw new GeneratorError(
+      `The plan was rejected, so NOTHING was written:\n\n` +
+        problems.map((problem) => `  - ${problem}`).join("\n"),
+    );
+  }
+
+  return files;
+}
+
+/**
+ * Write planned files, all or nothing.
  *
  * Never overwrites without `force`: a generator that can silently destroy a
  * half-finished feature is worse than no generator. Re-running a capability on
  * an existing feature is a normal, safe thing to do.
+ *
+ * If a write fails part-way — a permission error, a full disk — everything
+ * already written by THIS call is removed again, along with any directory it
+ * created. A failed generation must leave the repository exactly as it was.
  */
 export function writeFiles(files, { root, force = false, dryRun = false }) {
   const written = [];
   const skipped = [];
 
+  const planned = [];
   for (const file of files) {
     const absolute = path.join(root, file.destination);
     if (fs.existsSync(absolute) && !force) {
       skipped.push(file.destination);
       continue;
     }
-    if (!dryRun) {
-      fs.mkdirSync(path.dirname(absolute), { recursive: true });
-      fs.writeFileSync(absolute, file.contents, "utf8");
+    planned.push({ ...file, absolute });
+  }
+
+  if (dryRun) {
+    return { written: planned.map((file) => file.destination), skipped };
+  }
+
+  const createdFiles = [];
+  const createdDirs = [];
+
+  try {
+    for (const file of planned) {
+      const directory = path.dirname(file.absolute);
+      // Remember which directories did not exist, so a rollback can take them
+      // away too rather than leaving empty scaffolding behind.
+      for (const candidate of missingAncestors(directory, root)) createdDirs.push(candidate);
+      fs.mkdirSync(directory, { recursive: true });
+
+      const existed = fs.existsSync(file.absolute);
+      fs.writeFileSync(file.absolute, file.contents, "utf8");
+      if (!existed) createdFiles.push(file.absolute);
+      written.push(file.destination);
     }
-    written.push(file.destination);
+  } catch (error) {
+    for (const absolute of createdFiles.reverse()) {
+      try {
+        fs.rmSync(absolute, { force: true });
+      } catch {
+        // Best effort: report the original failure, not the cleanup's.
+      }
+    }
+    for (const directory of createdDirs.reverse()) {
+      try {
+        fs.rmdirSync(directory);
+      } catch {
+        // Non-empty because something else lives there — correct to keep.
+      }
+    }
+    throw new GeneratorError(
+      `Writing failed part-way and was rolled back; the repository is unchanged.\n  ${error.message}`,
+    );
   }
 
   return { written, skipped };
+}
+
+/** Directories between `root` and `directory` that do not exist yet, outermost first. */
+function missingAncestors(directory, root) {
+  const missing = [];
+  let current = directory;
+  while (current.startsWith(root) && current !== root && !fs.existsSync(current)) {
+    missing.unshift(current);
+    current = path.dirname(current);
+  }
+  return missing;
 }
 
 /**
@@ -178,18 +302,21 @@ export function ensureFeatureExport(files, { root, feature, dryRun, alreadyWritt
   let next = current;
 
   for (const file of files) {
-    const match = /features\/[^/]+\/screens\/(.+)\.tsx$/.exec(file.destination);
+    // Screens own a directory: screens/<name>/<name>-screen.tsx. Tests and
+    // screen-local components live there too and must not be exported.
+    const match = /features\/[^/]+\/screens\/([^/]+)\/([^/]+)-screen\.tsx$/.exec(
+      file.destination.split(path.sep).join("/"),
+    );
     if (!match) continue;
 
-    const basename = match[1];
+    const [, directory, basename] = match;
     const componentName = `${basename
-      .replace(/-screen$/, "")
       .split("-")
       .filter(Boolean)
       .map((word) => word[0].toUpperCase() + word.slice(1))
       .join("")}Screen`;
 
-    const line = `export { ${componentName} } from "./screens/${basename}";`;
+    const line = `export { ${componentName} } from "./screens/${directory}/${basename}-screen";`;
     if (next.includes(line)) continue;
 
     next = `${next.replace(/\s*$/, "")}\n${line}\n`;

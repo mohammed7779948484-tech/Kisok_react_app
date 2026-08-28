@@ -1,5 +1,5 @@
 ---
-destinationDir: features/<%= props.feature %>/screens
+destinationDir: features/<%= props.feature %>/screens/<%= props.kebabCaseName %>
 filename: NAME-screen.tsx
 ---
 <% if (props.withQuery) { -%>
@@ -9,7 +9,7 @@ import { ErrorState, SkeletonList } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
 import { Text } from "@/components/ui";
 
-import { use<%= props.pascalCaseName %> } from "../queries/use-<%= props.kebabCaseName %>";
+import { use<%= props.pascalCaseName %> } from "../../queries/use-<%= props.kebabCaseName %>";
 <% } else { -%>
 import { ScrollView } from "react-native";
 
@@ -19,6 +19,11 @@ import { Text } from "@/components/ui";
 
 /**
  * Composes this feature's UI.
+ *
+ * This screen owns a directory. UI used only by THIS screen belongs in its
+ * `components/` folder next door; UI shared by several screens in the feature
+ * moves up to `features/<%= props.feature %>/components/`; UI reused across
+ * features belongs in the design system under root `components/`.
  *
  * The screen may call the feature's own hooks, but never Supabase directly —
  * ESLint enforces that. Handle every state the data can be in; a screen that
@@ -66,7 +71,7 @@ export function <%= props.pascalCaseName %>Screen() {
       <ScrollView contentContainerClassName="gap-4 p-6">
         <Text variant="h1"><%= props.pascalCaseName %></Text>
         <Text variant="body" tone="muted">
-          TODO: build this screen. See features/<%= props.feature %>/TODO.md.
+          TODO: build this screen. See features/<%= props.feature %>/docs/todo.md.
         </Text>
       </ScrollView>
     </Screen>

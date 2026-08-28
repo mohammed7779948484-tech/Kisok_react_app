@@ -1,5 +1,5 @@
 ---
-destinationDir: features/<%= props.feature %>/components
+destinationDir: <%= props.componentDir %>
 filename: NAME.tsx
 ---
 import { View } from "react-native";
@@ -9,6 +9,10 @@ import { cn } from "@/core/utils";
 
 /**
  * Presentational only: it receives data and reports interactions upward.
+ *
+ * Scope: <%= props.componentScope === "screen" ? `private to the ${props.screenName} screen` : `shared across the ${props.feature} feature` %>.
+ * Ownership follows the nearest stable consumer — move it up only when a
+ * second consumer actually appears, not in anticipation of one.
  *
  * It must not fetch, must not read a store, and must not import the Supabase
  * client. Keeping components dumb is what makes them testable without a

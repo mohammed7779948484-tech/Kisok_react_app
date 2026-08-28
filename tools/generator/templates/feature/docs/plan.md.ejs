@@ -1,0 +1,86 @@
+---
+destinationDir: features/<%= props.feature %>/docs
+filename: plan.md
+---
+# <%= props.pascalCaseName %> — implementation plan
+
+**HOW the brief gets built.** Write this with the `kisok-feature-plan` skill
+after research, and before generating anything beyond this workspace.
+
+Status: `DRAFT`
+
+## Research synthesis
+
+What the research actually established, with pointers. Findings, not opinions.
+
+- Data contract: TODO (which RPCs/tables, from which migration)
+- Behaviour reference: TODO
+- UI/design: TODO
+
+## Design decisions
+
+For each: the decision, and the alternative rejected and why.
+
+- TODO
+
+## Data contract
+
+| RPC / table | Direction | Role | Returns | Migration |
+| --- | --- | --- | --- | --- |
+| TODO | read/write | <%= props.role %> | TODO | TODO |
+
+Realtime: TODO — an invalidation signal only, and Preparation-only. Never render
+from a Realtime payload.
+
+## Capabilities to generate
+
+The exact commands, in order. Generate only what the shape actually needs.
+
+```bash
+# TODO, e.g.
+# pnpm generate schema <%= props.feature %> <name>
+# pnpm generate query  <%= props.feature %> <name>
+```
+
+## Files expected to change
+
+Anything outside `features/<%= props.feature %>/` must be listed and justified —
+shared files are where parallel agents collide.
+
+- `features/<%= props.feature %>/...` — TODO
+- Shared files: TODO (expect none)
+
+## Required skills
+
+- `test-driven-development` — every task
+- TODO: `kisok-design-system`, `kisok-react-native-rules`, others as relevant
+
+## Test strategy
+
+What is worth a test and why. Behaviour, contracts, state transitions, safety
+invariants, accessibility — not coverage for its own sake.
+
+- TODO
+
+## Rounds and tasks
+
+Group tasks so each round leaves the feature coherent. Every task is atomic:
+RED → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE.
+
+### Round 1 — TODO
+
+| Task | Objective | Depends on | RED test |
+| --- | --- | --- | --- |
+| T01 | TODO | — | TODO |
+
+## Risks
+
+| Risk | Likelihood | Mitigation |
+| --- | --- | --- |
+| TODO | TODO | TODO |
+
+## Verification
+
+- `pnpm verify`
+- Browser evidence at the tablet sizes
+- TODO: Android or Maestro, if this feature warrants it

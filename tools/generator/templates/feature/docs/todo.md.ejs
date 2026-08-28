@@ -1,0 +1,30 @@
+---
+destinationDir: features/<%= props.feature %>/docs
+filename: todo.md
+---
+# <%= props.pascalCaseName %> — execution state
+
+Operational only. The reasoning lives in `plan.md`, the evidence in
+`worklog.md`. Do not restate either here.
+
+Gate: `PENDING` until verified, then `PASS` or `FAIL`. A task is DONE only at
+`PASS`. Task N+1 does not start until every dependency is `PASS`.
+
+## Round 1 — TODO
+
+| Task | Objective | Depends on | Gate |
+| --- | --- | --- | --- |
+| T01 | TODO | — | PENDING |
+
+Round gate: `PENDING`
+
+## Feature gate
+
+`PENDING` — set once every round has passed, review findings are resolved, and
+the quality audit is clean.
+
+## Blocked
+
+Anything that cannot proceed, and what it is waiting for. Empty is good.
+
+- —
