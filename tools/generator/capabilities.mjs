@@ -38,7 +38,9 @@ export const CAPABILITIES = {
   component: { summary: "A presentational, feature-private component." },
   screen: { summary: "A screen composing the feature's hooks and components." },
   realtime: { summary: "A Realtime subscription that invalidates a query.", also: ["_keys"] },
-  route: { summary: "A thin Expo Router route rendering a screen." },
+  // A route renders a screen through the feature's public API, so generating
+  // one without a screen would emit an import of something that does not exist.
+  route: { summary: "A thin Expo Router route rendering a screen.", also: ["screen"] },
 };
 
 /** Capabilities `feature --with=...` understands. */

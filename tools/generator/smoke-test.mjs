@@ -81,6 +81,9 @@ const FOLLOW_UPS = [
   { capability: "mutation", feature: "smoke-read", name: "refresh-catalog" },
   { capability: "component", feature: "smoke-read", name: "product-card" },
   { capability: "screen", feature: "smoke-read", name: "search" },
+  // The documented "add a route later" flow. Its screen must be generated AND
+  // exported from the feature's public API, or the route will not compile.
+  { capability: "route", feature: "smoke-read", name: "detail" },
 ];
 
 const SCRATCH_FEATURES = ["smoke-read", "smoke-state", "smoke-write", "smoke-live"];
@@ -155,7 +158,6 @@ check("every capability is individually generatable", () => {
     "store",
     "component",
     "screen",
-    "realtime",
     "route",
   ]) {
     const planned = planRequest({
@@ -166,6 +168,19 @@ check("every capability is individually generatable", () => {
     });
     assert.ok(planned.length > 0, `${capability} planned nothing`);
   }
+});
+check("a route also brings the screen it renders", () => {
+  // A route imports its screen through the feature's public API, so emitting a
+  // route without a screen would reference something that does not exist.
+  const destinations = planRequest({
+    capability: "route",
+    feature: "solo",
+    name: "detail",
+    options: { role: "customer" },
+  }).map((file) => file.destination);
+
+  assert.ok(destinations.some((d) => d.includes("screens/detail-screen.tsx")));
+  assert.ok(destinations.includes("app/(customer)/detail.tsx"));
 });
 check("rejects an unknown capability", () =>
   assert.throws(
@@ -183,6 +198,20 @@ check("rejects --with on a non-feature capability", () =>
   assert.throws(
     () => planRequest({ capability: "screen", feature: "x", options: { with: ["query"] } }),
     /--with only applies/,
+  ),
+);
+check("refuses realtime for the customer experience", () =>
+  // Only `public.orders` is published and RLS gives a customer no rows, so the
+  // subscription could never fire — generating it would be dead code.
+  assert.throws(
+    () =>
+      planRequest({
+        capability: "realtime",
+        feature: "x",
+        name: "live",
+        options: { role: "customer" },
+      }),
+    /not available to the customer experience/,
   ),
 );
 check("rejects an unknown role", () =>
@@ -231,10 +260,20 @@ if (failures > 0) {
 // ---------------------------------------------------------------------------
 console.log("\nend to end (generate -> typecheck -> lint -> format -> test)");
 
+/** Every path the run has written, so cleanup never has to guess a filename. */
+const writtenPaths = new Set();
+
 function cleanUp() {
+  for (const relative of writtenPaths) {
+    fs.rmSync(path.join(ROOT, relative), { force: true });
+  }
+  writtenPaths.clear();
+
   for (const feature of SCRATCH_FEATURES) {
     fs.rmSync(path.join(ROOT, "features", feature), { recursive: true, force: true });
   }
+
+  // Belt and braces for a previous run that was killed before it could clean up.
   for (const dir of ["app", "app/(customer)", "app/(preparation)"]) {
     const absolute = path.join(ROOT, dir);
     if (!fs.existsSync(absolute)) continue;
@@ -258,17 +297,31 @@ try {
   let total = 0;
   for (const shape of SHAPES) {
     const result = await run(shape.request);
+    for (const file of result.written) writtenPaths.add(file);
     total += result.written.length;
     console.log(`  generated ${result.written.length} files — ${shape.label}`);
   }
 
   for (const followUp of FOLLOW_UPS) {
     const result = await run({ ...followUp, options: { role: "customer" } });
+    for (const file of result.written) writtenPaths.add(file);
     assert.ok(result.written.length > 0, `follow-up ${followUp.capability} wrote nothing`);
   }
   console.log(`  added ${FOLLOW_UPS.length} follow-up capabilities to an existing feature`);
 
   // Re-running a capability must not clobber work in progress.
+  const indexPath = path.join(ROOT, "features", "smoke-read", "index.ts");
+  const indexAfter = fs.readFileSync(indexPath, "utf8");
+  assert.ok(
+    indexAfter.includes("DetailScreen"),
+    "a follow-up route must export its screen from the feature's public API",
+  );
+  assert.ok(
+    indexAfter.includes("SearchScreen"),
+    "a follow-up screen must export itself from the feature's public API",
+  );
+  console.log("  ok  follow-up screens are exported from the feature's public API");
+
   const rerun = await run({ ...FOLLOW_UPS[0], options: { role: "customer" } });
   assert.equal(rerun.written.length, 0, "re-running a capability overwrote existing files");
   assert.ok(rerun.skipped.length > 0, "re-run should have reported skipped files");

@@ -153,3 +153,49 @@ export function writeFiles(files, { root, force = false, dryRun = false }) {
 
   return { written, skipped };
 }
+
+/**
+ * Append a screen's export to the feature's own `index.ts` when it is missing.
+ *
+ * A route renders its screen through the feature's public API, so adding a
+ * screen to an EXISTING feature has to be exported there or the route will not
+ * compile — and "generated code compiles immediately" has to stay true.
+ *
+ * This is the ONLY file the generator appends to, and it is deliberately safe:
+ * `features/<name>/index.ts` belongs to exactly one feature, so unlike a shared
+ * registry it is never a cross-agent conflict. It appends only when the exact
+ * export is absent, never reorders, and never rewrites existing lines.
+ */
+export function ensureFeatureExport(files, { root, feature, dryRun, alreadyWritten }) {
+  const indexPath = `features/${feature}/index.ts`;
+  const absolute = path.join(root, indexPath);
+  const appended = [];
+
+  // A freshly generated feature already exports its screen from the template.
+  if (alreadyWritten.includes(indexPath) || !fs.existsSync(absolute)) return appended;
+
+  const current = fs.readFileSync(absolute, "utf8");
+  let next = current;
+
+  for (const file of files) {
+    const match = /features\/[^/]+\/screens\/(.+)\.tsx$/.exec(file.destination);
+    if (!match) continue;
+
+    const basename = match[1];
+    const componentName = `${basename
+      .replace(/-screen$/, "")
+      .split("-")
+      .filter(Boolean)
+      .map((word) => word[0].toUpperCase() + word.slice(1))
+      .join("")}Screen`;
+
+    const line = `export { ${componentName} } from "./screens/${basename}";`;
+    if (next.includes(line)) continue;
+
+    next = `${next.replace(/\s*$/, "")}\n${line}\n`;
+    appended.push(`${indexPath} — added ${componentName}`);
+  }
+
+  if (next !== current && !dryRun) fs.writeFileSync(absolute, next, "utf8");
+  return appended;
+}

@@ -10,7 +10,7 @@ import { AppError } from "@/core/errors";
  *
  * Writes in KISOK go through RPCs that own correctness server-side:
  *   create_order(client_request_id, items)        — customer checkout
- *   update_order_status(order_id, status, reason) — preparation/admin
+ *   update_order_status(order_id, target_status, reason) — preparation/admin
  *
  * Do NOT reimplement server guarantees here. `create_order` already handles
  * idempotency, request fingerprinting, deterministic stock locking, conflict

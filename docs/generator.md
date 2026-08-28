@@ -99,9 +99,21 @@ no route map, and no shared query-key file — each would be a merge conflict ev
 time two agents worked at once. Expo Router's file-based routing means adding a
 route file _is_ the registration.
 
-The generator also never edits a file it did not create. It will not touch your
-`index.ts` to add an export, and re-running a capability skips anything already
-on disk unless you pass `--force`.
+The generator writes new files and, in exactly one case, appends to the
+feature's own `index.ts`: when you add a `screen` or `route` to an existing
+feature, its export is appended so the route compiles. That file belongs to a
+single feature, so unlike a shared registry it is never a cross-agent conflict.
+It appends only when the export is missing, never reorders, and never rewrites
+existing lines — and reports it:
+
+```
+  + features/catalog/screens/search-screen.tsx
+  + app/(customer)/search.tsx
+  ~ features/catalog/index.ts — added SearchScreen
+```
+
+Nothing else is ever modified. Re-running a capability skips anything already on
+disk unless you pass `--force`.
 
 **If you extend the generator, do not break this.** The smoke test asserts it.
 

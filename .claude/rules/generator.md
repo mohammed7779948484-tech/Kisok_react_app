@@ -43,10 +43,17 @@ independent and feature-local; `feature --with=a,b,c` composes them.
 - Comments in templates should be **precise and few**. They exist to prevent a
   specific mistake, not to narrate. Delete a comment that no longer prevents
   anything.
-- **Never make the generator edit a file it did not create.** The moment a
-  capability patches a shared registry — or even the feature's own `index.ts` —
-  parallel agents start conflicting, which is the problem this generator exists
-  to avoid. The smoke test asserts this.
+- **Never make the generator edit a SHARED file.** The moment a capability
+  patches a registry, a route map or a global barrel, parallel agents start
+  conflicting — the problem this generator exists to avoid. The smoke test
+  asserts every generated path is inside the feature or is one route file.
+  The single exception is the feature's OWN `index.ts`, appended to so a
+  generated route compiles. That file has exactly one owner, so it is not a
+  conflict surface.
+- **Realtime is Preparation-only.** Only `public.orders` is published and RLS
+  gives a customer session no rows, so the generator refuses
+  `realtime --role=customer` rather than emitting a subscription that can never
+  fire.
 
 ## Database tooling
 

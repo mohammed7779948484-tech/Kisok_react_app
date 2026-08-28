@@ -7,6 +7,7 @@ import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { AppErrorBoundary } from "@/components/app/error-boundary";
 import { EnvGate } from "@/components/app/env-gate";
 import { AuthProvider, useAuth } from "@/core/auth";
 import { QueryProvider } from "@/core/query";
@@ -64,15 +65,19 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <EnvGate>
-          <QueryProvider>
-            <AuthProvider>
-              <RootNavigator />
-              {/* Hosts dialogs and adaptive sheets. Must be mounted once, here. */}
-              <PortalHost />
-            </AuthProvider>
-          </QueryProvider>
-        </EnvGate>
+        {/* Outermost, so a throw in any provider or screen shows a recovery
+            screen rather than leaving a white tablet in a shop. */}
+        <AppErrorBoundary>
+          <EnvGate>
+            <QueryProvider>
+              <AuthProvider>
+                <RootNavigator />
+                {/* Hosts dialogs and adaptive sheets. Must be mounted once, here. */}
+                <PortalHost />
+              </AuthProvider>
+            </QueryProvider>
+          </EnvGate>
+        </AppErrorBoundary>
         <StatusBar style="auto" />
       </SafeAreaProvider>
     </GestureHandlerRootView>

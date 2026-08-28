@@ -109,6 +109,14 @@ function Probe() {
   return <Text>{`${status}:${profile?.display_name ?? "-"}`}</Text>;
 }
 
+/** Surfaces the session token, to prove it does not go stale. */
+function TokenProbe() {
+  const { session } = useAuth();
+  return (
+    <Text>{`token:${(session as { access_token?: string } | null)?.access_token ?? "-"}`}</Text>
+  );
+}
+
 function renderAuth() {
   return renderWithProviders(
     <AuthProvider>
@@ -162,6 +170,28 @@ describe("AuthProvider lifecycle", () => {
     await supabase.emit("SIGNED_IN", sessionFor("user-1", "token-3"));
 
     await waitFor(() => expect(screen.getByText("ready:Kiosk")).toBeOnTheScreen());
+    expect(fetches).toBe(1);
+    supabase.restore();
+  });
+
+  it("keeps the exposed session current across a token refresh", async () => {
+    // The profile is deliberately not re-resolved on refresh, so the session must
+    // come from the listener rather than being copied into derived state — or a
+    // consumer would read an expired access token.
+    let fetches = 0;
+    const supabase = installAuthClient({ onProfileFetch: () => (fetches += 1) });
+    await renderWithProviders(
+      <AuthProvider>
+        <TokenProbe />
+      </AuthProvider>,
+    );
+
+    await supabase.emit("SIGNED_IN", sessionFor("user-1", "token-1"));
+    await waitFor(() => expect(screen.getByText("token:token-1")).toBeOnTheScreen());
+
+    await supabase.emit("TOKEN_REFRESHED", sessionFor("user-1", "token-2"));
+
+    await waitFor(() => expect(screen.getByText("token:token-2")).toBeOnTheScreen());
     expect(fetches).toBe(1);
     supabase.restore();
   });

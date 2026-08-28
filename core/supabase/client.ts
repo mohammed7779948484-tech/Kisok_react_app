@@ -86,4 +86,8 @@ function bindAutoRefresh(instance: KisokSupabaseClient) {
 /** Test seam: install a client (usually a mock) and forget the real one. */
 export function setSupabaseClient(next: KisokSupabaseClient | null) {
   client = next;
+  // Reset the binding too. Without this, a later real client would skip
+  // bindAutoRefresh and the AppState listener would stay attached to the
+  // discarded instance — auto-refresh silently stops for the live one.
+  autoRefreshBound = false;
 }

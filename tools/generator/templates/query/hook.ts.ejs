@@ -22,7 +22,11 @@ export function use<%= props.pascalCaseName %>() {
   return useQuery({
     // TODO: if this read takes parameters, add them to both the key and the
     // query function so the cache does not serve one input's data for another.
+<% if (props.kebabCaseName === props.feature) { -%>
+    queryKey: <%= props.featureCamel %>Keys.all,
+<% } else { -%>
     queryKey: [...<%= props.featureCamel %>Keys.all, "<%= props.kebabCaseName %>"] as const,
+<% } -%>
     queryFn: fetch<%= props.pascalCaseName %>,
   });
 }

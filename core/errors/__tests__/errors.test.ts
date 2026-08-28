@@ -18,6 +18,10 @@ describe("toAppError", () => {
     ["K1006", "server"],
     ["42501", "forbidden"],
     ["PGRST301", "auth"],
+    ["23514", "validation"],
+    ["23503", "unavailable"],
+    ["23505", "state-conflict"],
+    ["22023", "validation"],
   ])("maps Postgres code %s to kind %s", (code, kind) => {
     expect(toAppError(postgrestError(code)).kind).toBe(kind);
   });
@@ -62,6 +66,11 @@ describe("shouldRetry", () => {
 
   it("does not retry an idempotency conflict — a retry could duplicate an order", () => {
     expect(shouldRetry(0, postgrestError("K1003"))).toBe(false);
+  });
+
+  it("does not retry a constraint violation — an identical retry fails identically", () => {
+    expect(shouldRetry(0, postgrestError("23514"))).toBe(false);
+    expect(shouldRetry(0, postgrestError("22023"))).toBe(false);
   });
 
   it("stops once the attempt limit is reached", () => {

@@ -96,8 +96,9 @@ export function useRealtimeSubscription({
  *     queryKey: preparationKeys.all,
  *   });
  *
- * `queryKey` is compared by value, not identity, so passing a fresh array
- * literal on every render does not churn the subscription.
+ * `queryKey` is read inside the handler rather than being a subscription
+ * dependency, so passing a fresh array literal each render is fine — no
+ * `useMemo` needed, and the subscription does not churn.
  */
 export function useRealtimeInvalidation({
   channel,

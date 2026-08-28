@@ -43,6 +43,11 @@ Improvements over the package, each earning its keep:
 - **Never interactive.** Safe in CI, always.
 - **Output is Prettier-formatted before writing**, using the project's own
   config, so generated code passes `format:check` on its first commit.
+- **One narrow, deliberate exception to "writes only new files":** a generated
+  screen's export is appended to the feature's own `index.ts`, because a route
+  reaches its screen through the public API and would otherwise not compile.
+  That file has a single owner, so it is not a cross-agent conflict the way a
+  shared registry would be.
 - **Tested against four materially different feature shapes.**
   `pnpm generate:smoke` generates read-heavy, local-state-heavy, mutation-heavy
   and realtime features, proves each typechecks, lints with zero warnings, is

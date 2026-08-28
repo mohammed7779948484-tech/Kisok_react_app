@@ -49,8 +49,9 @@ export function createJsonStorage(backend: KeyValueStore = AsyncStorage) {
         if (raw === null) return { status: "miss" };
         return { status: "hit", value: parse(JSON.parse(raw)) };
       } catch (error) {
-        // A corrupt or schema-drifted payload is a miss, not a crash: the app
-        // must still start. The caller decides whether to clear the key.
+        // A corrupt or schema-drifted payload is REJECTED, not a miss, and never
+        // a crash: the app must still start, and the caller can tell "nothing
+        // stored" from "something stored that we could not read".
         log.warn("Failed to read persisted value", { key, error: asError(error).message });
         return { status: "rejected", error: asError(error) };
       }

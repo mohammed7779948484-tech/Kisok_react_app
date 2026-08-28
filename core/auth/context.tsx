@@ -13,14 +13,21 @@ import { isTabletRole, type ActiveProfile, type AuthStatus } from "./types";
 
 const log = createLogger("auth");
 
+/**
+ * Derived state. The session itself is NOT stored here — it lives in the
+ * snapshot below and is exposed from there, so there is exactly one copy. A
+ * second copy would go stale on token refresh, which deliberately does not
+ * re-resolve the profile.
+ */
 type AuthState = {
   status: AuthStatus;
-  session: Session | null;
   profile: ActiveProfile | null;
   error: AppError | null;
 };
 
 type AuthContextValue = AuthState & {
+  /** Always the current session, read straight from the auth listener. */
+  session: Session | null;
   signIn: (email: string, password: string) => Promise<void>;
   /** Resolves to `blocked` when a registered task vetoes the sign-out. */
   signOut: () => Promise<SignOutTaskResult>;
@@ -67,7 +74,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [snapshot, setSnapshot] = useState<SessionSnapshot>({ session: null, known: false });
   const [state, setState] = useState<AuthState>({
     status: "resolving",
-    session: null,
     profile: null,
     error: null,
   });
@@ -101,31 +107,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!active) return;
         const error = toAppError(caught, "We couldn't restore the session.");
         log.error("Failed to restore session", error.toLogContext());
-        setState({ status: "error", session: null, profile: null, error });
+        setState({ status: "error", profile: null, error });
       });
 
     return () => {
       active = false;
       listener.subscription.unsubscribe();
     };
-  }, []);
+    // `retryToken` re-runs this stage too: if `getSession` failed, retrying only
+    // stage 2 would do nothing, because `known` never became true.
+  }, [retryToken]);
 
   // ── Stage 2: resolve the profile, outside the auth callback ───────────────
   const userId = snapshot.session?.user.id ?? null;
-  const { known, session } = snapshot;
+  const { known } = snapshot;
 
   useEffect(() => {
     if (!known) return;
 
     if (!userId) {
-      setState({ status: "signedOut", session: null, profile: null, error: null });
+      setState({ status: "signedOut", profile: null, error: null });
       return;
     }
 
     // Cleanup flips this, so a slow lookup that lands after the user changed —
     // or after sign-out — cannot overwrite newer state.
     let cancelled = false;
-    setState((previous) => ({ ...previous, status: "resolving", session, error: null }));
+    setState((previous) => ({ ...previous, status: "resolving", error: null }));
 
     void (async () => {
       try {
@@ -136,34 +144,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Authenticated, but no active profile row. Client routing is UX only —
           // the database would refuse the work anyway.
           log.warn("Signed-in account has no active profile");
-          setState({ status: "unauthorized", session, profile: null, error: null });
+          setState({ status: "unauthorized", profile: null, error: null });
           return;
         }
 
         if (!isTabletRole(profile.role)) {
           // Admin is a web application, not a tablet experience.
           log.warn("Signed-in role has no tablet experience", { role: profile.role });
-          setState({ status: "unauthorized", session, profile, error: null });
+          setState({ status: "unauthorized", profile, error: null });
           return;
         }
 
-        setState({ status: "ready", session, profile, error: null });
+        setState({ status: "ready", profile, error: null });
       } catch (caught) {
         if (cancelled) return;
         const error = toAppError(caught, "We couldn't finish preparing the app.");
         log.error("Failed to resolve profile", error.toLogContext());
         // A network blip at startup must offer a retry, not strand the tablet on
         // a blank screen.
-        setState({ status: "error", session, profile: null, error });
+        setState({ status: "error", profile: null, error });
       }
     })();
 
     return () => {
       cancelled = true;
     };
-    // `session` is intentionally excluded: it changes on every token refresh for
-    // the same user, and the profile does not need re-fetching for that.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Keyed on the user, not the session: a token refresh produces a new session
+    // for the same user and must not re-fetch an unchanged profile. The session
+    // is read from the snapshot, so nothing goes stale by leaving it out.
   }, [userId, known, retryToken]);
 
   // ── Stage 3: keep Realtime's token current ────────────────────────────────
@@ -207,8 +215,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const retry = useCallback(() => setRetryToken((value) => value + 1), []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ ...state, signIn, signOut, retry }),
-    [state, signIn, signOut, retry],
+    () => ({ ...state, session: snapshot.session, signIn, signOut, retry }),
+    [state, snapshot.session, signIn, signOut, retry],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

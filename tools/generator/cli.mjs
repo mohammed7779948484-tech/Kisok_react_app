@@ -10,7 +10,7 @@ import {
   buildProps,
   planCapability,
 } from "./capabilities.mjs";
-import { formatFiles, writeFiles } from "./render.mjs";
+import { ensureFeatureExport, formatFiles, writeFiles } from "./render.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -100,6 +100,14 @@ export function planRequest({ capability, feature, name, options }) {
 
   const capabilities = capability === "feature" ? ["feature", ...requested] : [capability];
 
+  if (capabilities.includes("realtime") && options.role === "customer") {
+    throw new Error(
+      "Realtime is not available to the customer experience.\n" +
+        "Only `public.orders` is published, and RLS gives a customer session no rows on it, " +
+        "so the subscription would never fire. Use --role=preparation, or drop `realtime`.",
+    );
+  }
+
   // Templates branch on what else is being generated, so a screen created
   // alongside a query wires itself up while one created alone stays neutral.
   const shared = {
@@ -139,7 +147,20 @@ export async function run(request, { root = ROOT } = {}) {
     force: request.options.force,
     dryRun: request.options.dryRun,
   });
-  return { files, ...result };
+
+  // A route renders its screen through the feature's public API, so a screen
+  // added to an EXISTING feature has to be exported there or the route will not
+  // compile. This is the one file the generator appends to, and it is safe to:
+  // `features/<name>/index.ts` belongs to exactly one feature, so it is never a
+  // cross-agent conflict the way a shared registry would be.
+  const exported = ensureFeatureExport(files, {
+    root,
+    feature: request.feature,
+    dryRun: request.options.dryRun,
+    alreadyWritten: result.written,
+  });
+
+  return { files, ...result, exported };
 }
 
 async function main() {
@@ -170,19 +191,23 @@ async function main() {
   for (const file of result.written) console.log(`  + ${file}`);
   for (const file of result.skipped) console.log(`  = ${file} (exists, use --force to overwrite)`);
 
-  if (!request.options.dryRun) {
-    console.log(`\nNext:`);
-    if (request.capability === "feature") {
-      console.log(`  1. Read features/${request.feature}/TODO.md and turn it into a real plan.`);
-      console.log(`  2. Write the failing tests first where the behaviour is testable.`);
-    } else {
-      console.log(
-        `  1. Export anything other features need from features/${request.feature}/index.ts.`,
-      );
-      console.log(`  2. Update features/${request.feature}/TODO.md.`);
-    }
-    console.log(`  3. Run: pnpm verify\n`);
+  for (const line of result.exported) console.log(`  ~ ${line}`);
+
+  if (request.options.dryRun) return;
+
+  console.log(`\nNext:`);
+  let step = 1;
+
+  if (request.capability === "feature") {
+    console.log(
+      `  ${step++}. Read features/${request.feature}/TODO.md and turn it into a real plan.`,
+    );
+    console.log(`  ${step++}. Write the failing tests first where the behaviour is testable.`);
+  } else {
+    console.log(`  ${step++}. Update features/${request.feature}/TODO.md.`);
   }
+
+  console.log(`  ${step}. Run: pnpm verify\n`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

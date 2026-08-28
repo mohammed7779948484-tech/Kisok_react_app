@@ -114,6 +114,13 @@ const SQLSTATE_MAP: Record<string, { kind: AppErrorKind; userMessage: string }> 
   PGRST116: { kind: "unavailable", userMessage: "We couldn't find that item." },
   // PostgREST: the JWT is missing or expired.
   PGRST301: { kind: "auth", userMessage: "Your session expired. Please sign in again." },
+  // Constraint and trigger failures raised by the migrations. These are
+  // deterministic — retrying the identical request fails identically — so they
+  // must not fall through to the retryable `server` default.
+  "23514": { kind: "validation", userMessage: "That change isn't allowed." },
+  "23503": { kind: "unavailable", userMessage: "We couldn't find that item." },
+  "23505": { kind: "state-conflict", userMessage: "That already exists." },
+  "22023": { kind: "validation", userMessage: "We couldn't process that request." },
 };
 
 function isPostgrestError(value: unknown): value is PostgrestError {
