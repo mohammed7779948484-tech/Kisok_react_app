@@ -9,9 +9,9 @@
   },
   "scripts": {
     "start": "expo start",
-    "web": "expo start --web --port ${EXPO_PORT:-8081}",
+    "web": "node ignite/scripts/prime-nativewind-cache.mjs && expo start --web --port ${EXPO_PORT:-8081}",
     "android": "expo start --android",
-    "export:web": "expo export --platform web",
+    "export:web": "node ignite/scripts/prime-nativewind-cache.mjs && expo export --platform web",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
     "lint:fix": "expo lint --fix",

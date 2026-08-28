@@ -11,9 +11,12 @@ break the foundation — without needing any secret.
 | **web-export** | `expo export --platform web` still bundles — the preview workflow agents depend on                                |
 | **doctor**     | `expo-doctor` dependency alignment (advisory, non-blocking)                                                       |
 
-`expo-doctor` is `continue-on-error` on purpose: it compares against Expo's
-hosted compatibility manifest, so a network hiccup or a newly published SDK
-should not block an otherwise correct PR.
+The doctor job captures its report into the job summary and **always
+succeeds**. It compares against Expo's hosted compatibility manifest, so it goes
+red for reasons outside a PR's control — a network hiccup, or Expo publishing a
+patch release an hour earlier. `continue-on-error` alone is not enough there:
+the check run still reports failure, and a check that is permanently red teaches
+everyone to ignore red. Read its findings in the job summary.
 
 Locally, `pnpm verify` runs the same checks as the `verify` job.
 
@@ -31,6 +34,12 @@ code.
 
 - **No secrets.** Ordinary validation uses placeholder Supabase values, so any
   contributor's PR gets the same signal. `expo export` needs no login.
+- **The web bundle is primed first.** `pnpm export:web` runs
+  `ignite/scripts/prime-nativewind-cache.mjs` before bundling. NativeWind writes
+  its CSS cache *during* the build, but Metro resolves it beforehand, so the
+  first export after a fresh install fails on a file that does not exist yet.
+  This only ever bites CI and a fresh clone — never a warm dev machine — which
+  is exactly the class of failure CI exists to catch.
 - **`pull_request`, never `pull_request_target`.** The latter runs with the base
   repo's token against PR-authored code.
 - **`permissions: contents: read`** at workflow level; nothing writes.
