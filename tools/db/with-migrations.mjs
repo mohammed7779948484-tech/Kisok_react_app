@@ -33,12 +33,24 @@ export function postgresAvailable() {
 
 export const PG_BIN_PATH = PG_BIN;
 
+/** Single-quote an argument for a POSIX shell, escaping any embedded quote. */
+function shellQuote(argument) {
+  return `'${String(argument).replaceAll("'", `'\\''`)}'`;
+}
+
 function runAsPostgres(args) {
   // initdb and postgres refuse to run as root, so the cluster runs as the
   // `postgres` system user when this script is invoked with uid 0.
+  //
+  // The two paths need DIFFERENT quoting, and getting that wrong is silent:
+  // `su -c` takes one shell command string, so each argument must be quoted for
+  // the shell; spawnSync takes an argv array, where a quote character would be
+  // part of the value. Passing a pre-quoted string to both made pg_ctl read its
+  // port as `" 54329 -c listen_addresses=..."` on any non-root machine — which
+  // is every CI runner, where this had never actually run.
   const asRoot = process.getuid?.() === 0;
   const result = asRoot
-    ? spawnSync("su", ["postgres", "-c", args.join(" ")], { encoding: "utf8" })
+    ? spawnSync("su", ["postgres", "-c", args.map(shellQuote).join(" ")], { encoding: "utf8" })
     : spawnSync(args[0], args.slice(1), { encoding: "utf8" });
 
   if (result.status !== 0) {
@@ -95,10 +107,13 @@ export async function withMigratedDatabase(body) {
         "-D",
         dataDir,
         "-o",
+        // One argument, no surrounding quotes: runAsPostgres quotes for the
+        // shell only on the path that needs it.
+        //
         // The socket directory must live inside the throwaway data directory.
         // The default (/var/run/postgresql) is not writable by an unprivileged
         // CI user, which is why the cluster would not start on a GitHub runner.
-        `"-p ${PORT} -c listen_addresses=localhost -c unix_socket_directories=${dataDir}"`,
+        `-p ${PORT} -c listen_addresses=localhost -c unix_socket_directories=${dataDir}`,
         "-w",
         "-l",
         `${dataDir}/server.log`,
@@ -146,8 +161,10 @@ export async function withMigratedDatabase(body) {
     }
 
     const query = (sql) => {
-      // `-A -t` keeps psql from decorating the single JSON column.
-      const raw = psql(["-A", "-t", "-c", `"${sql.replace(/"/g, '\\"').replace(/\n/g, " ")}"`]);
+      // `-A -t` keeps psql from decorating the single JSON column. The SQL goes
+      // through as ONE plain argument — quoting is runAsPostgres's job, and
+      // doing it here too would have sent psql a literal leading quote.
+      const raw = psql(["-A", "-t", "-c", sql.replace(/\n/g, " ")]);
       const trimmed = raw.trim();
       return trimmed ? JSON.parse(trimmed) : [];
     };
