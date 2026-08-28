@@ -23,10 +23,13 @@ import { createTestQueryClient } from "./query";
  */
 export async function renderWithProviders(
   ui: React.ReactElement,
-  options?: RenderOptions & { queryClient?: QueryClient; withAuth?: boolean },
+  options: RenderOptions & { queryClient?: QueryClient; withAuth?: boolean } = {},
 ) {
-  const queryClient = options?.queryClient ?? createTestQueryClient();
-  const withAuth = options?.withAuth ?? false;
+  // Our own options must be stripped before forwarding: RNTL warns loudly about
+  // any option it does not recognise, and this suite runs with zero console
+  // output on purpose.
+  const { queryClient: injectedClient, withAuth = false, ...renderOptions } = options;
+  const queryClient = injectedClient ?? createTestQueryClient();
 
   function Wrapper({ children }: { children: React.ReactNode }) {
     return (
@@ -47,7 +50,7 @@ export async function renderWithProviders(
   // `render` is ASYNC in @testing-library/react-native v14 — it awaits the
   // initial `act()`. Forgetting to await it leaves `screen` unset and produces
   // stray act warnings, so always `await renderWithProviders(...)`.
-  const result = await render(ui, { wrapper: Wrapper, ...options });
+  const result = await render(ui, { wrapper: Wrapper, ...renderOptions });
 
   return { queryClient, ...result };
 }

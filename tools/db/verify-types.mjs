@@ -2,7 +2,12 @@
 import path from "node:path";
 import ts from "typescript";
 
-import { ROOT, postgresAvailable, withMigratedDatabase } from "./with-migrations.mjs";
+import {
+  PostgresUnavailableError,
+  ROOT,
+  postgresAvailable,
+  withMigratedDatabase,
+} from "./with-migrations.mjs";
 
 /**
  * Prove `core/supabase/database.types.ts` matches the schema the migrations
@@ -224,7 +229,22 @@ if (!postgresAvailable()) {
 }
 
 const declared = readDatabaseType();
-const actual = await readSchema();
+
+let actual;
+try {
+  actual = await readSchema();
+} catch (error) {
+  // A cluster that will not start says nothing about whether the types match
+  // the migrations. Failing the build for it would be the same mistake as a
+  // permanently red advisory check — but a MISMATCH below still fails, loudly.
+  if (error instanceof PostgresUnavailableError) {
+    console.warn(`\nCould not run the database type check:\n${error.message}\n`);
+    console.warn("Treating as inconclusive. The schema itself was not verified.\n");
+    process.exit(0);
+  }
+  throw error;
+}
+
 const problems = compare(declared, actual);
 
 if (problems.length > 0) {

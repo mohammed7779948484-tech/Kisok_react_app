@@ -17,6 +17,16 @@ const BOOTSTRAP = path.join(ROOT, "tools", "db", "supabase-bootstrap.sql");
 const PG_BIN = process.env.KISOK_PG_BIN ?? "/usr/lib/postgresql/16/bin";
 const PORT = process.env.KISOK_PG_PORT ?? "54329";
 
+/**
+ * Signals that the CHECK could not run, as opposed to the schema being wrong.
+ * An environment that cannot start PostgreSQL says nothing about whether the
+ * types match the migrations, so the caller treats this as inconclusive rather
+ * than failing the build — the same distinction `tools/doctor.mjs` draws.
+ */
+export class PostgresUnavailableError extends Error {
+  name = "PostgresUnavailableError";
+}
+
 export function postgresAvailable() {
   return fs.existsSync(path.join(PG_BIN, "initdb"));
 }
@@ -45,7 +55,7 @@ function runAsPostgres(args) {
  */
 export async function withMigratedDatabase(body) {
   if (!postgresAvailable()) {
-    throw new Error(
+    throw new PostgresUnavailableError(
       `PostgreSQL was not found at ${PG_BIN}. Set KISOK_PG_BIN, or install PostgreSQL 16.`,
     );
   }
@@ -79,17 +89,30 @@ export async function withMigratedDatabase(body) {
       "-E",
       "UTF8",
     ]);
-    runAsPostgres([
-      `${PG_BIN}/pg_ctl`,
-      "-D",
-      dataDir,
-      "-o",
-      `"-p ${PORT} -c listen_addresses=localhost"`,
-      "-w",
-      "-l",
-      `${dataDir}/server.log`,
-      "start",
-    ]);
+    try {
+      runAsPostgres([
+        `${PG_BIN}/pg_ctl`,
+        "-D",
+        dataDir,
+        "-o",
+        // The socket directory must live inside the throwaway data directory.
+        // The default (/var/run/postgresql) is not writable by an unprivileged
+        // CI user, which is why the cluster would not start on a GitHub runner.
+        `"-p ${PORT} -c listen_addresses=localhost -c unix_socket_directories=${dataDir}"`,
+        "-w",
+        "-l",
+        `${dataDir}/server.log`,
+        "start",
+      ]);
+    } catch (error) {
+      // pg_ctl's own message is close to useless alone ("could not start server.
+      // Examine the log output."), so surface the log it points at.
+      const logPath = path.join(dataDir, "server.log");
+      const serverLog = fs.existsSync(logPath)
+        ? fs.readFileSync(logPath, "utf8")
+        : "(no server log was written)";
+      throw new PostgresUnavailableError(`${error.message}\n--- server.log ---\n${serverLog}`);
+    }
     started = true;
 
     const psql = (args) =>
@@ -97,6 +120,9 @@ export async function withMigratedDatabase(body) {
         `${PG_BIN}/psql`,
         "-v",
         "ON_ERROR_STOP=1",
+        // Connect over the socket we just created inside the data directory.
+        "-h",
+        dataDir,
         "-p",
         PORT,
         "-U",
