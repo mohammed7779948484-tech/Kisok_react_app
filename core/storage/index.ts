@@ -1,0 +1,84 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import { createLogger } from "@/core/logging";
+
+const log = createLogger("storage");
+
+/**
+ * Durable key/value storage for client-owned state.
+ *
+ * Backed by AsyncStorage, which works unchanged on Android and on
+ * react-native-web (localStorage). MMKV was rejected because it needs a native
+ * build and is unavailable in Expo Go — see docs/adr/0003-client-state.md.
+ *
+ * The API returns a RESULT instead of throwing, because some state (the cart)
+ * must be able to tell the user "this change is in memory but was not saved".
+ * Swallowing a write failure is a correctness bug for KISOK, not a nuisance.
+ */
+export type StorageWriteResult = { status: "persisted" } | { status: "rejected"; error: Error };
+
+export type StorageReadResult<T> =
+  | { status: "hit"; value: T }
+  | { status: "miss" }
+  | { status: "rejected"; error: Error };
+
+export type KeyValueStore = {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
+  removeItem(key: string): Promise<void>;
+};
+
+/** Namespaced so a feature cannot accidentally collide with another's keys. */
+export function storageKey(feature: string, name: string): string {
+  return `kisok:${feature}:${name}`;
+}
+
+function asError(value: unknown): Error {
+  return value instanceof Error ? value : new Error(String(value));
+}
+
+/**
+ * Create a JSON-serialising store over any KeyValueStore. Pass a fake backend
+ * in tests (see `core/testing/storage.ts`) instead of mocking AsyncStorage.
+ */
+export function createJsonStorage(backend: KeyValueStore = AsyncStorage) {
+  return {
+    async read<T>(key: string, parse: (raw: unknown) => T): Promise<StorageReadResult<T>> {
+      try {
+        const raw = await backend.getItem(key);
+        if (raw === null) return { status: "miss" };
+        return { status: "hit", value: parse(JSON.parse(raw)) };
+      } catch (error) {
+        // A corrupt or schema-drifted payload is a miss, not a crash: the app
+        // must still start. The caller decides whether to clear the key.
+        log.warn("Failed to read persisted value", { key, error: asError(error).message });
+        return { status: "rejected", error: asError(error) };
+      }
+    },
+
+    async write(key: string, value: unknown): Promise<StorageWriteResult> {
+      try {
+        await backend.setItem(key, JSON.stringify(value));
+        return { status: "persisted" };
+      } catch (error) {
+        log.error("Failed to persist value", { key, error: asError(error).message });
+        return { status: "rejected", error: asError(error) };
+      }
+    },
+
+    async remove(key: string): Promise<StorageWriteResult> {
+      try {
+        await backend.removeItem(key);
+        return { status: "persisted" };
+      } catch (error) {
+        log.error("Failed to remove persisted value", { key, error: asError(error).message });
+        return { status: "rejected", error: asError(error) };
+      }
+    },
+  };
+}
+
+export type JsonStorage = ReturnType<typeof createJsonStorage>;
+
+/** The app-wide instance. Features should use this rather than AsyncStorage directly. */
+export const storage = createJsonStorage();

@@ -1,0 +1,27 @@
+---
+skip: <%= (props.layers.includes("queries") && props.layers.includes("api")) ? "false" : "true" %>
+destinationDir: features/<%= props.kebabCaseName %>/queries
+filename: use-<%= props.kebabCaseName %>-list.ts
+---
+import { useQuery } from "@tanstack/react-query";
+
+import { fetch<%= props.pascalCaseName %>List } from "../api/<%= props.kebabCaseName %>-api";
+
+import { <%= props.camelCaseName %>Keys } from "./keys";
+
+/**
+ * Server state for this feature.
+ *
+ * TanStack Query is the only server-state cache in the app — do not mirror this
+ * data into a Zustand store. Client-owned state (a cart, a selection, a draft)
+ * belongs in `state/`; anything that came from the database belongs here.
+ *
+ * Retry behaviour comes from the shared QueryClient, which only retries errors
+ * that could plausibly succeed. Do not override `retry` without a reason.
+ */
+export function use<%= props.pascalCaseName %>List() {
+  return useQuery({
+    queryKey: <%= props.camelCaseName %>Keys.list(),
+    queryFn: fetch<%= props.pascalCaseName %>List,
+  });
+}

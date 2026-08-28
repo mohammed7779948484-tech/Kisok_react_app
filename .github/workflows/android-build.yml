@@ -1,0 +1,71 @@
+name: Android build
+
+# TIERED CI, on purpose.
+#
+# A native Android build takes far longer than the checks in ci.yml and would
+# slow every PR for a signal most changes do not need. It runs only when someone
+# asks for it: add the `android-build` label to a PR, or dispatch it manually.
+#
+# Verify a change on a real Android tablet before shipping anything that touches
+# native configuration (app.config.ts plugins, SDK versions, permissions).
+on:
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  prebuild:
+    name: Android prebuild check
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'android-build')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Generates the native project from app.config.ts. This catches a broken
+      # config plugin or an incompatible native dependency without needing the
+      # EAS credentials a real release build would.
+      - name: Expo prebuild (Android)
+        run: npx --yes expo prebuild --platform android --no-install --clean
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+          EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+          EXPO_PUBLIC_ENVIRONMENT: local
+
+      - name: Assemble debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: kisok-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+          if-no-files-found: error

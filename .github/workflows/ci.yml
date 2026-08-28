@@ -1,0 +1,134 @@
+name: CI
+
+# Runs on every pull request. Requires NO secrets, so a PR from any contributor
+# — human or agent — gets the same fast, honest signal.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege: nothing here writes to the repository.
+permissions:
+  contents: read
+
+# A new push supersedes the previous run for the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  # Expo reads these at bundle time. They are placeholders so `expo export`
+  # can run; no real project is contacted and nothing is deployed.
+  EXPO_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+  EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+  EXPO_PUBLIC_ENVIRONMENT: local
+
+jobs:
+  verify:
+    name: Typecheck, lint, format, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The job never pushes, so do not leave a token in .git/config.
+          persist-credentials: false
+
+      # pnpm must be installed BEFORE setup-node, or `cache: pnpm` cannot find it.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Test
+        run: pnpm test:ci
+
+      # Proves the generator still emits code that compiles, lints, formats and
+      # passes its own tests. Without this, template rot is invisible until an
+      # agent hits it.
+      - name: Ignite generator smoke test
+        run: pnpm ignite:smoke
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "### CI result"
+            echo ""
+            echo "| Check | Status |"
+            echo "| --- | --- |"
+            echo "| Typecheck / lint / format / test / generator | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  web-export:
+    name: Web bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The web bundle is how agents preview the UI, so a broken web build is a
+      # broken developer workflow. `expo export` needs no login or EXPO_TOKEN.
+      - name: Export web bundle
+        run: pnpm export:web
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-bundle
+          path: dist
+          retention-days: 7
+          if-no-files-found: error
+
+  doctor:
+    name: Expo doctor
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Advisory only: expo-doctor compares installed versions against Expo's
+    # hosted compatibility manifest, so a network hiccup or a newly published
+    # SDK should not block an otherwise correct PR.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run expo-doctor
+        run: npx --yes expo-doctor

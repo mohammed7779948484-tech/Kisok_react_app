@@ -1,0 +1,50 @@
+---
+skip: <%= props.layers.includes("api") ? "false" : "true" %>
+destinationDir: features/<%= props.kebabCaseName %>/api
+filename: <%= props.kebabCaseName %>-api.ts
+---
+import { AppError } from "@/core/errors";
+<% if (props.layers.includes("schemas")) { -%>
+import { <%= props.camelCaseName %>PayloadSchema, type <%= props.pascalCaseName %>Item } from "../schemas/<%= props.kebabCaseName %>-schema";
+<% } -%>
+
+/**
+ * The ONLY place in this feature that talks to Supabase.
+ *
+ * Screens and components must not import the Supabase client — ESLint enforces
+ * this. Keeping the network in one module is what makes the feature testable:
+ * a test mocks this boundary, not the whole client.
+ *
+ * Rules:
+ *  - Validate every payload with the feature's Zod schema.
+ *  - Let `callRpc` normalise failures into `AppError`; do not catch and rethrow
+ *    raw Postgres errors.
+ *  - Never work around RLS. If the data is not reachable for this role, that is
+ *    a backend contract decision, not something to solve in the client.
+ */
+
+<% if (props.layers.includes("schemas")) { -%>
+export async function fetch<%= props.pascalCaseName %>List(): Promise<<%= props.pascalCaseName %>Item[]> {
+<% } else { -%>
+export async function fetch<%= props.pascalCaseName %>List(): Promise<unknown[]> {
+<% } -%>
+  // TODO: implement. Replace the throw below with a real call, e.g.
+  //
+  //   import { callRpc } from "@/core/supabase";
+  //   return callRpc("get_customer_catalog", {}, <%= props.camelCaseName %>PayloadSchema);
+  //
+  // Available RPCs for this client (see docs/data-and-supabase.md):
+  //   current_active_profile()                     — identity
+  //   get_customer_catalog()                       — customer catalog snapshot
+  //   create_order(client_request_id, items)       — customer checkout
+  //   update_order_status(order_id, status, reason)— preparation/admin transition
+  //
+  // Preparation may also SELECT directly from `orders` and `order_items`.
+  // Customers may not read any table directly.
+  throw new AppError({
+    kind: "unknown",
+    userMessage: "This isn't available yet.",
+    technicalMessage: "fetch<%= props.pascalCaseName %>List is not implemented — see features/<%= props.kebabCaseName %>/TODO.md",
+    code: "NOT_IMPLEMENTED",
+  });
+}
