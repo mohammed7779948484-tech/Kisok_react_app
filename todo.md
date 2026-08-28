@@ -10,3 +10,7 @@
 - [x] رفع مشروع mobile-system-starter فقط إلى مستودع Kisok_react_app دون تضمين مشروع تجربة Expo/Ignite
 - [x] إضافة شرح Ignite المختصر إلى مشروع mobile-system-starter
 - [x] مراجعة ملف .env.local قبل أي رفع جديد إلى المستودع العام
+- [x] تدقيق قالب mobile-app وتوثيق التعديلات اللازمة لتحويل تطبيق Flutter قائم إلى React Native/Expo
+- [x] تصميم طبقة Supabase وSupabase Auth وRLS وmigrations بما يلائم مخطط قاعدة البيانات المحدث
+- [ ] تحديد قالب Ignite متوسط إلى متقدم لتوليد ميزات التطبيق بعد توثيق الوحدات الحالية من تطبيق Flutter
+- [x] استيراد مجلد migrations من ملف KIOSK_V2_LEAN_MIGRATIONS إلى supabase/migrations ورفعه إلى GitHub
