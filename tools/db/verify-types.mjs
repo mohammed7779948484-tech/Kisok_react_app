@@ -118,13 +118,22 @@ async function readSchema() {
       where n.nspname = 'public' and t.typtype = 'e'
     `);
 
-    // Only functions the client is actually granted EXECUTE on are part of the
-    // contract this file describes.
+    // EVERY public function, with a flag for whether the client's role can call
+    // it. Both halves matter: a function `authenticated` can execute but the
+    // types omit is a hole in the contract, and a function the types declare but
+    // the schema does not have at all is a stale type. Supabase's own generator
+    // emits public functions regardless of grants, so `callable` is the right
+    // axis for the first check and mere existence for the second.
+    //
     // Only IN arguments belong to the call signature. A `returns table(...)`
     // function also lists its output columns in proargnames, which are part of
     // the RETURN shape, not the arguments.
     const functions = query(`
-      select json_agg(json_build_object('name', p.proname, 'args', a.args) order by p.proname)
+      select json_agg(json_build_object(
+        'name', p.proname, 'args', a.args,
+        'callable', has_function_privilege('authenticated', p.oid, 'EXECUTE'),
+        'trigger', p.prorettype = 'trigger'::regtype
+      ) order by p.proname)
       from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
       join lateral (
@@ -138,7 +147,6 @@ async function readSchema() {
         ) with ordinality as u(name, mode, ordinality)
       ) a on true
       where n.nspname = 'public'
-        and has_function_privilege('authenticated', p.oid, 'EXECUTE')
     `);
 
     return { columns, enums, functions };
@@ -203,12 +211,18 @@ function compare(declared, actual) {
     }
   }
 
-  for (const entry of actual.functions ?? []) {
+  const actualFunctions = new Map((actual.functions ?? []).map((entry) => [entry.name, entry]));
+
+  for (const entry of actualFunctions.values()) {
     const declaredArgs = declared.functions[entry.name];
     if (!declaredArgs) {
-      problems.push(
-        `Function "${entry.name}" is executable by \`authenticated\` but missing from the types.`,
-      );
+      // A trigger function is never called through PostgREST, so its absence
+      // from the types is correct rather than a gap.
+      if (entry.callable && !entry.trigger) {
+        problems.push(
+          `Function "${entry.name}" is executable by \`authenticated\` but missing from the types.`,
+        );
+      }
       continue;
     }
     const actualArgs = [...entry.args].sort();
@@ -219,13 +233,51 @@ function compare(declared, actual) {
     }
   }
 
+  // The reverse direction. Without this a function deleted from a migration
+  // stays in the types forever, and code keeps compiling against an RPC the
+  // database no longer has.
+  for (const name of Object.keys(declared.functions)) {
+    if (!actualFunctions.has(name)) {
+      problems.push(`Function "${name}" is declared in the types but not in the schema.`);
+    }
+  }
+
   return problems;
 }
 
-if (!postgresAvailable()) {
-  console.log("PostgreSQL is unavailable; skipping the database type check.");
-  console.log("Install PostgreSQL 16 (or set KISOK_PG_BIN) to run it.");
+/**
+ * Required mode: the check must actually RUN, not merely not-fail.
+ *
+ * Locally, a machine without PostgreSQL should not be blocked from committing —
+ * the check reports INCONCLUSIVE and exits 0. In CI that leniency is dangerous:
+ * a runner that silently stopped shipping PostgreSQL would turn this into a
+ * permanently green no-op, and "CI is green" would stop meaning the schema was
+ * verified. So CI sets KISOK_DB_VERIFY_REQUIRED=1 and inconclusive becomes FAIL.
+ *
+ * A MISMATCH fails in both modes. Only the "could not run" case differs.
+ */
+const REQUIRED = process.env.KISOK_DB_VERIFY_REQUIRED === "1";
+
+function inconclusive(message) {
+  if (REQUIRED) {
+    console.error(`\nFAIL — the database type check could not run, and it is REQUIRED here.\n`);
+    console.error(`${message}\n`);
+    console.error(
+      "This job must actually verify the schema. Fix the PostgreSQL setup on the\n" +
+        "runner (KISOK_PG_BIN), or unset KISOK_DB_VERIFY_REQUIRED if this environment\n" +
+        "genuinely cannot run it — but then it is not proving anything.\n",
+    );
+    process.exit(1);
+  }
+  console.log(`SKIPPED — ${message}`);
+  console.log("The schema itself was NOT verified. Run this where PostgreSQL 16 is available.");
   process.exit(0);
+}
+
+if (!postgresAvailable()) {
+  inconclusive(
+    "PostgreSQL is unavailable. Install PostgreSQL 16, or set KISOK_PG_BIN to its bin directory.",
+  );
 }
 
 const declared = readDatabaseType();
@@ -234,13 +286,10 @@ let actual;
 try {
   actual = await readSchema();
 } catch (error) {
-  // A cluster that will not start says nothing about whether the types match
-  // the migrations. Failing the build for it would be the same mistake as a
-  // permanently red advisory check — but a MISMATCH below still fails, loudly.
+  // A cluster that will not start says nothing about whether the types match the
+  // migrations — locally. In CI it is a failure, because the check is required.
   if (error instanceof PostgresUnavailableError) {
-    console.warn(`\nCould not run the database type check:\n${error.message}\n`);
-    console.warn("Treating as inconclusive. The schema itself was not verified.\n");
-    process.exit(0);
+    inconclusive(`The PostgreSQL cluster could not start:\n${error.message}`);
   }
   throw error;
 }

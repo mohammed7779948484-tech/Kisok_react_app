@@ -22,7 +22,7 @@ describe("callRpc", () => {
       rpc: { current_active_profile: () => ({ data: VALID, error: null }) },
     });
 
-    await expect(callRpc("current_active_profile", {}, schema)).resolves.toEqual(VALID);
+    await expect(callRpc("current_active_profile", schema)).resolves.toEqual(VALID);
     expect(supabase.callsTo("current_active_profile")).toHaveLength(1);
     supabase.restore();
   });
@@ -57,7 +57,7 @@ describe("callRpc", () => {
       },
     });
 
-    await expect(callRpc("get_customer_catalog", {}, schema)).rejects.toMatchObject({
+    await expect(callRpc("get_customer_catalog", schema)).rejects.toMatchObject({
       kind: "forbidden",
       code: "42501",
     });
@@ -71,7 +71,7 @@ describe("callRpc", () => {
       rpc: { get_customer_catalog: () => ({ data: [{ id: "not-a-uuid" }], error: null }) },
     });
 
-    const failure = await callRpc("get_customer_catalog", {}, schema).catch(
+    const failure = await callRpc("get_customer_catalog", schema).catch(
       (error: unknown) => error,
     );
 
@@ -85,7 +85,7 @@ describe("callRpc", () => {
       rpc: { get_customer_catalog: () => ({ data: "nonsense", error: null }) },
     });
 
-    const failure = (await callRpc("get_customer_catalog", {}, schema).catch(
+    const failure = (await callRpc("get_customer_catalog", schema).catch(
       (error: unknown) => error,
     )) as AppError;
 

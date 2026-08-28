@@ -2,7 +2,7 @@ import { ScrollView, View } from "react-native";
 
 import { Screen } from "@/components/layout/screen";
 import { Badge, Card, CardContent, CardHeader, CardTitle, Separator, Text } from "@/components/ui";
-import { useAuth } from "@/core/auth";
+import { useAuth, useSignOutAction } from "@/core/auth";
 
 /**
  * Honest stand-in for an experience that has not been built yet.
@@ -20,7 +20,8 @@ export function FoundationPlaceholder({
   nextFeature: string;
   surfaces: string[];
 }) {
-  const { profile, signOut } = useAuth();
+  const { profile } = useAuth();
+  const signOut = useSignOutAction();
 
   return (
     <Screen edges={["top", "bottom", "left", "right"]}>
@@ -70,10 +71,16 @@ export function FoundationPlaceholder({
           variant="caption"
           className="underline"
           accessibilityRole="button"
-          onPress={() => void signOut()}
+          onPress={signOut.run}
+          disabled={signOut.pending}
         >
-          Sign out
+          {signOut.pending ? "Signing out…" : "Sign out"}
         </Text>
+        {signOut.message ? (
+          <Text variant="caption" tone="destructive" className="text-center">
+            {signOut.message}
+          </Text>
+        ) : null}
       </ScrollView>
     </Screen>
   );

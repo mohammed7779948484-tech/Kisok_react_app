@@ -6,7 +6,7 @@ export {
   clearSignOutTasks,
   runSignOutTasks,
 } from "./sign-out";
-export type { SignOutTask, SignOutTaskResult } from "./sign-out";
+export type { SignOutTask, SignOutTaskResult, SignOutOutcome } from "./sign-out";
 export {
   appRoleSchema,
   activeProfileSchema,
@@ -15,3 +15,4 @@ export {
   TABLET_ROLES,
 } from "./types";
 export type { ActiveProfile, AppRole, AuthStatus, TabletRole } from "./types";
+export { useSignOutAction } from "./use-sign-out-action";

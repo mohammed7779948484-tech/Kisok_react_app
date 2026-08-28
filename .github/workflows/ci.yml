@@ -64,6 +64,11 @@ jobs:
       # database types still match the real schema. Also proves the migrations
       # apply cleanly, which nothing else here does.
       - name: Verify database types against migrations
+        # REQUIRED here: if the verifier cannot start PostgreSQL it FAILS rather
+        # than reporting inconclusive, so a green CI always means the schema was
+        # actually checked. Locally the same command still skips gracefully.
+        env:
+          KISOK_DB_VERIFY_REQUIRED: "1"
         run: pnpm db:verify
 
       # Proves the generator still emits code that compiles, lints, formats and

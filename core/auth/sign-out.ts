@@ -12,6 +12,20 @@ const log = createLogger("auth.signOut");
  */
 export type SignOutTaskResult = { status: "ok" } | { status: "blocked"; reason: string };
 
+/**
+ * What actually happened when the user asked to sign out.
+ *
+ * `failed` exists because the alternative is dishonest. Supabase can return an
+ * error from a path that leaves the persisted session in storage, and a screen
+ * that says "signed out" while the tablet can still silently restore the
+ * previous account is precisely the bug that matters on a shared kiosk. Callers
+ * must handle `failed` by keeping the user signed in and offering a retry.
+ */
+export type SignOutOutcome =
+  | { status: "ok" }
+  | { status: "blocked"; reason: string }
+  | { status: "failed"; reason: string };
+
 export type SignOutTask = {
   /** Used in logs and in the message shown when sign-out is blocked. */
   name: string;

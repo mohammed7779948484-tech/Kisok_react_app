@@ -17,6 +17,17 @@ export type MockAuthOptions = {
   role?: AppRole;
   /** Handlers for the feature's own RPCs, alongside `current_active_profile`. */
   rpc?: Record<string, (args: unknown) => RpcResponse | Promise<RpcResponse>>;
+  /**
+   * Override `auth.signOut`. Use it to exercise the failure paths — a sign-out
+   * that errors but clears storage, versus one that errors and leaves the
+   * session behind. Defaults to succeeding.
+   */
+  signOut?: (options?: { scope?: string }) => Promise<{ error: { message: string } | null }>;
+  /**
+   * What `getSession` returns AFTER a sign-out attempt. Defaults to the normal
+   * behaviour of reporting no session.
+   */
+  sessionAfterSignOut?: unknown;
 };
 
 /**
@@ -33,7 +44,13 @@ export type MockAuthOptions = {
  *   await renderWithProviders(<OrderBoard />, { withAuth: true });
  *   supabase.restore();
  */
-export function installMockAuth({ profile, role, rpc = {} }: MockAuthOptions = {}) {
+export function installMockAuth({
+  profile,
+  role,
+  rpc = {},
+  signOut,
+  sessionAfterSignOut = null,
+}: MockAuthOptions = {}) {
   const resolved =
     profile === null ? null : { ...TEST_PROFILE, ...(role ? { role } : {}), ...(profile ?? {}) };
 
@@ -42,11 +59,16 @@ export function installMockAuth({ profile, role, rpc = {} }: MockAuthOptions = {
     : null;
 
   const calls: { name: string; args: unknown }[] = [];
+  const signOutCalls: ({ scope?: string } | undefined)[] = [];
+  let signedOut = false;
   let authCallback: ((event: string, session: unknown) => void) | null = null;
 
   const client = {
     auth: {
-      getSession: async () => ({ data: { session }, error: null }),
+      getSession: async () => ({
+        data: { session: signedOut ? sessionAfterSignOut : session },
+        error: null,
+      }),
       onAuthStateChange: (fn: (event: string, session: unknown) => void) => {
         authCallback = fn;
         // Mirror supabase-js: the initial event arrives on its own.
@@ -54,7 +76,11 @@ export function installMockAuth({ profile, role, rpc = {} }: MockAuthOptions = {
         return { data: { subscription: { unsubscribe: () => {} } } };
       },
       signInWithPassword: async () => ({ data: { session }, error: null }),
-      signOut: async () => ({ error: null }),
+      signOut: async (options?: { scope?: string }) => {
+        signOutCalls.push(options);
+        signedOut = true;
+        return signOut ? await signOut(options) : { error: null };
+      },
       startAutoRefresh: () => {},
       stopAutoRefresh: () => {},
     },
@@ -83,6 +109,8 @@ export function installMockAuth({ profile, role, rpc = {} }: MockAuthOptions = {
     profile: resolved,
     calls,
     callsTo: (name: string) => calls.filter((call) => call.name === name),
+    /** Every `auth.signOut` call, with the options it was given. */
+    signOutCalls,
     /** Drive a later auth event, e.g. a sign-out or a token refresh. */
     emit: (event: string, next: unknown) => authCallback?.(event, next),
     restore: () => setSupabaseClient(null),

@@ -8,7 +8,7 @@ import { clearQueryCache } from "@/core/query";
 import { getSupabaseClient } from "@/core/supabase";
 
 import { fetchActiveProfile } from "./profile";
-import { runSignOutTasks, type SignOutTaskResult } from "./sign-out";
+import { runSignOutTasks, type SignOutOutcome } from "./sign-out";
 import { isTabletRole, type ActiveProfile, type AuthStatus } from "./types";
 
 const log = createLogger("auth");
@@ -29,8 +29,11 @@ type AuthContextValue = AuthState & {
   /** Always the current session, read straight from the auth listener. */
   session: Session | null;
   signIn: (email: string, password: string) => Promise<void>;
-  /** Resolves to `blocked` when a registered task vetoes the sign-out. */
-  signOut: () => Promise<SignOutTaskResult>;
+  /**
+   * Resolves to `blocked` when a registered task vetoes the sign-out, and to
+   * `failed` when the session may still be usable. Only `ok` means signed out.
+   */
+  signOut: () => Promise<SignOutOutcome>;
   /** Re-runs profile resolution after a failure. */
   retry: () => void;
 };
@@ -191,23 +194,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // The listener drives the resulting state transition.
   }, []);
 
-  const signOut = useCallback(async (): Promise<SignOutTaskResult> => {
+  const signOut = useCallback(async (): Promise<SignOutOutcome> => {
+    // The safety gate runs FIRST and can veto. Nothing below it is reversible:
+    // an unresolved checkout must never have its recovery state cleared.
     const gate = await runSignOutTasks();
     if (gate.status === "blocked") return gate;
 
     const supabase = getSupabaseClient();
-    const { error } = await supabase.auth.signOut();
+
+    // `scope: "local"` signs out THIS device only. The supabase-js default is
+    // "global", which revokes every refresh token for the account — and KISOK
+    // tablets share store-provisioned accounts, so one tablet signing out would
+    // knock out every other tablet in the shop. Revoking everywhere is a
+    // deliberate admin action, not what a customer finishing an order means.
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+
     if (error) {
-      // A session the server already considers gone still has to be cleared
-      // locally, or the tablet is stuck signed in to nothing.
-      log.warn("Supabase sign-out reported an error; clearing local state anyway", {
+      // Ambiguous: most supabase-js error paths still clear the stored session,
+      // but the one that fails while READING the session returns early and
+      // leaves it in place. From out here the two are indistinguishable, so ask
+      // rather than assume — the next customer must not inherit this session.
+      const remaining = await supabase.auth
+        .getSession()
+        .then(({ data }) => data.session)
+        .catch(() => undefined);
+
+      if (remaining !== null) {
+        // Either a session is still stored, or we could not even determine that.
+        // Both mean: do not tell anyone they are signed out.
+        log.error("Sign-out failed and the stored session may still be valid", {
+          message: error.message,
+          sessionState: remaining === undefined ? "unknown" : "still-present",
+        });
+        return {
+          status: "failed",
+          reason: "We couldn't finish signing out. Please try again.",
+        };
+      }
+
+      // The local session is genuinely gone; only the server call failed.
+      log.warn("Supabase sign-out reported an error but the local session was cleared", {
         message: error.message,
       });
     }
 
-    // Drop cached server data so the next account cannot read it.
+    // Only now is it true. Drop cached server data so the next account cannot
+    // read it, then let stage 2 transition to `signedOut` and cancel any
+    // in-flight profile lookup.
     clearQueryCache(queryClient);
-    // Stage 2 turns this into `signedOut` and cancels any in-flight lookup.
     setSnapshot({ session: null, known: true });
     return { status: "ok" };
   }, [queryClient]);

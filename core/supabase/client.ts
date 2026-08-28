@@ -41,7 +41,18 @@ export function createSupabaseClient(): KisokSupabaseClient {
 }
 
 let client: KisokSupabaseClient | null = null;
-let autoRefreshBound = false;
+
+/**
+ * The live AppState subscription, and the client it drives.
+ *
+ * Held as a HANDLE rather than a `bound` boolean on purpose: a boolean records
+ * that a listener was added but gives you no way to remove it, so every client
+ * reset — which tests do constantly — left another listener attached to a
+ * discarded client. They accumulate for the life of the process, and each one
+ * keeps calling startAutoRefresh on a client nobody uses any more.
+ */
+let autoRefresh: { subscription: { remove: () => void }; instance: KisokSupabaseClient } | null =
+  null;
 
 /**
  * The app-wide client. Created lazily so that importing this module does not
@@ -68,26 +79,34 @@ export function getSupabaseClient(): KisokSupabaseClient {
  * guidance scopes this to non-browser environments.
  */
 function bindAutoRefresh(instance: KisokSupabaseClient) {
-  if (autoRefreshBound || Platform.OS === "web") return;
-  autoRefreshBound = true;
+  if (Platform.OS === "web") return;
+
+  // Exactly one listener exists at a time, for exactly the current client.
+  releaseAutoRefresh();
 
   instance.auth.startAutoRefresh();
-  AppState.addEventListener("change", (state) => {
+  const subscription = AppState.addEventListener("change", (state) => {
     if (state === "active") {
       instance.auth.startAutoRefresh();
     } else {
       instance.auth.stopAutoRefresh();
     }
   });
+  autoRefresh = { subscription, instance };
 
   log.debug("Bound Supabase auto-refresh to AppState");
 }
 
+/** Detach the AppState listener and stop the timer on the client it drove. */
+function releaseAutoRefresh() {
+  if (!autoRefresh) return;
+  autoRefresh.subscription.remove();
+  void autoRefresh.instance.auth.stopAutoRefresh();
+  autoRefresh = null;
+}
+
 /** Test seam: install a client (usually a mock) and forget the real one. */
 export function setSupabaseClient(next: KisokSupabaseClient | null) {
+  releaseAutoRefresh();
   client = next;
-  // Reset the binding too. Without this, a later real client would skip
-  // bindAutoRefresh and the AppState listener would stay attached to the
-  // discarded instance — auto-refresh silently stops for the live one.
-  autoRefreshBound = false;
 }

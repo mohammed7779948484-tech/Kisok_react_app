@@ -2,7 +2,7 @@ import { View } from "react-native";
 
 import { Button, Text } from "@/components/ui";
 import { Screen } from "@/components/layout/screen";
-import { useAuth } from "@/core/auth";
+import { useAuth, useSignOutAction } from "@/core/auth";
 
 /**
  * The account authenticated but has no place in the tablet app: its profile is
@@ -13,7 +13,8 @@ import { useAuth } from "@/core/auth";
  * refuse the work regardless.
  */
 export function UnauthorizedScreen() {
-  const { profile, signOut } = useAuth();
+  const { profile } = useAuth();
+  const signOut = useSignOutAction();
 
   const reason =
     profile?.role === "admin"
@@ -29,9 +30,19 @@ export function UnauthorizedScreen() {
         <Text variant="body" tone="muted" className="max-w-md text-center">
           {reason}
         </Text>
-        <Button variant="secondary" onPress={() => void signOut()} className="mt-2">
-          <Text>Sign out</Text>
+        <Button
+          variant="secondary"
+          onPress={signOut.run}
+          disabled={signOut.pending}
+          className="mt-2"
+        >
+          <Text>{signOut.pending ? "Signing out…" : "Sign out"}</Text>
         </Button>
+        {signOut.message ? (
+          <Text variant="body" tone="destructive" className="max-w-md text-center">
+            {signOut.message}
+          </Text>
+        ) : null}
       </View>
     </Screen>
   );

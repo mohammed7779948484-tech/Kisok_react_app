@@ -12,6 +12,6 @@ import { activeProfileRowsSchema, type ActiveProfile } from "./types";
  * Returns `null` when the account has no active profile.
  */
 export async function fetchActiveProfile(): Promise<ActiveProfile | null> {
-  const rows = await callRpc("current_active_profile", {}, activeProfileRowsSchema);
+  const rows = await callRpc("current_active_profile", activeProfileRowsSchema);
   return rows[0] ?? null;
 }

@@ -4,9 +4,34 @@ import { AppError, toAppError } from "@/core/errors";
 import { createLogger } from "@/core/logging";
 
 import { getSupabaseClient } from "./client";
-import type { DbFunctions } from "./database.types";
+import type { Database } from "./database.types";
 
 const log = createLogger("supabase.rpc");
+
+/**
+ * Every Postgres function this client may call.
+ *
+ * Derived here rather than in `database.types.ts`: that file is a GENERATED
+ * artifact reproduced verbatim by `pnpm db:types`, so project-owned helpers live
+ * outside it. Editing the generated file to add conveniences is how a schema
+ * refresh silently reverts them.
+ */
+export type DbFunctions = Database["public"]["Functions"];
+
+/**
+ * Arguments plus schema, or — for a function that takes none — just the schema.
+ *
+ * Supabase generates a zero-argument function as `Args: never`, which nothing
+ * can satisfy, not even `{}`. So the argument slot disappears entirely for those
+ * and `callRpc("get_customer_catalog", schema)` is the only spelling that
+ * compiles. Adding an argument to the function in a migration turns the
+ * two-argument form back on, and every call site fails to compile until updated.
+ */
+type RpcInvocation<Name extends keyof DbFunctions, Parsed> = [
+  DbFunctions[Name]["Args"],
+] extends [never]
+  ? [schema: ZodType<Parsed>]
+  : [args: DbFunctions[Name]["Args"], schema: ZodType<Parsed>];
 
 /**
  * Call a Postgres function and validate its payload.
@@ -21,9 +46,13 @@ const log = createLogger("supabase.rpc");
  */
 export async function callRpc<Name extends keyof DbFunctions, Parsed>(
   name: Name,
-  args: DbFunctions[Name]["Args"],
-  schema: ZodType<Parsed>,
+  ...invocation: RpcInvocation<Name, Parsed>
 ): Promise<Parsed> {
+  const [first, second] = invocation as [unknown, ZodType<Parsed>?];
+  const hasArgs = second !== undefined;
+  const args = hasArgs ? first : undefined;
+  const schema = (hasArgs ? second : first) as ZodType<Parsed>;
+
   const supabase = getSupabaseClient();
 
   const { data, error } = await supabase.rpc(name as never, args as never);
