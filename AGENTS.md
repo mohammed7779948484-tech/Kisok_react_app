@@ -99,7 +99,8 @@ failure, and the fix is to move the code — not to add a disable comment.
 
 1. **Routes are thin.** `app/**` may not import Supabase, Zustand, or TanStack
    Query. A route renders a feature's screen and passes params.
-2. **UI never touches the network.** Screens and components may not import the
+2. **Only `api/` touches the network.** Every other file in a feature — screens,
+   components, query hooks, stores, schemas — is blocked from importing the
    Supabase client. Data access lives in `api/`, exposed through a query hook.
 3. **Features are private by default.** Import another feature only through
    `@/features/<name>`. Deep imports are blocked. Inside a feature, use relative

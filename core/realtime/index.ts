@@ -4,7 +4,7 @@ import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 
 import { createLogger } from "@/core/logging";
 
-import { getSupabaseClient } from "./client";
+import { getSupabaseClient } from "@/core/supabase";
 
 const log = createLogger("supabase.realtime");
 
@@ -23,6 +23,10 @@ export type RealtimeSubscriptionOptions = {
 
 /**
  * Subscribe to Postgres changes for as long as the component is mounted.
+ *
+ * Lives outside `core/supabase` on purpose: a Realtime subscription is a
+ * query-invalidation concern, so a feature's `queries/` layer may use it, while
+ * the Supabase client itself stays restricted to `api/`.
  *
  * KISOK treats Realtime as an INVALIDATION SIGNAL, never as a second source of
  * truth: an event tells you the server state moved, then you refetch the

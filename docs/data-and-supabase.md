@@ -151,6 +151,8 @@ Only `public.orders` is in the `supabase_realtime` publication, and RLS applies 
 so a customer session receives nothing.
 
 ```ts
+// from "@/core/realtime" — a subscription is a query-invalidation concern, so
+// a feature's queries/ layer may use it. The Supabase client stays in api/.
 useRealtimeInvalidation({
   channel: "preparation-orders",
   table: "orders",

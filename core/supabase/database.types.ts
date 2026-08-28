@@ -370,23 +370,23 @@ export type Database = {
       /** Admin surface — not used by the tablet client. */
       apply_inventory_adjustment: {
         Args: {
-          target_variant_id: string;
-          adjustment: Database["public"]["Enums"]["inventory_adjustment_type"];
-          quantity: number;
-          reason?: string;
+          variant_id: string;
+          type: Database["public"]["Enums"]["inventory_adjustment_type"];
+          delta: number;
+          reason: string;
         };
         Returns: Json;
       };
       /** Admin surface — not used by the tablet client. */
       set_inventory_quantity: {
-        Args: { target_variant_id: string; quantity: number; reason?: string };
+        Args: { variant_id: string; final_quantity: number; reason: string };
         Returns: Json;
       };
       /** Admin surface — not used by the tablet client. */
       get_media_asset_usage: { Args: { target_media_asset_id: string }; Returns: Json };
       /** Admin surface — not used by the tablet client. */
       reorder_items: {
-        Args: { scope: string; parent: string; ordered_ids: string[] };
+        Args: { resource_name: string; scope_id: string; ordered_ids: string[] };
         Returns: undefined;
       };
     };

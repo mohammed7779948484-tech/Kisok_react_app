@@ -50,7 +50,7 @@ no longer had any relationship to the repository.
 
 - [x] jest-expo + RNTL; Vitest removed
 - [x] Test utilities: providers, test QueryClient, Supabase mock, memory storage
-- [x] 55 foundation tests; suite runs with zero console output
+- [x] 62 foundation tests; suite runs with zero console output
 - [x] `pnpm verify` runs everything CI runs
 - [x] CI: fast checks on every PR, Android build behind a label
 

@@ -29,19 +29,19 @@ const NO_DEEP_FEATURE_IMPORT = {
     "Import a feature only through its public API: `@/features/<name>`. Inside a feature, use relative imports.",
 };
 
-/** UI must never reach the network directly. */
+/** Only a feature's `api/` module may reach the network. */
 const NO_SUPABASE_IN_UI = [
   {
     name: "@supabase/supabase-js",
     message:
-      "UI must not call Supabase. Put the call in the feature's api/ module and expose a query hook.",
+      "Only a feature's api/ module may call Supabase. Move the call there and expose it through a query hook.",
   },
 ];
 const NO_SUPABASE_IN_UI_PATTERNS = [
   {
     group: ["@/core/supabase", "@/core/supabase/*"],
     message:
-      "UI must not call Supabase. Put the call in the feature's api/ module and expose a query hook.",
+      "Only a feature's api/ module may call Supabase. Move the call there and expose it through a query hook.",
   },
 ];
 
@@ -96,12 +96,29 @@ export default defineConfig([
     },
   },
   {
-    // Presentational layers: screens, components, and the design system.
-    files: [
-      "features/*/screens/**/*.{ts,tsx}",
-      "features/*/components/**/*.{ts,tsx}",
-      "components/**/*.{ts,tsx}",
-    ],
+    // The shared design system never talks to the network.
+    files: ["components/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [...FORBIDDEN_LEGACY, ...NO_SUPABASE_IN_UI],
+          patterns: [
+            ...FORBIDDEN_LEGACY_PATTERNS,
+            NO_DEEP_FEATURE_IMPORT,
+            ...NO_SUPABASE_IN_UI_PATTERNS,
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Inside a feature, `api/` is the ONLY module allowed to reach Supabase.
+    // Scoped by EXCLUSION rather than by listing the presentational folders, so
+    // a layer added later (queries/, state/, schemas/, a feature root file) is
+    // covered by default instead of silently escaping the rule.
+    files: ["features/**/*.{ts,tsx}"],
+    ignores: ["features/*/api/**"],
     rules: {
       "no-restricted-imports": [
         "error",

@@ -5,7 +5,7 @@ filename: <%= props.kebabCaseName %>-api.ts
 ---
 import { AppError } from "@/core/errors";
 <% if (props.layers.includes("schemas")) { -%>
-import { <%= props.camelCaseName %>PayloadSchema, type <%= props.pascalCaseName %>Item } from "../schemas/<%= props.kebabCaseName %>-schema";
+import type { <%= props.pascalCaseName %>Item } from "../schemas/<%= props.kebabCaseName %>-schema";
 <% } -%>
 
 /**

@@ -193,6 +193,11 @@ function cleanUp() {
 }
 
 try {
+  // A previous run that was killed mid-flight would leave the scratch feature
+  // behind, and every later `pnpm verify` would then fail in a confusing place
+  // (typecheck or format:check, not here). Clear it first.
+  cleanUp();
+
   const result = await runFeature(SCRATCH_FEATURE, {
     role: "preparation",
     layers: ["api", "queries", "state", "schemas", "components", "screens", "tests"],
@@ -215,13 +220,21 @@ try {
 
   execFileSync(
     "npx",
-    ["eslint", `features/${SCRATCH_FEATURE}`, `app/(preparation)/${SCRATCH_FEATURE}.tsx`],
+    [
+      "eslint",
+      // A warning in generated code is inherited by every feature built from
+      // it. An unused import that only a warning caught is exactly the kind of
+      // rot this gate exists to prevent.
+      "--max-warnings=0",
+      `features/${SCRATCH_FEATURE}`,
+      `app/(preparation)/${SCRATCH_FEATURE}.tsx`,
+    ],
     {
       cwd: ROOT,
       stdio: "pipe",
     },
   );
-  console.log("  ok  generated code lints clean");
+  console.log("  ok  generated code lints clean (no warnings)");
 
   execFileSync("npx", ["prettier", "--check", `features/${SCRATCH_FEATURE}`], {
     cwd: ROOT,

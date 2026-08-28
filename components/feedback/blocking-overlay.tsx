@@ -20,7 +20,9 @@ export function BlockingOverlay({ visible, label }: { visible: boolean; label: s
       accessibilityLabel={label}
       accessibilityLiveRegion="assertive"
       className="absolute inset-0 z-50 items-center justify-center gap-4 bg-background/85"
-      // Swallows every touch underneath.
+      // Claims the touch on native so presses cannot reach the screen beneath.
+      // On web the prop is inert, but the overlay covers the viewport and
+      // intercepts pointer events by stacking, so the behaviour matches.
       onStartShouldSetResponder={() => true}
     >
       <ActivityIndicator size="large" />

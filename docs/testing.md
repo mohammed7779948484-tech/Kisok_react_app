@@ -31,7 +31,7 @@ for a missing `await` before blaming the framework.
 import {
   renderWithProviders, // render inside QueryClient + safe area + portal host
   createTestQueryClient, // retry: false, gcTime: Infinity
-  installMockSupabase, // stub the client's .rpc() per function name
+  installMockSupabase, // stub the client's .rpc() and .from() per name
   createMemoryStore, // in-memory storage, with a failOn option
   screen,
   waitFor,
@@ -56,11 +56,21 @@ jest.mock("../api/catalog-api", () => ({ fetchCatalog: jest.fn() }));
 
 ```ts
 const supabase = installMockSupabase({
-  get_customer_catalog: () => ({ data: snapshotFixture, error: null }),
+  rpc: { get_customer_catalog: () => ({ data: snapshotFixture, error: null }) },
 });
 // ...
 expect(supabase.callsTo("get_customer_catalog")).toHaveLength(1);
 supabase.restore();
+```
+
+Preparation is the one role that reads tables directly, so `.from()` is stubbed
+per table. The builder is chainable and awaitable at any point, so the shape of
+the query does not change the mock:
+
+```ts
+const supabase = installMockSupabase({
+  from: { orders: () => ({ data: [orderFixture], error: null }) },
+});
 ```
 
 An unregistered RPC throws a clear error rather than returning `undefined` and

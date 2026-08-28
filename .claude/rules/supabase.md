@@ -42,7 +42,9 @@ Direct table access: **`preparation` may `select` from `orders` and
   reimplement it in JavaScript. Reuse the same `client_request_id` when retrying
   an ambiguous submission — generating a new one can create a duplicate order.
 - Realtime is an invalidation signal. Only `public.orders` is published, and RLS
-  applies. Never render from a Realtime payload.
+  applies. Never render from a Realtime payload. The helpers live in
+  `@/core/realtime` (usable from a feature's `queries/`), not in
+  `@/core/supabase`, which stays restricted to `api/`.
 - Regenerate types with `pnpm db:types`. Never hand-edit
   `core/supabase/database.types.ts`.
 
