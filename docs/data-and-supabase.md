@@ -164,19 +164,41 @@ useRealtimeInvalidation({
 The event says _something changed_; the refetch says _what it is now_. Never
 render from the payload.
 
-## Generating types
+## Auth lifecycle
+
+Supabase runs `onAuthStateChange` callbacks while holding an internal auth lock.
+**Calling back into the Supabase client from inside one can deadlock** — the app
+hangs on the startup screen with no error. `core/auth` therefore splits the
+lifecycle into three stages: the callback only records the session; a separate
+effect resolves the profile; a third keeps Realtime's token current.
+
+Profile resolution is keyed on the **user id**, not the session, so a token
+refresh does not re-fetch a profile that has not changed.
+
+If you add work that reacts to auth, follow the same shape. Do not add it to the
+callback.
+
+## Verifying and generating types
 
 ```bash
-pnpm db:types
+pnpm db:verify   # apply the migrations to a throwaway Postgres and compare
+pnpm db:types    # regenerate from the linked Supabase project
 ```
+
+`pnpm db:verify` runs in CI. It proves `database.types.ts` matches the schema the
+migrations actually produce — tables, columns, nullability, enum values, and the
+argument names of every function `authenticated` can execute — and proves the
+migrations still apply cleanly. See
+[adr/0008-database-types-verification.md](./adr/0008-database-types-verification.md).
 
 Wraps `supabase gen types typescript`. It needs the Supabase CLI and either a
 linked project (`supabase link`) or `SUPABASE_PROJECT_ID`.
 
 `core/supabase/database.types.ts` is checked in so typecheck and CI work without
-credentials. **It was derived by hand from the migrations and has not been
-verified against a live project** — regenerate it against the real database
-before shipping, and never hand-edit it.
+credentials, and `pnpm db:verify` proves it matches the migrations on every CI
+run. Never hand-edit it. It has still not been checked against the **deployed**
+project, so regenerate with `pnpm db:types` if the live schema may have drifted
+from what is committed here.
 
 ## Known gap: customer order tracking
 

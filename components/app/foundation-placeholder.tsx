@@ -60,7 +60,7 @@ export function FoundationPlaceholder({
               Generate the vertical slice, then work through its TODO.md:
             </Text>
             <Text variant="mono" className="text-sm">
-              pnpm ignite feature {nextFeature}
+              pnpm generate feature {nextFeature}
             </Text>
             <Text variant="caption">Read AGENTS.md before you start.</Text>
           </CardContent>

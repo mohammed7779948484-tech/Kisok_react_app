@@ -68,7 +68,7 @@ without an Android device for every change. It is not a shipping surface.
 
 Planned product surfaces. **These are not instructions to build now** — they
 describe the shape the foundation must support. Each will be its own feature,
-generated with `pnpm ignite feature`.
+generated with `pnpm generate feature`.
 
 ### Customer
 

@@ -25,6 +25,9 @@ called") and produces stray `act(...)` warnings.
 
 - Use `renderWithProviders` from `@/core/testing`, not the bare RNTL `render` —
   it supplies the QueryClient, safe-area, and portal host.
+- Testing a screen behind the auth gate? `installMockAuth()` then
+  `renderWithProviders(ui, { withAuth: true })`. Do not hand-roll an auth client;
+  the helper exists so every feature's fake session behaves the same.
 - **Mock at the feature's `api/` module**, not at `@/core/supabase`. A screen
   test should not know Supabase exists. For an api-level test, use
   `installMockSupabase`.

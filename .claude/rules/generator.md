@@ -1,40 +1,62 @@
 ---
 paths:
-  - "ignite/**"
+  - "tools/**"
 ---
 
-# The Ignite generator
+# The KISOK generator
 
-`pnpm ignite feature <name>` scaffolds a feature vertical slice. It exists to
-stop agents from re-inventing (or hallucinating) the architecture.
+`pnpm generate <capability> <feature> [name]` scaffolds feature code. It exists
+to stop agents from re-inventing (or hallucinating) the architecture.
+
+Capabilities: `feature` (the shell + orchestrator), `schema`, `query`,
+`mutation`, `store`, `component`, `screen`, `realtime`, `route`. Each is
+independent and feature-local; `feature --with=a,b,c` composes them.
 
 ## How it works
 
-- Templates: `ignite/templates/feature/*.ejs`, EJS with YAML front matter.
+- Templates: `tools/generator/templates/<capability>/*.ejs`, EJS with YAML front
+  matter.
 - Front-matter keys: `destinationDir` (required), `filename`, `skip`. All three
-  are rendered through EJS first, so they can depend on the options.
-- Props available in a template: `pascalCaseName`, `camelCaseName`,
-  `kebabCaseName`, `snakeCaseName`, `name`, `originalName`, plus the generator
-  options `role`, `layers`, `realtime`, `route`, `routeDir`, `featureDir`.
-- Output is formatted with the project's Prettier config before it is written —
-  templates do not need to guess at line lengths.
+  render through EJS first, so a template can opt itself out based on options.
+- Props: `pascalCaseName`, `camelCaseName`, `kebabCaseName`, `snakeCaseName`,
+  `name`, `originalName`, plus `feature`, `featurePascal`, `featureCamel`,
+  `featureDir`, `role`, `routeDir`, and the `withSchema` / `withQuery` /
+  `withStore` / `withScreen` flags a template uses to wire itself to siblings.
+- A capability can declare `also: [...]` to share a template directory — `query`,
+  `mutation` and `realtime` share one `keys.ts` template instead of three copies.
+- Output is Prettier-formatted before writing, so generated code passes
+  `format:check` immediately.
 - Existing files are never overwritten without `--force`.
 
 ## Rules for changing templates
 
-- **Run `pnpm ignite:smoke` after every change.** It generates a real feature and
-  proves the output typechecks, lints, formats, and passes its own tests, then
-  cleans up. A template that merely looks right is worthless — agents inherit
-  whatever it emits.
-- Generated code must **encode the architecture**: no Supabase in screens, query
-  keys local, public API in `index.ts`, TODO.md always present.
-- Comments in templates should be **precise and few**. They exist to stop a
+- **Run `pnpm generate:smoke` after every change.** It generates four materially
+  different feature shapes (read-heavy, local-state-heavy, mutation-heavy,
+  realtime) plus follow-up capabilities, and proves the output typechecks, lints
+  with zero warnings, is formatted, and passes its own tests. A template that
+  merely looks right is worthless — every future feature inherits its output.
+- **Keep templates neutral.** Do not bias them toward one feature shape. A
+  capability that only makes sense for a list is the wrong abstraction; the
+  generator has to serve a cart and a checkout as well as a catalog.
+- Generated code must **encode the architecture**: Supabase only in `api/`,
+  query keys feature-local, a public API in `index.ts`, `TODO.md` always present.
+- Comments in templates should be **precise and few**. They exist to prevent a
   specific mistake, not to narrate. Delete a comment that no longer prevents
   anything.
-- **Never make the generator edit a shared file.** The moment a feature has to
-  register itself somewhere central, parallel agents start conflicting — which is
-  the problem this generator exists to avoid.
+- **Never make the generator edit a file it did not create.** The moment a
+  capability patches a shared registry — or even the feature's own `index.ts` —
+  parallel agents start conflicting, which is the problem this generator exists
+  to avoid. The smoke test asserts this.
 
-See `IGNITE.md` for the user-facing reference and
-`docs/adr/0005-generator.md` for why this is a local generator rather than the
-`ignite-cli` package.
+## Database tooling
+
+`tools/db/` holds the schema tooling:
+
+- `pnpm db:verify` applies the migrations to an ephemeral PostgreSQL and proves
+  `core/supabase/database.types.ts` matches the real schema. CI runs it.
+- `pnpm db:types` regenerates types from the linked Supabase project.
+
+Never hand-edit `database.types.ts`. If it disagrees with a migration, the
+migration is right.
+
+See `docs/generator.md` and `docs/adr/0005-generator.md`.

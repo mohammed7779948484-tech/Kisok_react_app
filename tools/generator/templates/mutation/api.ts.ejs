@@ -1,0 +1,39 @@
+---
+destinationDir: features/<%= props.feature %>/api
+filename: NAME.ts
+---
+import { AppError } from "@/core/errors";
+
+/**
+ * A write. Like every module in `api/`, this is the only layer allowed to reach
+ * Supabase.
+ *
+ * Writes in KISOK go through RPCs that own correctness server-side:
+ *   create_order(client_request_id, items)        — customer checkout
+ *   update_order_status(order_id, status, reason) — preparation/admin
+ *
+ * Do NOT reimplement server guarantees here. `create_order` already handles
+ * idempotency, request fingerprinting, deterministic stock locking, conflict
+ * reporting, immutable snapshots and the inventory ledger.
+ */
+export type <%= props.pascalCaseName %>Input = {
+  // TODO: the arguments this write actually takes.
+  id: string;
+};
+
+export async function <%= props.camelCaseName %>(input: <%= props.pascalCaseName %>Input): Promise<unknown> {
+  // TODO: implement. Replace the throw below with a real call, e.g.
+  //
+  //   import { callRpc } from "@/core/supabase";
+  //   return callRpc("update_order_status", { order_id: input.id, target_status: "preparing" }, resultSchema);
+  //
+  // If this write must be safe to retry after an ambiguous response, reuse the
+  // SAME client_request_id rather than generating a new one — a fresh id can
+  // create a second real order. See docs/data-and-supabase.md.
+  throw new AppError({
+    kind: "unknown",
+    userMessage: "This isn't available yet.",
+    technicalMessage: "<%= props.camelCaseName %> is not implemented — see features/<%= props.feature %>/TODO.md",
+    code: "NOT_IMPLEMENTED",
+  });
+}

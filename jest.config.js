@@ -6,7 +6,7 @@ module.exports = {
   preset: "jest-expo",
   setupFilesAfterEnv: ["<rootDir>/core/testing/setup.ts"],
   testMatch: ["**/*.test.ts", "**/*.test.tsx"],
-  testPathIgnorePatterns: ["/node_modules/", "/.expo/", "/dist/", "/ignite/templates/"],
+  testPathIgnorePatterns: ["/node_modules/", "/.expo/", "/dist/", "/tools/generator/templates/"],
   transformIgnorePatterns: [
     "node_modules/(?!(?:jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|native-base|react-native-svg|nativewind|react-native-css-interop|@rn-primitives/.*)",
   ],

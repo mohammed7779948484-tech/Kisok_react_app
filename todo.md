@@ -11,6 +11,19 @@ no longer had any relationship to the repository.
 
 ## Complete
 
+**Hardening pass**
+
+- [x] Auth lifecycle split so no Supabase call happens inside `onAuthStateChange`
+- [x] Profile resolution keyed on user id — a token refresh no longer refetches
+- [x] Realtime subscriptions stable across renders; latest handler kept via a ref
+- [x] Database types verified against the migrations on every CI run
+- [x] Generator renamed to the KISOK generator (`pnpm generate`) and made composable
+- [x] Foundation dependency direction enforced (`core`/`components` cannot import features)
+- [x] Expo packages aligned to the SDK 54 manifest
+- [x] `inlineRem: 16` so native sizing matches the web preview and Tailwind's scale
+- [x] `expo-doctor` distinguishes real incompatibilities from network failures
+- [x] Shared auth test helper so features do not hand-roll a session fake
+
 **Repository**
 
 - [x] Manus starter stack removed: OAuth/session/JWT, tRPC, Express, MySQL, Drizzle, LLM/image/voice helpers, notifications, heartbeat, storage proxy, demo components and assets
@@ -50,16 +63,16 @@ no longer had any relationship to the repository.
 
 - [x] jest-expo + RNTL; Vitest removed
 - [x] Test utilities: providers, test QueryClient, Supabase mock, memory storage
-- [x] 62 foundation tests; suite runs with zero console output
+- [x] 80 foundation tests; suite runs with zero console output
 - [x] `pnpm verify` runs everything CI runs
 - [x] CI: fast checks on every PR, Android build behind a label
 
-**Ignite**
+**Generator**
 
 - [x] Generator with `--role`, `--layers`, `--realtime`, `--no-route`, `--dry-run`
 - [x] Generated code compiles, lints, formats, and passes its own tests
 - [x] `TODO.md` generated for every feature
-- [x] `pnpm ignite:smoke` verifies all of the above in CI
+- [x] `pnpm generate:smoke` verifies all of the above in CI
 
 **Agent harness**
 
@@ -80,14 +93,9 @@ no longer had any relationship to the repository.
       the test suite. Native behaviour — splash, adaptive icon, orientation
       changes, safe areas, AsyncStorage persistence, Realtime over a real
       connection — is unverified.
-- [ ] **Align Expo package patch versions.** `expo-doctor` reports 7 packages
-      behind the SDK 54 line: `expo` (~54.0.37), `expo-constants` (~18.0.14),
-      `expo-font` (~14.0.12), `expo-linking` (~8.0.12), `expo-router` (~6.0.24),
-      `expo-splash-screen` (~31.0.13), and the `@react-navigation/native` range.
-      These are same-SDK patches, not the deferred SDK upgrade. Run
-      `npx expo install --check` — the sanctioned tool, which needs network
-      access to Expo's API that the build environment did not have — then
-      `pnpm verify` and a device check.
+- [ ] Re-run `pnpm doctor` once with network access. Package versions were
+      aligned to Expo's own SDK 54 manifest, but Expo's API was unreachable from
+      the build environment, so `expo-doctor` itself never confirmed a clean run.
 
 **Backend decisions**
 

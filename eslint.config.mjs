@@ -29,6 +29,18 @@ const NO_DEEP_FEATURE_IMPORT = {
     "Import a feature only through its public API: `@/features/<name>`. Inside a feature, use relative imports.",
 };
 
+/**
+ * Dependencies point one way: features depend on the foundation, never the
+ * reverse. A `core/` module that reaches into a feature is no longer shared
+ * infrastructure — it is that feature's code in the wrong place, and it couples
+ * every other feature to it.
+ */
+const NO_FEATURE_IMPORT = {
+  group: ["@/features", "@/features/*", "@/features/*/*"],
+  message:
+    "Foundation code must not depend on a feature. Dependencies point features -> core/components, never back. Move the shared part into core/, or keep it in the feature.",
+};
+
 /** Only a feature's `api/` module may reach the network. */
 const NO_SUPABASE_IN_UI = [
   {
@@ -48,7 +60,12 @@ const NO_SUPABASE_IN_UI_PATTERNS = [
 export default defineConfig([
   expoConfig,
   {
-    ignores: ["dist/*", ".expo/*", "ignite/templates/**", "core/supabase/database.types.ts"],
+    ignores: [
+      "dist/*",
+      ".expo/*",
+      "tools/generator/templates/**",
+      "core/supabase/database.types.ts",
+    ],
   },
   {
     // Baseline for all application source.
@@ -96,7 +113,8 @@ export default defineConfig([
     },
   },
   {
-    // The shared design system never talks to the network.
+    // The shared design system never talks to the network, and never depends on
+    // a feature.
     files: ["components/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
@@ -105,10 +123,20 @@ export default defineConfig([
           paths: [...FORBIDDEN_LEGACY, ...NO_SUPABASE_IN_UI],
           patterns: [
             ...FORBIDDEN_LEGACY_PATTERNS,
-            NO_DEEP_FEATURE_IMPORT,
+            NO_FEATURE_IMPORT,
             ...NO_SUPABASE_IN_UI_PATTERNS,
           ],
         },
+      ],
+    },
+  },
+  {
+    // The foundation is shared by every feature, so it may depend on none of them.
+    files: ["core/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { paths: FORBIDDEN_LEGACY, patterns: [...FORBIDDEN_LEGACY_PATTERNS, NO_FEATURE_IMPORT] },
       ],
     },
   },

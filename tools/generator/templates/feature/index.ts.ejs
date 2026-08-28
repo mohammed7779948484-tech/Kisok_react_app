@@ -1,0 +1,22 @@
+---
+destinationDir: features/<%= props.feature %>
+filename: index.ts
+---
+/**
+ * Public API of the `<%= props.feature %>` feature.
+ *
+ * This file is the ONLY thing other features and routes may import from here.
+ * ESLint blocks `@/features/<%= props.feature %>/screens/...` and friends from outside this
+ * directory. Inside the feature, use relative imports.
+ *
+ * Export the minimum another feature genuinely needs. A small public surface is
+ * what lets several agents work in parallel without conflicting.
+ *
+ * Generating more capabilities later will NOT edit this file — add their exports
+ * yourself, so the generator never fights your changes.
+ */
+<% if (props.withScreen) { -%>
+export { <%= props.pascalCaseName %>Screen } from "./screens/<%= props.kebabCaseName %>-screen";
+<% } else { -%>
+export {};
+<% } -%>

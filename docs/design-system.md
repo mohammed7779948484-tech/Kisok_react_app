@@ -26,6 +26,11 @@ correctly with no edits.
 **Never hardcode a colour.** Use `bg-primary`, `text-muted-foreground`,
 `border-border`. A hex value breaks dark mode and any future re-theme.
 
+Sizing note: `metro.config.js` sets NativeWind's `inlineRem: 16`. The default is
+14, which would make every rem-based size ~12% smaller on the tablet than in the
+web preview and smaller than Tailwind documents. 16 keeps native, web and the
+Tailwind scale in agreement — and suits a screen read at arm's length.
+
 Radius scale: `rounded-sm|md|lg|xl`, derived from `--radius` (14px).
 Spacing: the Tailwind scale, plus `h-touch` / `w-touch` = **48dp**.
 

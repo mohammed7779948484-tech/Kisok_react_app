@@ -18,9 +18,26 @@ app/            Expo Router routes. Thin: routing and composition only.
 features/       Vertical slices. Each owns its data access, state, UI, and tests.
 core/           Shared foundation with no feature knowledge.
 components/     Shared design system and UX state components.
-ignite/         The feature generator.
+tools/          The generator and database tooling.
 supabase/       Database migrations — the data contract.
 ```
+
+## The one shared surface to coordinate on
+
+Feature work is designed to touch only its own directory plus a route file, and
+the lint rules keep it that way. There is one honest exception worth naming
+before it surprises anyone:
+
+**The customer shell.** Home, product discovery, search, the cart badge, and the
+long-press entry into hidden maintenance all live in one navigation chrome that
+several features appear in. Whoever builds it first owns
+`app/(customer)/_layout.tsx` and should say so on their PR; everyone else
+consumes it. Treat it as shared infrastructure from that point, and add to it
+additively rather than restructuring it.
+
+`app/(customer)/index.tsx` and `app/(preparation)/index.tsx` currently render a
+placeholder. The catalog and preparation features respectively replace them —
+one file each, no coordination needed beyond knowing it is coming.
 
 ### `app/` — routes
 

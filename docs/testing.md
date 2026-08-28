@@ -39,9 +39,9 @@ import {
 } from "@/core/testing";
 ```
 
-`renderWithProviders` deliberately does **not** include `AuthProvider` — it talks
-to Supabase. Tests that need a session should mock the client and wrap
-explicitly, or pass the profile into the component as a prop.
+`renderWithProviders` includes `AuthProvider` only when you pass
+`{ withAuth: true }`, because it talks to Supabase. Install the fake session
+first with `installMockAuth()`.
 
 ## Where to mock
 
@@ -134,7 +134,7 @@ Configuration files and pure glue do not need this ceremony. Use judgement.
 ## The generator is tested too
 
 ```bash
-pnpm ignite:smoke
+pnpm generate:smoke
 ```
 
 Generates a real feature, then proves it typechecks, lints, formats, and passes

@@ -14,23 +14,23 @@ The path from nothing to a reviewable PR.
 ## 2. Generate the slice
 
 ```bash
-pnpm ignite feature catalog --role=customer
+pnpm generate feature catalog --role=customer
 ```
 
 Common variations:
 
 ```bash
 # Cart: local state, no route of its own, no server data
-pnpm ignite feature cart --role=customer --layers=state,components,screens,tests --no-route
+pnpm generate feature cart --role=customer --layers=state,components,screens,tests --no-route
 
 # Preparation board: needs live order updates
-pnpm ignite feature preparation --role=preparation --realtime
+pnpm generate feature preparation --role=preparation --realtime
 
 # See the plan without writing anything
-pnpm ignite feature search --role=customer --dry-run
+pnpm generate feature search --role=customer --dry-run
 ```
 
-Full options in [`IGNITE.md`](../IGNITE.md).
+Full options in [`docs/generator.md`](../docs/generator.md).
 
 ## 3. Turn the TODO into a real plan
 

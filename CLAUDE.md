@@ -36,8 +36,11 @@ contract from it. In particular there is no `Flavor` — the model is
   migration, stop and say so.
 - **No prices, payments, delivery, shipping, public signup, or social login.**
   These are deliberate product boundaries.
-- **Use `pnpm ignite feature <name>` for a new feature.** Do not hand-roll a
-  feature directory.
+- **Use `pnpm generate` for new feature code.** `feature` scaffolds a slice;
+  `query`, `mutation`, `store`, `screen`, `component`, `schema`, `realtime` and
+  `route` add one piece each. Do not hand-roll a feature directory.
+- **Never call Supabase inside an `onAuthStateChange` callback.** The client
+  holds a lock there; it can deadlock the app.
 - **Read `features/<name>/TODO.md` first**, expand it into a real plan, and keep
   it updated with evidence as you work.
 
@@ -51,7 +54,8 @@ pnpm typecheck          # tsc --noEmit
 pnpm lint               # eslint (also enforces architecture boundaries)
 pnpm format:check       # prettier
 pnpm test               # jest + @testing-library/react-native
-pnpm ignite feature <n> # scaffold a feature vertical slice
+pnpm generate feature <n> --role=customer   # scaffold a feature vertical slice
+pnpm db:verify          # prove database.types.ts matches the migrations
 pnpm verify             # everything CI runs — do this before opening a PR
 ```
 

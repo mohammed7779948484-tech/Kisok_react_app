@@ -24,8 +24,10 @@ pnpm format:check   # prettier
 pnpm test           # jest + @testing-library/react-native
 pnpm verify         # everything CI runs
 
-pnpm ignite feature <name> --role=customer   # scaffold a feature
-pnpm db:types                                # regenerate Supabase types
+pnpm generate feature <name> --role=customer   # scaffold a feature slice
+pnpm generate query <feature> <name>          # add one capability later
+pnpm db:verify                                # types vs. migrations
+pnpm db:types                                 # regenerate from the linked project
 ```
 
 ## Layout
@@ -35,7 +37,7 @@ app/          Expo Router routes — thin, routing only
 features/     Vertical slices; each owns its data, state, UI, and tests
 core/         Shared foundation: supabase, query, auth, errors, logging, storage
 components/   Design system and shared UX states
-ignite/       The feature generator
+tools/        The generator and database tooling
 supabase/     Database migrations — the data contract
 docs/         Documentation and decision records
 ```

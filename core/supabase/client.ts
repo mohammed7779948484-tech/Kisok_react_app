@@ -45,7 +45,7 @@ let autoRefreshBound = false;
 
 /**
  * The app-wide client. Created lazily so that importing this module does not
- * require a valid environment — tests and the Ignite generator can load the
+ * require a valid environment — tests and the generator can load the
  * surrounding code without credentials.
  *
  * Only feature `api/` modules may call this. ESLint blocks it from routes,

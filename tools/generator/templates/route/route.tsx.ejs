@@ -1,0 +1,22 @@
+---
+destinationDir: <%= props.routeDir %>
+filename: NAME.tsx
+---
+import { <%= props.pascalCaseName %>Screen } from "@/features/<%= props.feature %>";
+
+/**
+ * Route only. Adding a file here is the whole registration step — there is no
+ * central route table to edit, which is what keeps parallel feature work from
+ * conflicting.
+ *
+ * Keep this file thin: no data loading, no state, no business logic. If you need
+ * route params, read them here with `useLocalSearchParams` and pass them to the
+ * screen as props.
+ *
+ * Remember to export `<%= props.pascalCaseName %>Screen` from
+ * `features/<%= props.feature %>/index.ts` — the generator does not edit that
+ * file, so it never fights your changes.
+ */
+export default function <%= props.pascalCaseName %>Route() {
+  return <<%= props.pascalCaseName %>Screen />;
+}

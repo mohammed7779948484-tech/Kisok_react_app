@@ -35,7 +35,7 @@ code.
 - **No secrets.** Ordinary validation uses placeholder Supabase values, so any
   contributor's PR gets the same signal. `expo export` needs no login.
 - **The web bundle is primed first.** `pnpm export:web` runs
-  `ignite/scripts/prime-nativewind-cache.mjs` before bundling. NativeWind writes
+  `tools/prime-nativewind-cache.mjs` before bundling. NativeWind writes
   its CSS cache _during_ the build, but Metro resolves it beforehand, so the
   first export after a fresh install fails on a file that does not exist yet.
   This only ever bites CI and a fresh clone — never a warm dev machine — which

@@ -70,7 +70,7 @@ features/       Vertical slices. Each owns its api, state, UI, and tests.
 core/           Shared foundation: supabase, query, auth, errors, logging,
                 storage, env, responsive, testing.
 components/     Shared design system and UX states.
-ignite/         The feature generator.
+tools/          The generator and database tooling.
 supabase/       Database migrations — the data contract.
 docs/           Detailed documentation and decision records.
 ```
@@ -107,7 +107,9 @@ failure, and the fix is to move the code — not to add a disable comment.
    imports.
 4. **Server state lives in TanStack Query. Client state lives in Zustand.**
    Never mirror database data into a store.
-5. **Legacy stacks stay gone.** tRPC, Drizzle, MySQL, Express, and axios are
+5. **The foundation never depends on a feature.** `core/` and `components/` are
+   blocked from importing `@/features/*` at all. Dependencies point one way.
+6. **Legacy stacks stay gone.** tRPC, Drizzle, MySQL, Express, and axios are
    blocked at the lint level.
 
 ### Why the boundaries exist
@@ -158,6 +160,10 @@ through `get_customer_catalog()`.
 
 ## 5. Errors, logging, state
 
+- **Auth:** `useAuth()` from `@/core/auth`. Never call Supabase from inside an
+  `onAuthStateChange` callback — the client holds a lock there and it can
+  deadlock. `AuthProvider` already separates listening from resolving; follow
+  that shape if you add auth-reactive work.
 - **Errors:** convert everything to `AppError` at the `api/` boundary
   (`toAppError`). Branch on `error.kind` in UI. Render `error.userMessage`;
   never render `technicalMessage`. Never write
@@ -191,8 +197,14 @@ Inspect everything at `/ui-lab` in a dev build. Details:
 ## 7. Feature workflow
 
 ```bash
-pnpm ignite feature catalog --role=customer
+pnpm generate feature catalog --role=customer
 ```
+
+The generator is composable — a feature is assembled from capabilities
+(`schema`, `query`, `mutation`, `store`, `component`, `screen`, `realtime`,
+`route`), so it fits a read-heavy catalog, a local-state cart, a mutation-heavy
+checkout and a Realtime board equally well. Add pieces later with
+`pnpm generate query catalog product-detail`.
 
 Then:
 
@@ -207,7 +219,7 @@ Then:
 7. Open a focused PR.
 
 Full walkthrough: [`docs/feature-workflow.md`](./docs/feature-workflow.md).
-Generator reference: [`IGNITE.md`](./IGNITE.md).
+Generator reference: [`docs/generator.md`](./docs/generator.md).
 
 ### Changing the architecture
 

@@ -18,6 +18,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # PostgreSQL 16 ships on the GitHub runner image but is not on PATH.
+  KISOK_PG_BIN: /usr/lib/postgresql/16/bin
   # Expo reads these at bundle time. They are placeholders so `expo export`
   # can run; no real project is contacted and nothing is deployed.
   EXPO_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
@@ -58,11 +60,17 @@ jobs:
       - name: Test
         run: pnpm test:ci
 
+      # Applies the migrations to a throwaway PostgreSQL and proves the checked-in
+      # database types still match the real schema. Also proves the migrations
+      # apply cleanly, which nothing else here does.
+      - name: Verify database types against migrations
+        run: pnpm db:verify
+
       # Proves the generator still emits code that compiles, lints, formats and
       # passes its own tests. Without this, template rot is invisible until an
       # agent hits it.
-      - name: Ignite generator smoke test
-        run: pnpm ignite:smoke
+      - name: Generator smoke test
+        run: pnpm generate:smoke
 
       - name: Summarise
         if: always()
@@ -126,32 +134,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # ADVISORY, and genuinely so: the step captures expo-doctor's report into
-      # the job summary and always succeeds.
-      #
-      # expo-doctor compares installed versions against Expo's hosted
-      # compatibility manifest, so it goes red for reasons outside a PR's
-      # control — a network hiccup, or Expo publishing a new patch release the
-      # hour before. `continue-on-error` is not enough: the check run still
-      # reports failure, and a check that is permanently red teaches every
-      # contributor to ignore red.
+      # Fails on a real incompatibility; treats an unreachable Expo service as
+      # inconclusive. See tools/doctor.mjs — an always-green check would have
+      # swallowed a genuine SDK mismatch.
       - name: Run expo-doctor
-        run: |
-          set +e
-          npx --yes expo-doctor > doctor.log 2>&1
-          status=$?
-          {
-            echo "### Expo doctor"
-            echo ""
-            if [ "$status" -eq 0 ]; then
-              echo "No issues reported."
-            else
-              echo "Advisory findings — these do not block the PR:"
-              echo ""
-              echo '```'
-              cat doctor.log
-              echo '```'
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-          cat doctor.log
-          exit 0
+        run: pnpm doctor

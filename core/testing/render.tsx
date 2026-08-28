@@ -3,6 +3,8 @@ import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { PortalHost } from "@rn-primitives/portal";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { AuthProvider } from "@/core/auth";
+
 import { createTestQueryClient } from "./query";
 
 /**
@@ -14,15 +16,17 @@ import { createTestQueryClient } from "./query";
  *
  * Returns a promise: RNTL v14's `render` is async, so `await` this call.
  *
- * Note `AuthProvider` is NOT included: it talks to Supabase. Tests that need a
- * session should mock the client with `installMockSupabase` and wrap in
- * `AuthProvider` explicitly, or pass the profile into the component under test.
+ * `AuthProvider` is opt-in via `withAuth`, because it talks to Supabase. Install
+ * a fake session first — `installMockAuth()` from `@/core/testing` — then pass
+ * `{ withAuth: true }`. Most feature screens sit behind the auth gate, so this is
+ * the common case.
  */
 export async function renderWithProviders(
   ui: React.ReactElement,
-  options?: RenderOptions & { queryClient?: QueryClient },
+  options?: RenderOptions & { queryClient?: QueryClient; withAuth?: boolean },
 ) {
   const queryClient = options?.queryClient ?? createTestQueryClient();
+  const withAuth = options?.withAuth ?? false;
 
   function Wrapper({ children }: { children: React.ReactNode }) {
     return (
@@ -33,7 +37,7 @@ export async function renderWithProviders(
         }}
       >
         <QueryClientProvider client={queryClient}>
-          {children}
+          {withAuth ? <AuthProvider>{children}</AuthProvider> : children}
           <PortalHost />
         </QueryClientProvider>
       </SafeAreaProvider>
