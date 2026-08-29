@@ -106,7 +106,31 @@ jobs:
           disable-animations: true
           script: |
             adb install -r android/app/build/outputs/apk/release/app-release.apk
+            # Clear the log so what follows is only this run, then capture
+            # everything on failure: a Maestro timeout tells you a view was not
+            # found, never why. Without this the only way to debug is to guess.
+            adb logcat -c || true
+            set +e
             maestro test .maestro/flows --format junit --output maestro-report.xml
+            status=$?
+            set -e
+            if [ $status -ne 0 ]; then
+              echo "::group::What was actually on screen"
+              adb exec-out screencap -p > /tmp/failure.png || true
+              adb shell dumpsys activity activities \
+                | grep -E "mResumedActivity|mFocusedApp|topResumedActivity" || true
+              echo "::endgroup::"
+              echo "::group::App logcat (crashes, JS errors, Expo)"
+              adb logcat -d -v brief \
+                -s ReactNative:V ReactNativeJS:V AndroidRuntime:E ExpoModulesCore:V expo:V \
+                | tail -300 || true
+              echo "::endgroup::"
+              echo "::group::Anything the app process logged"
+              adb logcat -d -v brief | grep -iE "kisok|hermes|fatal|exception" | tail -200 || true
+              echo "::endgroup::"
+              cp /tmp/failure.png . 2>/dev/null || true
+            fi
+            exit $status
 
       - name: Upload Maestro report
         if: always()
@@ -115,6 +139,7 @@ jobs:
           name: maestro-report
           path: |
             maestro-report.xml
+            failure.png
             ~/.maestro/tests/**
           retention-days: 7
           if-no-files-found: warn

@@ -85,17 +85,20 @@ no longer had any relationship to the repository.
 
 **Needs a real environment**
 
-- [ ] **Regenerate `core/supabase/database.types.ts`** against the live project
-      with `pnpm db:types`. The committed file was derived by hand from the
-      migrations so CI can typecheck without credentials; it has not been
-      verified against a real database.
-- [ ] **Verify on an Android tablet.** Everything here was verified on web and in
-      the test suite. Native behaviour — splash, adaptive icon, orientation
-      changes, safe areas, AsyncStorage persistence, Realtime over a real
-      connection — is unverified.
-- [ ] Re-run `pnpm doctor` once with network access. Package versions were
-      aligned to Expo's own SDK 54 manifest, but Expo's API was unreachable from
-      the build environment, so `expo-doctor` itself never confirmed a clean run.
+- [x] **`core/supabase/database.types.ts` is genuinely generated.** Produced by
+      Supabase's own generator against the deployed project, and `pnpm db:verify`
+      proves it matches the migrations on every CI run — in required mode, so
+      "could not run" fails rather than passing quietly.
+- [x] **`pnpm doctor` completes cleanly in CI**, where Expo's compatibility
+      services are reachable. It distinguishes a real incompatibility from an
+      unreachable service, so it cannot go green by failing to check.
+- [ ] **Verify on a physical Android tablet.** CI builds a release APK and runs
+      the Maestro smoke flow on an emulator, but splash, adaptive icon, real
+      orientation changes, AsyncStorage across a genuine cold start, and Realtime
+      over a real connection still need the actual device.
+- [ ] **Point the app at the deployed database and exercise it.** The types come
+      from that project, but no screen has performed a real RPC against it with a
+      real session.
 
 **Backend decisions**
 

@@ -18,6 +18,13 @@ it, which is exactly the failure mode you would predict.
 "Regenerate it before shipping" is not a control. Nobody re-verifies a file that
 looks generated.
 
+**Update.** The types are no longer hand-derived: they were later produced by
+Supabase's own generator against the deployed project and committed verbatim.
+That did not make this decision obsolete — it confirmed it. The hand-derived
+file was missing two RPCs that the migrations define, which the verifier had not
+caught because it only compared in one direction. Generation fixes the file;
+only the check keeps it correct as migrations change.
+
 ## Decision
 
 Keep the checked-in types file, and **prove it matches the schema on every CI

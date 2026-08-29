@@ -1,9 +1,11 @@
 import "@/global.css";
 import "react-native-reanimated";
 
+import { ThemeProvider } from "@react-navigation/native";
 import { PortalHost } from "@rn-primitives/portal";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useColorScheme } from "nativewind";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -11,6 +13,7 @@ import { AppErrorBoundary } from "@/components/app/error-boundary";
 import { EnvGate } from "@/components/app/env-gate";
 import { AuthProvider, useAuth } from "@/core/auth";
 import { QueryProvider } from "@/core/query";
+import { NAV_THEME } from "@/core/theme";
 import { StartupScreen } from "@/features/auth";
 
 export const unstable_settings = { anchor: "index" };
@@ -62,22 +65,29 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
+  // Read from NativeWind so the navigator's own surfaces follow the same colour
+  // scheme as the Tailwind classes, instead of React Navigation painting its
+  // white default behind every screen transition.
+  const { colorScheme } = useColorScheme();
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        {/* Outermost, so a throw in any provider or screen shows a recovery
+        <ThemeProvider value={NAV_THEME[colorScheme === "dark" ? "dark" : "light"]}>
+          {/* Outermost, so a throw in any provider or screen shows a recovery
             screen rather than leaving a white tablet in a shop. */}
-        <AppErrorBoundary>
-          <EnvGate>
-            <QueryProvider>
-              <AuthProvider>
-                <RootNavigator />
-                {/* Hosts dialogs and adaptive sheets. Must be mounted once, here. */}
-                <PortalHost />
-              </AuthProvider>
-            </QueryProvider>
-          </EnvGate>
-        </AppErrorBoundary>
+          <AppErrorBoundary>
+            <EnvGate>
+              <QueryProvider>
+                <AuthProvider>
+                  <RootNavigator />
+                  {/* Hosts dialogs and adaptive sheets. Must be mounted once, here. */}
+                  <PortalHost />
+                </AuthProvider>
+              </QueryProvider>
+            </EnvGate>
+          </AppErrorBoundary>
+        </ThemeProvider>
         <StatusBar style="auto" />
       </SafeAreaProvider>
     </GestureHandlerRootView>

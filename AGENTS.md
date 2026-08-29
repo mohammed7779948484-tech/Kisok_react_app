@@ -94,7 +94,7 @@ features/<name>/
 Generate only what the feature needs. Empty architectural folders are not free:
 they teach the next agent that this is the expected shape.
 
-### The five boundary rules
+### The boundary rules
 
 These are enforced by ESLint, not just documented. A violation is a build
 failure, and the fix is to move the code — not to add a disable comment.
