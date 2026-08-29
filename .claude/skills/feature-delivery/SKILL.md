@@ -51,6 +51,12 @@ This creates `index.ts` and `docs/` — and deliberately nothing else. Do not pa
 `--with=` yet: you do not know the shape of the feature until you have planned
 it, and generated code you then delete is worse than none.
 
+**Every `docs/…` path below means `features/<name>/docs/…`**, never the
+repository's root `docs/`. The five control documents — `brief.md`, `plan.md`,
+`todo.md`, `worklog.md`, `review.md` — live inside the feature, so two agents
+building two features never write to the same file. Root `docs/` is the
+repository's own documentation and is not yours to edit for a feature.
+
 ### 2. Research before deciding
 
 Delegate to research subagents **in parallel** when their scopes are genuinely
