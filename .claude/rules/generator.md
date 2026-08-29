@@ -35,7 +35,7 @@ planned file is invalid, nothing is written.
 
 ## Rules for changing templates
 
-- **Run `pnpm generate:smoke` after every change.** It generates six materially
+- **Run `pnpm generate:smoke` after every change.** It generates materially
   different feature shapes (workspace-only, pure model, read-heavy,
   local-state-heavy, mutation-heavy, realtime) plus follow-up capabilities, and
   proves the output typechecks, lints with zero warnings, is formatted, and

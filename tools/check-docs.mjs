@@ -73,8 +73,16 @@ const OBSOLETE = [
     fix: "KISOK has no pricing. Use a real KISOK concept: availability-badge, stock-status, variant-summary, option-selector, catalog-filter, order-status.",
   },
   {
-    pattern: /four\s+(?:materially\s+)?different\s+feature\s+shapes/i,
+    pattern:
+      /\b(?:two|three|four|five|six|seven|eight|\d+)\s+(?:materially\s+)?different\s+feature\s+shapes/i,
     fix: "Do not hard-code the number of generator smoke shapes; say 'the generator smoke shapes'.",
+  },
+  {
+    // A debug APK has no embedded JS bundle, so the E2E job could never have
+    // reached the app. Prose that still says it assembles one teaches the
+    // reasoning the release-APK change exists to refute.
+    pattern: /assembles?\s+a\s+debug\s+APK/i,
+    fix: 'The Android E2E job assembles a RELEASE APK. A debug APK carries no JS bundle (`debuggableVariants` defaults to ["debug"]) and would need Metro.',
   },
   {
     // `generate feature` creates a workspace, not an implementation. Describing
@@ -84,8 +92,28 @@ const OBSOLETE = [
   },
 ];
 
-/** Documentation that describes how to work in this repository. */
-const ROOTS = ["docs", ".claude", "AGENTS.md", "CLAUDE.md", "README.md", "todo.md", "design.md"];
+/**
+ * Documentation that describes how to work in this repository.
+ *
+ * `tools/generator/templates` and `features` are here because the documents a
+ * feature is actually born from — the generated brief, plan, todo and worklog —
+ * are documentation too. A stale pipeline in a `.md.ejs` template is worse than
+ * one in `docs/`: it is copied into every future feature.
+ */
+const ROOTS = [
+  "docs",
+  ".claude",
+  "features",
+  "tools/generator/templates",
+  "AGENTS.md",
+  "CLAUDE.md",
+  "README.md",
+  "todo.md",
+  "design.md",
+];
+
+/** Markdown, and the EJS templates that render markdown. */
+const isDocument = (file) => file.endsWith(".md") || file.endsWith(".md.ejs");
 
 /**
  * Deliberate exceptions, with a reason. A historical record is allowed to
@@ -125,7 +153,7 @@ function walk(target) {
   // Resolves symlinks, so a vendored skill linked into .claude/skills is
   // recognised as vendored rather than scanned as if it were ours.
   if (isVendored(absolute)) return [];
-  if (fs.statSync(absolute).isFile()) return absolute.endsWith(".md") ? [absolute] : [];
+  if (fs.statSync(absolute).isFile()) return isDocument(absolute) ? [absolute] : [];
 
   return fs
     .readdirSync(absolute, { withFileTypes: true })

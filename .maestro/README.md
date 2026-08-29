@@ -24,6 +24,11 @@ are slow and are gated behind a label for that reason.
   element in the component; it is part of the contract the flow depends on.
 - **Prepare state explicitly.** `clearState: true` on launch. A flow that only
   passes on a device someone already used is not a test.
+- **Write the `appId` out; never interpolate it.** Maestro substitutes `${...}`
+  only from values passed with `-e`, so a shell environment variable is left as
+  a literal and every selector in the flow silently targets nothing.
+  `pnpm check:e2e-appid` reads `BUNDLE_ID` from `app.config.ts` and fails the
+  build if a flow interpolates its appId or names a different app.
 - **No secrets in a flow.** Credentials come from environment variables the
   runner injects (`MAESTRO_*`); never commit an account.
 - Keep flows **independent** — any order, any subset.

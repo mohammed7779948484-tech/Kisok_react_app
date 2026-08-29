@@ -74,8 +74,10 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider value={NAV_THEME[colorScheme === "dark" ? "dark" : "light"]}>
-          {/* Outermost, so a throw in any provider or screen shows a recovery
-            screen rather than leaving a white tablet in a shop. */}
+          {/* Wraps every provider and screen, so a throw anywhere below shows a
+            recovery screen rather than leaving a white tablet in a shop. It sits
+            INSIDE ThemeProvider deliberately: the fallback is then painted in
+            the app's own colours instead of React Navigation's white default. */}
           <AppErrorBoundary>
             <EnvGate>
               <QueryProvider>

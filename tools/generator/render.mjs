@@ -286,8 +286,12 @@ export function writeFiles(files, { root, force = false, dryRun = false }) {
         });
       }
 
-      fs.writeFileSync(file.absolute, file.contents, "utf8");
+      // Record BEFORE writing, not after. A write that throws part-way
+      // (ENOSPC, EIO) still leaves a truncated file on disk; recording it
+      // afterwards would mean the rollback never learned it existed, and the
+      // "the repository is unchanged" promise would be a lie.
       if (!existed) createdFiles.push(file.absolute);
+      fs.writeFileSync(file.absolute, file.contents, "utf8");
       written.push(file.destination);
     }
   } catch (error) {

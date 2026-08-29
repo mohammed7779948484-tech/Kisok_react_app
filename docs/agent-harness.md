@@ -67,6 +67,16 @@ frontmatter, so they are in context before the agent's first turn instead of
 depending on it remembering to load them. Task-dependent skills stay opt-in
 through the Skill tool.
 
+`skills:` is a supported subagent frontmatter field — verified against the
+official subagent documentation on **2026-08-29**, which lists it alongside
+`name`, `description`, `tools`, `disallowedTools`, `model`, `permissionMode`,
+`maxTurns`, `mcpServers`, `hooks`, `memory`, `background`, `effort`,
+`isolation`, `color` and `initialPrompt`, and defines it as injecting the full
+skill content at startup. Because a silently ignored field would leave an agent
+with no instruction at all, each agent body also says to load its skill with the
+Skill tool if it is not already in context. That fallback costs one sentence and
+removes the whole failure mode.
+
 | Agent                                   | Preloaded                 | Job                                 | Deliberately cannot                                    |
 | --------------------------------------- | ------------------------- | ----------------------------------- | ------------------------------------------------------ |
 | `feature-implementer`                   | `test-driven-development` | One bounded task, returns evidence  | Certify its own task, or widen its file scope          |

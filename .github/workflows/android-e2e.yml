@@ -2,10 +2,10 @@ name: Android E2E
 
 # TIERED CI, like the Android build.
 #
-# This boots an emulator, installs a debug build and drives the real UI with
-# Maestro. It is minutes of runtime, so it runs only when asked: add the `e2e`
-# label to a pull request, or dispatch it manually. Paying that cost on a docs
-# change would train everyone to ignore the result.
+# This boots an emulator, installs a self-contained RELEASE build and drives the
+# real UI with Maestro. It is minutes of runtime, so it runs only when asked:
+# add the `e2e` label to a pull request, or dispatch it manually. Paying that
+# cost on a docs change would train everyone to ignore the result.
 on:
   pull_request:
     types: [labeled, synchronize]
@@ -104,33 +104,11 @@ jobs:
           profile: pixel_tablet
           ram-size: 4096M
           disable-animations: true
-          script: |
-            adb install -r android/app/build/outputs/apk/release/app-release.apk
-            # Clear the log so what follows is only this run, then capture
-            # everything on failure: a Maestro timeout tells you a view was not
-            # found, never why. Without this the only way to debug is to guess.
-            adb logcat -c || true
-            set +e
-            maestro test .maestro/flows --format junit --output maestro-report.xml
-            status=$?
-            set -e
-            if [ $status -ne 0 ]; then
-              echo "::group::What was actually on screen"
-              adb exec-out screencap -p > /tmp/failure.png || true
-              adb shell dumpsys activity activities \
-                | grep -E "mResumedActivity|mFocusedApp|topResumedActivity" || true
-              echo "::endgroup::"
-              echo "::group::App logcat (crashes, JS errors, Expo)"
-              adb logcat -d -v brief \
-                -s ReactNative:V ReactNativeJS:V AndroidRuntime:E ExpoModulesCore:V expo:V \
-                | tail -300 || true
-              echo "::endgroup::"
-              echo "::group::Anything the app process logged"
-              adb logcat -d -v brief | grep -iE "kisok|hermes|fatal|exception" | tail -200 || true
-              echo "::endgroup::"
-              cp /tmp/failure.png . 2>/dev/null || true
-            fi
-            exit $status
+          # ONE line, so it is ONE shell. This action runs the script line by
+          # line, each in its own `sh -c`: an inline `set +e` does not survive
+          # to the next line and `$?` reads the wrong shell, which is why an
+          # earlier version's failure diagnostics silently never ran.
+          script: bash .github/scripts/run-maestro.sh
 
       - name: Upload Maestro report
         if: always()

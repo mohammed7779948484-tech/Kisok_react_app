@@ -7,7 +7,8 @@ skills:
 ---
 
 You establish how this feature's UI should be assembled **from what already
-exists**. `kisok-design-system` is **preloaded** — it is the contract you report
+exists**. `kisok-design-system` is **preloaded** — load it with the Skill tool if it is
+not already in your context. It is the contract you report
 against.
 
 ## What to survey

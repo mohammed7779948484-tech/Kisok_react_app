@@ -20,6 +20,10 @@ const CASES = [
   { message: "fix(checkout): reuse client_request_id on retry", valid: true },
   { message: "feat(preparation): show the order board", valid: true },
   { message: "feat(order-status): surface the ready state", valid: true },
+  // A scope must be able to be a feature directory name verbatim, and the
+  // generator permits digits. commitlint's built-in kebab-case does not.
+  { message: "feat(order-v2): surface the ready state", valid: true },
+  { message: "feat(catalog2): add product list", valid: true },
   // Infrastructure scopes keep working.
   { message: "fix(ci): make the android e2e job boot the app", valid: true },
   { message: "chore(deps): bump expo", valid: true },
@@ -32,16 +36,26 @@ const CASES = [
   // Shape is still enforced, so history stays greppable.
   { message: "feat(Catalog Screen): add list", valid: false },
   { message: "feat(CATALOG): add list", valid: false },
-  { message: "SHOUTING SUBJECT", valid: false },
+  { message: "feat(cat_alog): add list", valid: false },
+  // With a type and scope present, this can only fail on subject-case — so the
+  // guard actually pins that rule. Bare "SHOUTING SUBJECT" fails on
+  // type-empty/subject-empty instead and would pass even with subject-case off.
+  { message: "feat: SHOUTING SUBJECT", valid: false },
   { message: "made some changes", valid: false },
 ];
 
-const { rules, parserPreset } = await load({}, { cwd: process.cwd() });
-const parserOpts = parserPreset?.parserOpts;
+const { rules, parserPreset, plugins } = await load({}, { cwd: process.cwd() });
+// `plugins` carries the inline scope-shape rule. Without it commitlint throws
+// "Found rules without implementation", so this also proves the rule is really
+// wired up rather than silently ignored.
+const options = {
+  ...(parserPreset?.parserOpts ? { parserOpts: parserPreset.parserOpts } : {}),
+  ...(plugins ? { plugins } : {}),
+};
 
 const failures = [];
 for (const { message, valid } of CASES) {
-  const report = await lint(message, rules, parserOpts ? { parserOpts } : {});
+  const report = await lint(message, rules, options);
   if (report.valid !== valid) {
     const detail = report.errors.map((error) => error.message).join("; ") || "(accepted)";
     failures.push(

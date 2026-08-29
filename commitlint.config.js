@@ -12,19 +12,43 @@
  * agent writes `feat(catalog):` on day one with no shared edit, while
  * `feat(Catalog Screen):` is still rejected, so history stays greppable.
  */
+
+/**
+ * The shape a generated feature directory has, character for character —
+ * `tools/generator/render.mjs` validates names against this same expression.
+ *
+ * commitlint's built-in `kebab-case` is NOT this: it rejects digits, so a
+ * feature legitimately generated as `order-v2` could not use its own directory
+ * name as its commit scope. A scope you cannot derive from the directory
+ * defeats the point of having one.
+ */
+const FEATURE_NAME_SHAPE = /^[a-z0-9][a-z0-9-]*$/;
+
 module.exports = {
   extends: ["@commitlint/config-conventional"],
+  plugins: [
+    {
+      rules: {
+        "scope-feature-shape": ({ scope }) => [
+          scope === null || scope === undefined || FEATURE_NAME_SHAPE.test(scope),
+          `scope must look like a feature directory: lowercase letters, digits and hyphens, ` +
+            `starting with a letter or digit (e.g. catalog, order-status, order-v2)`,
+        ],
+      },
+    },
+  ],
   rules: {
-    // Lower-case, digits and hyphens: the same shape as a feature directory, so
-    // `git log --grep "(catalog)"` finds the feature's history.
-    "scope-case": [2, "always", "kebab-case"],
+    // Replaces `scope-case`, which cannot express "digits are allowed".
+    "scope-case": [0],
+    "scope-feature-shape": [2, "always"],
 
     /**
      * config-conventional forbids a sentence-case subject, which also rejects a
      * subject legitimately starting with a proper noun — "Android E2E …",
      * "Supabase session …", "Metro config …". That is a daily papercut with no
      * upside, and it teaches people to reach for --no-verify, which disables
-     * the checks that matter. Only Upper-Case (SHOUTING) stays rejected.
+     * the checks that matter. Only Upper-Case (SHOUTING) stays rejected;
+     * Start Case is permitted as a consequence, which is an acceptable trade.
      */
     "subject-case": [2, "never", ["upper-case"]],
 

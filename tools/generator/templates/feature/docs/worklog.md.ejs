@@ -11,16 +11,33 @@ both belong here — a task that failed twice is a signal worth keeping.
 
 ## Template
 
+The entry evidence depends on the task's declared mode, so record the mode
+first. `behavior`, `bug` and `behavior-change` open with RED; `refactor` opens
+with a named BASELINE shown green; `config` has no RED at all — run the thing
+it configures and paste the result under VERIFICATION.
+
 ```
 ### T01 — <objective>
+MODE: behavior | bug | behavior-change | refactor | config
 
-RED
+RED               (behavior | bug | behavior-change)
   $ <command>
-  <the failure, and why it is the RIGHT failure>
+  <the failure, and why it is the RIGHT failure — not a typo or bad import>
 
-GREEN
+BASELINE          (refactor)
+  $ <command naming the existing tests being preserved>
+  <green, before any change>
+
+IMPLEMENT
+  <the smallest change that does it>
+
+GREEN             (behavior | bug | behavior-change | refactor)
   $ <command>
   <pass>
+
+VERIFICATION      (config)
+  $ <the thing it configures, actually run>
+  <output proving the configuration works — not that a file contains a string>
 
 AFFECTED CHECKS
   $ <typecheck / lint / focused tests>
@@ -31,6 +48,9 @@ DIFF
 
 GATE: PASS | FAIL
 ```
+
+Delete the lines that do not apply to the mode. An empty RED heading under a
+`config` task is the fabricated evidence this shape exists to prevent.
 
 ## Entries
 

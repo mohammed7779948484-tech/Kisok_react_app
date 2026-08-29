@@ -87,6 +87,29 @@ The token contract matches, so an added component themes correctly. Review what
 lands and adapt it to the conventions here — these are our components once
 vendored, not a dependency.
 
+#### `components.json` is a contract with the CLI — do not let it rewrite it
+
+Two fields in that file carry KISOK-specific meaning:
+
+- `aliases.lib` is `@/core`, not the CLI's default. It is why the CLI's theme
+  check looks for `core/theme.ts` (a flat file, matching `core/utils.ts`) and
+  why an added component's imports resolve here at all.
+- `aliases.components` and `aliases.ui` keep vendored components in
+  `components/ui/`.
+
+Run `npx @react-native-reusables/cli@latest doctor` before using the CLI. If the
+file is invalid for the installed CLI version, the doctor **offers to rewrite
+it** — and its rewrite uses the default aliases, which silently breaks every
+`@/core` import an added component makes. Accept a rewrite only after checking
+the aliases survive; otherwise add the fields it names by hand. `rsc`, `tsx`,
+`hooks` and `iconLibrary` are present for exactly that reason, and `platform`
+was removed because the current CLI rejects it.
+
+`NAV_THEME` in `core/theme.ts` is the name the doctor looks for. It restates the
+colour tokens because React Navigation cannot read CSS variables;
+`core/__tests__/theme.test.ts` parses `global.css` and fails if the two copies
+diverge, or if a new token is added to the CSS and not mirrored.
+
 ## Responsive
 
 Tablet-first. The Tailwind breakpoints and `useLayout()` use the same

@@ -20,7 +20,8 @@ Read, in this order:
    the feature's `model/` schemas
 4. `AGENTS.md` and the rules in `.claude/rules/` covering the files you will edit
 
-`test-driven-development` is **preloaded** — it is in your context already, and
+`test-driven-development` is **preloaded** — it is in your context already (if
+it is not, load it with the Skill tool first), and
 it defines the five verification modes. Load `kisok-design-system` for UI work
 and `kisok-react-native-rules` for lists, animation or performance; those are
 task-dependent, so they stay opt-in rather than costing every task.

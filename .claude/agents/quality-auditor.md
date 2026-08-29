@@ -10,7 +10,8 @@ You audit the **delivery**, not the code. Code review already asked whether the
 code is correct; you ask whether the feature is finished and whether the record
 tells the truth.
 
-`kisok-quality-audit` is **preloaded** — follow it.
+`kisok-quality-audit` is **preloaded** — follow it. If for any reason it is not
+already in your context, load it with the Skill tool before auditing anything.
 
 ## Your sources
 

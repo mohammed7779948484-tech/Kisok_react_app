@@ -2,11 +2,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { planRequest, run } from "./cli.mjs";
-import { caseProps, parseFrontMatter } from "./render.mjs";
+import { caseProps, parseFrontMatter, writeFiles } from "./render.mjs";
 
 /**
  * Generator quality gate.
@@ -290,6 +291,24 @@ check("a feature is a workspace by default: public API plus control documents", 
     "features/bare/docs/worklog.md",
     "features/bare/index.ts",
   ]);
+});
+// The control documents are the workflow a feature agent actually follows. If
+// one of them keeps an older shape — a bare RED heading with no mode, say —
+// every future feature inherits the contradiction the harness exists to remove.
+check("every control document teaches the same five verification modes", () => {
+  const MODES = ["behavior", "bug", "behavior-change", "refactor", "config"];
+  const rendered = planRequest({
+    capability: "feature",
+    feature: "modes",
+    options: { role: "shared" },
+  }).filter((file) => /docs\/(plan|todo|worklog)\.md$/.test(file.destination));
+
+  assert.equal(rendered.length, 3, "expected plan, todo and worklog templates");
+
+  for (const file of rendered) {
+    const missing = MODES.filter((mode) => !file.contents.includes(mode));
+    assert.deepEqual(missing, [], `${file.destination} never names: ${missing.join(", ")}`);
+  }
 });
 check("a component is feature-wide by default and screen-local with --screen", () => {
   const wide = planRequest({
@@ -611,6 +630,78 @@ try {
 }
 
 check("the force fixture was cleaned up", () => assert.ok(!fs.existsSync(forceDir)));
+
+// ---------------------------------------------------------------------------
+// A write that fails PART-WAY THROUGH A NEW FILE must leave nothing behind.
+//
+// The --force case above sabotages an existing destination, so the throw comes
+// from the pre-read. This one fails inside writeFileSync itself, after bytes
+// have already landed — the case where "the repository is unchanged" is
+// easiest to claim falsely.
+// ---------------------------------------------------------------------------
+console.log("\npartial-write rollback");
+
+const partialRoot = fs.mkdtempSync(path.join(os.tmpdir(), "kisok-partial-"));
+const realWriteFileSync = fs.writeFileSync;
+
+try {
+  let writes = 0;
+  fs.writeFileSync = (target, data, ...rest) => {
+    writes += 1;
+    if (writes === 2) {
+      // Land bytes first, then fail: a truncated file, not an absent one.
+      realWriteFileSync.call(fs, target, "PARTIAL", "utf8");
+      const error = new Error("ENOSPC: no space left on device");
+      error.code = "ENOSPC";
+      throw error;
+    }
+    return realWriteFileSync.call(fs, target, data, ...rest);
+  };
+
+  let threw = null;
+  try {
+    writeFiles(
+      [
+        { destination: "features/smoke-partial/a.ts", contents: "export const a = 1;\n" },
+        { destination: "features/smoke-partial/b.ts", contents: "export const b = 2;\n" },
+      ],
+      { root: partialRoot },
+    );
+  } catch (error) {
+    threw = error;
+  }
+
+  fs.writeFileSync = realWriteFileSync;
+
+  check("a partial write reports the failure", () => {
+    assert.ok(threw, "writeFiles reported success despite a failed write");
+    assert.match(threw.message, /rolled back/i);
+  });
+
+  check("the truncated file is removed", () =>
+    assert.ok(
+      !fs.existsSync(path.join(partialRoot, "features/smoke-partial/b.ts")),
+      "a half-written file survived the rollback",
+    ),
+  );
+
+  check("the earlier file is removed too", () =>
+    assert.ok(
+      !fs.existsSync(path.join(partialRoot, "features/smoke-partial/a.ts")),
+      "a file written before the failure survived the rollback",
+    ),
+  );
+
+  check("no scaffolding directory is left behind", () =>
+    assert.ok(
+      !fs.existsSync(path.join(partialRoot, "features/smoke-partial")),
+      "an empty generated directory survived the rollback",
+    ),
+  );
+} finally {
+  fs.writeFileSync = realWriteFileSync;
+  fs.rmSync(partialRoot, { recursive: true, force: true });
+}
 
 if (failures > 0) {
   console.error(`\n${failures} generator check(s) failed.\n`);

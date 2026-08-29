@@ -88,8 +88,18 @@ maestro test .maestro/flows/smoke-app-launches.yaml    # one
 ```
 
 In CI: add the **`e2e`** label to a pull request, or dispatch the _Android E2E_
-workflow. It prebuilds, assembles a debug APK, boots a tablet-profile emulator
-and runs every flow.
+workflow. It prebuilds, assembles a **release** APK, boots a tablet-profile
+emulator and runs every flow.
+
+Release, not debug: a debug APK carries no JS bundle (`debuggableVariants`
+defaults to `["debug"]`), so it needs a Metro server and Maestro would only ever
+time out. If you change that step, keep the check that asserts the APK contains
+`assets/index.android.bundle`.
+
+Write the `appId` out in the flow. Maestro substitutes `${...}` only from values
+passed with `-e`, so a shell environment variable is left as a literal and every
+selector silently targets nothing. `pnpm check:e2e-appid` fails the build if a
+flow interpolates it or names an app this build does not produce.
 
 ## Evidence
 

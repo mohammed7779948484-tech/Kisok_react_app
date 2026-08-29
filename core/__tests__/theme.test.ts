@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { NAV_THEME, TOKENS } from "@/core/theme";
+import { NAV_THEME, radius, TOKENS } from "@/core/theme";
 
 /**
  * `core/theme` restates colour tokens because React Navigation cannot read CSS
@@ -20,7 +20,7 @@ function cssTokens(selector: string): Record<string, string> {
   if (!body) throw new Error(`No \`${selector}\` block in global.css`);
 
   return Object.fromEntries(
-    [...body.matchAll(/--([a-z-]+):\s*([^;]+);/g)].map((match) => [
+    [...body.matchAll(/--([a-z0-9-]+):\s*([^;]+);/g)].map((match) => [
       String(match[1]),
       String(match[2]).trim(),
     ]),
@@ -57,6 +57,27 @@ describe("navigation theme", () => {
         expect(colors[key as keyof typeof colors]).toMatch(/^hsl\(/);
       }
     }
+  });
+
+  it("maps each navigator slot to the token it is meant to show", () => {
+    // Without this, swapping `background` and `card` inside navigationTheme
+    // still produces two valid hsl() strings and every other test passes.
+    for (const scheme of ["light", "dark"] as const) {
+      const { colors } = NAV_THEME[scheme];
+      const t = TOKENS[scheme];
+      expect(colors.background).toBe(`hsl(${t.background})`);
+      expect(colors.card).toBe(`hsl(${t.card})`);
+      expect(colors.text).toBe(`hsl(${t.foreground})`);
+      expect(colors.border).toBe(`hsl(${t.border})`);
+      expect(colors.primary).toBe(`hsl(${t.primary})`);
+      expect(colors.notification).toBe(`hsl(${t.destructive})`);
+    }
+  });
+
+  it("keeps the exported radius equal to --radius", () => {
+    // Excluded from the colour comparison above because it is not a colour, so
+    // it needs its own assertion or it can drift unnoticed.
+    expect(radius).toBe(cssTokens(":root").radius);
   });
 
   it("uses different backgrounds for light and dark", () => {

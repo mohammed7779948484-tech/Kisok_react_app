@@ -24,8 +24,31 @@ if (!bundleId) {
   process.exit(1);
 }
 
+/**
+ * Recurse and accept both extensions, because `maestro test .maestro/flows`
+ * does. A guard narrower than the thing it guards passes while the real run
+ * fails, which is worse than no guard at all.
+ */
+function collectFlows(dir, prefix = "") {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const relative = prefix ? path.join(prefix, entry.name) : entry.name;
+    if (entry.isDirectory()) return collectFlows(path.join(dir, entry.name), relative);
+    return /\.ya?ml$/.test(entry.name) ? [relative] : [];
+  });
+}
+
 const problems = [];
-const flows = fs.existsSync(FLOWS) ? fs.readdirSync(FLOWS).filter((f) => f.endsWith(".yaml")) : [];
+const flows = collectFlows(FLOWS);
+
+// A check that passes because it found nothing to check is the failure mode
+// this whole repository is trying to eliminate.
+if (flows.length === 0) {
+  console.error(`\nNo Maestro flows found under ${path.relative(process.cwd(), FLOWS)}.\n`);
+  console.error(`  CI runs \`maestro test .maestro/flows\`, which would fail too. If the`);
+  console.error(`  flows moved, update this check; if they were deleted, remove the job.\n`);
+  process.exit(1);
+}
 
 for (const flow of flows) {
   const source = fs.readFileSync(path.join(FLOWS, flow), "utf8");

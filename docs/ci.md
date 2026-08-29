@@ -47,7 +47,17 @@ code.
 ## On request — `.github/workflows/android-e2e.yml`
 
 Maestro flows against a tablet-profile emulator, gated on the **`e2e`** label. It
-prebuilds, assembles a debug APK, boots the emulator and runs `.maestro/flows`.
+prebuilds, assembles a **release** APK, boots the emulator and runs
+`.maestro/flows`.
+
+Release, not debug, and the reason is load-bearing: React Native's Gradle plugin
+only embeds the JS bundle for variants outside `debuggableVariants`, which
+defaults to `["debug"]`. A debug APK therefore expects a Metro server and shows
+"Unable to load script" without one, so Maestro would time out waiting for a
+screen that never renders. The workflow asserts the APK really contains
+`assets/index.android.bundle` rather than trusting that. Expo's template signs
+the release variant with the checked-in debug keystore, so this needs no
+secrets.
 
 Minutes of runtime, so it is not on every PR: paying that on a docs change
 trains everyone to ignore the result. See [`.maestro/README.md`](../.maestro/README.md)
