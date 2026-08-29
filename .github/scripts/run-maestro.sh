@@ -36,8 +36,14 @@ if [ "$status" -ne 0 ]; then
   adb logcat -d -v brief | grep -iE "kisok|hermes|fatal|exception" | tail -200 || true
   echo "::endgroup::"
 
+  # Dump to a file and cat it: `uiautomator dump /dev/tty` is unreliable under
+  # `exec-out` and silently produces nothing.
   echo "::group::The full view hierarchy Maestro was searching"
-  adb exec-out uiautomator dump /dev/tty 2>/dev/null | tail -c 20000 || true
+  if adb shell uiautomator dump /sdcard/ui-hierarchy.xml >/dev/null 2>&1; then
+    adb shell cat /sdcard/ui-hierarchy.xml | tail -c 20000 || true
+  else
+    echo "uiautomator dump failed (no window? app not running?)"
+  fi
   echo "::endgroup::"
 fi
 
