@@ -25,9 +25,10 @@
     "db:types": "node tools/db/gen-types.mjs",
     "db:verify": "node tools/db/verify-types.mjs",
     "doctor": "node tools/doctor.mjs",
-    "verify": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test:ci && pnpm check:docs && pnpm db:verify && pnpm generate:smoke",
+    "verify": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test:ci && pnpm check:docs && pnpm check:e2e-appid && pnpm db:verify && pnpm generate:smoke",
     "prepare": "husky",
-    "check:docs": "node tools/check-docs.mjs"
+    "check:docs": "node tools/check-docs.mjs",
+    "check:e2e-appid": "node tools/check-maestro-appid.mjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

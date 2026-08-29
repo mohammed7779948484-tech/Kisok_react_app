@@ -3,8 +3,12 @@
 # no seeded data and no network.
 #
 # It selects by testID, not by the visible copy — see .maestro/README.md.
+#
+# The appId is written out rather than interpolated: Maestro only substitutes
+# ${VAR} from values passed with `-e`, so a shell environment variable would
+# have been left as a literal. CI asserts this matches app.config.ts.
 # Everything else waits for the feature it tests.
-appId: ${MAESTRO_APP_ID}
+appId: com.kisok.kiosk
 name: Smoke — app launches to sign-in
 ---
 - launchApp:
