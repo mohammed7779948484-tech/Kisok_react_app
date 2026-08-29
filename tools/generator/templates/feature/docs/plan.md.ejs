@@ -65,13 +65,17 @@ invariants, accessibility — not coverage for its own sake.
 ## Rounds and tasks
 
 Group tasks so each round leaves the feature coherent. Every task is atomic:
-RED → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE.
+CLASSIFY → RED / BASELINE → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE.
 
 ### Round 1 — TODO
 
-| Task | Objective | Depends on | RED test |
-| --- | --- | --- | --- |
-| T01 | TODO | — | TODO |
+Every task declares a **verification mode** — `behavior`, `bug`,
+`behavior-change`, `refactor` or `config` — which decides its entry evidence.
+See the `test-driven-development` skill.
+
+| Task | Mode | Objective | Depends on | Entry evidence |
+| --- | --- | --- | --- | --- |
+| T01 | behavior | TODO | — | failing test: TODO |
 
 ## Risks
 

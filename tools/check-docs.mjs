@@ -56,6 +56,26 @@ const OBSOLETE = [
     pattern: /callRpc\([^)]*\{\s*\}\s*,/,
     fix: "A zero-argument RPC is typed `Args: never`; call it as `callRpc(name, schema)` with no argument object.",
   },
+  {
+    // The old pipeline made a failing test look mandatory for every task,
+    // including config and docs work, where it produces a fabricated test.
+    pattern: /RED\s*→\s*IMPLEMENT/,
+    fix: "The task pipeline is `CLASSIFY → RED / BASELINE → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE`. A task declares a verification mode first; only the behaviour-bearing modes need a failing test.",
+  },
+  {
+    pattern: /\b44\s*[x×]\s*44\b|\b44dp\b/,
+    fix: "The minimum touch target is 48dp — the `touch` token in tailwind.config.js. Say 48dp.",
+  },
+  {
+    // KISOK has no pricing UI at all; an example that implies one teaches a
+    // future agent to build forbidden product behaviour.
+    pattern: /price-badge|pricing-rules/,
+    fix: "KISOK has no pricing. Use a real KISOK concept: availability-badge, stock-status, variant-summary, option-selector, catalog-filter, order-status.",
+  },
+  {
+    pattern: /four\s+(?:materially\s+)?different\s+feature\s+shapes/i,
+    fix: "Do not hard-code the number of generator smoke shapes; say 'the generator smoke shapes'.",
+  },
 ];
 
 /** Documentation that describes how to work in this repository. */
@@ -73,17 +93,37 @@ const ALLOWED = [
   "docs/adr/0009-feature-anatomy.md",
 ];
 
+/**
+ * Directories we deliberately do not police, and why.
+ *
+ * The exclusion is NARROW on purpose. A previous version skipped any directory
+ * named `skills`, which silently excluded all of `.claude/skills` — our own
+ * workflow instructions, and the single most dangerous place for stale guidance.
+ * A contradiction lived there undetected precisely because of that.
+ *
+ * `.agents/skills` holds skills installed from an external source
+ * (`npx skills add ...`); their wording is not ours to change, and it is
+ * symlinked into `.claude/skills`, so skipping the real directory also avoids
+ * scanning the same file twice through the link.
+ */
+const VENDORED = [path.join(ROOT, ".agents", "skills")];
+
+function isVendored(absolute) {
+  const real = fs.existsSync(absolute) ? fs.realpathSync(absolute) : absolute;
+  return VENDORED.some((dir) => real === dir || real.startsWith(dir + path.sep));
+}
+
 function walk(target) {
   const absolute = path.join(ROOT, target);
   if (!fs.existsSync(absolute)) return [];
+  // Resolves symlinks, so a vendored skill linked into .claude/skills is
+  // recognised as vendored rather than scanned as if it were ours.
+  if (isVendored(absolute)) return [];
   if (fs.statSync(absolute).isFile()) return absolute.endsWith(".md") ? [absolute] : [];
 
-  return fs.readdirSync(absolute, { withFileTypes: true }).flatMap((entry) =>
-    // Skills installed from an external source are not ours to police.
-    entry.name === "node_modules" || entry.name === "skills"
-      ? []
-      : walk(path.join(target, entry.name)),
-  );
+  return fs
+    .readdirSync(absolute, { withFileTypes: true })
+    .flatMap((entry) => (entry.name === "node_modules" ? [] : walk(path.join(target, entry.name))));
 }
 
 const files = ROOTS.flatMap(walk);

@@ -4,27 +4,79 @@ filename: todo.md
 ---
 # <%= props.pascalCaseName %> — execution state
 
-Operational only. The reasoning lives in `plan.md`, the evidence in
-`worklog.md`. Do not restate either here.
+**This file is the working memory.** After a context compaction, an interrupted
+session, or a handoff, this is what tells the next agent exactly where the work
+stopped and what the next legal move is. Keep it current as you go, not at the
+end.
 
-Gate: `PENDING` until verified, then `PASS` or `FAIL`. A task is DONE only at
-`PASS`. Task N+1 does not start until every dependency is `PASS`.
+Reasoning lives in `plan.md`; evidence lives in `worklog.md`. Do not restate
+either here — a `todo.md` that duplicates the plan stops being scannable, which
+defeats its only purpose.
+
+## Rules
+
+- A task is **DONE only at `GATE: PASS`**.
+- **Task N+1 does not start until every dependency is `PASS`.**
+- A failed gate is fixed **in that task**, not compensated in a later one.
+- Every task declares a **verification mode** first — see the
+  `test-driven-development` skill. The mode decides the entry evidence:
+  `behavior` / `bug` / `behavior-change` need a failing test, `refactor` needs a
+  named green baseline, `config` needs the command that exercises the artifact.
+
+## Status board
+
+Scan this first. Detail is below.
+
+| Task | Mode | Objective | Deps | Stage | Gate |
+| --- | --- | --- | --- | --- | --- |
+| T01 | behavior | TODO | — | not started | PENDING |
+
+Stage is one of: `not started` · `red/baseline` · `implementing` · `green` ·
+`checks` · `diff review` · `done`.
 
 ## Round 1 — TODO
 
-| Task | Objective | Depends on | Gate |
-| --- | --- | --- | --- |
-| T01 | TODO | — | PENDING |
+### T01 — TODO
+
+- **Mode**: behavior | bug | behavior-change | refactor | config
+- **Depends on**: —
+- **Skills**: test-driven-development, TODO
+- **Generator command**: — <!-- e.g. pnpm generate query catalog products -->
+- **Allowed file scope**: `features/<%= props.feature %>/...` <!-- anything else must be justified in plan.md -->
+
+```
+[ ] RED / BASELINE
+    check defined      : <test name, or the command for a config task>
+    entry evidence      : <failed for the intended reason | baseline green | n/a>
+    worklog             : <task id in worklog.md>
+
+[ ] IMPLEMENT
+    state               : not started | in progress | complete
+
+[ ] GREEN / VERIFICATION
+    focused             : <command + result>
+    affected tests      :
+    typecheck           :
+    lint                :
+    format              :
+
+[ ] TASK DIFF REVIEW
+    only allowed files  :
+    nothing unrelated   :
+    acceptance holds    :
+
+GATE: PENDING
+```
 
 Round gate: `PENDING`
 
 ## Feature gate
 
-`PENDING` — set once every round has passed, review findings are resolved, and
-the quality audit is clean.
+`PENDING` — set only when every round has passed, review findings are
+dispositioned, and the quality audit is clean. See `review.md`.
 
 ## Blocked
 
-Anything that cannot proceed, and what it is waiting for. Empty is good.
+What cannot proceed, and what it is waiting for. Empty is good.
 
 - —

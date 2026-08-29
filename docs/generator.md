@@ -40,7 +40,7 @@ can be added to an existing feature at any time.
 
 ## Examples
 
-Four materially different feature shapes, all first-class:
+Materially different feature shapes, all first-class:
 
 ```bash
 # Read-heavy — a catalog
@@ -94,7 +94,7 @@ Plan first, then generate what the plan calls for:
 pnpm generate schema catalog catalog-response
 pnpm generate query  catalog products
 pnpm generate screen catalog product-detail --role=customer
-pnpm generate component catalog price-badge --screen=product-detail
+pnpm generate component catalog availability-badge --screen=product-detail
 pnpm generate route  catalog index --role=customer
 ```
 
@@ -115,7 +115,7 @@ features/catalog/
 ├── screens/product-detail/           a screen owns a directory
 │   ├── product-detail-screen.tsx
 │   ├── product-detail-screen.test.tsx
-│   └── components/price-badge.tsx    private to THIS screen
+│   └── components/availability-badge.tsx  private to THIS screen
 └── components/                       shared by several screens in this feature
 app/(customer)/index.tsx              thin route
 ```
@@ -132,11 +132,11 @@ before you have written a line, and stays a meaningful signal while you work.
 Ownership follows the nearest stable consumer, and the generator can put it
 there directly rather than making you move it afterwards:
 
-| Used by                        | Command                                                               | Lands in                             |
-| ------------------------------ | --------------------------------------------------------------------- | ------------------------------------ |
-| One screen                     | `pnpm generate component catalog price-badge --screen=product-detail` | `screens/product-detail/components/` |
-| Several screens in the feature | `pnpm generate component catalog product-card`                        | `features/catalog/components/`       |
-| Several features               | not generated — see `kisok-design-system` before promoting            | `components/`                        |
+| Used by                        | Command                                                                      | Lands in                             |
+| ------------------------------ | ---------------------------------------------------------------------------- | ------------------------------------ |
+| One screen                     | `pnpm generate component catalog availability-badge --screen=product-detail` | `screens/product-detail/components/` |
+| Several screens in the feature | `pnpm generate component catalog product-card`                               | `features/catalog/components/`       |
+| Several features               | not generated — see `kisok-design-system` before promoting                   | `components/`                        |
 
 ## No central files to edit
 
@@ -215,7 +215,7 @@ design. The implementation is project-owned — see
 pnpm generate:smoke
 ```
 
-Generates **four materially different feature shapes** plus follow-up
+Generates every shape in its shape table plus follow-up
 capabilities, then proves the output typechecks, lints with zero warnings, is
 formatted, and passes its own tests — and that re-running overwrites nothing.
 Then it removes everything.

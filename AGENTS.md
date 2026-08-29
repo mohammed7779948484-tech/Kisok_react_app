@@ -218,7 +218,7 @@ workflow. In outline:
 4. **Generate what the plan calls for**: `pnpm generate query catalog products`,
    `pnpm generate screen catalog product-detail --role=customer`, and so on.
 5. **Work in atomic tasks**, each one
-   `RED → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → TASK GATE`.
+   `CLASSIFY → RED / BASELINE → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE`.
    A task is done only at `PASS`, and the next task waits for its dependencies.
    Record evidence in `docs/worklog.md` — a checkmark with no command output is
    not evidence.

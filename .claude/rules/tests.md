@@ -43,8 +43,26 @@ called") and produces stray `act(...)` warnings.
 - Use `createMemoryStore()` to test persistence, including its `failOn` option to
   exercise write failures — KISOK must surface those, not swallow them.
 
-## TDD
+## Verification modes
 
-Where behaviour is testable: write the test, **confirm it fails for the intended
-reason**, implement, watch it pass, refactor. Never weaken a test to make it
-pass. Configuration files and pure glue do not need this ceremony — use judgement.
+Every task declares one **before** work starts. The mode decides what evidence
+the task needs; the rest of the pipeline is identical either way.
+
+| Mode              | Entry evidence                                           |
+| ----------------- | -------------------------------------------------------- |
+| `behavior`        | a failing test for the new behaviour                     |
+| `bug`             | a failing regression test reproducing the bug            |
+| `behavior-change` | a failing test stating the NEW behaviour                 |
+| `refactor`        | named existing/characterization tests, shown green first |
+| `config`          | none — run the thing it configures                       |
+
+For the first three, **confirm the test fails for the intended reason** before
+implementing: a failure from a typo or an unresolved import proves nothing.
+Never weaken a test to make it pass.
+
+Do not fabricate a failing test for configuration, tooling, CI or documentation.
+A test asserting that a config file contains a string breaks on every legitimate
+edit and catches nothing.
+
+Full detail, including what deserves a test at all: the `test-driven-development`
+skill.

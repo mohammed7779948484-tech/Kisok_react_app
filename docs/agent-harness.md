@@ -29,23 +29,57 @@ installed project-scoped from `supabase/agent-skills`. They live once in
 records their source and hash. Update them with
 `npx skills add supabase/agent-skills`, not by hand.
 
-Expo publishes no agent-skills package at the time of writing, and none exists
-in the plugin catalogue. `pnpm doctor` and `kisok-react-native-rules` cover that
-ground.
+### Expo
+
+Checked 2026-08-29, against sources rather than memory:
+
+| Looked for                                                                            | Result                                                             |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `@expo/agent-skills`, `expo-agent-skills`, `@expo/claude-skills`, `@expo/claude-code` | not published on npm                                               |
+| `npx skills search expo` / `react native`                                             | no results                                                         |
+| Claude Code plugin catalogue                                                          | no Expo plugin                                                     |
+| `expo-mcp`                                                                            | **official** (`github.com/expo/expo-mcp`, maintained by Expo core) |
+
+So Expo publishes no agent skills and no Claude Code plugin — but it does
+publish `expo-mcp`. It is **not** installed here, deliberately: it is a _local
+device-automation_ server (drives a simulator or emulator, collects device
+logs), not a platform-knowledge capability. It needs a running dev server and an
+attached device, which the environments these agents run in do not have, so
+committing it would hand every agent a tool that cannot work. A developer
+automating a local simulator may still find it useful.
+
+Expo platform knowledge therefore comes from `pnpm doctor` (real compatibility
+checks against the installed SDK), `kisok-react-native-rules`, and the official
+documentation an agent can fetch when it has network access.
+
+One thing was not verifiable from here: `docs.expo.dev` is blocked by this
+environment's egress proxy, so Expo's own AI-tooling guide could not be read.
+Re-check it from a machine with open network before treating this table as
+final.
 
 ## Subagents
 
 Project subagents live in `.claude/agents/`. The roles are separated because the
 separation is what makes the checks worth anything.
 
-| Agent                                   | Job                                            | Deliberately cannot                                   |
-| --------------------------------------- | ---------------------------------------------- | ----------------------------------------------------- |
-| `feature-implementer`                   | One bounded task, test-first, returns evidence | Certify its own task, or widen its file scope         |
-| `code-reviewer`                         | Independent review with fresh context          | Edit code — a reviewer that fixes is not a check      |
-| `quality-auditor`                       | Did the delivery match the promise?            | Re-do the code review                                 |
-| `research/supabase-contract-researcher` | What the backend actually offers               | Invent a contract, or propose weakening RLS           |
-| `research/flutter-behavior-researcher`  | What the product should DO                     | Return any data contract — that app's schema is older |
-| `research/ui-researcher`                | How to build it from what exists               | Design a new shared primitive                         |
+Mandatory skills are **preloaded** through each subagent's `skills:`
+frontmatter, so they are in context before the agent's first turn instead of
+depending on it remembering to load them. Task-dependent skills stay opt-in
+through the Skill tool.
+
+| Agent                                   | Preloaded                 | Job                                 | Deliberately cannot                                    |
+| --------------------------------------- | ------------------------- | ----------------------------------- | ------------------------------------------------------ |
+| `feature-implementer`                   | `test-driven-development` | One bounded task, returns evidence  | Certify its own task, or widen its file scope          |
+| `code-reviewer`                         | `kisok-code-review`       | Independent review, fresh context   | Edit code, or author `review.md` — it returns findings |
+| `quality-auditor`                       | `kisok-quality-audit`     | Did the delivery match the promise? | Re-do the code review, or write its own verdict        |
+| `research/supabase-contract-researcher` | —                         | What the backend actually offers    | Invent a contract, or propose weakening RLS            |
+| `research/flutter-behavior-researcher`  | —                         | What the product should DO          | Return a data contract — that app's schema is older    |
+| `research/ui-researcher`                | `kisok-design-system`     | How to build it from what exists    | Design a new shared primitive                          |
+
+Reviewer and auditor have no edit tools, and the Lead records what they return —
+in the **Findings** and **Quality audit** sections of
+`features/<feature>/docs/review.md` respectively. An agent that can rewrite the
+record of its own review is not an independent check.
 
 The **Lead** — the parent agent — owns research orchestration, the brief, the
 plan, task derivation, delegation, gate verification, the worklog, remediation
@@ -58,7 +92,7 @@ Three levels, each answering a different question.
 ### Task gate
 
 ```
-RED → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE
+CLASSIFY → RED / BASELINE → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE
 ```
 
 `PENDING` until verified, then `PASS` or `FAIL`. A task is DONE only at `PASS`,

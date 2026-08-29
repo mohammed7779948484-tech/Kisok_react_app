@@ -43,7 +43,7 @@ The plan decides the shape. Only then do you generate the rest:
 pnpm generate schema catalog catalog-response
 pnpm generate query  catalog products
 pnpm generate screen catalog product-detail --role=customer
-pnpm generate component catalog price-badge --screen=product-detail
+pnpm generate component catalog availability-badge --screen=product-detail
 pnpm generate route  catalog index --role=customer
 ```
 
@@ -54,12 +54,19 @@ Options in [`docs/generator.md`](./generator.md), or `pnpm generate --help`.
 Every task is one unit:
 
 ```
-RED → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → TASK GATE
+CLASSIFY → RED / BASELINE → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE
 ```
 
-Confirm the RED failure is the behaviour being missing — not a typo or a bad
-import. Then the smallest implementation that passes. Then the directly affected
-checks. Then read your own diff for anything unrelated.
+A task declares its **verification mode** first — `behavior`, `bug`,
+`behavior-change`, `refactor` or `config` — because that decides what its entry
+evidence is. For the first three, confirm the RED failure is the behaviour being
+missing, not a typo or a bad import. For a refactor, pin a named baseline of
+green tests. For configuration or tooling, there is no RED: run the thing it
+configures. Fabricating a failing test for a CI change produces a test that
+asserts a file contains a string.
+
+Then the smallest implementation. Then the directly affected checks. Then read
+your own diff for anything unrelated. See the `test-driven-development` skill.
 
 Record the evidence in `docs/worklog.md` under the task ID and set the gate to
 `PASS` or `FAIL`. **A task is done only at `PASS`, and the next task does not

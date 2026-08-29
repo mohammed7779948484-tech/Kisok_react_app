@@ -10,7 +10,10 @@ report** problems with evidence. You do not quietly fix what you find: the
 author needs to see the finding, and a reviewer that edits code stops being an
 independent check on it.
 
-Write findings into `features/<name>/docs/review.md`.
+Findings go into the **Findings** table of `features/<feature>/docs/review.md`.
+If you are the `code-reviewer` subagent you have no edit tools: return the
+findings and let the Lead record them. That separation is what keeps the review
+independent.
 
 ## How to read the change
 

@@ -1,6 +1,6 @@
 ---
 name: test-driven-development
-description: How to write tests first in KISOK — the four modes (new behaviour, bug fix, behaviour change, pure refactor), how to prove a test fails for the right reason, and what deserves a test at all. Use this whenever you are implementing a feature, fixing a bug, or changing behaviour in this repository, before writing the implementation. Also use it when you are about to add or modify any test.
+description: How KISOK verifies work — classifying every task into one of five verification modes (behavior, bug, behavior-change, refactor, config), proving a test fails for the right reason, pinning a baseline before a refactor, and verifying configuration without fabricating a failing test. Use this whenever you are implementing a feature, fixing a bug, changing behaviour, refactoring, or changing configuration/tooling/CI in this repository, before writing the implementation, and whenever you add or modify a test.
 ---
 
 # Test-driven development in KISOK
@@ -12,43 +12,90 @@ first run, which tells you nothing about whether it would notice a regression.
 Stack: jest-expo + @testing-library/react-native v14. Helpers in `@/core/testing`.
 `render` is async in RNTL v14 — always `await renderWithProviders(...)`.
 
-## Pick the mode first
+## Classify the task first
 
-Four situations, four correct sequences. Choosing the wrong one is where this
-goes bad — usually by inventing a meaningless failing test for work that has no
-behaviour to specify.
+Every task declares a **verification mode** before any work starts. This is step
+one, not a formality: choosing the wrong mode is where this goes bad, usually by
+inventing a meaningless failing test for work that has no behaviour to specify.
 
-### New behaviour → RED → GREEN → REFACTOR
+The mode is recorded in the feature's `docs/todo.md`, and the shape of the task
+follows from it. There are five, and they are the only five:
+
+| Mode              | When                                       | Sequence                          |
+| ----------------- | ------------------------------------------ | --------------------------------- |
+| `behavior`        | New behaviour a person can observe         | RED → GREEN → REFACTOR            |
+| `bug`             | Something is wrong and must stop recurring | regression RED → GREEN            |
+| `behavior-change` | Existing behaviour must become different   | RED → GREEN                       |
+| `refactor`        | Structure changes, behaviour must not      | BASELINE GREEN → refactor → GREEN |
+| `config`          | Configuration, tooling, CI, deps, docs     | executable verification, no RED   |
+
+Whatever the mode, the task runs the same pipeline:
+
+```
+CLASSIFY → RED / BASELINE → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE
+```
+
+Only the second and fourth steps differ by mode. Everything else — affected
+checks, reading your own diff, the gate — is identical.
+
+### `behavior` → RED → GREEN → REFACTOR
 
 Write the smallest test that expresses what should happen. Watch it fail for the
 right reason. Write the least code that passes. Then clean up while green.
 
-### Bug fix → regression RED → GREEN
+### `bug` → regression RED → GREEN
 
 Reproduce the bug as a test first. That test is the permanent value of the fix:
 it is what stops the bug coming back. If you cannot make it fail, you have not
 understood the bug yet — keep going rather than fixing what you guess it is.
 
-### Behaviour change → RED → GREEN
+### `behavior-change` → RED → GREEN
 
 Change or add the test that states the NEW behaviour, watch it fail, then change
 the code. Delete or update tests that asserted the old behaviour — deliberately,
 naming what changed. Never quietly loosen an assertion to get green.
 
-### Pure behaviour-preserving refactor → GREEN → refactor → GREEN
+### `refactor` → BASELINE GREEN → refactor → GREEN
 
 There is no new behaviour, so there is nothing to write a failing test for.
-Instead: confirm the existing tests cover what you are about to move, and if
-they do not, add **characterization** tests that pass now and pin the current
-behaviour. Then refactor, keeping them green throughout.
+Instead establish a **baseline**: confirm the existing tests cover what you are
+about to move, and if they do not, add **characterization** tests that pass now
+and pin the current behaviour. Record that baseline as evidence. Then refactor,
+keeping them green throughout.
 
-Do not invent a failing test for configuration-only work — a Metro option, a
-CI step, a dependency bump. There is no behaviour to specify. Verify it by
-running the thing it configures.
+A refactor whose baseline is "the suite passes" is not pinned to anything
+specific. Name the tests that cover the code you are moving.
 
-## Proving RED
+### `config` → executable verification, no RED
+
+Configuration, tooling, CI, dependency bumps and documentation have no behaviour
+to specify, and fabricating a failing test for them produces a test that asserts
+your config file contains a string — which breaks on every legitimate edit and
+catches nothing.
+
+Verify by **running the thing it configures**, and record that command:
+
+| Change                          | Verification                                        |
+| ------------------------------- | --------------------------------------------------- |
+| Metro / Babel / Tailwind config | `pnpm export:web`, or the build it affects          |
+| A CI workflow                   | trigger the workflow and read the job log           |
+| A dependency bump               | `pnpm verify`, plus whatever the package is used by |
+| Generator templates             | `pnpm generate:smoke`                               |
+| Documentation                   | `pnpm check:docs`, and read the rendered result     |
+| A new guard script              | run it against a deliberately broken input          |
+
+The last row is the one worth internalising: a guard that has never rejected
+anything is indistinguishable from a guard that cannot. Prove it fails before
+you trust it passing.
+
+## Proving RED (or the baseline)
 
 This is the step with all the value, and the easiest to fake.
+
+For `behavior`, `bug` and `behavior-change`, prove the RED. For `refactor`,
+prove the BASELINE — name the tests that pin the code you are about to move and
+show them green first. For `config`, there is nothing to prove here; the
+evidence is the verification command in the GREEN step.
 
 ```bash
 npx jest path/to/thing.test.ts
@@ -62,8 +109,8 @@ If it passes immediately, one of three things is true: the behaviour already
 exists, the test asserts something trivially true, or it is asserting on a mock
 instead of on real code. Find out which before continuing.
 
-Record the RED command and its output in the feature's `docs/worklog.md`. A
-checkmark with no output is not evidence.
+Record the command and its output in the feature's `docs/worklog.md`, and set
+the task's stage in `docs/todo.md`. A checkmark with no output is not evidence.
 
 ## What deserves a test
 

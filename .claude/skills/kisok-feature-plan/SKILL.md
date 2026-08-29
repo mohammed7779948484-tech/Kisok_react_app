@@ -22,7 +22,7 @@ of which one this is. Decide explicitly:
 | Local state              | Cart              | `store`, components, a screen or a sheet — often no `api/` at all |
 | Mutation / state machine | Checkout          | `schema`, `mutation`, `store`, careful error branches             |
 | Live operational         | Preparation board | `schema`, `query`, `realtime`, `screen`, `route`                  |
-| Domain only              | Pricing rules     | `model/` and nothing else                                         |
+| Domain only              | Stock rules       | `model/` and nothing else                                         |
 
 Naming the shape early stops you generating a screen for a feature that has no
 UI, or a store for one that owns no client state.
@@ -55,7 +55,7 @@ never a render source.
 pnpm generate schema catalog catalog-response
 pnpm generate query  catalog products
 pnpm generate screen catalog product-detail --role=customer
-pnpm generate component catalog price-badge --screen=product-detail
+pnpm generate component catalog availability-badge --screen=product-detail
 ```
 
 Generate only what the shape needs. Empty architectural folders are not free —
@@ -75,11 +75,11 @@ transitions, safety invariants, accessibility. Not a coverage target.
 **Rounds and tasks.** Group tasks so each round leaves the feature coherent.
 Every task is atomic and independently verifiable:
 
-| Task | Objective                                       | Depends on | RED test                                   |
-| ---- | ----------------------------------------------- | ---------- | ------------------------------------------ |
-| T01  | Catalog response schema                         | —          | rejects a payload with no `schema_version` |
-| T02  | `api/fetch-catalog` calls the RPC and validates | T01        | throws AppError on a bad payload           |
-| T03  | `useCatalog` exposes loading/error/data         | T02        | renders the error state on failure         |
+| Task | Mode                                            | Objective | Depends on                                 | Entry evidence |
+| ---- | ----------------------------------------------- | --------- | ------------------------------------------ | -------------- |
+| T01  | Catalog response schema                         | —         | rejects a payload with no `schema_version` |
+| T02  | `api/fetch-catalog` calls the RPC and validates | T01       | throws AppError on a bad payload           |
+| T03  | `useCatalog` exposes loading/error/data         | T02       | renders the error state on failure         |
 
 Dependencies are what make the gates meaningful, so get them right: if T03 does
 not really depend on T02, say so and let them proceed independently.
@@ -101,7 +101,8 @@ padding it. A plan nobody reads is worse than a short one.
 ## Before you call the plan done
 
 - Every acceptance criterion in `brief.md` maps to at least one task
-- Every task has a RED test you can actually describe
+- Every task declares a verification mode, and its entry evidence follows from
+  that mode — a RED test, a named baseline, or a verification command
 - No task depends on a contract you have not found in a migration
 - Nothing outside the feature directory is changed without a justification
 - The shape you named at the top matches the capabilities you are generating

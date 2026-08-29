@@ -19,7 +19,8 @@ original defect survives in the model, now with a workaround on top.
 ## Decision
 
 **Atomic, gated tasks.** Every task is
-`RED → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → TASK GATE`, and task
+`CLASSIFY → RED / BASELINE → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE`,
+and task
 N+1 does not begin until its dependencies are `PASS`. When a gate fails, the fix
 happens in that task. Tasks group into rounds with round gates; the feature gate
 adds full verification, runtime evidence, independent review and a quality audit.
@@ -45,9 +46,11 @@ output, scope that appeared without a plan.
 
 ## Consequences
 
-- More process per task, and it is not free. It is scoped to feature work;
-  configuration changes do not need a RED test, and the TDD skill says so
-  explicitly.
+- More process per task, and it is not free. Every task first declares a
+  **verification mode**, and only the behaviour-bearing modes require a failing
+  test; a refactor pins a baseline and a configuration change runs the thing it
+  configures. Without that classification, agents invent meaningless failing
+  tests for CI and documentation work.
 - The control documents must stay distinct or they collapse into one unreliable
   file. Their responsibilities are stated in the templates themselves.
 - Reference material adapted from outside sources was curated, not copied. Where

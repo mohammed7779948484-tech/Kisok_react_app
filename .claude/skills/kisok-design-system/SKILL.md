@@ -56,7 +56,7 @@ appears — not in anticipation of one. Generate it in the right place rather th
 creating it and moving it:
 
 ```bash
-pnpm generate component catalog price-badge --screen=product-detail
+pnpm generate component catalog availability-badge --screen=product-detail
 pnpm generate component catalog product-card
 ```
 
@@ -82,7 +82,9 @@ under pressure. Accessibility here is basic usability.
 
 - Every interactive element needs a **role** and an accessible **name**:
   `accessibilityRole`, and a label when the visible text is not enough.
-- Touch targets **at least 44×44** — a store tablet is used standing up.
+- Touch targets **at least 48dp** (`h-touch`) — a store tablet is used standing
+  up, often in a hurry. This is the same number as the `touch` spacing token in
+  `tailwind.config.js`; do not introduce a smaller one.
 - **Never carry meaning in colour alone.** "Out of stock" needs words, not just
   a red dot.
 - Keep the visible text and the accessible name consistent — a label that

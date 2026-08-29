@@ -8,6 +8,11 @@ description: Audit whether a KISOK feature was actually delivered as promised �
 Code review asks "is this code correct?". You ask a different question: **"is
 this feature actually finished, and does the record tell the truth?"**
 
+Your result is recorded in the **Quality audit** section of
+`features/<feature>/docs/review.md` — the same file as the code review, in its
+own section, because they answer different questions about the same delivery.
+If you are the `quality-auditor` subagent, return the result; the Lead writes it.
+
 Do not re-do the code review. If you find a code defect, note it and point at
 the reviewer — your subject is the delivery, not the implementation.
 

@@ -61,7 +61,7 @@ Examples
   pnpm generate schema catalog catalog-response
   pnpm generate query  catalog products
   pnpm generate screen catalog product-detail --role=customer
-  pnpm generate component catalog price-badge --screen=product-detail
+  pnpm generate component catalog availability-badge --screen=product-detail
   pnpm generate route  catalog index --role=customer
 
   # Or, when the shape is already known, compose it in one go.

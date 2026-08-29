@@ -93,7 +93,7 @@ generator command if any, and the file scope it is allowed to touch.
 ### 6. Run each task as an atomic unit
 
 ```
-RED → IMPLEMENT → GREEN → AFFECTED CHECKS → TASK DIFF REVIEW → TASK GATE
+CLASSIFY → RED / BASELINE → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE
 ```
 
 Delegate the implementation to `feature-implementer` with exactly one task. Then
@@ -102,12 +102,18 @@ agent that wrote the code is the worst judge of whether it did what was asked.
 
 Check, in order:
 
-1. The RED evidence shows the test failing for the _intended missing behaviour_,
-   not a typo or an import error.
-2. GREEN passes.
-3. Affected checks pass: focused tests, `pnpm typecheck`, `pnpm lint`, format.
-4. The diff contains nothing unrelated to this task.
-5. The task's acceptance condition actually holds.
+1. The task declared a **verification mode**, and it is the right one for what
+   the task actually does. See `test-driven-development` for the five modes.
+2. The mode's entry evidence is real:
+   - `behavior` / `bug` / `behavior-change` — the RED output shows the test
+     failing for the _intended missing behaviour_, not a typo or an import error
+   - `refactor` — a named BASELINE of existing or characterization tests, shown
+     green before the change
+   - `config` — no RED; the verification command that exercises the artifact
+3. GREEN passes, or for `config` the verification command succeeded.
+4. Affected checks pass: focused tests, `pnpm typecheck`, `pnpm lint`, format.
+5. The diff contains nothing unrelated to this task.
+6. The task's acceptance condition actually holds.
 
 Record all of it in `docs/worklog.md` under the task ID, then set the gate:
 `PASS` or `FAIL`. A task is DONE only at `PASS`.

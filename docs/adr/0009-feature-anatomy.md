@@ -9,7 +9,7 @@ for every new feature. That default is a design claim: it says every KISOK
 feature is a read-heavy routed screen.
 
 It is not. Cart is local state with no `api/` at all. Checkout is a mutation
-state machine. A pricing-rules feature is pure domain logic with no UI. Each of
+state machine. A stock-rules feature is pure domain logic with no UI. Each of
 those started by deleting generated placeholder files — and deleting generated
 code is worse than never generating it, because the author has to work out which
 parts were a real suggestion and which were an artefact of the default.
