@@ -531,6 +531,87 @@ check("the template was restored", () =>
   assert.equal(fs.readFileSync(brokenTemplate, "utf8"), originalTemplate),
 );
 
+// ---------------------------------------------------------------------------
+// --force rollback: an OVERWRITTEN file must come back byte-for-byte.
+//
+// Rolling back by deleting only newly created files would leave the earlier
+// ones clobbered with generated content and no way back — worse than not
+// rolling back at all, and `--force` on an existing feature is a normal thing
+// to run.
+// ---------------------------------------------------------------------------
+console.log("\nforce rollback");
+
+const FORCE_FEATURE = "smoke-force";
+const forceDir = path.join(ROOT, "features", FORCE_FEATURE);
+
+try {
+  await run({
+    capability: "feature",
+    feature: FORCE_FEATURE,
+    options: { role: "shared", with: ["schema"] },
+  });
+
+  // Make every generated file recognisably the developer's own work.
+  const targets = [];
+  const collect = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) collect(full);
+      else targets.push(full);
+    }
+  };
+  collect(forceDir);
+
+  const before = new Map();
+  for (const target of targets) {
+    const edited = `${fs.readFileSync(target, "utf8")}\n// hand-written work that must survive\n`;
+    fs.writeFileSync(target, edited, "utf8");
+    before.set(target, edited);
+  }
+
+  // Force a mid-write failure: one planned destination becomes a DIRECTORY, so
+  // writeFileSync throws EISDIR after earlier files have already been rewritten.
+  const planned = planRequest({
+    capability: "feature",
+    feature: FORCE_FEATURE,
+    options: { role: "shared", with: ["schema"] },
+  }).map((file) => path.join(ROOT, file.destination));
+
+  const saboteur = planned[planned.length - 1];
+  fs.rmSync(saboteur, { force: true });
+  fs.mkdirSync(saboteur, { recursive: true });
+  before.delete(saboteur);
+
+  let threw = null;
+  try {
+    await run({
+      capability: "feature",
+      feature: FORCE_FEATURE,
+      options: { role: "shared", with: ["schema"], force: true },
+    });
+  } catch (error) {
+    threw = error;
+  }
+
+  check("a failed --force run reports the failure", () => {
+    assert.ok(threw, "the generator reported success despite an unwritable target");
+    assert.match(threw.message, /rolled back/i);
+  });
+
+  check("every overwritten file is restored byte-for-byte", () => {
+    const clobbered = [];
+    for (const [target, expected] of before) {
+      const actual = fs.existsSync(target) ? fs.readFileSync(target, "utf8") : "(missing)";
+      if (actual !== expected) clobbered.push(path.relative(ROOT, target));
+    }
+    assert.deepEqual(clobbered, [], `these files were not restored: ${clobbered.join(", ")}`);
+  });
+} finally {
+  fs.rmSync(forceDir, { recursive: true, force: true });
+}
+
+check("the force fixture was cleaned up", () => assert.ok(!fs.existsSync(forceDir)));
+
 if (failures > 0) {
   console.error(`\n${failures} generator check(s) failed.\n`);
   process.exit(1);

@@ -233,9 +233,15 @@ export function validatePlan(files, { feature, routeDir }) {
  * half-finished feature is worse than no generator. Re-running a capability on
  * an existing feature is a normal, safe thing to do.
  *
- * If a write fails part-way — a permission error, a full disk — everything
- * already written by THIS call is removed again, along with any directory it
- * created. A failed generation must leave the repository exactly as it was.
+ * If a write fails part-way — a permission error, a full disk — the filesystem
+ * is put back exactly as it was: files this call created are removed, files it
+ * OVERWROTE under `--force` are restored from an in-memory backup, and
+ * directories it created are taken away.
+ *
+ * The overwrite case is the one that actually costs someone work. `--force` on
+ * an existing feature is a normal thing to run, and rolling back by deleting
+ * only the new files would leave the earlier ones clobbered with generated
+ * content and no way back — worse than not rolling back at all.
  */
 export function writeFiles(files, { root, force = false, dryRun = false }) {
   const written = [];
@@ -257,6 +263,8 @@ export function writeFiles(files, { root, force = false, dryRun = false }) {
 
   const createdFiles = [];
   const createdDirs = [];
+  /** Content and mode of every file this call is about to overwrite. */
+  const overwritten = [];
 
   try {
     for (const file of planned) {
@@ -267,6 +275,17 @@ export function writeFiles(files, { root, force = false, dryRun = false }) {
       fs.mkdirSync(directory, { recursive: true });
 
       const existed = fs.existsSync(file.absolute);
+      // Read BEFORE writing — afterwards the original is gone. Generated files
+      // are small, so holding them in memory for the duration of one request is
+      // cheaper and far more robust than a temp-file dance.
+      if (existed) {
+        overwritten.push({
+          absolute: file.absolute,
+          contents: fs.readFileSync(file.absolute),
+          mode: fs.statSync(file.absolute).mode,
+        });
+      }
+
       fs.writeFileSync(file.absolute, file.contents, "utf8");
       if (!existed) createdFiles.push(file.absolute);
       written.push(file.destination);
@@ -275,6 +294,14 @@ export function writeFiles(files, { root, force = false, dryRun = false }) {
     for (const absolute of createdFiles.reverse()) {
       try {
         fs.rmSync(absolute, { force: true });
+      } catch {
+        // Best effort: report the original failure, not the cleanup's.
+      }
+    }
+    for (const backup of overwritten.reverse()) {
+      try {
+        fs.writeFileSync(backup.absolute, backup.contents);
+        fs.chmodSync(backup.absolute, backup.mode);
       } catch {
         // Best effort: report the original failure, not the cleanup's.
       }
