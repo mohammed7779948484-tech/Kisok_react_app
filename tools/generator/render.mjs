@@ -79,6 +79,18 @@ export function renderTemplateDir(templateDir, props) {
     .filter((file) => file !== null);
 }
 
+/**
+ * Longest name we accept.
+ *
+ * Generated paths nest the name several times — `features/<n>/screens/<n>/<n>-screen.test.tsx`
+ * — so a long name multiplies into filenames that hit the filesystem's 255-byte
+ * limit and module specifiers the resolver then fails to find. That failure
+ * arrives as "cannot find module" in a generated test, which reads like a
+ * generator bug rather than a bad name. Rejecting it here says what is actually
+ * wrong. Forty characters is far beyond any real feature name.
+ */
+const MAX_NAME_LENGTH = 40;
+
 /** The case conversions available to every template. */
 export function caseProps(input) {
   const words = String(input)
@@ -88,6 +100,21 @@ export function caseProps(input) {
     .map((word) => word.toLowerCase());
 
   if (words.length === 0) throw new Error("A name is required.");
+
+  const kebab = words.join("-");
+  if (kebab.length > MAX_NAME_LENGTH) {
+    throw new GeneratorError(
+      `"${kebab}" is ${kebab.length} characters; the limit is ${MAX_NAME_LENGTH}.\n` +
+        `The name is repeated in nested paths, so a long one produces filenames the ` +
+        `filesystem or the module resolver cannot handle. Choose a shorter name.`,
+    );
+  }
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(kebab)) {
+    throw new GeneratorError(
+      `"${kebab}" is not a usable name. Use lowercase letters, digits and hyphens, ` +
+        `starting with a letter or digit — it becomes a directory name and an import path.`,
+    );
+  }
 
   const pascalCaseName = words.map((word) => word[0].toUpperCase() + word.slice(1)).join("");
 

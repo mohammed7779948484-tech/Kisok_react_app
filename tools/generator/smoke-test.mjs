@@ -157,6 +157,19 @@ check("normalises camelCase and spaced input identically", () => {
   assert.equal(caseProps("Order Tracking").kebabCaseName, "order-tracking");
 });
 check("rejects an empty name", () => assert.throws(() => caseProps("   ")));
+check("rejects a name too long to survive nested paths", () => {
+  // The name is repeated in features/<n>/screens/<n>/<n>-screen.test.tsx, so a
+  // very long one produced files whose imports the resolver could not find —
+  // a confusing "cannot find module" in generated code rather than a clear
+  // complaint about the name.
+  assert.throws(() => caseProps("seg".repeat(80)), /the limit is/);
+});
+check("rejects a name that is not a usable directory or import path", () => {
+  // Separators are normalised away, so the reachable bad case is a character
+  // that survives the split and would end up in a directory name.
+  assert.throws(() => caseProps("cart!"), /not a usable name/);
+  assert.throws(() => caseProps("order.tracking"), /not a usable name/);
+});
 
 console.log("\nfront matter");
 check("parses keys and strips the block", () => {
