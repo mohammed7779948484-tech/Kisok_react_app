@@ -76,6 +76,12 @@ const OBSOLETE = [
     pattern: /four\s+(?:materially\s+)?different\s+feature\s+shapes/i,
     fix: "Do not hard-code the number of generator smoke shapes; say 'the generator smoke shapes'.",
   },
+  {
+    // `generate feature` creates a workspace, not an implementation. Describing
+    // it as scaffolding a slice is what the neutral default exists to undo.
+    pattern: /generate feature[^\n]*#[^\n]*(scaffold|slice|vertical)/i,
+    fix: "`pnpm generate feature` creates a WORKSPACE — index.ts plus docs/ — and no implementation code.",
+  },
 ];
 
 /** Documentation that describes how to work in this repository. */

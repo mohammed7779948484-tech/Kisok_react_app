@@ -24,8 +24,8 @@ pnpm format:check   # prettier
 pnpm test           # jest + @testing-library/react-native
 pnpm verify         # everything CI runs
 
-pnpm generate feature <name> --role=customer   # scaffold a feature slice
-pnpm generate query <feature> <name>          # add one capability later
+pnpm generate feature <name> --role=customer   # a feature WORKSPACE (index + docs)
+pnpm generate query <feature> <name>          # add one capability once planned
 pnpm db:verify                                # types vs. migrations
 pnpm db:types                                 # regenerate from the linked project
 ```
