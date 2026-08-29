@@ -16,13 +16,14 @@
 
 ## Feature documents
 
-| Document                                  | Status                  |
-| ----------------------------------------- | ----------------------- |
-| `docs/brief.md`                           | <!-- complete / n/a --> |
-| `docs/plan.md`                            |                         |
-| `docs/todo.md` — all tasks `PASS`         |                         |
-| `docs/worklog.md` — evidence per task     |                         |
-| `docs/review.md` — findings + disposition |                         |
+| Document                                          | Status                  |
+| ------------------------------------------------- | ----------------------- |
+| `features/<name>/docs/brief.md`                   | <!-- complete / n/a --> |
+| `features/<name>/docs/plan.md`                    |                         |
+| `features/<name>/docs/todo.md` — all gates `PASS` |                         |
+| `features/<name>/docs/worklog.md` — evidence      |                         |
+| `features/<name>/docs/review.md` — findings       |                         |
+| `features/<name>/docs/review.md` — quality audit  |                         |
 
 ## How it was built
 
@@ -40,12 +41,22 @@
 
 ## Test evidence
 
-<!-- Paste the commands and their results. RED must show the test failing for
-     the intended reason BEFORE the implementation existed. -->
+<!-- Paste the commands and their results. What counts as entry evidence
+     depends on each task's verification mode:
+
+       behavior / bug / behavior-change  a test failing for the intended
+                                         reason BEFORE the implementation
+       refactor                          the named tests pinning the behaviour,
+                                         shown green first
+       config                            no RED — the command that exercises
+                                         the thing you configured
+
+     Do not invent a failing test for configuration or documentation work. -->
 
 ```
-RED
-GREEN
+MODE
+RED or BASELINE
+GREEN / VERIFICATION
 ```
 
 - Affected checks (typecheck / lint / format / focused tests):
@@ -70,7 +81,7 @@ GREEN
 - Reviewer findings (blocking / major / minor):
 - Remediation:
 - Re-review result:
-- Quality audit:
+- Quality audit result <!-- recorded in the Quality audit section of review.md -->:
 
 ## Explicitly NOT verified
 

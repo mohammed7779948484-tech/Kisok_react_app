@@ -80,6 +80,7 @@ carrying an empty `state/` directory.
 | `core/logging`    | Scoped, level-filtered, redacting logger                                 |
 | `core/storage`    | Durable key/value storage that reports write failures                    |
 | `core/responsive` | Semantic layout sizes matching the Tailwind breakpoints                  |
+| `core/theme`      | `NAV_THEME` and the colour tokens React Navigation needs as values       |
 | `core/testing`    | Render helper, test QueryClient, Supabase and storage fakes              |
 | `core/utils`      | `cn()`                                                                   |
 

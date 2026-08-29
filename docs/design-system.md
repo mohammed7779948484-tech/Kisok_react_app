@@ -34,6 +34,12 @@ Tailwind scale in agreement — and suits a screen read at arm's length.
 Radius scale: `rounded-sm|md|lg|xl`, derived from `--radius` (14px).
 Spacing: the Tailwind scale, plus `h-touch` / `w-touch` = **48dp**.
 
+React Navigation cannot read CSS variables, so `core/theme.ts` mirrors the
+tokens as values and supplies `NAV_THEME` to the root `ThemeProvider` — without
+it the navigator paints its own white default behind every screen. That mirror
+is a second copy of the tokens, so `core/__tests__/theme.test.ts` fails if it
+ever stops matching `global.css`, including when a new token is added there.
+
 ## Typography
 
 Use the `Text` component's `variant`, never raw font sizes:
