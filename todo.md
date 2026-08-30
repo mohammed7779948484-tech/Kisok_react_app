@@ -86,6 +86,14 @@ no longer had any relationship to the repository.
 
 ## Outstanding
 
+**Needs repository admin — cannot be done from a session**
+
+- [ ] **Protect `main`.** Require a PR, require the three fast CI checks, block
+      direct pushes, and do NOT require the label-gated Android jobs. The exact
+      job names are in [`docs/ci.md`](./docs/ci.md). This session's GitHub access
+      is `metadata=read`, so the API returns 403 for branch protection. Husky is
+      a convenience guard, not enforcement — `--no-verify` bypasses it.
+
 **Needs a real environment**
 
 - [x] **`core/supabase/database.types.ts` is genuinely generated.** Produced by

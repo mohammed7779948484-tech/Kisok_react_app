@@ -34,6 +34,12 @@ Read them in that order, then the diff, then check the evidence.
 
 - Does every acceptance criterion in `brief.md` map to something in the diff?
   A forgotten criterion is the single most common real finding.
+- Every criterion has a stable ID (`AC-01`, …) and every task declares
+  `Acceptance:`, `Supporting:` or `N/A — <reason>`. Check both directions: an
+  AC with no task is unbuilt; a task claiming `Acceptance: AC-xx` for something
+  it does not actually satisfy is a false claim. Were any IDs renumbered or
+  reused after the plan went `READY`? That silently invalidates every worklog
+  reference.
 - Is anything in the diff that no document asked for? That is scope drift —
   benign-looking, but it is unreviewed and unplanned work.
 - Was anything in `brief.md` quietly dropped? Dropping scope is allowed;
@@ -41,6 +47,8 @@ Read them in that order, then the diff, then check the evidence.
 
 ### Do the gates mean anything?
 
+- Was `plan.md` `READY` before the first implementation task started? Work begun
+  against a `DRAFT` plan was not planned; it was improvised and back-filled.
 - Is any task marked DONE whose gate is not `PASS`?
 - Is any gate `PASS` with no corresponding worklog evidence?
 - Did a task start before its dependencies passed? The order in the worklog
@@ -52,6 +60,15 @@ Read them in that order, then the diff, then check the evidence.
 This is the heart of the audit. For each claim, ask what would prove it.
 
 - Does `worklog.md` contain **actual command output**, or checkmarks?
+- Does each task's `SCAFFOLD` block name a real command, and do the paths it
+  claims to have created actually exist? Follow the chain both ways:
+  `plan command → command run → filesystem`. A generated-looking file with no
+  recorded command, or a recorded command whose files are absent, means the
+  record and the repository disagree — and one of them is wrong about what was
+  built.
+- Did the Lead run the scaffolds, or did an implementer generate structure it
+  was not given? Structural files absent from the plan mean the feature's shape
+  widened without anyone deciding to.
 - Does the RED evidence show a failure for the intended missing behaviour — or
   an import error, a typo, or nothing at all?
 - Do the claimed commands match what the repo can actually run? A worklog citing
@@ -60,6 +77,14 @@ This is the heart of the audit. For each claim, ask what would prove it.
   before the final commit proves nothing about the final state.
 - Is runtime verification claimed without saying at which sizes, on what device,
   or what was observed?
+
+### Was the final HEAD actually verified?
+
+- Is there a **GitHub CI run on the final HEAD**, linked, and green? A local
+  `pnpm verify` is not the authority for checks that depend on an environment
+  only CI has, and a run against an earlier commit says nothing about this one.
+- If a native tier was required, is it PASS, N/A, or recorded as explicitly
+  unverified? "Not mentioned" is none of those.
 
 ### Was anything skipped?
 

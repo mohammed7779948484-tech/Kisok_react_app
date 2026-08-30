@@ -119,3 +119,33 @@ PRs a week instead of dozens.
 **Expo SDK packages are grouped together and must move as a set.** Never merge a
 single `expo-*` or `react-native-*` bump on its own — see
 [adr/0001-expo-sdk-version.md](./adr/0001-expo-sdk-version.md).
+
+## Protecting `main` — required before parallel feature agents
+
+`main` is currently **unprotected**, and no check in this repository can change
+that: branch protection is a repository setting, and the pre-commit hook is a
+convenience that `--no-verify` walks past. It must be configured by someone with
+admin access before several agents start working from `main` at once.
+
+Settings → Branches → add a rule for `main`:
+
+- **Require a pull request before merging.**
+- **Require status checks to pass**, and select these three — they run on every
+  PR and need no secrets, so any contributor gets the same signal:
+
+  | Check       | Job name                                                         |
+  | ----------- | ---------------------------------------------------------------- |
+  | Verify      | `Verify (typecheck, lint, format, tests, guards, db, generator)` |
+  | Web bundle  | `Web bundle`                                                     |
+  | Expo doctor | `Expo doctor`                                                    |
+
+- **Do not require the Android jobs.** `Android build` and `Android E2E` are
+  label-gated and normally skipped; a required check that usually does not run
+  blocks every PR. Request them with the `android-build` and `e2e` labels, and
+  make them part of the feature gate rather than a merge rule.
+- **Block direct pushes** (do not allow bypass for administrators unless there
+  is a specific reason).
+
+The job names above are the display names in `ci.yml`. If a job is renamed, the
+required check silently stops matching and protection quietly weakens — so
+rename a job and its required check together.
