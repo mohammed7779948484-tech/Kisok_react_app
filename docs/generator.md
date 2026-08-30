@@ -16,7 +16,7 @@ checkout, and a Realtime preparation board equally well.
 
 | Capability  | Produces                                                                  |
 | ----------- | ------------------------------------------------------------------------- |
-| `feature`   | The shell: public API and `TODO.md`. Orchestrates the rest via `--with`.  |
+| `feature`   | A WORKSPACE: `index.ts` plus `docs/` — and no implementation code.        |
 | `schema`    | A Zod schema validating one payload, plus its test.                       |
 | `query`     | A read: an `api/` function, a query hook, and the feature's query keys.   |
 | `mutation`  | A write: an `api/` function and a mutation hook with invalidation.        |
@@ -24,28 +24,103 @@ checkout, and a Realtime preparation board equally well.
 | `component` | A presentational, feature-private component.                              |
 | `screen`    | A screen composing the feature's hooks, plus its test.                    |
 | `realtime`  | A Realtime subscription that invalidates a query.                         |
-| `route`     | A thin Expo Router route.                                                 |
+| `route`     | A thin Expo Router route rendering an EXISTING, named screen.             |
 
-Each is independent and feature-local. `feature` runs several at once; the rest
-can be added to an existing feature at any time.
+Each is independent and feature-local. `feature` can run several at once via
+`--with`; the rest can be added to an existing feature at any time.
+
+**The normal agent workflow is one capability at a time, just-in-time.** The
+Lead maps each command to a task in `plan.md` and runs it immediately before
+delegating that task. `feature --with=...` stays available for a shape that is
+genuinely known and cohesive up front, but bulk-generating a feature's future
+tree is not the expected path: it fills the directory with files no plan
+justifies yet.
+
+**Generator-first.** If a capability matches, use it. Hand-writing a file a
+capability would have produced is how two features end up with different shapes
+for the same thing. Manual artifacts are legitimate when no capability fits, the
+path and purpose are planned, and the file is inside the task's allowed scope —
+domain rules, selectors, state-machine helpers, mappers, predicates, and
+behaviour-specific tests.
+
+**Follow-up capabilities do not discover their siblings.** `withSchema`,
+`withQuery`, `withStore` and `withScreen` describe what is being generated in
+the SAME request. Generating a schema now and a query later produces a neutral
+query scaffold — it does not detect and wire itself to the existing schema, and
+a later screen does not detect an existing query. The implementation task wires
+the planned siblings together. That is deliberate: filesystem introspection
+would guess, and a wrong guess is harder to spot than an unwired scaffold. Route
+is the exception, because a route cannot be structurally valid without a target
+screen, which is why it takes one explicitly.
 
 ## Options
 
-| Option                                 | Default                               | Effect                                             |
-| -------------------------------------- | ------------------------------------- | -------------------------------------------------- |
-| `--role=customer\|preparation\|shared` | `shared`                              | Which experience owns it. Decides the route group. |
-| `--with=a,b,c`                         | `schema,query,component,screen,route` | `feature` only: which capabilities to generate.    |
-| `--dry-run`                            | off                                   | Print the plan, write nothing.                     |
-| `--force`                              | off                                   | Overwrite existing files.                          |
+| Option                                 | Default                                                   | Effect                                                                                  |
+| -------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `--role=customer\|preparation\|shared` | none for `feature`/`route`/`realtime`; `shared` elsewhere | Which experience owns it. Decides the route group.                                      |
+| `--with=a,b,c`                         | nothing                                                   | `feature` only: which capabilities to generate alongside it.                            |
+| `--screen=<name>`                      | none                                                      | `component`: make it private to that screen. `route`: the screen it renders — REQUIRED. |
+| `--dry-run`                            | off                                                       | Print the plan, write nothing.                                                          |
+| `--force`                              | off                                                       | Overwrite existing files.                                                               |
+
+### Roles are explicit where they matter
+
+`feature`, `route` and `realtime` **require** `--role`. It used to default to
+`shared`, which meant `pnpm generate route x y` silently wrote into top-level
+`app/` instead of a role group, and `pnpm generate realtime x y` slipped past
+the Realtime guard by not being a customer. A default that is wrong most of the
+time is worse than none. Every other capability is role-independent and still
+defaults to `shared`.
+
+`realtime` accepts **`preparation` only**. Only `public.orders` is published and
+RLS gives everyone else no rows, so `customer` and `shared` are both rejected —
+a shared feature can be reached by a customer session, where the subscription
+could never fire.
+
+### A route names the screen it renders
+
+```bash
+pnpm generate route catalog index --role=customer --screen=catalog-home
+#   → app/(customer)/index.tsx rendering CatalogHomeScreen
+```
+
+The route file's name is a URL segment; the screen's name says what it shows.
+They are named independently, which is what makes
+`app/(customer)/index.tsx → CatalogHomeScreen` expressible at all — the route
+used to generate its own same-named screen, leaving an unused `IndexScreen`.
+
+Route generation refuses when the target screen does not exist, and
+`feature --with=route` refuses unless `screen` is in the same request.
+
+### Screens are private by default
+
+`pnpm generate screen` creates a **feature-private** screen: nothing is added to
+`features/<name>/index.ts`. A screen becomes public only when a route renders
+it, because a route is the only thing the generator creates that lives outside
+the feature. `feature --with=screen` alone does not widen the public API;
+`feature --with=screen,route` does, for that screen.
+
+Any other cross-feature export is an explicit, planned decision — not something
+the generator does for you.
 
 ## Examples
 
 Materially different feature shapes, all first-class:
 
-```bash
-# Read-heavy — a catalog
-pnpm generate feature catalog --role=customer
+The workspace first, then one capability per task as the plan calls for it:
 
+```bash
+pnpm generate feature catalog --role=customer         # workspace only
+# ... research, brief, plan READY ...
+pnpm generate schema  catalog catalog-response        # before T01
+pnpm generate query   catalog products                # before T02
+pnpm generate screen  catalog catalog-home --role=customer   # before T03
+pnpm generate route   catalog index --role=customer --screen=catalog-home  # before T04
+```
+
+`--with` composes a shape that is genuinely known up front:
+
+```bash
 # Local-state-heavy — a cart, surfaced as a sheet rather than its own route
 pnpm generate feature cart --role=customer --with=store,component,screen
 
@@ -63,8 +138,9 @@ Adding pieces later:
 pnpm generate query catalog product-detail
 pnpm generate mutation checkout submit-order
 pnpm generate component catalog product-card
-pnpm generate screen catalog search
-pnpm generate route catalog search --role=customer
+pnpm generate screen catalog search --role=customer
+pnpm generate component catalog search-filter --screen=search
+pnpm generate route catalog search --role=customer --screen=search
 ```
 
 ## What you get
@@ -141,14 +217,15 @@ there directly rather than making you move it afterwards:
 ## No central files to edit
 
 Generating touches **only the feature's own directory plus, for a route, one
-Expo Router file**. There is deliberately no feature registry, no global barrel,
+Expo Router file per route**. There is deliberately no feature registry, no global barrel,
 no route map, and no shared query-key file — each would be a merge conflict every
 time two agents worked at once. Expo Router's file-based routing means adding a
 route file _is_ the registration.
 
 The generator writes new files and, in exactly one case, appends to the
-feature's own `index.ts`: when you add a `screen` or `route` to an existing
-feature, its export is appended so the route compiles. That file belongs to a
+feature's own `index.ts`: when a `route` targets a screen in an existing
+feature, that screen's export is appended so the route compiles. A screen
+generated without a route does not touch it. That file belongs to a
 single feature, so unlike a shared registry it is never a cross-agent conflict.
 It appends only when the export is missing, never reorders, and never rewrites
 existing lines — and reports it:

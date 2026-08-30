@@ -93,10 +93,27 @@ jobs:
           echo "native libraries in the APK:"
           unzip -l "$apk" | grep -oE "lib/[^/]+/" | sort -u
 
+      # NOT PINNED, and that is a known reproducibility gap: this installer takes
+      # whatever is newest, so a Maestro release can change selector or timeout
+      # behaviour and turn a green flow red with no change in this repository.
+      #
+      # It is left unpinned deliberately rather than pinned wrongly. The
+      # installer's own version-selection interface could not be verified from
+      # the environment this was written in (egress to the host is blocked), and
+      # a pin that silently does nothing is worse than an honest unpinned
+      # install — it reads as a guarantee that is not there.
+      #
+      # To close this: check the installer's supported version variable, or
+      # fetch a specific release archive by URL, then record the version here.
       - name: Install Maestro
         run: |
           curl -fsSL "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      # Until it is pinned, at least every run states which version produced its
+      # result, so a sudden failure can be checked against a version change.
+      - name: Report the Maestro version
+        run: maestro --version
 
       # KVM must be enabled or the emulator falls back to software rendering and
       # times out. This is the documented setup for the emulator runner action.

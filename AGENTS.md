@@ -101,9 +101,12 @@ failure, and the fix is to move the code — not to add a disable comment.
 
 1. **Routes are thin.** `app/**` may not import Supabase, Zustand, or TanStack
    Query. A route renders a feature's screen and passes params.
-2. **Only `api/` touches the network.** Every other file in a feature — screens,
+2. **Only `api/` reaches Supabase.** Every other file in a feature — screens,
    components, query hooks, stores, schemas — is blocked from importing the
-   Supabase client. Data access lives in `api/`, exposed through a query hook.
+   Supabase client. Backend access lives in `api/`, exposed through a query
+   hook. (The lint rule targets the Supabase client specifically; there is no
+   generic network-access enforcement, so do not read this as "no `fetch`
+   anywhere else" — read it as "the backend has one door".)
 3. **Features are private by default.** Import another feature only through
    `@/features/<name>`. Deep imports are blocked. Inside a feature, use relative
    imports.
@@ -117,10 +120,12 @@ failure, and the fix is to move the code — not to add a disable comment.
 ### Why the boundaries exist
 
 Several agents work from this `main` in parallel. The architecture is optimised
-so that adding a feature touches **only that feature's directory plus one new
-route file**. There is no central feature registry, no global barrel, no shared
-route map, and no central query-key file — because every one of those would be a
-merge conflict on every PR.
+so that adding a feature touches **only that feature's directory plus its
+explicitly planned route file(s)**. Usually that is one file; a multi-screen
+feature legitimately owns several, each named in `plan.md` with the screen it
+renders. There is no central feature registry, no global barrel, no shared route
+map, and no central query-key file — because every one of those would be a merge
+conflict on every PR.
 
 If you find yourself editing a shared file, stop and ask whether the design can
 put that decision inside your feature instead.
@@ -188,8 +193,12 @@ directly** — everything comes through `get_customer_catalog()`.
 - **Logging:** `createLogger("scope")` from `@/core/logging`. `console` is a
   lint error everywhere else. Never log tokens, passwords, or keys.
 - **Server state:** TanStack Query. Query keys live in your feature.
-- **Client state:** Zustand + `@/core/storage`. If state must be durable,
-  surface a failed write — see [`docs/state-management.md`](./docs/state-management.md).
+- **Client state:** not every client-owned value needs a store. State used by
+  one screen and discarded with it is React state. A **Zustand store** is for
+  client-owned state that outlives a screen or is shared across several —
+  a cart, say. When it must survive a restart, persist it through
+  `@/core/storage` and surface a failed write; see
+  [`docs/state-management.md`](./docs/state-management.md).
 
 ---
 
@@ -201,7 +210,11 @@ directly** — everything comes through `get_customer_catalog()`.
   `border-border`). Never a raw hex value or an arbitrary pixel dimension that
   should be a token.
 - Minimum touch target **48dp** (`h-touch`).
-- Every screen handles **loading, empty, error, retry** — not just the happy path.
+- **Handle every state the screen actually has** — and only those. A data-backed
+  read handles loading, empty, error with retry, and success; a mutation handles
+  pending, success, business conflict and error; a static or local-only screen
+  handles the states it genuinely has. Do not fabricate an empty state for a
+  screen that cannot be empty.
 - Check **tablet portrait, tablet landscape, and a narrow web width**.
 - Accessibility is not optional: accessible names, announced state, text
   scaling, no hover-only actions.
@@ -232,10 +245,21 @@ workflow. In outline:
 1. **Research** — what the migrations actually offer, what the product should do,
    what the design system already has. Delegate these in parallel.
 2. **`features/<name>/docs/brief.md`** — what, and how you will know it is done.
-3. **`features/<name>/docs/plan.md`** — how, with the `kisok-feature-plan` skill. It names
-   the feature's shape and therefore which capabilities to generate.
-4. **Generate what the plan calls for**: `pnpm generate query catalog products`,
-   `pnpm generate screen catalog product-detail --role=customer`, and so on.
+3. **`features/<name>/docs/plan.md`** — how, with the `kisok-feature-plan` skill.
+   It names the feature's shape, maps every generator command to a task, and
+   carries `Status: DRAFT` until it is implementable. **No implementation task
+   starts while the plan is `DRAFT`.** That is the readiness signal, not a fourth
+   gate — the gates stay `TASK`, `ROUND`, `FEATURE`.
+4. **Scaffold just-in-time, and it is the Lead's job.** Run each planned
+   generator command immediately before delegating the task that needs it —
+   never all of them up front. An implementer does not run the generator and
+   does not hand-write a file a capability would have produced; if an unplanned
+   structural artifact turns out to be necessary it stops and reports, and the
+   plan is revised first.
+   If a capability matches, use it: `feature`, `schema`, `query`, `mutation`,
+   `store`, `component`, `screen`, `realtime`, `route`. Manual files are
+   legitimate only when none fits, the path is planned, and it is in the task's
+   scope — domain rules, selectors, state machines, mappers, behaviour tests.
 5. **Work in atomic tasks**, each one
    `CLASSIFY → RED / BASELINE → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE`.
    **CLASSIFY** means declaring the task's verification mode before any work:
@@ -247,9 +271,16 @@ workflow. In outline:
    A task is done only at `PASS`, and the next task waits for its dependencies.
    Record evidence in the feature's `docs/worklog.md` — a checkmark with no output is
    not evidence.
-6. **Round gates**, then the **feature gate**: `pnpm verify`, runtime evidence,
-   independent code review, remediation, re-review, quality audit.
-7. Open a focused PR using the template.
+6. **Open a draft PR early** — as soon as there is coherent verified work, not
+   at the feature gate. PR-triggered CI and the label-gated native jobs only run
+   once a PR exists, so deferring it means the first Android build happens after
+   the work is supposedly finished. `PENDING` gates in the template are fine
+   while it is a draft.
+7. **Round gates**, then the **feature gate**: `pnpm verify`, fast GitHub CI
+   green **on the final HEAD**, runtime evidence, independent code review,
+   remediation, re-review, quality audit. Local `pnpm verify` alone is not the
+   authority — several checks depend on an environment only CI has.
+8. Only at `PASS` do you mark the PR ready for a human. **Never merge it.**
 
 Full walkthrough: [`docs/feature-workflow.md`](./docs/feature-workflow.md).
 The harness — skills, subagents, gates: [`docs/agent-harness.md`](./docs/agent-harness.md).

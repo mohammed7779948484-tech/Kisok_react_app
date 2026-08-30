@@ -28,7 +28,7 @@ env:
 
 jobs:
   verify:
-    name: Typecheck, lint, format, test
+    name: Verify (typecheck, lint, format, tests, guards, db, generator)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -36,6 +36,9 @@ jobs:
         with:
           # The job never pushes, so do not leave a token in .git/config.
           persist-credentials: false
+          # Full history: the commit-range lint below needs the merge base, and
+          # a shallow clone does not have it.
+          fetch-depth: 0
 
       # pnpm must be installed BEFORE setup-node, or `cache: pnpm` cannot find it.
       - uses: pnpm/action-setup@v6
@@ -78,8 +81,21 @@ jobs:
       - name: Check documentation matches the current workflow
         run: pnpm check:docs
 
+      # Proves the RULES behave — that a feature agent's commit is accepted and a
+      # shapeless one is not. It lints sample messages, not this PR's commits.
       - name: Check the commit convention still accepts what agents write
         run: pnpm check:commits
+
+      # Lints THIS PR's actual commits. The commit-msg hook is bypassed by
+      # --no-verify, so without this the convention is a suggestion. Skipped on
+      # pushes to main, where the range has already been reviewed.
+      - name: Lint this pull request's commits
+        if: github.event_name == 'pull_request'
+        run: |
+          pnpm exec commitlint \
+            --from "${{ github.event.pull_request.base.sha }}" \
+            --to "${{ github.event.pull_request.head.sha }}" \
+            --verbose
 
       - name: Check Maestro flows target the app this project builds
         run: pnpm check:e2e-appid
@@ -104,7 +120,13 @@ jobs:
             echo ""
             echo "| Check | Status |"
             echo "| --- | --- |"
-            echo "| Typecheck / lint / format / test / generator | ${{ job.status }} |"
+            echo "| Typecheck, lint, format, tests | ${{ job.status }} |"
+            echo "| Database types vs migrations (db:verify) | ${{ job.status }} |"
+            echo "| Documentation freshness (check:docs) | ${{ job.status }} |"
+            echo "| Commit convention (check:commits) | ${{ job.status }} |"
+            echo "| Maestro appId (check:e2e-appid) | ${{ job.status }} |"
+            echo "| Workflow script invocations (check:ci-scripts) | ${{ job.status }} |"
+            echo "| Generator smoke test | ${{ job.status }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   web-export:

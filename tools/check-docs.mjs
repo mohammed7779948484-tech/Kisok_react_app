@@ -78,6 +78,34 @@ const OBSOLETE = [
     fix: "Do not hard-code the number of generator smoke shapes; say 'the generator smoke shapes'.",
   },
   {
+    // The narrower `features/…/TODO.md` pattern missed a bare `TODO.md` in an
+    // anatomy listing, which is exactly where it did survive.
+    pattern: /^\s*(?:[│├└─\s]*)?TODO\.md\b/,
+    fix: "A feature's working memory is `features/<name>/docs/todo.md`. There is no feature-root TODO.md.",
+  },
+  {
+    // Same blind spot for the old test-bucket convention.
+    pattern: /^\s*(?:[│├└─\s]*)?__tests__\/\s+/,
+    fix: "Feature tests sit directly beside their subject — `catalog.schema.test.ts` next to `catalog.schema.ts`. Foundation and core/ suites keep their existing __tests__/.",
+  },
+  {
+    // The generator's old populated default. `feature` now creates a workspace
+    // and nothing else, so prose promising these files is an instruction to
+    // expect code that will not be there.
+    pattern: /schema,\s*query,\s*component,\s*screen,\s*route/,
+    fix: "`pnpm generate feature` defaults to NOTHING — a workspace. Capabilities are generated one at a time as the plan calls for them.",
+  },
+  {
+    // Expo does publish official skills, at github.com/expo/skills.
+    pattern: /Expo\s+publishes\s+no\s+agent\s+skills|no\s+official\s+Expo\s+skills/i,
+    fix: "Expo publishes official skills at github.com/expo/skills, under plugins/expo/skills/. expo-router and expo-dev-client are vendored here.",
+  },
+  {
+    // `route` no longer implies a screen; it targets one by name.
+    pattern: /route\s+(?:also\s+)?(?:brings|generates|creates)\s+(?:its|the)\s+screen/i,
+    fix: "A route renders an EXISTING screen named with --screen=<name>. It generates only the route file.",
+  },
+  {
     // The five control documents live in features/<name>/docs/. A bare
     // `docs/plan.md` in a root document reads as THIS repository's docs/, and
     // an agent following it literally writes a feature's control document into

@@ -63,7 +63,7 @@ pnpm generate feature <n> --role=customer   # a feature WORKSPACE (docs + index)
 pnpm generate --help    # every capability; add pieces once the plan says so
 pnpm check:docs         # fail on docs describing a workflow we no longer have
 pnpm db:verify          # prove database.types.ts matches the migrations
-pnpm verify             # everything CI runs — do this before opening a PR
+pnpm verify             # the CI verify job, exactly — before opening a PR
 ```
 
 ## Where code goes

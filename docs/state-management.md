@@ -39,6 +39,25 @@ The shared `QueryClient` sets sensible defaults:
 On sign-out, `queryClient.clear()` runs so the next account cannot read the
 previous session's data.
 
+## When a store is the right answer
+
+Not every client-owned value needs one.
+
+| State                                  | Where it belongs                                                                         |
+| -------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Used by one screen, discarded with it  | React state in that screen                                                               |
+| Shared across screens, or outlives one | a Zustand store in `state/`                                                              |
+| Must survive an app restart            | a Zustand store, persisted through `@/core/storage`, with an explicit persistence result |
+| Comes from the database                | TanStack Query — never mirrored into a store                                             |
+
+A store for state a single screen owns adds a module, a subscription and a
+lifetime to reason about, for nothing. Generate one when the state genuinely
+outlives or spans screens.
+
+Non-persistent stores are legitimate; `pnpm generate store` produces a persisted
+one because that is the harder case to get right, and dropping persistence is a
+smaller edit than adding it correctly.
+
 ## Client state and persistence
 
 Zustand, writing through `@/core/storage`.

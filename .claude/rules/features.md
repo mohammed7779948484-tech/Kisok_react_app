@@ -6,7 +6,8 @@ paths:
 # Working inside a feature
 
 A feature is a self-contained vertical slice. The goal is that implementing it
-touches **only this directory plus one route file** — so parallel work does not
+touches **only this directory plus its explicitly planned route file(s)** — so
+parallel work does not
 conflict.
 
 ## Layout
@@ -36,8 +37,15 @@ Tests live beside what they protect. Generate only what the feature needs.
 - **Query keys stay local**, in `queries/keys.ts`. There is no central registry
   on purpose.
 - Keep `index.ts` small. A wide public API defeats the boundary.
-- **Update `TODO.md` as you work.** Do not tick a box without evidence: a test
-  name, a command you ran, or a screen state you actually looked at.
+- **Update `features/<feature>/docs/todo.md` as you work.** It is the execution
+  state — current task, stage, gate — and after a compaction or a handoff it is
+  what tells the next agent where the work stopped. Do not tick a box without
+  evidence: a test name, a command you ran, or a screen state you looked at.
+  Evidence itself goes in the feature's `docs/worklog.md`.
+- **No implementation task starts while the feature's `docs/plan.md` is
+  `DRAFT`.** The Lead
+  sets it `READY`, and the Lead runs each planned generator command immediately
+  before delegating the task that needs it — never in bulk up front.
 
 ## Before you finish
 

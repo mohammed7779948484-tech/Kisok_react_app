@@ -65,7 +65,8 @@ no longer had any relationship to the repository.
 - [x] jest-expo + RNTL; Vitest removed
 - [x] Test utilities: providers, test QueryClient, Supabase mock, memory storage
 - [x] Foundation test suite runs with zero console output
-- [x] `pnpm verify` runs everything CI runs
+- [x] `pnpm verify` matches the CI **verify job** — enforced by `pnpm check:ci-scripts`. CI also
+      runs separate `web-export` and `doctor` jobs.
 - [x] CI: fast checks on every PR, Android build behind a label
 
 **Generator**
@@ -96,11 +97,13 @@ no longer had any relationship to the repository.
       unreachable service, so it cannot go green by failing to check. It must be
       invoked as `pnpm run doctor` — pnpm has a built-in `doctor` that shadows
       the script, and `pnpm check:ci-scripts` fails the build on that mistake.
-- [x] **The Maestro smoke flow passes on an emulator.** Run 33289290576:
-      `1/1 Flow Passed in 10s`. It found a real defect first — the release APK
-      died in `Application.onCreate` with
-      `SoLoaderDSONotFoundError: libreactnative.so`, an ABI mismatch — which no
-      test, typecheck or lint in this repository could have seen.
+- [x] **The Maestro smoke flow passes on an emulator.** First green on run
+      33289290576 (`1/1 Flow Passed in 10s`), which found a real defect on the
+      way — the release APK died in `Application.onCreate` with
+      `SoLoaderDSONotFoundError: libreactnative.so`, an ABI mismatch no test,
+      typecheck or lint here could have seen. **Golden-main evidence must be a
+      run on the final HEAD**, not this historical one; see the PR body for the
+      run that actually gates the freeze.
 - [ ] **Verify on a physical Android tablet.** The emulator flow is green, but
       splash, adaptive icon, real orientation changes, AsyncStorage across a
       genuine cold start, and Realtime over a real connection still need the

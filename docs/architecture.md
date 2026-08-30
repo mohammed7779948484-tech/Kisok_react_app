@@ -51,19 +51,35 @@ There is **no central route registry**. Expo Router's file-based routing means
 adding a file _is_ the registration — which is exactly the property that keeps
 parallel work conflict-free.
 
+A feature owns **explicitly planned route file(s)** — usually one, but a
+multi-screen feature legitimately owns several, and each is named in `plan.md`
+with the screen it renders. A route is generated against an existing screen
+(`--screen=<name>`), because the route file's name is a URL segment and the
+screen's name says what it shows.
+
 ### `features/<name>/` — vertical slices
 
 ```
-index.ts     Public API. The only importable surface from outside.
-TODO.md      The agent's working memory for this feature.
-api/         The only place that calls Supabase.
-queries/     TanStack Query hooks and query keys.
-state/       Zustand store for client-owned state.
-model/       Types, Zod schemas, pure rules and selectors. No IO.
-components/  Presentational, feature-private.
-screens/     Composed screens.
-__tests__/   Colocated tests.
+index.ts             Public API. The only importable surface from outside.
+docs/                brief.md, plan.md, todo.md, worklog.md, review.md
+api/                 The only place that calls Supabase.
+queries/             TanStack Query hooks and query keys.
+state/               Zustand store for client-owned state.
+model/               Types, Zod schemas, pure rules and selectors. No IO.
+components/          UI shared by several screens in this feature.
+screens/<screen>/    The screen, its colocated test, and its own components/.
 ```
+
+Tests sit **directly beside the code they cover** — `catalog.schema.ts` and
+`catalog.schema.test.ts` in the same directory — not in a `__tests__/` bucket.
+That applies to feature code. Existing foundation and `core/` tests use
+`__tests__/` and are deliberately left alone; moving them would be churn with no
+benefit.
+
+A screen owns a directory. UI used by only that screen lives in its own
+`components/` next door; UI shared by several screens in the feature moves up to
+`features/<name>/components/`; UI reused across features belongs in the design
+system under root `components/`.
 
 A feature generates only the layers it needs. A read-only screen has no business
 carrying an empty `state/` directory.

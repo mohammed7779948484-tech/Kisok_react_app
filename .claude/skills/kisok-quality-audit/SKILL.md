@@ -70,7 +70,8 @@ This is the heart of the audit. For each claim, ask what would prove it.
 
 ### Are shared surfaces touched?
 
-- Anything outside `features/<name>/` and one route file: is it justified in the
+- Anything outside `features/<name>/` and the route file(s) the plan names: is
+  it justified in the
   plan, or did it appear silently?
 - New dependencies: recorded and justified?
 - Migrations, RLS, grants: any change here needs an explicit backend decision.

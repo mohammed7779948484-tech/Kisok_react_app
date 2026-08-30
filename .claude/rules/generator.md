@@ -14,6 +14,10 @@ Capabilities: `feature` (a minimal workspace — `index.ts` plus `docs/`),
 composes them. `feature` alone generates NO implementation code on purpose —
 planning decides the shape.
 
+**The Lead runs these, just-in-time**: each planned command immediately before
+the task that needs it, never all of them up front. An implementer does not run
+the generator, and does not hand-write a file a capability would have produced.
+
 Writing is atomic: PLAN → RENDER → FORMAT/PARSE → VALIDATE → WRITE. If any
 planned file is invalid, nothing is written.
 
@@ -54,14 +58,28 @@ planned file is invalid, nothing is written.
 - **Never make the generator edit a SHARED file.** The moment a capability
   patches a registry, a route map or a global barrel, parallel agents start
   conflicting — the problem this generator exists to avoid. The smoke test
-  asserts every generated path is inside the feature or is one route file.
+  asserts every generated path is inside the feature or is a route file.
   The single exception is the feature's OWN `index.ts`, appended to so a
   generated route compiles. That file has exactly one owner, so it is not a
   conflict surface.
-- **Realtime is Preparation-only.** Only `public.orders` is published and RLS
-  gives a customer session no rows, so the generator refuses
-  `realtime --role=customer` rather than emitting a subscription that can never
-  fire.
+- **Realtime is Preparation-only, and that includes `shared`.** Only
+  `public.orders` is published, and RLS gives a non-Preparation session no rows
+  on it. `realtime` accepts `--role=preparation` and rejects both `customer` and
+  `shared` — a shared feature can be reached by a customer session, where the
+  subscription can never fire.
+- **Role-sensitive capabilities require an explicit `--role`**: `feature`,
+  `route` and `realtime`. It used to default to `shared`, which meant
+  `pnpm generate route x y` silently wrote into top-level `app/` instead of a
+  role group. A default that is wrong most of the time is worse than none. Every
+  other capability is role-independent and still defaults to `shared`.
+- **A route targets a named EXISTING screen**: `--screen=<name>`, required. The
+  route file's name is a URL segment; the screen's name says what it shows.
+  Route generation refuses when the target is missing, and
+  `feature --with=route` refuses without `screen` in the same request.
+- **Screens are feature-private by default.** `features/<name>/index.ts` only
+  gains an export when a route renders that screen, because a route is the one
+  thing the generator creates that lives outside the feature. `generate screen`
+  alone does not widen the public API.
 
 ## Database tooling
 

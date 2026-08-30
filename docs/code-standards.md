@@ -25,7 +25,11 @@ The generator encodes all of this — a generated feature is the reference.
   `export default`.
 - A feature's `index.ts` is its public API and should stay small. Everything else
   is private.
-- Colocate tests in `__tests__/` next to the code they cover.
+- **Feature code**: put the test directly beside its subject —
+  `catalog.schema.ts` and `catalog.schema.test.ts` in the same directory, a
+  screen's test inside `screens/<screen>/`. No `__tests__/` bucket.
+- **Foundation and `core/`**: existing suites live in `__tests__/` and stay
+  there. This is a convention for new feature code, not a reason to move them.
 
 ## TypeScript
 

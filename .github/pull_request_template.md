@@ -64,11 +64,35 @@ GREEN / VERIFICATION
 
 ## Gates
 
+`PENDING` is fine while this is a draft. The feature gate must pass before the
+PR is marked ready — and it is never merged by an agent.
+
 | Gate            | Result |
 | --------------- | ------ |
 | All task gates  |        |
 | All round gates |        |
 | Feature gate    |        |
+
+### Feature gate checklist
+
+- [ ] Every Task Gate PASS
+- [ ] Every Round Gate PASS
+- [ ] Every acceptance criterion (`AC-xx`) verified
+- [ ] `pnpm verify` PASS after the final local change
+- [ ] Required fast GitHub CI PASS **on the final HEAD** (link the run)
+- [ ] Required runtime evidence recorded
+- [ ] Required native tier(s) PASS, N/A, or explicitly unverified
+- [ ] Reviewer findings dispositioned
+- [ ] Blocking/major fixes re-reviewed
+- [ ] Quality audit clean
+- [ ] Anything not verified is explicitly recorded below
+- [ ] Shared/`core/` changes justified
+- [ ] The evidence in this PR matches `docs/worklog.md`
+
+FEATURE GATE: PENDING
+
+GitHub CI on the final HEAD is required evidence. A local `pnpm verify` is not
+the authority for checks that depend on an environment only CI has.
 
 ## Runtime verification
 

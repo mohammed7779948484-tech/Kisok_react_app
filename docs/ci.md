@@ -11,6 +11,21 @@ break the foundation — without needing any secret.
 | **web-export** | `expo export --platform web` still bundles — the preview workflow agents depend on                                                                                                                                                                               |
 | **doctor**     | `expo-doctor` dependency alignment                                                                                                                                                                                                                               |
 
+### Two different commit checks, deliberately
+
+They are not the same guarantee, and neither substitutes for the other:
+
+| Check                                  | Lints                          | Answers                                                                                                                        |
+| -------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm check:commits`                   | 13+ hard-coded sample messages | do the RULES behave — is `feat(order-v2)` accepted, is a shapeless subject rejected, did someone reintroduce a scope registry? |
+| `commitlint --from <base> --to <head>` | this PR's real commits         | does the history actually follow the convention?                                                                               |
+
+The sample check is not commit enforcement, and calling it that would be the
+kind of claim this repository is built to avoid. The `commit-msg` hook is
+bypassed by `--no-verify`, so the range lint in CI is what makes the convention
+binding. Policy: **every commit on a PR must be a Conventional Commit**, not
+just the eventual merge subject.
+
 ### A check that ran nothing at all
 
 The doctor job invoked `pnpm doctor`. pnpm has a **built-in `doctor`

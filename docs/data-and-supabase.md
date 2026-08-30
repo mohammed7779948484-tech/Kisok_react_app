@@ -197,10 +197,21 @@ Wraps `supabase gen types typescript`. It needs the Supabase CLI and either a
 linked project (`supabase link`) or `SUPABASE_PROJECT_ID`.
 
 `core/supabase/database.types.ts` is checked in so typecheck and CI work without
-credentials, and `pnpm db:verify` proves it matches the migrations on every CI
-run. Never hand-edit it. It has still not been checked against the **deployed**
-project, so regenerate with `pnpm db:types` if the live schema may have drifted
-from what is committed here.
+credentials. Never hand-edit it.
+
+The committed file **was generated from the deployed project** at this
+checkpoint, using Supabase's own generator — it is not hand-derived.
+
+`pnpm db:verify` is a different guarantee, and both matter:
+
+| Check            | Proves                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm db:verify` | the committed types match `supabase/migrations/*.sql`, deterministically, against a throwaway PostgreSQL. Runs on every CI run. |
+| `pnpm db:types`  | regenerates from the deployed project                                                                                           |
+
+Neither rules out future drift: someone can change the deployed schema without a
+migration. If the live schema may have moved, regenerate and let `db:verify`
+tell you whether the migrations agree.
 
 ## Known gap: customer order tracking
 

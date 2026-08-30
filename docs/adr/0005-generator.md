@@ -48,10 +48,11 @@ Improvements over the package, each earning its keep:
   reaches its screen through the public API and would otherwise not compile.
   That file has a single owner, so it is not a cross-agent conflict the way a
   shared registry would be.
-- **Tested against four materially different feature shapes.**
-  `pnpm generate:smoke` generates read-heavy, local-state-heavy, mutation-heavy
-  and realtime features, proves each typechecks, lints with zero warnings, is
-  formatted and passes its own tests, then removes them.
+- **Tested against materially different feature shapes.**
+  `pnpm generate:smoke` generates workspace-only, domain-only, read-heavy,
+  local-state-heavy, mutation-heavy and realtime features, proves each
+  typechecks, lints with zero warnings, is formatted and passes its own tests,
+  then removes them.
 
 ## Consequences
 
@@ -70,3 +71,19 @@ catalog and badly for a cart, a checkout, or a maintenance screen, and a
 generator that fits one feature type teaches the wrong patterns for the rest.
 Capabilities fix that: a feature composes only what it needs, and nothing in the
 output implies a shape the feature does not have.
+
+## Update — 2026-08-30
+
+Two parts of the record above have since changed, and the reasons are worth
+keeping:
+
+- **A route no longer implies a screen.** It targets an existing one by name
+  (`--screen=<name>`). The old coupling forced the route file and the screen to
+  share a name, which cannot express `app/(customer)/index.tsx` rendering
+  `CatalogHomeScreen` — it generated an unused `IndexScreen` instead.
+- **A screen is exported from the feature's `index.ts` only when a route renders
+  it.** Exporting every generated screen made the generator itself break the
+  "keep the public API minimal" rule it teaches.
+
+The `index.ts` append is otherwise unchanged, and now happens inside the same
+write transaction as everything else, so a failure rolls it back too.

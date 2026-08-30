@@ -15,7 +15,7 @@ import { caseProps, parseFrontMatter, writeFiles } from "./render.mjs";
  * A generator whose templates merely "look right" is worthless: every future
  * feature inherits whatever it emits. This proves the real output typechecks,
  * lints without warnings, is formatted, and passes its own generated tests —
- * across FOUR materially different feature shapes — then removes every trace.
+ * across materially different feature shapes — then removes every trace.
  *
  * Run with `pnpm generate:smoke`. CI runs it on every PR.
  */

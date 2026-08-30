@@ -33,9 +33,9 @@ records their source and hash. Update them with
 
 Expo maintains an official skills repository at **`github.com/expo/skills`**,
 with each skill one level deep under `plugins/expo/skills/<name>/`. An earlier
-version of this file said Expo publishes no agent skills. That was wrong: the
-search looked for an npm package and a Claude Code plugin, found neither, and
-concluded the wrong thing. The repository is the distribution channel.
+version of this file claimed otherwise. That search looked for an npm package
+and a Claude Code plugin, found neither, and concluded the wrong thing: the
+repository is the distribution channel.
 
 Two of them are vendored, whole directories including `references/`:
 

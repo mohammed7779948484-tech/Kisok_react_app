@@ -3,9 +3,14 @@ import lint from "@commitlint/lint";
 import load from "@commitlint/load";
 
 /**
- * Prove the commit convention accepts what feature agents actually write.
+ * Prove the commit convention RULES behave, using sample messages.
  *
  *     pnpm check:commits
+ *
+ * This is NOT enforcement of this PR's commits. It lints fixed examples to prove
+ * the configuration does what it claims. CI lints the real commit range
+ * separately (`commitlint --from <base> --to <head>`), because the commit-msg
+ * hook is bypassed by --no-verify.
  *
  * The scope used to be a fixed enum, which made this config a shared file every
  * new feature had to edit before its first commit — the merge-conflict hotspot

@@ -19,9 +19,16 @@ tablet. It should feel premium, calm, and deliberate.
   `border-border`, `bg-destructive`. Never a raw hex value. Colours are defined
   once in `global.css`; a hardcoded colour breaks dark mode and any re-theme.
 - **Touch targets ≥ 48dp** (`h-touch`). Never smaller, even in dense internal UI.
-- **Handle every state**, not just the happy path: loading (prefer a skeleton
-  when the shape is known), empty (with somewhere to go next), error (with retry
-  when retrying can help), and in-flight mutations (controls disabled).
+- **Handle every state the feature actually HAS**, not just the happy path — and
+  only the states it has. Inventing an empty state for a screen that cannot be
+  empty produces a test asserting something impossible.
+
+  | The feature has…        | Handle                                                                                                                            |
+  | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+  | a data-backed read      | loading (skeleton when the shape is known), empty (with somewhere to go next), error (with retry when retrying can help), success |
+  | a mutation              | pending (controls disabled), success, business conflict, error                                                                    |
+  | static or local-only UI | only the states that genuinely exist                                                                                              |
+
 - **Responsive:** check tablet portrait (768+), tablet landscape (1024+), and a
   narrow web width (<768). Use `useLayout()` from `@/core/responsive` or the
   Tailwind breakpoints — they are the same thresholds. No ad-hoc pixel maths.
