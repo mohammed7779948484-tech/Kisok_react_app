@@ -412,8 +412,9 @@ export function planFeatureExport({ root, feature, screens, alreadyPlanned }) {
     const line = screenExportLine(screen);
     if (next.includes(line)) continue;
     // `export {}` is the placeholder a workspace-only feature carries; a real
-    // export replaces it rather than sitting beside it.
-    next = `${next.replace(/\nexport \{\};\n?/, "\n").replace(/\s*$/, "")}\n${line}\n`;
+    // export replaces it rather than sitting beside it. The semicolon is
+    // optional because a hand-edited file may not have been formatted yet.
+    next = `${next.replace(/\nexport\s*\{\s*\};?[ \t]*\n?/, "\n").replace(/\s*$/, "")}\n${line}\n`;
   }
 
   return next === current ? null : { destination, absolute, contents: next };

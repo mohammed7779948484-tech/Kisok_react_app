@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { planRequest, run } from "./cli.mjs";
-import { caseProps, parseFrontMatter, writeFiles } from "./render.mjs";
+import { caseProps, parseFrontMatter, planFeatureExport, writeFiles } from "./render.mjs";
 
 /**
  * Generator quality gate.
@@ -933,6 +933,40 @@ try {
   }
 
   fs.writeFileSync = realWriteForExport;
+
+  check("the workspace placeholder is replaced, not left beside a real export", () => {
+    // `export {}` is what a workspace-only feature carries. A real export must
+    // replace it; leaving both is valid TypeScript and reads as an oversight.
+    // The semicolon is optional because a hand-edited file may not be formatted.
+    for (const placeholder of ["export {};\n", "export {}\n", "export { };\n"]) {
+      fs.writeFileSync(featureIndex, `/** doc */\n${placeholder}`, "utf8");
+      const patch = planFeatureExport({
+        root: exportRoot,
+        feature: "smoke-export",
+        screens: ["home"],
+        alreadyPlanned: new Set(),
+      });
+      assert.doesNotMatch(patch.contents, /export\s*\{\s*\}/, placeholder);
+      assert.match(patch.contents, /HomeScreen/);
+    }
+
+    // ...and an existing REAL export is kept, not swallowed.
+    fs.writeFileSync(
+      featureIndex,
+      'export { OneScreen } from "./screens/one/one-screen";\n',
+      "utf8",
+    );
+    const appended = planFeatureExport({
+      root: exportRoot,
+      feature: "smoke-export",
+      screens: ["two"],
+      alreadyPlanned: new Set(),
+    });
+    assert.match(appended.contents, /OneScreen/);
+    assert.match(appended.contents, /TwoScreen/);
+
+    fs.writeFileSync(featureIndex, before, "utf8");
+  });
 
   check("a failure after the export patch reports the failure", () => {
     assert.ok(threw, "writeFiles reported success despite a failed write");
