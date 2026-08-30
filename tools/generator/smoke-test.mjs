@@ -117,9 +117,14 @@ const FOLLOW_UPS = [
     name: "search-filter",
     screen: "search",
   },
-  // The documented "add a route later" flow. Its screen must be generated AND
-  // exported from the feature's public API, or the route will not compile.
-  { capability: "route", feature: "smoke-read", name: "detail" },
+  // The documented "add a route later" flow: the screen already exists (the
+  // `search` follow-up above generated it), and the route names it. This is the
+  // case the old design could not express — the route file is `detail.tsx` and
+  // the screen is `SearchScreen`, which forced a same-named unused screen before.
+  //
+  // The route is also what makes that screen public: a screen is feature-private
+  // until something outside the feature renders it.
+  { capability: "route", feature: "smoke-read", name: "detail", screen: "search" },
 ];
 
 const SCRATCH_FEATURES = [
@@ -207,15 +212,7 @@ for (const shape of SHAPES) {
 }
 
 check("every capability is individually generatable", () => {
-  for (const capability of [
-    "schema",
-    "query",
-    "mutation",
-    "store",
-    "component",
-    "screen",
-    "route",
-  ]) {
+  for (const capability of ["schema", "query", "mutation", "store", "component", "screen"]) {
     const planned = planRequest({
       capability,
       feature: "solo",
@@ -224,19 +221,218 @@ check("every capability is individually generatable", () => {
     });
     assert.ok(planned.length > 0, `${capability} planned nothing`);
   }
-});
-check("a route also brings the screen it renders", () => {
-  // A route imports its screen through the feature's public API, so emitting a
-  // route without a screen would reference something that does not exist.
-  const destinations = planRequest({
-    capability: "route",
-    feature: "solo",
-    name: "detail",
-    options: { role: "customer" },
-  }).map((file) => file.destination);
 
-  assert.ok(destinations.some((d) => d.includes("screens/detail/detail-screen.tsx")));
-  assert.ok(destinations.includes("app/(customer)/detail.tsx"));
+  // `route` and screen-local `component` both need a target screen on disk, so
+  // they are exercised against a real one rather than in the abstract.
+  const featureRoot = path.join(ROOT, "features", "solo-target");
+  try {
+    fs.mkdirSync(path.join(featureRoot, "screens", "catalog-home"), { recursive: true });
+    fs.writeFileSync(
+      path.join(featureRoot, "screens", "catalog-home", "catalog-home-screen.tsx"),
+      "export function CatalogHomeScreen() {\n  return null;\n}\n",
+      "utf8",
+    );
+
+    const route = planRequest({
+      capability: "route",
+      feature: "solo-target",
+      name: "index",
+      options: { role: "customer", screen: "catalog-home" },
+    });
+    assert.ok(route.length > 0, "route planned nothing");
+
+    const component = planRequest({
+      capability: "component",
+      feature: "solo-target",
+      name: "chip",
+      options: { role: "customer", screen: "catalog-home" },
+    });
+    assert.ok(component.length > 0, "screen-local component planned nothing");
+  } finally {
+    fs.rmSync(featureRoot, { recursive: true, force: true });
+  }
+});
+check("a route renders a NAMED existing screen and generates nothing else", () => {
+  // A route used to imply `also: ["screen"]`, forcing the route file and the
+  // screen to share a name. That cannot express
+  // `app/(customer)/index.tsx → CatalogHomeScreen`: it generated an unused
+  // `IndexScreen` instead. The route now targets a screen explicitly.
+  const featureRoot = path.join(ROOT, "features", "solo-route");
+  try {
+    fs.mkdirSync(path.join(featureRoot, "screens", "catalog-home"), { recursive: true });
+    fs.writeFileSync(
+      path.join(featureRoot, "screens", "catalog-home", "catalog-home-screen.tsx"),
+      "export function CatalogHomeScreen() {\n  return null;\n}\n",
+      "utf8",
+    );
+
+    const planned = planRequest({
+      capability: "route",
+      feature: "solo-route",
+      name: "index",
+      options: { role: "customer", screen: "catalog-home" },
+    });
+    const destinations = planned.map((file) => file.destination);
+
+    assert.deepEqual(destinations, ["app/(customer)/index.tsx"], "a route is ONE file");
+    assert.match(
+      planned[0].contents,
+      /CatalogHomeScreen/,
+      "the route must render the screen it was pointed at",
+    );
+    assert.doesNotMatch(planned[0].contents, /IndexScreen/, "no screen named after the route file");
+  } finally {
+    fs.rmSync(featureRoot, { recursive: true, force: true });
+  }
+});
+
+// The first real feature in each experience REPLACES the foundation placeholder
+// at app/(role)/index.tsx. That is a deliberate overwrite of a tracked file, and
+// it has to work — otherwise the documented first step of the first feature is
+// "the generator refuses, work around it by hand".
+for (const [role, group] of [
+  ["customer", "(customer)"],
+  ["preparation", "(preparation)"],
+]) {
+  check(`replaces the ${role} index.tsx placeholder deliberately`, () => {
+    const routePath = path.join(ROOT, "app", group, "index.tsx");
+    const original = fs.readFileSync(routePath, "utf8");
+    assert.match(original, /FoundationPlaceholder/, "expected a placeholder to replace");
+
+    const featureRoot = path.join(ROOT, "features", `smoke-${role}-home`);
+    try {
+      fs.mkdirSync(path.join(featureRoot, "screens", "home"), { recursive: true });
+      fs.writeFileSync(
+        path.join(featureRoot, "screens", "home", "home-screen.tsx"),
+        "export function HomeScreen() {\n  return null;\n}\n",
+        "utf8",
+      );
+
+      const planned = planRequest({
+        capability: "route",
+        feature: `smoke-${role}-home`,
+        name: "index",
+        options: { role, screen: "home" },
+      });
+
+      assert.deepEqual(
+        planned.map((file) => file.destination),
+        [`app/${group}/index.tsx`],
+        "the route must target the placeholder's exact path",
+      );
+      assert.match(planned[0].contents, /HomeScreen/);
+
+      // Without --force the existing placeholder is preserved, not clobbered.
+      const guarded = writeFiles(planned, { root: ROOT });
+      assert.deepEqual(guarded.written, [], "an existing route must not be overwritten silently");
+      assert.deepEqual(guarded.skipped, [`app/${group}/index.tsx`]);
+      assert.equal(fs.readFileSync(routePath, "utf8"), original, "placeholder was modified");
+
+      // With --force it is replaced, which is the intended one-time step.
+      const forced = writeFiles(planned, { root: ROOT, force: true });
+      assert.deepEqual(forced.written, [`app/${group}/index.tsx`]);
+      assert.match(fs.readFileSync(routePath, "utf8"), /HomeScreen/);
+    } finally {
+      fs.writeFileSync(routePath, original, "utf8");
+      fs.rmSync(featureRoot, { recursive: true, force: true });
+    }
+
+    assert.equal(fs.readFileSync(routePath, "utf8"), original, "placeholder was not restored");
+  });
+}
+
+check("a route whose target screen does not exist is refused", () => {
+  assert.throws(
+    () =>
+      planRequest({
+        capability: "route",
+        feature: "solo",
+        name: "index",
+        options: { role: "customer", screen: "not-generated-yet" },
+      }),
+    /No screen `not-generated-yet`/,
+  );
+});
+
+check("a route with no target screen is refused", () =>
+  assert.throws(
+    () =>
+      planRequest({
+        capability: "route",
+        feature: "solo",
+        name: "index",
+        options: { role: "customer" },
+      }),
+    /needs --screen=/,
+  ),
+);
+
+check("a screen-local component whose screen does not exist is refused", () =>
+  assert.throws(
+    () =>
+      planRequest({
+        capability: "component",
+        feature: "solo",
+        name: "chip",
+        options: { role: "customer", screen: "no-such-screen" },
+      }),
+    /No screen `no-such-screen`/,
+  ),
+);
+
+check("role-sensitive capabilities refuse to guess a role", () => {
+  for (const capability of ["feature", "route", "realtime"]) {
+    assert.throws(
+      () => planRequest({ capability, feature: "solo", name: "thing", options: {} }),
+      /needs an explicit --role=/,
+      `${capability} accepted an unstated role`,
+    );
+  }
+
+  // The rest are role-independent and still default to shared.
+  assert.ok(
+    planRequest({ capability: "schema", feature: "solo", name: "thing", options: {} }).length > 0,
+  );
+});
+
+check("realtime accepts preparation only", () => {
+  for (const role of ["customer", "shared"]) {
+    assert.throws(
+      () =>
+        planRequest({ capability: "realtime", feature: "solo", name: "live", options: { role } }),
+      /preparation-only/,
+      `realtime accepted --role=${role}`,
+    );
+  }
+
+  assert.ok(
+    planRequest({
+      capability: "realtime",
+      feature: "solo",
+      name: "live",
+      options: { role: "preparation" },
+    }).length > 0,
+  );
+});
+
+check("feature --with=route requires a screen in the same request", () => {
+  assert.throws(
+    () =>
+      planRequest({
+        capability: "feature",
+        feature: "solo",
+        options: { role: "customer", with: ["route"] },
+      }),
+    /also needs `screen`/,
+  );
+
+  assert.ok(
+    planRequest({
+      capability: "feature",
+      feature: "solo",
+      options: { role: "customer", with: ["screen", "route"] },
+    }).length > 0,
+  );
 });
 check("rejects an unknown capability", () =>
   assert.throws(
@@ -267,7 +463,7 @@ check("refuses realtime for the customer experience", () =>
         name: "live",
         options: { role: "customer" },
       }),
-    /not available to the customer experience/,
+    /preparation-only/,
   ),
 );
 check("rejects an unknown role", () =>
@@ -310,6 +506,58 @@ check("every control document teaches the same five verification modes", () => {
     assert.deepEqual(missing, [], `${file.destination} never names: ${missing.join(", ")}`);
   }
 });
+// Template CONTRACTS that no generated-output check can catch, because these
+// live in comments. `check:docs` cannot see them either — it scans .md and
+// .md.ejs, not .ts.ejs. A wrong example in a template is copied by every future
+// feature, so it is worth asserting the text directly.
+check("no template teaches a zero-argument RPC with an argument object", () => {
+  const offenders = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith(".ejs")) {
+        const source = fs.readFileSync(full, "utf8");
+        // `callRpc("name", {}, schema)` — Supabase types a zero-argument RPC as
+        // `Args: never`, which `{}` does not satisfy, so this cannot compile.
+        if (/callRpc\([^)]*,\s*\{\s*\}\s*,/.test(source)) {
+          offenders.push(path.relative(ROOT, full));
+        }
+      }
+    }
+  };
+  walk(path.join(ROOT, "tools", "generator", "templates"));
+
+  assert.deepEqual(
+    offenders,
+    [],
+    "a zero-argument RPC is called as callRpc(name, schema); these still pass {}",
+  );
+});
+
+check("no template repeats the false 'every RPC returns jsonb' contract", () => {
+  const offenders = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith(".ejs")) {
+        const source = fs.readFileSync(full, "utf8");
+        if (/every\s+RPC\s+returns\s+`?jsonb/i.test(source)) {
+          offenders.push(path.relative(ROOT, full));
+        }
+      }
+    }
+  };
+  walk(path.join(ROOT, "tools", "generator", "templates"));
+
+  assert.deepEqual(
+    offenders,
+    [],
+    "current_active_profile() is table-returning; not every RPC returns jsonb",
+  );
+});
+
 check("a component is feature-wide by default and screen-local with --screen", () => {
   const wide = planRequest({
     capability: "component",
@@ -319,13 +567,27 @@ check("a component is feature-wide by default and screen-local with --screen", (
   }).map((file) => file.destination);
   assert.deepEqual(wide, ["features/solo/components/chip.tsx"]);
 
-  const local = planRequest({
-    capability: "component",
-    feature: "solo",
-    name: "chip",
-    options: { role: "customer", screen: "detail" },
-  }).map((file) => file.destination);
-  assert.deepEqual(local, ["features/solo/screens/detail/components/chip.tsx"]);
+  // A screen-local component needs its screen to exist — otherwise it lands in a
+  // directory nothing renders, which is usually a sign the tasks ran out of order.
+  const featureRoot = path.join(ROOT, "features", "solo");
+  try {
+    fs.mkdirSync(path.join(featureRoot, "screens", "detail"), { recursive: true });
+    fs.writeFileSync(
+      path.join(featureRoot, "screens", "detail", "detail-screen.tsx"),
+      "export function DetailScreen() {\n  return null;\n}\n",
+      "utf8",
+    );
+
+    const local = planRequest({
+      capability: "component",
+      feature: "solo",
+      name: "chip",
+      options: { role: "customer", screen: "detail" },
+    }).map((file) => file.destination);
+    assert.deepEqual(local, ["features/solo/screens/detail/components/chip.tsx"]);
+  } finally {
+    fs.rmSync(featureRoot, { recursive: true, force: true });
+  }
 });
 check("rejects --screen on anything but a component", () =>
   assert.throws(
@@ -336,7 +598,7 @@ check("rejects --screen on anything but a component", () =>
         name: "y",
         options: { role: "customer", screen: "z" },
       }),
-    /--screen only applies/,
+    /--screen applies to `component`/,
   ),
 );
 check("tests are colocated with the code they protect", () => {
@@ -447,8 +709,8 @@ try {
   const indexPath = path.join(ROOT, "features", "smoke-read", "index.ts");
   const indexAfter = fs.readFileSync(indexPath, "utf8");
   assert.ok(
-    indexAfter.includes("DetailScreen"),
-    "a follow-up route must export its screen from the feature's public API",
+    indexAfter.includes("SearchScreen"),
+    "a follow-up route must export the screen it TARGETS from the public API",
   );
   assert.ok(
     indexAfter.includes("SearchScreen"),
@@ -630,6 +892,64 @@ try {
 }
 
 check("the force fixture was cleaned up", () => assert.ok(!fs.existsSync(forceDir)));
+
+// ---------------------------------------------------------------------------
+// The feature's index.ts export must be INSIDE the rollback.
+//
+// It used to be patched after a successful write, so a later failure left
+// index.ts modified while every generated file had been removed — the one case
+// where "the repository is unchanged" was false.
+// ---------------------------------------------------------------------------
+console.log("\nexport rollback");
+
+const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), "kisok-export-"));
+const realWriteForExport = fs.writeFileSync;
+
+try {
+  const featureIndex = path.join(exportRoot, "features", "smoke-export", "index.ts");
+  fs.mkdirSync(path.dirname(featureIndex), { recursive: true });
+  fs.writeFileSync(featureIndex, "export {};\n", "utf8");
+  const before = fs.readFileSync(featureIndex, "utf8");
+
+  let writes = 0;
+  fs.writeFileSync = (target, data, ...rest) => {
+    writes += 1;
+    // Fail on the SECOND write, after the index.ts patch has landed.
+    if (writes === 2) throw Object.assign(new Error("EIO: simulated"), { code: "EIO" });
+    return realWriteForExport.call(fs, target, data, ...rest);
+  };
+
+  let threw = null;
+  try {
+    writeFiles(
+      [
+        { destination: "app/(customer)/index.tsx", contents: "export default function R() {}\n" },
+        { destination: "app/(customer)/other.tsx", contents: "export default function O() {}\n" },
+      ],
+      { root: exportRoot, feature: "smoke-export", exportScreens: ["home"] },
+    );
+  } catch (error) {
+    threw = error;
+  }
+
+  fs.writeFileSync = realWriteForExport;
+
+  check("a failure after the export patch reports the failure", () => {
+    assert.ok(threw, "writeFiles reported success despite a failed write");
+    assert.match(threw.message, /rolled back/i);
+  });
+
+  check("the feature index.ts is restored byte-for-byte", () =>
+    assert.equal(
+      fs.readFileSync(featureIndex, "utf8"),
+      before,
+      "index.ts kept an export for a feature whose files were all rolled back",
+    ),
+  );
+} finally {
+  fs.writeFileSync = realWriteForExport;
+  fs.rmSync(exportRoot, { recursive: true, force: true });
+}
 
 // ---------------------------------------------------------------------------
 // A write that fails PART-WAY THROUGH A NEW FILE must leave nothing behind.

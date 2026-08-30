@@ -12,10 +12,11 @@ filename: index.ts
  * Export the minimum another feature genuinely needs. A small public surface is
  * what lets several agents work in parallel without conflicting.
  *
- * Generating a screen later appends its export here; nothing else is edited for
- * you, so the generator never fights your changes.
+ * A screen is feature-PRIVATE by default. It appears here only when something
+ * outside the feature renders it — which, from the generator, means a route.
+ * `pnpm generate screen` alone does not widen this file.
  */
-<% if (props.withScreen) { -%>
+<% if (props.withScreen && props.withRoute) { -%>
 export { <%= props.pascalCaseName %>Screen } from "./screens/<%= props.kebabCaseName %>/<%= props.kebabCaseName %>-screen";
 <% } else { -%>
 export {};

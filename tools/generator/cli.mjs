@@ -2,22 +2,20 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import fs from "node:fs";
+
 import {
   CAPABILITIES,
   DEFAULT_WITH,
   FEATURE_CAPABILITIES,
+  REALTIME_ROLES,
+  ROLE_REQUIRED,
   ROLES,
   buildProps,
   planCapability,
   routeDirForRole,
 } from "./capabilities.mjs";
-import {
-  GeneratorError,
-  ensureFeatureExport,
-  formatFiles,
-  validatePlan,
-  writeFiles,
-} from "./render.mjs";
+import { GeneratorError, caseProps, formatFiles, validatePlan, writeFiles } from "./render.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -32,12 +30,16 @@ ${Object.entries(CAPABILITIES)
   .join("\n")}
 
 Options
-  --role=<${ROLES.join("|")}>   Which experience owns this. Decides the route group. Default: shared.
+  --role=<${ROLES.join("|")}>   Which experience owns this. Decides the route group.
+                                REQUIRED for ${ROLE_REQUIRED.join(", ")}; defaults to
+                                shared for everything else.
   --with=<a,b,c>                For \`feature\` only: also generate these.
                                 Default: nothing — a workspace, no assumed shape.
                                 Available: ${FEATURE_CAPABILITIES.join(", ")}.
-  --screen=<name>               For \`component\` only: make it private to that
-                                screen instead of shared across the feature.
+  --screen=<name>               For \`component\`: make it private to that screen
+                                instead of shared across the feature.
+                                For \`route\`: the existing screen the route
+                                renders. Required for \`route\`.
   --dry-run                     Print the plan without writing anything.
   --force                       Overwrite existing files.
 
@@ -62,7 +64,7 @@ Examples
   pnpm generate query  catalog products
   pnpm generate screen catalog product-detail --role=customer
   pnpm generate component catalog availability-badge --screen=product-detail
-  pnpm generate route  catalog index --role=customer
+  pnpm generate route  catalog index --role=customer --screen=catalog-home
 
   # Or, when the shape is already known, compose it in one go.
   pnpm generate feature cart --role=customer --with=store,component
@@ -74,7 +76,9 @@ After generating a feature, fill in docs/brief.md, then docs/plan.md.
 
 function parseArgs(argv) {
   const positional = [];
-  const options = { role: "shared", with: null, screen: null, dryRun: false, force: false };
+  // `role: null` means "not stated". The capabilities that depend on it reject
+  // that; the rest fall back to `shared`.
+  const options = { role: null, with: null, screen: null, dryRun: false, force: false };
 
   for (const arg of argv) {
     if (arg === "--dry-run") options.dryRun = true;
@@ -101,7 +105,7 @@ function parseArgs(argv) {
  * Exported so the smoke test drives exactly the same entry point a developer
  * does — a generator verified through a different path is not verified.
  */
-export function planRequest({ capability, feature, name, options }) {
+export function planRequest({ capability, feature, name, options, root = ROOT }) {
   if (!CAPABILITIES[capability]) {
     throw new GeneratorError(
       `Unknown capability "${capability}". Available: ${Object.keys(CAPABILITIES).join(", ")}.`,
@@ -112,10 +116,11 @@ export function planRequest({ capability, feature, name, options }) {
   if (capability !== "feature" && options.with) {
     throw new GeneratorError("--with only applies to `pnpm generate feature`.");
   }
-  if (options.screen && capability !== "component") {
+  if (options.screen && capability !== "component" && capability !== "route") {
     throw new GeneratorError(
-      "--screen only applies to `pnpm generate component`. A screen-local component " +
-        "lives beside its screen; everything else is already feature-local.",
+      "--screen applies to `component` (make it private to that screen) and to " +
+        "`route` (name the screen the route renders). Everything else is already " +
+        "feature-local.",
     );
   }
 
@@ -129,21 +134,115 @@ export function planRequest({ capability, feature, name, options }) {
 
   const capabilities = capability === "feature" ? ["feature", ...requested] : [capability];
 
-  if (capabilities.includes("realtime") && options.role === "customer") {
+  // Role first: it decides where a route lands and whether realtime is legal, so
+  // an unstated role is a silently wrong answer rather than a missing one.
+  const needsRole = capabilities.filter((entry) => ROLE_REQUIRED.includes(entry));
+  // `== null` deliberately: an omitted flag is `undefined` from a programmatic
+  // caller and `null` from parseArgs, and both mean "not stated".
+  if (needsRole.length > 0 && options.role == null) {
     throw new GeneratorError(
-      "Realtime is not available to the customer experience.\n" +
-        "Only `public.orders` is published, and RLS gives a customer session no rows on it, " +
-        "so the subscription would never fire. Use --role=preparation, or drop `realtime`.",
+      `\`${needsRole.join("`, `")}\` needs an explicit --role=<${ROLES.join("|")}>.\n` +
+        "It decides which route group a route lands in and whether Realtime can " +
+        "receive anything at all, so there is no safe default.",
     );
+  }
+  const role = options.role ?? "shared";
+
+  if (capabilities.includes("realtime") && !REALTIME_ROLES.includes(role)) {
+    throw new GeneratorError(
+      `Realtime is ${REALTIME_ROLES.join("/")}-only, and --role=${role} is not that.\n` +
+        "Only `public.orders` is published, and RLS gives a non-Preparation session no " +
+        "rows on it, so the subscription would never fire. A `shared` feature can be " +
+        "reached by a customer session, which is why `shared` is rejected too.\n" +
+        "Use --role=preparation, or drop `realtime`.",
+    );
+  }
+
+  // A route renders a screen through the feature's public API. Without a named
+  // target it used to generate its own same-named screen, which cannot express
+  // `app/(customer)/index.tsx → CatalogHomeScreen` and left an unused
+  // `IndexScreen` exported.
+  if (capabilities.includes("route")) {
+    const generatedHere = capabilities.includes("screen");
+
+    if (capability === "route" && !options.screen) {
+      throw new GeneratorError(
+        "`route` needs --screen=<name>: the screen it renders.\n" +
+          "  pnpm generate route catalog index --role=customer --screen=catalog-home\n" +
+          "The route file is a URL segment; the screen says what it shows. They are " +
+          "named independently.",
+      );
+    }
+
+    if (capability === "feature" && !generatedHere) {
+      throw new GeneratorError(
+        "`feature --with=route` also needs `screen`: a route renders a screen " +
+          "through the feature's public API, and there is none to render.\n" +
+          "  --with=screen,route   generate both now\n" +
+          "or generate the screen first, then " +
+          "`pnpm generate route <feature> <path> --role=<role> --screen=<name>`.",
+      );
+    }
+
+    // Not generated in this request, so it must already exist. A route whose
+    // target is missing compiles to an import of nothing.
+    if (!generatedHere) {
+      const target = caseProps(options.screen).kebabCaseName;
+      const featureDir = caseProps(feature).kebabCaseName;
+      const screenFile = path.join(
+        root,
+        "features",
+        featureDir,
+        "screens",
+        target,
+        `${target}-screen.tsx`,
+      );
+      if (!fs.existsSync(screenFile)) {
+        throw new GeneratorError(
+          `No screen \`${target}\` in \`features/${featureDir}\`.\n` +
+            `Expected: features/${featureDir}/screens/${target}/${target}-screen.tsx\n` +
+            `Generate it first: pnpm generate screen ${featureDir} ${target} --role=${role}`,
+        );
+      }
+    }
+  }
+
+  // A screen-local component needs its screen to exist, or it lands in a
+  // directory nothing renders — usually a sign the tasks are in the wrong order.
+  if (capability === "component" && options.screen) {
+    const target = caseProps(options.screen).kebabCaseName;
+    const featureDir = caseProps(feature).kebabCaseName;
+    const screenFile = path.join(
+      root,
+      "features",
+      featureDir,
+      "screens",
+      target,
+      `${target}-screen.tsx`,
+    );
+    if (!fs.existsSync(screenFile)) {
+      throw new GeneratorError(
+        `No screen \`${target}\` in \`features/${featureDir}\`, so a screen-local ` +
+          `component would have nothing to belong to.\n` +
+          `Expected: features/${featureDir}/screens/${target}/${target}-screen.tsx\n` +
+          `Generate the screen first, or drop --screen to make the component ` +
+          `feature-wide.`,
+      );
+    }
   }
 
   // Templates branch on what else is being generated, so a screen created
   // alongside a query wires itself up while one created alone stays neutral.
+  //
+  // `withRoute` is what decides whether the feature's index.ts exports the
+  // screen: a screen is FEATURE-PRIVATE unless something outside the feature
+  // renders it, and the only such thing the generator creates is a route.
   const shared = {
     withSchema: capabilities.includes("schema"),
     withQuery: capabilities.includes("query"),
     withStore: capabilities.includes("store"),
     withScreen: capabilities.includes("screen"),
+    withRoute: capabilities.includes("route"),
     screen: options.screen,
   };
 
@@ -153,7 +252,7 @@ export function planRequest({ capability, feature, name, options }) {
       capability: entry,
       feature,
       name,
-      role: options.role,
+      role,
       options: shared,
     });
     files.push(...planCapability(entry, props));
@@ -171,6 +270,27 @@ export function planRequest({ capability, feature, name, options }) {
 }
 
 /**
+ * The screens this request must make public, and only those.
+ *
+ * A screen is feature-private by default. `features/<name>/index.ts` is the
+ * boundary other features and routes import through, so exporting every screen
+ * that happens to be generated widens the public surface for no reason and
+ * makes "keep index.ts minimal" a rule the generator itself breaks.
+ *
+ * A route is the one thing the generator creates that lives OUTSIDE the feature
+ * and renders a screen, so it is the only reason to export one.
+ */
+export function publicScreensFor({ capability, feature, name, options }) {
+  const capabilities =
+    capability === "feature" ? ["feature", ...(options.with ?? DEFAULT_WITH)] : [capability];
+  if (!capabilities.includes("route")) return [];
+
+  // `feature --with=screen,route` names both after the feature; a standalone
+  // route names its target with --screen.
+  return [caseProps(options.screen ?? name ?? feature).kebabCaseName];
+}
+
+/**
  * PLAN → RENDER → FORMAT/PARSE → VALIDATE → WRITE.
  *
  * Nothing reaches the repository until every planned file has rendered, parsed
@@ -185,25 +305,25 @@ export async function run(request, { root = ROOT } = {}) {
     routeDir: routeDirForRole(request.options.role),
   });
 
+  // A route renders its screen through the feature's public API, so a screen a
+  // route targets has to be exported there or the route will not compile. This
+  // is the one file the generator appends to, and it is safe to:
+  // `features/<name>/index.ts` belongs to exactly one feature, so it is never a
+  // cross-agent conflict the way a shared registry would be.
+  //
+  // It is handed to writeFiles rather than applied afterwards so it is INSIDE
+  // the same rollback. Patching it after a successful write meant a failure
+  // there left index.ts modified while every generated file had been removed —
+  // the one case where "the repository is unchanged" was false.
   const result = writeFiles(files, {
     root,
     force: request.options.force,
     dryRun: request.options.dryRun,
-  });
-
-  // A route renders its screen through the feature's public API, so a screen
-  // added to an EXISTING feature has to be exported there or the route will not
-  // compile. This is the one file the generator appends to, and it is safe to:
-  // `features/<name>/index.ts` belongs to exactly one feature, so it is never a
-  // cross-agent conflict the way a shared registry would be.
-  const exported = ensureFeatureExport(files, {
-    root,
+    exportScreens: publicScreensFor(request),
     feature: request.feature,
-    dryRun: request.options.dryRun,
-    alreadyWritten: result.written,
   });
 
-  return { files, ...result, exported };
+  return { files, ...result };
 }
 
 async function main() {

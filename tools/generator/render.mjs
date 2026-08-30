@@ -243,9 +243,13 @@ export function validatePlan(files, { feature, routeDir }) {
  * only the new files would leave the earlier ones clobbered with generated
  * content and no way back — worse than not rolling back at all.
  */
-export function writeFiles(files, { root, force = false, dryRun = false }) {
+export function writeFiles(
+  files,
+  { root, force = false, dryRun = false, exportScreens = [], feature = null },
+) {
   const written = [];
   const skipped = [];
+  const exported = [];
 
   const planned = [];
   for (const file of files) {
@@ -257,8 +261,27 @@ export function writeFiles(files, { root, force = false, dryRun = false }) {
     planned.push({ ...file, absolute });
   }
 
+  // The feature's own index.ts, when a route needs a screen exported from it.
+  // Planned as a normal file so it goes through the SAME write and the same
+  // rollback: patching it afterwards meant a later failure left it modified
+  // while every generated file had been removed.
+  const exportPatch = planFeatureExport({
+    root,
+    feature,
+    screens: exportScreens,
+    alreadyPlanned: new Set(files.map((file) => file.destination)),
+  });
+  if (exportPatch) {
+    planned.push(exportPatch);
+    exported.push(`${exportPatch.destination} — exported ${exportScreens.join(", ")}`);
+  }
+
   if (dryRun) {
-    return { written: planned.map((file) => file.destination), skipped };
+    return {
+      written: planned.map((file) => file.destination),
+      skipped,
+      exported,
+    };
   }
 
   const createdFiles = [];
@@ -322,7 +345,7 @@ export function writeFiles(files, { root, force = false, dryRun = false }) {
     );
   }
 
-  return { written, skipped };
+  return { written, skipped, exported };
 }
 
 /** Directories between `root` and `directory` that do not exist yet, outermost first. */
@@ -348,39 +371,50 @@ function missingAncestors(directory, root) {
  * registry it is never a cross-agent conflict. It appends only when the exact
  * export is absent, never reorders, and never rewrites existing lines.
  */
-export function ensureFeatureExport(files, { root, feature, dryRun, alreadyWritten }) {
-  const indexPath = `features/${feature}/index.ts`;
-  const absolute = path.join(root, indexPath);
-  const appended = [];
+/**
+ * The export line `features/<feature>/index.ts` needs for one screen.
+ *
+ * Exported for the smoke test, which asserts the exact text rather than merely
+ * that something was appended.
+ */
+export function screenExportLine(screen) {
+  const componentName = `${screen
+    .split("-")
+    .filter(Boolean)
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join("")}Screen`;
 
-  // A freshly generated feature already exports its screen from the template.
-  if (alreadyWritten.includes(indexPath) || !fs.existsSync(absolute)) return appended;
+  return `export { ${componentName} } from "./screens/${screen}/${screen}-screen";`;
+}
+
+/**
+ * Plan the feature index.ts content that makes `screens` publicly importable.
+ *
+ * Returns `null` when nothing needs to change — the file is being generated in
+ * this same request (its template already has the export), does not exist yet,
+ * or already carries every line.
+ *
+ * This produces CONTENT rather than writing, so the caller can put it through
+ * the same atomic write as everything else.
+ */
+export function planFeatureExport({ root, feature, screens, alreadyPlanned }) {
+  if (!feature || screens.length === 0) return null;
+
+  const destination = `features/${feature}/index.ts`;
+  if (alreadyPlanned.has(destination)) return null;
+
+  const absolute = path.join(root, destination);
+  if (!fs.existsSync(absolute)) return null;
 
   const current = fs.readFileSync(absolute, "utf8");
   let next = current;
-
-  for (const file of files) {
-    // Screens own a directory: screens/<name>/<name>-screen.tsx. Tests and
-    // screen-local components live there too and must not be exported.
-    const match = /features\/[^/]+\/screens\/([^/]+)\/([^/]+)-screen\.tsx$/.exec(
-      file.destination.split(path.sep).join("/"),
-    );
-    if (!match) continue;
-
-    const [, directory, basename] = match;
-    const componentName = `${basename
-      .split("-")
-      .filter(Boolean)
-      .map((word) => word[0].toUpperCase() + word.slice(1))
-      .join("")}Screen`;
-
-    const line = `export { ${componentName} } from "./screens/${directory}/${basename}-screen";`;
+  for (const screen of screens) {
+    const line = screenExportLine(screen);
     if (next.includes(line)) continue;
-
-    next = `${next.replace(/\s*$/, "")}\n${line}\n`;
-    appended.push(`${indexPath} — added ${componentName}`);
+    // `export {}` is the placeholder a workspace-only feature carries; a real
+    // export replaces it rather than sitting beside it.
+    next = `${next.replace(/\nexport \{\};\n?/, "\n").replace(/\s*$/, "")}\n${line}\n`;
   }
 
-  if (next !== current && !dryRun) fs.writeFileSync(absolute, next, "utf8");
-  return appended;
+  return next === current ? null : { destination, absolute, contents: next };
 }

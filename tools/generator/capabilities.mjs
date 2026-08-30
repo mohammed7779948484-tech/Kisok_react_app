@@ -7,6 +7,24 @@ const TEMPLATES = path.join(path.dirname(fileURLToPath(import.meta.url)), "templ
 
 export const ROLES = ["customer", "preparation", "shared"];
 
+/**
+ * Capabilities whose output DEPENDS on the role, so it must be stated.
+ *
+ * `--role` used to default to `shared`, which meant `pnpm generate route x y`
+ * silently wrote into top-level `app/` instead of a role group, and
+ * `pnpm generate realtime x y` passed the customer guard by not being a
+ * customer. A default that is wrong most of the time is worse than no default.
+ */
+export const ROLE_REQUIRED = ["feature", "route", "realtime"];
+
+/**
+ * Realtime is Preparation-only, and that is a database fact, not a convention:
+ * only `public.orders` is published, and RLS gives a customer session no rows on
+ * it. `shared` is rejected for the same reason a customer is — a shared feature
+ * can be reached by a customer session, where the subscription can never fire.
+ */
+export const REALTIME_ROLES = ["preparation"];
+
 /** Route group each role's routes belong to. `shared` gets a top-level route. */
 export function routeDirForRole(role) {
   if (role === "customer") return "app/(customer)";
@@ -46,9 +64,12 @@ export const CAPABILITIES = {
   component: { summary: "A presentational component, feature-wide or screen-local." },
   screen: { summary: "A screen directory: the screen, its test, and its own components/." },
   realtime: { summary: "A Realtime subscription that invalidates a query.", also: ["_keys"] },
-  // A route renders a screen through the feature's public API, so generating
-  // one without a screen would emit an import of something that does not exist.
-  route: { summary: "A thin Expo Router route rendering a screen.", also: ["screen"] },
+  // A route renders a screen through the feature's public API, so it needs a
+  // target: `--screen=<name>`. It used to imply `also: ["screen"]`, which forced
+  // the route and the screen to share a name and made
+  // `app/(customer)/index.tsx → CatalogHomeScreen` impossible to express — it
+  // generated an unused `IndexScreen` instead.
+  route: { summary: "A thin Expo Router route rendering an existing screen." },
 };
 
 /** Capabilities `feature --with=...` understands. */
@@ -90,6 +111,11 @@ export function buildProps({ capability, feature, name, role, options = {} }) {
     ? `${featureDir}/screens/${screenName}/components`
     : `${featureDir}/components`;
 
+  // A route renders a named EXISTING screen, so it needs that screen's names,
+  // not its own. `route catalog index --screen=catalog-home` produces
+  // `app/(customer)/index.tsx` rendering `CatalogHomeScreen`.
+  const targetScreen = options.screen ? caseProps(options.screen) : artefactNames;
+
   return {
     ...artefactNames,
     feature: featureNames.kebabCaseName,
@@ -99,6 +125,8 @@ export function buildProps({ capability, feature, name, role, options = {} }) {
     role,
     routeDir: routeDirForRole(role),
     screenName,
+    targetScreenKebab: targetScreen.kebabCaseName,
+    targetScreenPascal: targetScreen.pascalCaseName,
     componentScope: screenName ? "screen" : "feature",
     componentDir,
     ...options,
