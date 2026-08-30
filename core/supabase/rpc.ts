@@ -9,14 +9,41 @@ import type { Database } from "./database.types";
 const log = createLogger("supabase.rpc");
 
 /**
- * Every Postgres function this client may call.
+ * The Postgres functions the MOBILE client may call.
+ *
+ * The database also defines Admin-only functions — `admin_update_profile`,
+ * `search_admin_profiles`, `apply_inventory_adjustment`, `set_inventory_quantity`,
+ * `get_media_asset_usage`, `reorder_items`. Those belong to the separate Admin
+ * web app and are reached through a service-role Edge Function; this client has
+ * no business naming them. Typing `callRpc` against the whole generated
+ * `Functions` map offered every one of them in autocomplete, which is an
+ * invitation to write a call that can only ever fail at runtime with `42501`.
+ *
+ * This is a **client-contract boundary, not a security control**. Database
+ * grants and RLS remain the authority — a narrowed TypeScript type stops a
+ * mistake, never an attacker. It is also not a feature registry: it is the list
+ * of backend functions this application is built against, which changes only
+ * when the backend contract does.
  *
  * Derived here rather than in `database.types.ts`: that file is a GENERATED
  * artifact reproduced verbatim by `pnpm db:types`, so project-owned helpers live
  * outside it. Editing the generated file to add conveniences is how a schema
  * refresh silently reverts them.
  */
-export type DbFunctions = Database["public"]["Functions"];
+export const MOBILE_RPC_NAMES = [
+  "current_active_profile",
+  "get_customer_catalog",
+  "create_order",
+  "update_order_status",
+] as const satisfies readonly (keyof Database["public"]["Functions"])[];
+
+/**
+ * `satisfies` above ties this list to the generated types: rename an RPC in a
+ * migration, regenerate, and this stops compiling instead of failing at runtime.
+ */
+export type MobileRpcName = (typeof MOBILE_RPC_NAMES)[number];
+
+export type DbFunctions = Pick<Database["public"]["Functions"], MobileRpcName>;
 
 /**
  * Arguments plus schema, or — for a function that takes none — just the schema.
@@ -36,8 +63,8 @@ type RpcInvocation<Name extends keyof DbFunctions, Parsed> = [DbFunctions[Name][
 /**
  * Call a Postgres function and validate its payload.
  *
- * Why validation is not optional: every KISOK RPC returns `jsonb`, and Supabase
- * generates `jsonb` as the wide `Json` union. Without a schema at this boundary
+ * Why validation is not optional: the JSON-returning business RPCs return
+ * `jsonb`, which Supabase generates as the wide `Json` union. Without a schema
  * the rest of the app would be casting blindly and a backend change would show
  * up as a runtime crash deep inside a screen instead of a clear error here.
  *

@@ -23,9 +23,28 @@ it as a person using the tablet would, not as components.
 
 Each one must be observable and checkable. These become tests.
 
-- [ ] TODO
-- [ ] TODO
-- [ ] Every data state is handled: loading, empty, error with a retry.
+**IDs are stable.** Every task in `plan.md` links to one by ID. Once the plan is
+`READY`, never renumber or reuse an ID: a new criterion gets a new ID, and a
+removed one stays here marked superseded, with the reason. Renumbering silently
+invalidates every reference in `worklog.md`.
+
+| ID    | Criterion | Observable how |
+| ----- | --------- | -------------- |
+| AC-01 | TODO      | TODO           |
+| AC-02 | TODO      | TODO           |
+
+State requirements are **capability-aware**. Claim only the states this feature
+actually has — inventing an empty state for a screen that cannot be empty
+produces a test asserting something impossible, which is worse than no test.
+
+| If the feature has…              | The states to specify                                   |
+| -------------------------------- | ------------------------------------------------------- |
+| a data-backed read               | loading, empty, error with retry, success — as applicable |
+| a mutation                       | pending, success, business conflict, error — as applicable |
+| static or local-only UI          | only the states that genuinely exist                     |
+
+- [ ] AC-0n: data states above are handled for the reads and mutations this
+      feature actually has
 - [ ] Works at the tablet sizes in `docs/design-system.md` (landscape and portrait).
 - [ ] Accessible: roles and labels on interactive elements; no colour-only meaning.
 

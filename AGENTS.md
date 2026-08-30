@@ -142,14 +142,29 @@ data code. The essentials:
 | `update_order_status(order_id, target_status, reason)` | `preparation`/`admin` | order transition                         |
 
 **Direct table reads:** `preparation` may `select` from `orders` and
-`order_items`. **A customer may not read any table directly** — everything comes
-through `get_customer_catalog()`.
+`order_items`, and `store_settings`. **A customer may not read any table
+directly** — everything comes through `get_customer_catalog()`.
 
 **Rules:**
 
 - Read the migration before you code against a contract.
-- Every RPC returns `jsonb`, which types as the wide `Json`. **Validate with a
-  Zod schema** at the `api/` boundary — that is what makes the data trustworthy.
+- **`callRpc` runtime-validates every RPC result** with a Zod schema — that is
+  what makes the data trustworthy. It is not optional, and the reason differs by
+  RPC:
+  - The JSON-returning business RPCs (`get_customer_catalog`, `create_order`,
+    `update_order_status`) return `jsonb`, which the generator types as the wide
+    `Json` union. Without a schema the payload is untyped.
+  - `current_active_profile()` is **table-returning**, so it arrives as rows.
+    It is still validated, against a rows schema — a shape from the database is
+    not the same as a shape this client has checked.
+- Call shape follows the generated types: a zero-argument RPC is typed
+  `Args: never`, so the argument slot disappears.
+
+  ```ts
+  callRpc(name, schema); // zero-argument RPC
+  callRpc(name, args, schema); // RPC with arguments
+  ```
+
 - Let `callRpc` map failures to `AppError`. Do not inspect Postgres codes in a
   screen.
 - Realtime is an **invalidation signal**, never a second source of truth.

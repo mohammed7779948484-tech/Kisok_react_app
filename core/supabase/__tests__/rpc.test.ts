@@ -2,7 +2,8 @@ import { z } from "zod";
 
 import { AppError } from "@/core/errors";
 import { resetLogging, setLogSink } from "@/core/logging";
-import { callRpc } from "@/core/supabase";
+import { callRpc, MOBILE_RPC_NAMES } from "@/core/supabase";
+import type { DbFunctions } from "@/core/supabase";
 import { installMockSupabase } from "@/core/testing";
 
 const schema = z.array(z.object({ id: z.uuid(), label: z.string() }));
@@ -118,5 +119,73 @@ describe("installMockSupabase table reads", () => {
       /No mock handler registered for table "order_items"/,
     );
     supabase.restore();
+  });
+});
+
+/**
+ * Compile-time proof that `callRpc` is restricted to the mobile RPC surface.
+ *
+ * Nothing here runs — these are type assertions, and `pnpm typecheck` is what
+ * enforces them. Widening `DbFunctions` back to the whole generated `Functions`
+ * map breaks the build rather than silently re-offering Admin-only functions in
+ * autocomplete.
+ *
+ * The database grants and RLS are the real authority; this only stops a call
+ * that could never have succeeded from being written in the first place.
+ */
+
+/** True only when A and B are the same type, not merely mutually assignable. */
+type Equals<A, B> =
+  (<G>() => G extends A ? 1 : 2) extends <G>() => G extends B ? 1 : 2 ? true : false;
+type Expect<T extends true> = T;
+
+// The surface is EXACTLY these four. Adding or losing one fails to compile,
+// which is the point: the mobile RPC surface changes only when the backend
+// contract does, and that should be a deliberate edit here.
+type SurfaceIsExactlyTheMobileFour = Expect<
+  Equals<
+    keyof DbFunctions,
+    "current_active_profile" | "get_customer_catalog" | "create_order" | "update_order_status"
+  >
+>;
+const surfaceIsExactlyTheMobileFour: SurfaceIsExactlyTheMobileFour = true;
+
+function mobileRpcSurfaceIsRestricted() {
+  const anySchema = z.unknown();
+
+  // The four the mobile client is built against.
+  void callRpc("current_active_profile", anySchema);
+  void callRpc("get_customer_catalog", anySchema);
+  void callRpc("create_order", { client_request_id: "", items: [] }, anySchema);
+  void callRpc("update_order_status", { order_id: "", target_status: "ready" }, anySchema);
+
+  // Admin-only, reached by the Admin web app through a service-role Edge
+  // Function. The arguments below are the CORRECT ones from the generated
+  // types, deliberately: the only thing wrong with this call is the name. If
+  // DbFunctions widens, this compiles, the expected error disappears, and
+  // typecheck fails on the unused @ts-expect-error.
+  // @ts-expect-error admin_update_profile is not part of the mobile RPC surface
+  void callRpc("admin_update_profile", { actor_id: "", changes: {}, target_id: "" }, anySchema);
+
+  // @ts-expect-error search_admin_profiles is not part of the mobile RPC surface
+  void callRpc("search_admin_profiles", { search_term: "" }, anySchema);
+
+  // @ts-expect-error an RPC that does not exist in the database at all
+  void callRpc("definitely_not_an_rpc", anySchema);
+}
+void mobileRpcSurfaceIsRestricted;
+
+describe("the mobile RPC surface", () => {
+  it("is exactly the four RPCs a tablet may call", () => {
+    // The type assertion above is what enforces this at compile time; asserting
+    // the value here keeps the runtime list and the type from drifting apart,
+    // and gives the failure a readable message rather than a TS error code.
+    expect(surfaceIsExactlyTheMobileFour).toBe(true);
+    expect([...MOBILE_RPC_NAMES].sort()).toEqual([
+      "create_order",
+      "current_active_profile",
+      "get_customer_catalog",
+      "update_order_status",
+    ]);
   });
 });

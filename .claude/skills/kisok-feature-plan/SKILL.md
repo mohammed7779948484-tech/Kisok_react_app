@@ -11,6 +11,18 @@ build it, and how will we know each step worked.
 
 Write it into `features/<name>/docs/plan.md`, which the generator created.
 
+The plan carries a status, and it is what says implementation may begin. There
+is no fourth gate — `TASK`, `ROUND`, `FEATURE` stay as they are.
+
+```
+Status: DRAFT     ← starts here; no implementation task may start
+Status: READY     ← implementation may begin
+```
+
+The checklist for `DRAFT → READY` is at the end of this skill. If a material
+decision changes later, return the plan to `DRAFT`, reconcile it and `todo.md`,
+and restore `READY` before implementation resumes.
+
 ## Before you plan: know the shape
 
 KISOK features are not all the same shape, and the plan is mostly a consequence
@@ -49,17 +61,48 @@ it, what it returns, which migration defines it. Note explicitly whether
 Realtime is involved — it is Preparation-only, and it is an invalidation signal,
 never a render source.
 
-**Capabilities to generate.** The exact commands, in order:
+**Feature shape decision.** Every capability gets an explicit YES or NO with a
+reason. "Not mentioned" is not a decision — it is how a feature ends up with an
+empty `state/` nobody can explain.
 
-```bash
-pnpm generate schema catalog catalog-response
-pnpm generate query  catalog products
-pnpm generate screen catalog product-detail --role=customer
-pnpm generate component catalog availability-badge --screen=product-detail
+| Capability   | Needed? | Evidence / reason                                    |
+| ------------ | ------: | ---------------------------------------------------- |
+| model/schema |     YES | RPC returns jsonb; needs a Zod boundary              |
+| query        |     YES | reads `get_customer_catalog`                         |
+| mutation     |      NO | nothing is written                                   |
+| store        |      NO | no durable client-owned state; screen state is local |
+| component    |     YES | availability badge is reused by two screens          |
+| screen       |     YES | the catalog home                                     |
+| realtime     |      NO | customer role; Realtime is Preparation-only          |
+| route        |     YES | replaces the `(customer)/index.tsx` placeholder      |
+
+Routes are planned explicitly, one line each:
+
 ```
+route path → role/group → target screen → existing placeholder or new file
+app/(customer)/index.tsx → customer → catalog-home → replaces placeholder
+```
+
+**Capabilities to generate.** The exact commands, in order, each mapped to the
+task that will use it. The Lead runs each command immediately before delegating
+that task — never all of them up front.
+
+| Generator command                                                         | Task |
+| ------------------------------------------------------------------------- | ---- |
+| `pnpm generate schema catalog catalog-response`                           | T01  |
+| `pnpm generate query catalog products`                                    | T02  |
+| `pnpm generate screen catalog catalog-home --role=customer`               | T03  |
+| `pnpm generate route catalog index --role=customer --screen=catalog-home` | T04  |
 
 Generate only what the shape needs. Empty architectural folders are not free —
 they teach the next agent that this is the expected structure.
+
+**Generator-first.** If a structural capability matches, use it. Hand-writing a
+file a capability would have produced gives two features different shapes for
+the same thing. Manual artifacts are legitimate when no capability fits, the
+path and purpose are planned, and the file is in the task's allowed scope —
+domain rules, selectors, state-machine helpers, mappers, predicates, and
+behaviour-specific tests. List them in the plan as `Allowed manual files`.
 
 **Files expected to change.** Anything outside `features/<name>/` must be listed
 and justified. Expect none. Shared files are where parallel agents collide, so a
@@ -75,11 +118,23 @@ transitions, safety invariants, accessibility. Not a coverage target.
 **Rounds and tasks.** Group tasks so each round leaves the feature coherent.
 Every task is atomic and independently verifiable:
 
-| Task | Mode                                            | Objective | Depends on                                 | Entry evidence |
-| ---- | ----------------------------------------------- | --------- | ------------------------------------------ | -------------- |
-| T01  | Catalog response schema                         | —         | rejects a payload with no `schema_version` |
-| T02  | `api/fetch-catalog` calls the RPC and validates | T01       | throws AppError on a bad payload           |
-| T03  | `useCatalog` exposes loading/error/data         | T02       | renders the error state on failure         |
+| Task | Mode     | Acceptance       | Objective               | Depends on | Entry evidence                             |
+| ---- | -------- | ---------------- | ----------------------- | ---------- | ------------------------------------------ |
+| T01  | behavior | Supporting AC-01 | Catalog response schema | —          | rejects a payload with no `schema_version` |
+| T02  | behavior | Acceptance AC-01 | Catalog read pipeline   | T01        | throws AppError on a bad payload           |
+| T03  | behavior | Acceptance AC-02 | Catalog home renders    | T02        | renders the error state on failure         |
+| T04  | config   | N/A — routing    | Route to catalog home   | T03        | `pnpm export:web` resolves `/`             |
+
+Read that table carefully: **Mode** is the verification mode, **Acceptance** is
+the criterion link, **Objective** is what the task does. They are three separate
+columns and mixing them is the single most common way this table goes wrong.
+
+**Task granularity follows capability granularity, not files.** T02 above is one
+task, not three, even though `pnpm generate query` emits `api/fetch-catalog.ts`,
+`queries/keys.ts` and `queries/use-catalog.ts`. Those are one read pipeline and
+one verifiable behaviour. Atomic means _one independently verifiable slice_, not
+_one file_ — an api module with no hook proves nothing on its own. Do not ask
+for `--api-only` style flags until repeated real use shows they are needed.
 
 Dependencies are what make the gates meaningful, so get them right: if T03 does
 not really depend on T02, say so and let them proceed independently.
@@ -98,11 +153,23 @@ the worklog and the gates can refer to them — that is their whole job.
 If a section has nothing useful in it, write one line saying why rather than
 padding it. A plan nobody reads is worse than a short one.
 
-## Before you call the plan done
+## `DRAFT → READY`
 
-- Every acceptance criterion in `brief.md` maps to at least one task
-- Every task declares a verification mode, and its entry evidence follows from
-  that mode — a RED test, a named baseline, or a verification command
+Set `Status: READY` only when every one of these holds. Until then no
+implementation task may start.
+
+- Acceptance criteria are complete, carry stable IDs (`AC-01`, `AC-02`, …), and
+  each maps to at least one task
+- Every task declares a verification mode, an acceptance link
+  (`Acceptance:` / `Supporting:` / `N/A — reason`), and entry evidence that
+  follows from its mode — a RED test, a named baseline, or a verification command
+- The feature shape matrix is complete and every YES is justified
 - No task depends on a contract you have not found in a migration
-- Nothing outside the feature directory is changed without a justification
-- The shape you named at the top matches the capabilities you are generating
+- Every planned generator command is mapped to a task
+- Manual-only artifacts are justified
+- Dependencies are coherent
+- Route mappings are known, target screen named
+- Anything changing outside `features/<name>/` is listed and justified
+- No unnecessary capability or folder is planned
+
+After `READY`, acceptance-criterion IDs are never renumbered or reused.

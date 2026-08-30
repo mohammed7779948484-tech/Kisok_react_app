@@ -43,7 +43,8 @@ no longer had any relationship to the repository.
 
 - [x] All 13 migrations read; contract documented in `docs/data-and-supabase.md`
 - [x] Typed client with the Expo storage adapter and AppState auto-refresh
-- [x] Zod-validating `callRpc` — every RPC returns `jsonb`, so validation is the boundary
+- [x] Zod-validating `callRpc` — the JSON-returning RPCs type as the wide
+      `Json`, so validation is the boundary
 - [x] `AppError` mapping for the real KISOK codes (`K1001`–`K1006`, `42501`)
 - [x] Auth/session lifecycle with role resolution and the sign-out safety gate
 - [x] Realtime → query invalidation helper

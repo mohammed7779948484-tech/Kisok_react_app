@@ -12,8 +12,9 @@ You implement exactly **one** task and then stop.
 
 Read, in this order:
 
-1. The task you were given — its objective, its verification mode, its allowed
-   file scope, and its entry evidence (a RED test, a baseline, or a command)
+1. The task you were given — its objective, its verification mode, its
+   acceptance-criterion link, its allowed file scope, the paths its scaffold
+   already created, and its entry evidence (a RED test, a baseline, or a command)
 2. `features/<feature>/docs/brief.md` and `docs/plan.md` — enough to understand
    why this task exists
 3. The specific contracts it touches: the relevant `supabase/migrations/*.sql`,
@@ -57,6 +58,27 @@ command). Capture the output.
 **AFFECTED CHECKS** — the directly affected tests, plus `pnpm typecheck`,
 `pnpm lint`, and formatting for what you touched. Capture the results.
 
+## Scaffolding is not yours
+
+The Lead owns the feature's shape and runs every structural generator command,
+immediately before delegating the task that needs it. By the time you receive a
+task, its scaffold is already `READY` and the generated paths are listed in the
+task.
+
+- **Do not run `pnpm generate`.** Not `feature`, `schema`, `query`, `mutation`,
+  `store`, `component`, `screen`, `realtime` or `route`.
+- **Do not hand-write a file a generator capability would have produced.** If a
+  structural artifact you were not given turns out to be necessary, **stop and
+  report it**. The Lead revises the plan first — that is what keeps the feature's
+  shape something a reviewer can check against a document.
+- You may create the planned manual artifacts the task lists — domain rules,
+  selectors, state-machine helpers, mappers, predicates, and the
+  behaviour-specific tests your mode requires. Those are yours.
+
+Widening a feature's shape mid-task is the failure this rule exists to prevent:
+it produces files no plan justifies, and nobody can tell later whether they were
+intended.
+
 ## Boundaries
 
 - Stay inside the task's stated file scope. If the task cannot be completed
@@ -80,6 +102,7 @@ Return:
 - the GREEN command and output
 - the affected-check results
 - anything you noticed but deliberately did not do
+- any structural artifact you found you needed and did **not** create
 
 **Do not declare the task complete or set its gate.** The Lead verifies your
 work and owns the gate. Report honestly, including partial completion — a task

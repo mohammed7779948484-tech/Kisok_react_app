@@ -9,6 +9,14 @@ after research, and before generating anything beyond this workspace.
 
 Status: `DRAFT`
 
+`DRAFT` → no implementation task may start. Set `READY` only when the checklist
+at the bottom of this file is fully satisfied. If a material decision changes
+later — an acceptance criterion, the shape, a dependency, a scaffold — return to
+`DRAFT`, reconcile this file and `todo.md`, then restore `READY`.
+
+There is no fourth gate: `TASK`, `ROUND` and `FEATURE` are the gates. This
+status is the implementation-readiness signal.
+
 ## Research synthesis
 
 What the research actually established, with pointers. Findings, not opinions.
@@ -32,15 +40,50 @@ For each: the decision, and the alternative rejected and why.
 Realtime: TODO — an invalidation signal only, and Preparation-only. Never render
 from a Realtime payload.
 
-## Capabilities to generate
+## Feature shape decision
 
-The exact commands, in order. Generate only what the shape actually needs.
+Every capability gets an explicit YES or NO with a reason. "Not mentioned" is
+not a decision — it is how a feature ends up with an empty directory nobody can
+explain.
 
-```bash
-# TODO, e.g.
-# pnpm generate schema <%= props.feature %> <name>
-# pnpm generate query  <%= props.feature %> <name>
+| Capability   | Needed? | Evidence / reason |
+| ------------ | ------: | ----------------- |
+| model/schema | YES/NO  | TODO              |
+| query        | YES/NO  | TODO              |
+| mutation     | YES/NO  | TODO              |
+| store        | YES/NO  | TODO              |
+| component    | YES/NO  | TODO              |
+| screen       | YES/NO  | TODO              |
+| realtime     | YES/NO  | TODO — Preparation-only |
+| route        | YES/NO  | TODO              |
+
+Routes are planned explicitly, one line each:
+
 ```
+route path → role/group → target screen → existing placeholder or new file
+```
+
+- TODO
+
+## Generator commands, mapped to tasks
+
+The exact commands, in order, each mapped to the task that uses it. **The Lead
+runs each one immediately before delegating that task** — not all of them up
+front. Generate only what the shape actually needs.
+
+If a structural capability matches, use it. Files a capability would have
+produced must not be hand-written. Manual artifacts are legitimate only when no
+capability fits, the path and purpose are planned, and the file is inside the
+task's allowed scope — domain rules, selectors, state-machine helpers, mappers,
+predicates, behaviour-specific tests.
+
+| Generator command | Task |
+| --- | --- |
+| `pnpm generate schema <%= props.feature %> <name>` | T01 |
+
+Allowed manual files (with the reason no capability fits):
+
+- TODO
 
 ## Files expected to change
 
@@ -73,9 +116,19 @@ Every task declares a **verification mode** — `behavior`, `bug`,
 `behavior-change`, `refactor` or `config` — which decides its entry evidence.
 See the `test-driven-development` skill.
 
-| Task | Mode | Objective | Depends on | Entry evidence |
-| --- | --- | --- | --- | --- |
-| T01 | behavior | TODO | — | failing test: TODO |
+**Mode**, **Acceptance** and **Objective** are three different columns. Mode is
+the verification mode; Acceptance links to a `brief.md` criterion ID as
+`Acceptance: AC-xx`, `Supporting: AC-xx`, or `N/A — <reason>`; Objective is what
+the task does.
+
+Task granularity follows **capability** granularity, not files. One
+`pnpm generate query` emits an api module, a key factory and a hook — that is
+one read pipeline and one task, not three. Atomic means one independently
+verifiable slice, not one file.
+
+| Task | Mode | Acceptance | Objective | Depends on | Entry evidence |
+| --- | --- | --- | --- | --- | --- |
+| T01 | behavior | Acceptance: AC-01 | TODO | — | failing test: TODO |
 
 ## Risks
 
@@ -86,5 +139,20 @@ See the `test-driven-development` skill.
 ## Verification
 
 - `pnpm verify`
+- Fast GitHub CI on the final HEAD
 - Browser evidence at the tablet sizes
 - TODO: Android or Maestro, if this feature warrants it
+
+## `DRAFT` → `READY`
+
+Set the status at the top to `READY` only when every line here is true.
+
+- [ ] Acceptance criteria complete, stable IDs, each mapped to at least one task
+- [ ] Feature shape matrix complete; every YES justified
+- [ ] Data contracts verified against `supabase/migrations/*.sql`
+- [ ] Every generator command mapped to a task
+- [ ] Manual-only artifacts justified
+- [ ] Dependencies coherent
+- [ ] Route mappings known, target screen named
+- [ ] Changes outside `features/<%= props.feature %>/` listed and justified
+- [ ] No unnecessary capability or folder planned

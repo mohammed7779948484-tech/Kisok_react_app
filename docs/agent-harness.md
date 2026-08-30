@@ -94,14 +94,14 @@ with no instruction at all, each agent body also says to load its skill with the
 Skill tool if it is not already in context. That fallback costs one sentence and
 removes the whole failure mode.
 
-| Agent                                   | Preloaded                 | Job                                 | Deliberately cannot                                    |
-| --------------------------------------- | ------------------------- | ----------------------------------- | ------------------------------------------------------ |
-| `feature-implementer`                   | `test-driven-development` | One bounded task, returns evidence  | Certify its own task, or widen its file scope          |
-| `code-reviewer`                         | `kisok-code-review`       | Independent review, fresh context   | Edit code, or author `review.md` — it returns findings |
-| `quality-auditor`                       | `kisok-quality-audit`     | Did the delivery match the promise? | Re-do the code review, or write its own verdict        |
-| `research/supabase-contract-researcher` | —                         | What the backend actually offers    | Invent a contract, or propose weakening RLS            |
-| `research/flutter-behavior-researcher`  | —                         | What the product should DO          | Return a data contract — that app's schema is older    |
-| `research/ui-researcher`                | `kisok-design-system`     | How to build it from what exists    | Design a new shared primitive                          |
+| Agent                                   | Preloaded                 | Job                                 | Deliberately cannot                                              |
+| --------------------------------------- | ------------------------- | ----------------------------------- | ---------------------------------------------------------------- |
+| `feature-implementer`                   | `test-driven-development` | One bounded task, returns evidence  | Certify its own task, run the generator, or widen its file scope |
+| `code-reviewer`                         | `kisok-code-review`       | Independent review, fresh context   | Edit code, or author `review.md` — it returns findings           |
+| `quality-auditor`                       | `kisok-quality-audit`     | Did the delivery match the promise? | Re-do the code review, or write its own verdict                  |
+| `research/supabase-contract-researcher` | —                         | What the backend actually offers    | Invent a contract, or propose weakening RLS                      |
+| `research/flutter-behavior-researcher`  | —                         | What the product should DO          | Return a data contract — that app's schema is older              |
+| `research/ui-researcher`                | `kisok-design-system`     | How to build it from what exists    | Design a new shared primitive                                    |
 
 Reviewer and auditor are given no `Write` or `Edit` tool, and the Lead records
 what they return — in the **Findings** and **Quality audit** sections of
@@ -116,8 +116,25 @@ not make one impossible. The real defence is that the Lead reads what comes back
 and writes the record itself.
 
 The **Lead** — the parent agent — owns research orchestration, the brief, the
-plan, task derivation, delegation, gate verification, the worklog, remediation
-decisions and the final handoff.
+plan, task derivation, **every structural generator command**, delegation, gate
+verification, the worklog, remediation decisions and the final handoff.
+
+Scaffolding is Lead-owned and **just-in-time**: each planned generator command
+runs immediately before the task that needs it, never all of them up front. The
+implementer receives a task whose scaffold is already `READY` and whose
+generated paths are listed; it must not run the generator, and must not
+hand-write a file a capability would have produced. If an unplanned structural
+artifact turns out to be necessary, it stops and reports, and the Lead revises
+the plan first. That is what keeps a feature's shape checkable against a
+document rather than being whatever the implementer happened to create.
+
+## Plan readiness
+
+`plan.md` carries `Status: DRAFT` or `Status: READY`. No implementation task
+starts while it is `DRAFT`. This is deliberately **not** a fourth gate — the
+three below are the gates, and adding another would mean two mechanisms for the
+same idea. A material change to an acceptance criterion, the shape, a dependency
+or a scaffold returns the plan to `DRAFT` until it is reconciled.
 
 ## Gates
 
@@ -126,7 +143,7 @@ Three levels, each answering a different question.
 ### Task gate
 
 ```
-CLASSIFY → RED / BASELINE → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE
+Lead scaffold → CLASSIFY → RED / BASELINE → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE
 ```
 
 `PENDING` until verified, then `PASS` or `FAIL`. A task is DONE only at `PASS`,
@@ -146,6 +163,11 @@ the relevant subsystem verification and review the whole accumulated round diff
 — tasks that each pass can still combine into something incoherent.
 
 ### Feature gate
+
+An explicit checklist, in the PR template. Fast GitHub CI on the **final HEAD**
+is required evidence alongside the local run: several checks depend on an
+environment only CI has, so `pnpm verify` alone is not the fail-closed authority
+for all of them.
 
 Full `pnpm verify`, runtime evidence, independent code review, remediation,
 re-review of blocking findings, then the quality audit. Only then does the PR

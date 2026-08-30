@@ -13,6 +13,20 @@ Reasoning lives in `plan.md`; evidence lives in `worklog.md`. Do not restate
 either here — a `todo.md` that duplicates the plan stops being scannable, which
 defeats its only purpose.
 
+## Current checkpoint
+
+The single answer to "where are we?". Update it whenever any of it changes; it
+is the first thing the next agent reads.
+
+```
+Current round     : —
+Current task      : —
+Current stage     : not started
+Last gate         : —
+Next legal action : write brief.md, then plan.md; no task starts while the plan is DRAFT
+Blocked by        : —
+```
+
 ## Rules
 
 - A task is **DONE only at `GATE: PASS`**.
@@ -22,29 +36,48 @@ defeats its only purpose.
   `test-driven-development` skill. The mode decides the entry evidence:
   `behavior` / `bug` / `behavior-change` need a failing test, `refactor` needs a
   named green baseline, `config` needs the command that exercises the artifact.
+- **No task starts while `plan.md` is `DRAFT`.**
+- **The Lead runs the scaffold**, immediately before delegating the task. The
+  implementer starts only once `Scaffold status` is `READY`.
 
 ## Status board
 
 Scan this first. Detail is below.
 
-| Task | Mode | Objective | Deps | Stage | Gate |
-| --- | --- | --- | --- | --- | --- |
-| T01 | behavior | TODO | — | not started | PENDING |
+| Task | Mode | Acceptance | Objective | Deps | Stage | Gate |
+| --- | --- | --- | --- | --- | --- | --- |
+| T01 | behavior | AC-01 | TODO | — | not started | PENDING |
 
-Stage is one of: `not started` · `red/baseline` · `implementing` · `green` ·
-`checks` · `diff review` · `done`.
+Stage is one of: `not started` · `scaffolding` · `red/baseline` ·
+`implementing` · `green` · `checks` · `diff review` · `done`.
+
+This board is the only summary. Do not add a second task-checkbox list beside
+it — two summaries disagree the moment one is updated and the other is not.
 
 ## Round 1 — TODO
 
 ### T01 — TODO
 
+<!-- PLACEHOLDER. T01 and "Round 1" are not a plan. Replace this whole block
+     with the real rounds and tasks from plan.md once its status is READY. -->
+
 - **Mode**: behavior | bug | behavior-change | refactor | config
+- **Acceptance**: `Acceptance: AC-xx` | `Supporting: AC-xx` | `N/A — <reason>`
 - **Depends on**: —
 - **Skills**: test-driven-development, TODO
-- **Generator command**: — <!-- e.g. pnpm generate query catalog products -->
+- **Lead scaffold**: — <!-- the exact command, e.g. pnpm generate query catalog products -->
+- **Expected generated files**: — <!-- what the plan says that command creates -->
+- **Allowed manual files**: — <!-- planned artifacts no capability covers, with the reason -->
+- **Scaffold status**: `N/A — no generator capability applies` <!-- PENDING | READY | BLOCKED | N/A -->
 - **Allowed file scope**: `features/<%= props.feature %>/...` <!-- anything else must be justified in plan.md -->
 
 ```
+[ ] SCAFFOLD                                  (Lead — before delegating)
+    command             : <exact command, or n/a>
+    created             :
+    skipped / replaced  :
+    manual artifacts    :
+
 [ ] RED / BASELINE
     check defined      : <test name, or the command for a config task>
     entry evidence      : <failed for the intended reason | baseline green | n/a>

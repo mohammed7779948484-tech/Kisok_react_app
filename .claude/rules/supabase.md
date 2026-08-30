@@ -14,21 +14,37 @@ name, column, or RPC from the Flutter reference — it targets an older database
 
 ## The contract this client has
 
-| RPC                                                    | Caller                  | Returns                                                           |
-| ------------------------------------------------------ | ----------------------- | ----------------------------------------------------------------- |
-| `current_active_profile()`                             | any signed-in user      | 0 or 1 row: `{id, display_name, role, is_active}`                 |
-| `get_customer_catalog()`                               | active `customer`       | one `jsonb` snapshot, `schema_version: "kiosk.catalog.lean.v1"`   |
-| `create_order(client_request_id, items)`               | active `customer`       | `{kind:"success", …}` or `{kind:"stock_conflict", conflicts:[…]}` |
-| `update_order_status(order_id, target_status, reason)` | `preparation` / `admin` | the updated order projection                                      |
+| RPC                                                    | Caller                  | Returns                                                                             |
+| ------------------------------------------------------ | ----------------------- | ----------------------------------------------------------------------------------- |
+| `current_active_profile()`                             | any signed-in user      | **table-returning**: 0 or 1 row `{id, display_name, role, is_active}` — not `jsonb` |
+| `get_customer_catalog()`                               | active `customer`       | one `jsonb` snapshot, `schema_version: "kiosk.catalog.lean.v1"`                     |
+| `create_order(client_request_id, items)`               | active `customer`       | `{kind:"success", …}` or `{kind:"stock_conflict", conflicts:[…]}`                   |
+| `update_order_status(order_id, target_status, reason)` | `preparation` / `admin` | the updated order projection                                                        |
 
-Direct table access: **`preparation` may `select` from `orders` and
-`order_items`.** A `customer` may read **no** table — RLS grants none, and the
-`profiles` grant is explicitly revoked.
+Direct table access: an active **`preparation`** session may `select` from
+`orders`, `order_items` and `store_settings` (see
+`20260826050013_lean_rls_grants.sql`). A `customer` may read **no** table — RLS
+grants none, and the `profiles` grant is explicitly revoked.
 
 ## Rules
 
-- Every RPC returns `jsonb`, typed as the wide `Json`. **Validate with Zod** via
-  `callRpc(name, args, schema)`. An unvalidated payload is an untyped payload.
+- **`callRpc` runtime-validates every RPC result** with a Zod schema — that is
+  what makes the data trustworthy. It is not optional, and the reason differs by
+  RPC:
+  - The JSON-returning business RPCs (`get_customer_catalog`, `create_order`,
+    `update_order_status`) return `jsonb`, which the generator types as the wide
+    `Json` union. Without a schema the payload is untyped.
+  - `current_active_profile()` is **table-returning**, so it arrives as rows.
+    It is still validated, against a rows schema — a shape from the database is
+    not the same as a shape this client has checked.
+- Call shape follows the generated types: a zero-argument RPC is typed
+  `Args: never`, so the argument slot disappears.
+
+  ```ts
+  callRpc(name, schema); // zero-argument RPC
+  callRpc(name, args, schema); // RPC with arguments
+  ```
+
 - `create_order` returning `kind: "stock_conflict"` is a **successful call**, not
   an error. Do not route it through the error path.
 - Error codes come from the migrations: `K1001` validation, `K1002` unavailable,

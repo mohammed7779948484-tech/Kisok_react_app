@@ -36,6 +36,8 @@ Ordered by how expensive it is when missed.
   Flutter reference are wrong — that app targets an older database.
 - Is every RPC payload validated with Zod through `callRpc`? Every KISOK RPC
   returns `jsonb`, typed as the wide `Json`; an unvalidated payload is untyped.
+  `current_active_profile()` is table-returning rather than `jsonb`, and is
+  validated against a rows schema — not every RPC returns `jsonb`.
 - Is `create_order` returning `kind: "stock_conflict"` treated as a **successful
   call**? It is a normal outcome, not an error.
 - Is checkout correctness left to the server? Idempotency, request fingerprint,
@@ -98,8 +100,33 @@ finding; "this should be memoized" on its own is not.
 
 ### Generator conformity and dependencies
 
+**Generator-first.** If a structural capability exists — `feature`, `schema`,
+`query`, `mutation`, `store`, `component`, `screen`, `realtime`, `route` — it
+must have been used. Check for files that look generated-shaped but were
+hand-written:
+
+- a `queries/keys.ts` or `api/fetch-*.ts` that does not match the template's
+  shape
+- a `screens/<name>/` assembled by hand
+- a route file that is not thin
+
+A hand-written equivalent is a finding, not a style preference: it is how two
+features end up with different shapes for the same thing.
+
+Manual files are legitimate when no capability fits AND the path is named in
+`plan.md` AND it is inside the task's allowed scope — domain rules, selectors,
+state-machine helpers, mappers, predicates, behaviour-specific tests. Anything
+structural that is not in the plan is a finding: it means the feature's shape
+was widened without the Lead revising the plan.
+
+Cross-check `worklog.md`'s `SCAFFOLD` blocks against what is actually on disk. A
+generated path with no recorded command, or a recorded command whose files are
+not there, means the record and the repository disagree.
+
 - Was the structure generated, or hand-rolled into a different shape?
 - Does anything edit a shared registry, barrel or route table?
+- Does the feature's `index.ts` export more than the routes and cross-feature
+  consumers actually need?
 - New dependencies: is each justified, SDK 54 compatible, and not a duplicate of
   something already present?
 

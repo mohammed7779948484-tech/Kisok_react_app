@@ -11,6 +11,11 @@ both belong here — a task that failed twice is a signal worth keeping.
 
 ## Template
 
+Record the scaffold before anything else: the command the Lead actually ran and
+what it put on disk. That is what makes the chain checkable —
+`plan command → command run → filesystem → task evidence`. Without it, nobody
+can tell later whether a file was generated, hand-written, or left over.
+
 The entry evidence depends on the task's declared mode, so record the mode
 first. `behavior`, `bug` and `behavior-change` open with RED; `refactor` opens
 with a named BASELINE shown green; `config` has no RED at all — run the thing
@@ -19,6 +24,14 @@ it configures and paste the result under VERIFICATION.
 ```
 ### T01 — <objective>
 MODE: behavior | bug | behavior-change | refactor | config
+ACCEPTANCE: AC-xx | Supporting AC-xx | N/A — <reason>
+
+SCAFFOLD          (Lead, before delegating — omit only when genuinely N/A)
+  $ <the exact generator command the Lead ran>
+  created  : <paths>
+  skipped  : <paths that already existed>
+  replaced : <paths overwritten, and why that was safe>
+  manual   : <planned artifacts no capability covers>
 
 RED               (behavior | bug | behavior-change)
   $ <command>

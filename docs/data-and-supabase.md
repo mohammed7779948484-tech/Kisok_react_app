@@ -90,7 +90,9 @@ snapshot, not from `store_settings`.
 
 ## Calling an RPC
 
-Every RPC returns `jsonb`, which Supabase generates as the wide `Json` union.
+The JSON-returning business RPCs return `jsonb`, which Supabase generates as
+the wide `Json` union. `current_active_profile()` is table-returning and arrives
+as rows; it is validated too, against a rows schema.
 Validation is what turns that into something the rest of the feature can trust:
 
 ```ts

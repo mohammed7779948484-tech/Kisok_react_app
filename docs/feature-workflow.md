@@ -39,15 +39,28 @@ research
 synthesis, design decisions, the data contract from the migrations, the exact
 generator commands, the test strategy, rounds of atomic tasks, risks.
 
-The plan decides the shape. Only then do you generate the rest:
+The plan decides the shape, and it carries a status: `DRAFT` until it is
+implementable, then `READY`. **No implementation task starts while it is
+`DRAFT`.** That is the readiness signal — there is no fourth gate.
+
+Only then do you generate the rest, and **not all at once**. The Lead runs each
+planned command immediately before delegating the task that needs it:
 
 ```bash
-pnpm generate schema catalog catalog-response
-pnpm generate query  catalog products
-pnpm generate screen catalog product-detail --role=customer
-pnpm generate component catalog availability-badge --screen=product-detail
-pnpm generate route  catalog index --role=customer
+pnpm generate schema catalog catalog-response          # before T01
+pnpm generate query  catalog products                  # before T02
+pnpm generate screen catalog catalog-home --role=customer   # before T03
+pnpm generate route  catalog index --role=customer --screen=catalog-home  # before T04
 ```
+
+Bulk-generating the future tree before T01 fills the feature with files nobody
+has justified, and the honest question at review is why they exist.
+
+**Generator-first**: if a structural capability matches, use it. Hand-writing a
+file a capability would have produced gives two features different shapes for
+the same thing. Manual artifacts are legitimate when no capability fits, the
+path is planned, and it is inside the task's scope — domain rules, selectors,
+state-machine helpers, mappers, predicates, behaviour-specific tests.
 
 Options in [`docs/generator.md`](./generator.md), or `pnpm generate --help`.
 
@@ -94,14 +107,24 @@ If the change touches native configuration, verify on an Android device — or s
 explicitly in the PR that you did not. If it warrants device-level coverage, see
 [`.maestro/README.md`](../.maestro/README.md) and the `kisok-maestro-e2e` skill.
 
-## 6. Review, audit, then PR
+## 6. Open the draft PR early
+
+As soon as there is coherent verified work — not at the feature gate. CI and the
+label-gated native jobs only run once a PR exists, so deferring it means the
+first Android build happens after the work is supposedly finished. The PR
+template may carry `PENDING` gates while it is a draft.
+
+## 7. Review, audit, then mark it ready
 
 - **Independent code review** with fresh context (`code-reviewer` +
   `kisok-code-review`). Findings go in the feature's `docs/review.md`.
 - Remediate, then **re-run the reviewer** on the same scope.
 - **Quality audit** (`quality-auditor`) — a different question: was this
   delivered as promised, and is the evidence real?
-- Set the feature gate, then open the PR using the template.
+- Work the feature-gate checklist in the PR template. Fast GitHub CI on the
+  **final HEAD** is required evidence: `pnpm verify` alone is not the authority
+  for checks that depend on an environment only CI has.
+- Only at `PASS` do you mark the draft PR ready. **Never merge it.**
 
 ## Evidence, not assertions
 
