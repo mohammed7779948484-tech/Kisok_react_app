@@ -64,9 +64,19 @@ jobs:
       # Maestro would just time out waiting for a screen that never renders.
       # The release variant is self-contained, and Expo's template signs it with
       # the checked-in debug keystore, so this needs no secrets.
-      - name: Assemble release APK (self-contained, bundled JS)
+      #
+      # ONE ABI, matching the emulator below. A multi-ABI APK crashed on launch
+      # with SoLoaderDSONotFoundError: libreactnative.so — the system resolved
+      # the app's native library directory to arm64 while the only libs SoLoader
+      # could reach inside the APK were x86_64, so MainApplication.onCreate died
+      # before React Native loaded and Maestro saw the launcher, not the app.
+      # Building for exactly the emulator's ABI removes the ambiguity, and an
+      # ABI that does not match now fails loudly at install
+      # (INSTALL_FAILED_NO_MATCHING_ABIS) instead of as a mystery timeout.
+      # It is also a much faster build.
+      - name: Assemble release APK (self-contained, bundled JS, emulator ABI)
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=x86_64
 
       - name: Confirm the APK really contains a JS bundle
         run: |
@@ -78,6 +88,10 @@ jobs:
             unzip -l "$apk" | head -40
             exit 1
           fi
+          # Which ABIs are actually in the APK. A mismatch with the emulator is
+          # a launch-time crash, and this is the cheapest place to see it.
+          echo "native libraries in the APK:"
+          unzip -l "$apk" | grep -oE "lib/[^/]+/" | sort -u
 
       - name: Install Maestro
         run: |

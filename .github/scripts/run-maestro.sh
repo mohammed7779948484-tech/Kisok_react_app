@@ -11,6 +11,11 @@ set -uo pipefail
 
 APK=android/app/build/outputs/apk/release/app-release.apk
 
+# The device's ABI order decides which lib/<abi> the system extracts. If it
+# disagrees with what the APK contains, the app dies in Application.onCreate
+# with SoLoaderDSONotFoundError and Maestro only sees a timeout.
+echo "device ABIs: $(adb shell getprop ro.product.cpu.abilist | tr -d '\r')"
+
 adb install -r "$APK"
 
 # Clear the log first so what follows is only this run.
