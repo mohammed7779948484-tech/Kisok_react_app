@@ -87,7 +87,7 @@ PR is marked ready — and it is never merged by an agent.
 - [ ] Quality audit clean
 - [ ] Anything not verified is explicitly recorded below
 - [ ] Shared/`core/` changes justified
-- [ ] The evidence in this PR matches `docs/worklog.md`
+- [ ] The evidence in this PR matches the feature's `docs/worklog.md`
 
 FEATURE GATE: PENDING
 

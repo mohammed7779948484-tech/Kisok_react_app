@@ -41,4 +41,8 @@ node -e "
   manifest.vendoredOn = new Date().toISOString().slice(0, 10);
   fs.writeFileSync('$manifest', JSON.stringify(manifest, null, 2) + '\n');
 "
-echo "recorded upstream $sha"
+# `vendoredAt` records WHERE these copies came from, for auditing a diff against
+# upstream. It is not a pin: this script always clones the default branch tip, so
+# re-running it re-vendors whatever is newest, not the recorded commit. To
+# reproduce an exact past state, check that SHA out by hand.
+echo "recorded upstream $sha (provenance, not a pin — see the comment above)"

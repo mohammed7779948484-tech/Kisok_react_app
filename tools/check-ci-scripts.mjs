@@ -157,29 +157,52 @@ if (fs.existsSync(ciPath)) {
   const ci = fs.readFileSync(ciPath, "utf8");
   // The verify job ends where the next top-level job begins.
   const job = /\n {2}verify:\n([\s\S]*?)(?=\n {2}[a-z][a-z0-9-]*:\n)/.exec(ci)?.[1] ?? "";
-  for (const line of job.split(/\r?\n/)) {
-    if (/^\s*#/.test(line)) continue;
+
+  // A step is only counted if it can actually FAIL. Name-presence is not
+  // run-ness: `if: false` skips the step, and `|| true` swallows its exit code,
+  // and either would leave this check reporting a match for a step that proves
+  // nothing. That is the exact failure class this file was written for.
+  const lines = job.split(/\r?\n/);
+  const stepStarts = lines
+    .map((line, index) => (/^\s*- (name|run|uses):/.test(line) ? index : -1))
+    .filter((index) => index !== -1);
+
+  const stepAt = (index) => {
+    const start = [...stepStarts].reverse().find((candidate) => candidate <= index) ?? 0;
+    const nextStart = stepStarts.find((candidate) => candidate > index) ?? lines.length;
+    return lines.slice(start, nextStart);
+  };
+
+  lines.forEach((line, index) => {
+    if (/^\s*#/.test(line)) return;
+
     for (const name of scriptNames(line)) {
-      if (name in scripts && name !== "install" && name !== "verify") ciJobVerify.add(name);
+      if (!(name in scripts) || name === "install" || name === "verify") continue;
+
+      const step = stepAt(index).filter((entry) => !/^\s*#/.test(entry));
+      const disabled = step.some((entry) => /^\s*if:\s*(false|\$\{\{\s*false)/.test(entry));
+      const swallowed = step.some((entry) => /\|\|\s*true\s*$/.test(entry));
+
+      if (disabled || swallowed) {
+        problems.push(
+          `ci.yml:${index + 1}\n    ${line.trim()}\n` +
+            `    → the step runs \`${name}\` but cannot fail (` +
+            `${disabled ? "if: false" : "|| true"}). A step that cannot fail is not a check.`,
+        );
+        continue;
+      }
+
+      ciJobVerify.add(name);
     }
-  }
+  });
 }
 
-/**
- * Steps the CI verify job runs that `pnpm verify` deliberately does not.
- *
- * Each needs a reason. This is not an escape hatch for "CI drifted" — it is for
- * a check that CANNOT run locally in a meaningful way.
- */
-const CI_ONLY = {
-  commitlint:
-    "lints the PR's real commit range (--from base --to head); there is no base branch locally",
-};
-
 const onlyLocal = [...verifyScript].filter((name) => !ciJobVerify.has(name)).sort();
-const onlyCi = [...ciJobVerify]
-  .filter((name) => !verifyScript.has(name) && !(name in CI_ONLY))
-  .sort();
+// No allow-list is needed. The only CI-only step is `pnpm exec commitlint
+// --from … --to …`, and `exec` is not a package script, so the extractor never
+// yields it. An earlier version carried a CI_ONLY map for it that could never
+// have fired — an exception with nothing to except.
+const onlyCi = [...ciJobVerify].filter((name) => !verifyScript.has(name)).sort();
 
 if (onlyLocal.length > 0 || onlyCi.length > 0) {
   problems.push(

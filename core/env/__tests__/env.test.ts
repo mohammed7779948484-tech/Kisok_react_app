@@ -70,12 +70,19 @@ describe("environment validation", () => {
   // would ship in the APK and be readable by anyone holding it.
   it("the committed .env carries no secret", () => {
     const source = fs.readFileSync(path.join(process.cwd(), ".env"), "utf8");
-    // Case-INSENSITIVE: an uppercase-only pattern cannot see `db_password=…`,
-    // which is exactly the shape a stray credential takes.
+    // Case-insensitive, and tolerant of a leading `export ` — an uppercase-only
+    // pattern cannot see `db_password=…`, and an anchored one cannot see
+    // `export DB_PASSWORD=…`. Both are ordinary ways to write a stray
+    // credential, and dotenv loads both.
     const declared = source
       .split(/\r?\n/)
-      .filter((line) => /^\s*[A-Za-z_][A-Za-z0-9_]*\s*=/.test(line))
-      .map((line) => line.split("=")[0]?.trim());
+      .filter((line) => /^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=/.test(line))
+      .map((line) =>
+        line
+          .replace(/^\s*(?:export\s+)?/, "")
+          .split("=")[0]
+          ?.trim(),
+      );
 
     // Only EXPO_PUBLIC_* may be here: anything else is not inlined by Metro
     // anyway, so its only effect would be to sit in the repository looking
@@ -95,6 +102,7 @@ describe("environment validation", () => {
     // "service_role" — it is base64. Since this project uses `sb_publishable_`
     // keys, no value here has any business being a JWT at all, whatever its
     // payload says.
-    expect(assignments).not.toMatch(/=\s*eyJ/);
+    // The quote is optional: `X="eyJ..."` is the same secret as `X=eyJ...`.
+    expect(assignments).not.toMatch(/=\s*["']?eyJ/);
   });
 });

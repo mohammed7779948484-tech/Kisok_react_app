@@ -305,7 +305,9 @@ A feature is done when **all** of these are true:
 **Product**
 
 - [ ] Every acceptance criterion in the feature's `docs/brief.md` is implemented
-- [ ] Loading, empty, error, and retry states exist
+- [ ] Every state the screen ACTUALLY has is handled — loading, empty, error and
+      retry for a data-backed read; pending, success, business conflict and error
+      for a mutation; only the real ones for static or local-only UI
 - [ ] No forbidden scope introduced (prices, payments, signup, …)
 
 **Architecture**

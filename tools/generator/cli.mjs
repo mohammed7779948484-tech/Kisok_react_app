@@ -64,7 +64,7 @@ Examples
   pnpm generate query  catalog products
   pnpm generate screen catalog product-detail
   pnpm generate component catalog availability-badge --screen=product-detail
-  pnpm generate route  catalog index --role=customer --screen=catalog-home
+  pnpm generate route  catalog index --role=customer --screen=product-detail
 
   # Or, when the shape is already known, compose it in one go.
   pnpm generate feature cart --role=customer --with=store,component
@@ -201,7 +201,7 @@ export function planRequest({ capability, feature, name, options, root = ROOT })
         throw new GeneratorError(
           `No screen \`${target}\` in \`features/${featureDir}\`.\n` +
             `Expected: features/${featureDir}/screens/${target}/${target}-screen.tsx\n` +
-            `Generate it first: pnpm generate screen ${featureDir} ${target} --role=${role}`,
+            `Generate it first: pnpm generate screen ${featureDir} ${target}`,
         );
       }
     }

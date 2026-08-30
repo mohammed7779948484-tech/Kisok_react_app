@@ -126,7 +126,7 @@ pnpm generate feature catalog --role=customer         # workspace only
 # ... research, brief, plan READY ...
 pnpm generate schema  catalog catalog-response        # before T01
 pnpm generate query   catalog products                # before T02
-pnpm generate screen  catalog catalog-home --role=customer   # before T03
+pnpm generate screen  catalog catalog-home                   # before T03
 pnpm generate route   catalog index --role=customer --screen=catalog-home  # before T04
 ```
 
@@ -183,7 +183,7 @@ pnpm generate schema catalog catalog-response
 pnpm generate query  catalog products
 pnpm generate screen catalog product-detail
 pnpm generate component catalog availability-badge --screen=product-detail
-pnpm generate route  catalog index --role=customer
+pnpm generate route  catalog index --role=customer --screen=product-detail
 ```
 
 Which fills in the anatomy:

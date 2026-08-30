@@ -18,6 +18,15 @@ import { caseProps, parseFrontMatter, planFeatureExport, writeFiles } from "./re
  * across materially different feature shapes — then removes every trace.
  *
  * Run with `pnpm generate:smoke`. CI runs it on every PR.
+ *
+ * WHERE IT WRITES. Every unit-level check runs in an `fs.mkdtempSync` root and
+ * touches nothing tracked. The end-to-end section is the exception and has to
+ * be: typechecking and linting generated output only means something against
+ * this project's real config, so it generates `features/smoke-*` and
+ * `app/(role)/smoke-*.tsx` into the working tree and removes them. Cleanup runs
+ * on the success and failure paths, but a SIGKILL skips both — which is why
+ * `.husky/pre-commit` refuses to commit anything matching those names, and why
+ * two agents must not run this concurrently.
  */
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -384,6 +393,43 @@ for (const [role, group] of [
 // the plan is READY. On that second run index.ts is SKIPPED because it already
 // exists — and the export patch has to notice, or the route imports a screen
 // the public API does not export and typecheck fails with TS2305.
+// The command sequences in docs/generator.md and `pnpm generate --help` are
+// what an agent copies. Two of them did not run: one omitted the now-required
+// --screen on `route`, the other named a screen its own preceding examples
+// never created. Prose is not executable, so this executes it.
+check("the documented command sequence runs end to end", async () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "kisok-docseq-"));
+  try {
+    const sequence = [
+      { capability: "feature", feature: "catalog", options: { role: "customer" } },
+      { capability: "schema", feature: "catalog", name: "catalog-response", options: {} },
+      { capability: "query", feature: "catalog", name: "products", options: {} },
+      { capability: "screen", feature: "catalog", name: "product-detail", options: {} },
+      {
+        capability: "component",
+        feature: "catalog",
+        name: "availability-badge",
+        options: { screen: "product-detail" },
+      },
+      {
+        capability: "route",
+        feature: "catalog",
+        name: "index",
+        options: { role: "customer", screen: "product-detail" },
+      },
+    ];
+
+    for (const request of sequence) {
+      await run(request, { root: scratch });
+    }
+
+    const index = fs.readFileSync(path.join(scratch, "features", "catalog", "index.ts"), "utf8");
+    assert.match(index, /ProductDetailScreen/, "the routed screen must end up public");
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
 check("composing onto an existing workspace still exports the routed screen", () => {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "kisok-compose-"));
   try {
@@ -813,11 +859,17 @@ try {
     indexAfter.includes("SearchScreen"),
     "a follow-up route must export the screen it TARGETS from the public API",
   );
+
+  // The other half of the contract, and the assertion that was missing: a
+  // screen generated WITHOUT a route stays feature-private. `product-detail`
+  // and `search-filter` were follow-ups too; only `search` got a route.
+  // A duplicate of the line above used to sit here carrying a message that
+  // claimed the opposite, so a regression in either direction went unnoticed.
   assert.ok(
-    indexAfter.includes("SearchScreen"),
-    "a follow-up screen must export itself from the feature's public API",
+    !indexAfter.includes("ProductDetailScreen"),
+    "a screen with no route must stay feature-private",
   );
-  console.log("  ok  follow-up screens are exported from the feature's public API");
+  console.log("  ok  a routed screen is exported; an unrouted one stays private");
 
   const rerun = await run({ ...FOLLOW_UPS[0], options: { role: "customer" } });
   assert.equal(rerun.written.length, 0, "re-running a capability overwrote existing files");

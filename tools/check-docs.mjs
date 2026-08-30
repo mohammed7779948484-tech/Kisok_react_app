@@ -80,12 +80,12 @@ const OBSOLETE = [
   {
     // The narrower `features/…/TODO.md` pattern missed a bare `TODO.md` in an
     // anatomy listing, which is exactly where it did survive.
-    pattern: /^\s*(?:[│├└─\s]*)?TODO\.md\b/,
+    pattern: /^[\s│├└─]*TODO\.md\b/,
     fix: "A feature's working memory is `features/<name>/docs/todo.md`. There is no feature-root TODO.md.",
   },
   {
     // Same blind spot for the old test-bucket convention.
-    pattern: /^\s*(?:[│├└─\s]*)?__tests__\/\s+/,
+    pattern: /^[\s│├└─]*__tests__\//,
     fix: "Feature tests sit directly beside their subject — `catalog.schema.test.ts` next to `catalog.schema.ts`. Foundation and core/ suites keep their existing __tests__/.",
   },
   {
@@ -141,6 +141,7 @@ const OBSOLETE = [
 const ROOTS = [
   "docs",
   ".claude",
+  ".github",
   "features",
   "tools/generator/templates",
   "AGENTS.md",

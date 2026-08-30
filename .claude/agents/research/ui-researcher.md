@@ -24,7 +24,11 @@ against.
 
 - Which existing primitives compose this feature's UI, and how
 - Which semantic tokens apply — never a raw colour
-- Every state that must be handled: loading, empty, error with retry, success
+- Which states this feature ACTUALLY has, and only those: a data-backed read
+  needs loading, empty, error with retry and success; a mutation needs pending,
+  success, business conflict and error; static or local-only UI needs whatever
+  genuinely exists. Do not report a state the feature cannot reach — it becomes
+  a test asserting something impossible.
 - Responsive implications: what changes between landscape and portrait, and at
   compact / medium / expanded
 - Accessibility: the roles and labels each interactive element needs, touch

@@ -43,12 +43,21 @@ dismiss_foreign_anr() {
 
   case "$hierarchy" in
     *"isn't responding"*)
-      if printf '%s' "$hierarchy" | grep -qi "kisok"; then
-        echo "::error::KISOK itself is not responding — that is a real failure, not cleared."
-        return 0
-      fi
-      echo "::warning::Dismissing a system ANR dialog that is not KISOK's:"
-      printf '%s' "$hierarchy" | grep -o "[A-Za-z ]*isn't responding" | head -1
+      # Ownership is decided by the DIALOG TITLE, not by the whole dump. Our own
+      # window sits behind the dialog and its package name appears throughout,
+      # so grepping the dump for "kisok" would refuse every legitimate dismissal.
+      local title
+      title=$(printf '%s' "$hierarchy" |
+        grep -o "text=\"[^\"]*isn't responding\"" | head -1)
+
+      case "$title" in
+        *[Kk]isok*|*kiosk*)
+          echo "::error::KISOK itself is not responding ($title) — a real failure, not cleared."
+          return 0
+          ;;
+      esac
+
+      echo "::warning::Dismissing a system ANR dialog that is not KISOK's: $title"
       adb shell am force-stop com.google.android.apps.nexuslauncher || true
       adb shell input keyevent KEYCODE_HOME || true
       sleep 3

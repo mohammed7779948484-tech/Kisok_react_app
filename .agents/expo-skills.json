@@ -1,5 +1,5 @@
 {
-  "_comment": "Provenance for the Expo skills vendored into .agents/skills/. These were copied from Expo's official repository rather than installed by the 'skills' CLI, because they live under plugins/expo/skills/<name>/ rather than at the path that CLI expects — so they are not in skills-lock.json. Refresh them with tools/refresh-expo-skills.sh, which re-copies whole directories from upstream.",
+  "_comment": "Provenance for the Expo skills vendored into .agents/skills/. These were copied from Expo's official repository rather than installed by the 'skills' CLI, because they live under plugins/expo/skills/<name>/ rather than at the path that CLI expects \u2014 so they are not in skills-lock.json. Refresh them with tools/refresh-expo-skills.sh, which re-copies whole directories from upstream.",
   "source": "https://github.com/expo/skills",
   "sourcePath": "plugins/expo/skills",
   "vendoredAt": "50f59f837ddb7595d8c6683c693207e265d58c43",
@@ -9,5 +9,6 @@
     "expo-project-structure": "teaches a generic src/ layout; KISOK's root architecture is settled",
     "expo-design-system": "KISOK owns kisok-design-system and its token contract",
     "expo-tailwind-setup": "NativeWind here is already set up and verified"
-  }
+  },
+  "_vendoredAtNote": "The upstream commit these copies were taken from. Provenance for auditing a diff, NOT a pin: tools/refresh-expo-skills.sh clones the default branch tip, so re-running it takes whatever is newest."
 }
