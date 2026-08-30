@@ -1,6 +1,10 @@
-# The one flow that is true today: with no stored session the app boots through
+# The one flow this repository has: with no stored session the app boots through
 # the startup screen and lands on sign-in without crashing. It needs no account,
 # no seeded data and no network.
+#
+# It is the only check that proves the app STARTS. It has already caught a
+# release build that died in Application.onCreate before React Native loaded —
+# something no test, typecheck or lint here can see.
 #
 # It selects by testID, not by the visible copy — see .maestro/README.md.
 #

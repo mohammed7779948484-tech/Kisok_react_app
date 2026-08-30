@@ -390,7 +390,7 @@ if (failures > 0) {
 }
 
 // ---------------------------------------------------------------------------
-// End to end: generate all four shapes for real, prove they hold up, clean up.
+// End to end: generate every shape for real, prove they hold up, clean up.
 // ---------------------------------------------------------------------------
 console.log("\nend to end (generate -> typecheck -> lint -> format -> test)");
 

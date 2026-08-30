@@ -110,7 +110,8 @@ exists, the test asserts something trivially true, or it is asserting on a mock
 instead of on real code. Find out which before continuing.
 
 Record the command and its output in the feature's `docs/worklog.md`, and set
-the task's stage in `docs/todo.md`. A checkmark with no output is not evidence.
+the task's stage in the feature's `docs/todo.md`. A checkmark with no output
+is not evidence.
 
 ## What deserves a test
 

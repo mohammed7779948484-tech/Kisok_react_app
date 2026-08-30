@@ -25,10 +25,11 @@
     "db:types": "node tools/db/gen-types.mjs",
     "db:verify": "node tools/db/verify-types.mjs",
     "doctor": "node tools/doctor.mjs",
-    "verify": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test:ci && pnpm check:docs && pnpm check:commits && pnpm check:e2e-appid && pnpm db:verify && pnpm generate:smoke",
+    "verify": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test:ci && pnpm check:docs && pnpm check:commits && pnpm check:e2e-appid && pnpm check:ci-scripts && pnpm db:verify && pnpm generate:smoke",
     "prepare": "husky",
     "check:docs": "node tools/check-docs.mjs",
     "check:e2e-appid": "node tools/check-maestro-appid.mjs",
+    "check:ci-scripts": "node tools/check-ci-scripts.mjs",
     "check:commits": "node tools/check-commit-convention.mjs"
   },
   "dependencies": {

@@ -15,7 +15,7 @@ lives in one place instead of being restated in every feature's `todo.md`.
 | Skill                      | Load it when                                      |
 | -------------------------- | ------------------------------------------------- |
 | `feature-delivery`         | Building any feature — the orchestration workflow |
-| `kisok-feature-plan`       | Turning a brief into `docs/plan.md`               |
+| `kisok-feature-plan`       | Turning a brief into the feature's `docs/plan.md` |
 | `test-driven-development`  | Any implementation, bug fix, or behaviour change  |
 | `kisok-code-review`        | Reviewing a diff, a PR, or a feature before merge |
 | `kisok-quality-audit`      | Checking a delivery matches what was promised     |
@@ -86,10 +86,17 @@ removes the whole failure mode.
 | `research/flutter-behavior-researcher`  | —                         | What the product should DO          | Return a data contract — that app's schema is older    |
 | `research/ui-researcher`                | `kisok-design-system`     | How to build it from what exists    | Design a new shared primitive                          |
 
-Reviewer and auditor have no edit tools, and the Lead records what they return —
-in the **Findings** and **Quality audit** sections of
-`features/<feature>/docs/review.md` respectively. An agent that can rewrite the
+Reviewer and auditor are given no `Write` or `Edit` tool, and the Lead records
+what they return — in the **Findings** and **Quality audit** sections of
+`features/<feature>/docs/review.md` respectively. An agent that rewrites the
 record of its own review is not an independent check.
+
+Be precise about what that buys: both agents keep `Bash`, because an audit that
+cannot run a command is worthless, and `Bash` can write any file. So the
+separation is an **instruction plus a removed convenience**, not a sandbox. It
+makes the reviewer's job clear and makes an accidental edit unlikely; it does
+not make one impossible. The real defence is that the Lead reads what comes back
+and writes the record itself.
 
 The **Lead** — the parent agent — owns research orchestration, the brief, the
 plan, task derivation, delegation, gate verification, the worklog, remediation

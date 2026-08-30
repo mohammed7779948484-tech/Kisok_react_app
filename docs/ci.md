@@ -5,11 +5,21 @@ break the foundation — without needing any secret.
 
 ## Every PR — `.github/workflows/ci.yml`
 
-| Job            | What it proves                                                                                                                                                                        |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **verify**     | typecheck, lint (including the architecture boundaries), formatting, the test suite, documentation freshness, the database types against the migrations, and the generator smoke test |
-| **web-export** | `expo export --platform web` still bundles — the preview workflow agents depend on                                                                                                    |
-| **doctor**     | `expo-doctor` dependency alignment                                                                                                                                                    |
+| Job            | What it proves                                                                                                                                                                                                                                                   |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **verify**     | typecheck, lint (including the architecture boundaries), formatting, the test suite, documentation freshness, the commit convention, the Maestro appId, the workflow script invocations, the database types against the migrations, and the generator smoke test |
+| **web-export** | `expo export --platform web` still bundles — the preview workflow agents depend on                                                                                                                                                                               |
+| **doctor**     | `expo-doctor` dependency alignment                                                                                                                                                                                                                               |
+
+### A check that ran nothing at all
+
+The doctor job invoked `pnpm doctor`. pnpm has a **built-in `doctor`
+subcommand**, which shadows the package script: the job checked pnpm's own
+installation, printed nothing, and exited 0 without ever running
+`tools/doctor.mjs`. It would have stayed green if the script were deleted. It is
+now `pnpm run doctor`, and `pnpm check:ci-scripts` fails the build on any
+workflow step whose `pnpm <name>` resolves to a pnpm subcommand instead of this
+project's script.
 
 ### The two checks that could quietly become theatre
 
@@ -32,7 +42,10 @@ mismatch still fails, even when unrelated network noise appears in the same run
 — excusing everything because "network" appeared somewhere is how a genuine SDK
 mismatch gets swallowed.
 
-Locally, `pnpm verify` runs the same checks as the `verify` job.
+Locally, `pnpm verify` runs the same checks as the `verify` job — and that is
+enforced, not asserted: `pnpm check:ci-scripts` compares the two sets and fails
+if they diverge. It used to be false in both directions, and every document that
+told an agent to run `pnpm verify` before opening a PR was quietly wrong.
 
 ## On request — `.github/workflows/android-build.yml`
 

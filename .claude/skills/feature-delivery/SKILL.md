@@ -72,7 +72,7 @@ If the contract you need does not exist in `supabase/migrations/*.sql`, **stop
 and say so**. Do not design around it, and never weaken RLS to make a screen
 easier — that is a backend decision, not a client problem.
 
-### 3. Write `docs/brief.md` — WHAT
+### 3. Write the feature's `docs/brief.md` — WHAT
 
 Objective, user-visible behaviour, acceptance criteria, scope, explicit
 out-of-scope, constraints, evidence. Every acceptance criterion must be
@@ -81,7 +81,7 @@ observable, because each one becomes a test.
 No implementation sequencing here. If you are writing "then we add a hook", it
 belongs in the plan.
 
-### 4. Write `docs/plan.md` — HOW
+### 4. Write the feature's `docs/plan.md` — HOW
 
 Use the **`kisok-feature-plan`** skill. It covers research synthesis, design
 decisions, the data contract, the exact generator commands, the test strategy,
@@ -121,7 +121,8 @@ Check, in order:
 5. The diff contains nothing unrelated to this task.
 6. The task's acceptance condition actually holds.
 
-Record all of it in `docs/worklog.md` under the task ID, then set the gate:
+Record all of it in the feature's `docs/worklog.md` under the task ID, then set
+the gate:
 `PASS` or `FAIL`. A task is DONE only at `PASS`.
 
 **Task N+1 does not start until every dependency is PASS.** When a gate fails,
@@ -137,7 +138,9 @@ combine into something incoherent.
 
 ### 8. Feature gate
 
-- `pnpm verify` (typecheck, lint, format, tests, db:verify, generator smoke)
+- `pnpm verify` — exactly the set the CI verify job runs, including `check:docs`.
+  `pnpm check:ci-scripts` fails if the two ever diverge, so this is not a claim
+  that can quietly go stale.
 - Runtime evidence: browser at the tablet sizes; Android or Maestro where the
   feature warrants it (see `kisok-maestro-e2e`)
 - **Fresh** independent review — `code-reviewer`, using `kisok-code-review`.

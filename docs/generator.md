@@ -180,10 +180,11 @@ corrupts a real template and asserts nothing reaches disk.
 1. **Fill in `features/<feature>/docs/brief.md`** — what, and how you will know
    it is done.
 2. **Read the migration** for the contract you are about to use.
-3. Write `docs/plan.md` with the `kisok-feature-plan` skill.
+3. Write `features/<feature>/docs/plan.md` with the `kisok-feature-plan` skill.
 4. Replace the placeholder Zod schema with the real payload shape.
 5. Write the failing test, then implement — one atomic task at a time.
-6. Keep `docs/todo.md` and `docs/worklog.md` current, **with evidence**.
+6. Keep the feature's `docs/todo.md` and `docs/worklog.md` current, **with
+   evidence**.
 7. `pnpm verify`.
 
 See [feature-workflow.md](./feature-workflow.md).

@@ -29,11 +29,13 @@ placeholder code is worse than never generating it.
 
 ## 3. Write the brief, then the plan
 
-`docs/brief.md` — **what** the feature does and how you will know it is done:
+`features/<name>/docs/brief.md` — **what** the feature does and how you will know
+it is done:
 objective, user-visible behaviour, acceptance criteria, scope, explicit
 out-of-scope, evidence.
 
-`docs/plan.md` — **how**, using the `kisok-feature-plan` skill: research
+`features/<name>/docs/plan.md` — **how**, using the `kisok-feature-plan` skill:
+research
 synthesis, design decisions, the data contract from the migrations, the exact
 generator commands, the test strategy, rounds of atomic tasks, risks.
 
@@ -68,7 +70,8 @@ asserts a file contains a string.
 Then the smallest implementation. Then the directly affected checks. Then read
 your own diff for anything unrelated. See the `test-driven-development` skill.
 
-Record the evidence in `docs/worklog.md` under the task ID and set the gate to
+Record the evidence in the feature's `docs/worklog.md` under the task ID and set
+the gate to
 `PASS` or `FAIL`. **A task is done only at `PASS`, and the next task does not
 start until its dependencies have passed.** When a gate fails, fix it in that
 task — compensating in a later layer hides the original defect and produces code
@@ -80,7 +83,7 @@ just the last task.
 ## 5. Verify for real
 
 ```bash
-pnpm verify    # typecheck, lint, format, tests, db:verify, generator smoke
+pnpm verify    # exactly what the CI verify job runs — check:ci-scripts proves it
 pnpm web       # then actually look at it
 ```
 
@@ -94,7 +97,7 @@ explicitly in the PR that you did not. If it warrants device-level coverage, see
 ## 6. Review, audit, then PR
 
 - **Independent code review** with fresh context (`code-reviewer` +
-  `kisok-code-review`). Findings go in `docs/review.md`.
+  `kisok-code-review`). Findings go in the feature's `docs/review.md`.
 - Remediate, then **re-run the reviewer** on the same scope.
 - **Quality audit** (`quality-auditor`) — a different question: was this
   delivered as promised, and is the evidence real?

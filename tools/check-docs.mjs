@@ -78,6 +78,16 @@ const OBSOLETE = [
     fix: "Do not hard-code the number of generator smoke shapes; say 'the generator smoke shapes'.",
   },
   {
+    // The five control documents live in features/<name>/docs/. A bare
+    // `docs/plan.md` in a root document reads as THIS repository's docs/, and
+    // an agent following it literally writes a feature's control document into
+    // shared documentation — the merge-conflict hotspot everything else here is
+    // shaped to avoid.
+    pattern: /`docs\/(brief|plan|todo|worklog|review)\.md`/,
+    unless: /features\/|feature's|the feature|docs\/…/,
+    fix: 'Write `features/<name>/docs/<doc>.md`, or say "the feature\'s `docs/<doc>.md`" — the control documents are feature-local.',
+  },
+  {
     // A debug APK has no embedded JS bundle, so the E2E job could never have
     // reached the app. Prose that still says it assembles one teaches the
     // reasoning the release-APK change exists to refute.
@@ -169,8 +179,8 @@ for (const file of files) {
 
   const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
   lines.forEach((line, index) => {
-    for (const { pattern, fix } of OBSOLETE) {
-      if (pattern.test(line)) {
+    for (const { pattern, unless, fix } of OBSOLETE) {
+      if (pattern.test(line) && !(unless && unless.test(line))) {
         problems.push(`${relative}:${index + 1}\n    ${line.trim()}\n    → ${fix}`);
       }
     }

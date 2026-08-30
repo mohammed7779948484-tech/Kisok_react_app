@@ -63,7 +63,7 @@ no longer had any relationship to the repository.
 
 - [x] jest-expo + RNTL; Vitest removed
 - [x] Test utilities: providers, test QueryClient, Supabase mock, memory storage
-- [x] 80 foundation tests; suite runs with zero console output
+- [x] Foundation test suite runs with zero console output
 - [x] `pnpm verify` runs everything CI runs
 - [x] CI: fast checks on every PR, Android build behind a label
 
@@ -71,7 +71,8 @@ no longer had any relationship to the repository.
 
 - [x] Generator with `--role`, `--with`, `--screen`, `--dry-run`, `--force`
 - [x] Generated code compiles, lints, formats, and passes its own tests
-- [x] `TODO.md` generated for every feature
+- [x] Control documents generated for every feature, under
+      `features/<name>/docs/` — brief, plan, todo, worklog, review
 - [x] `pnpm generate:smoke` verifies all of the above in CI
 
 **Agent harness**
@@ -89,13 +90,20 @@ no longer had any relationship to the repository.
       Supabase's own generator against the deployed project, and `pnpm db:verify`
       proves it matches the migrations on every CI run — in required mode, so
       "could not run" fails rather than passing quietly.
-- [x] **`pnpm doctor` completes cleanly in CI**, where Expo's compatibility
+- [x] **`pnpm run doctor` completes cleanly in CI**, where Expo's compatibility
       services are reachable. It distinguishes a real incompatibility from an
-      unreachable service, so it cannot go green by failing to check.
-- [ ] **Verify on a physical Android tablet.** CI builds a release APK and runs
-      the Maestro smoke flow on an emulator, but splash, adaptive icon, real
-      orientation changes, AsyncStorage across a genuine cold start, and Realtime
-      over a real connection still need the actual device.
+      unreachable service, so it cannot go green by failing to check. It must be
+      invoked as `pnpm run doctor` — pnpm has a built-in `doctor` that shadows
+      the script, and `pnpm check:ci-scripts` fails the build on that mistake.
+- [x] **The Maestro smoke flow passes on an emulator.** Run 33289290576:
+      `1/1 Flow Passed in 10s`. It found a real defect first — the release APK
+      died in `Application.onCreate` with
+      `SoLoaderDSONotFoundError: libreactnative.so`, an ABI mismatch — which no
+      test, typecheck or lint in this repository could have seen.
+- [ ] **Verify on a physical Android tablet.** The emulator flow is green, but
+      splash, adaptive icon, real orientation changes, AsyncStorage across a
+      genuine cold start, and Realtime over a real connection still need the
+      actual device.
 - [ ] **Point the app at the deployed database and exercise it.** The types come
       from that project, but no screen has performed a real RPC against it with a
       real session.

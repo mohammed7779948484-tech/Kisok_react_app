@@ -207,20 +207,30 @@ That creates a **workspace** — `index.ts` and the five control documents in
 because a local-state cart and a read-heavy catalog are not shaped alike, and
 deleting generated placeholder code is worse than never generating it.
 
+Every `docs/…` below is `features/<name>/docs/…`, inside the feature — never
+this repository's root `docs/`. The control documents live in the feature so
+that two agents building two features never write to the same file.
+
 **Load the `feature-delivery` skill** before you start; it carries the full
 workflow. In outline:
 
 1. **Research** — what the migrations actually offer, what the product should do,
    what the design system already has. Delegate these in parallel.
-2. **`docs/brief.md`** — what, and how you will know it is done.
-3. **`docs/plan.md`** — how, with the `kisok-feature-plan` skill. The plan names
+2. **`features/<name>/docs/brief.md`** — what, and how you will know it is done.
+3. **`features/<name>/docs/plan.md`** — how, with the `kisok-feature-plan` skill. It names
    the feature's shape and therefore which capabilities to generate.
 4. **Generate what the plan calls for**: `pnpm generate query catalog products`,
    `pnpm generate screen catalog product-detail --role=customer`, and so on.
 5. **Work in atomic tasks**, each one
    `CLASSIFY → RED / BASELINE → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE`.
+   **CLASSIFY** means declaring the task's verification mode before any work:
+   `behavior`, `bug` or `behavior-change` open with a failing test; `refactor`
+   opens with named existing tests shown green; `config` has no RED at all — you
+   run the thing it configures. Fabricating a failing test for a CI or docs
+   change produces a test that asserts a file contains a string. Full detail is
+   in the `test-driven-development` skill.
    A task is done only at `PASS`, and the next task waits for its dependencies.
-   Record evidence in `docs/worklog.md` — a checkmark with no command output is
+   Record evidence in the feature's `docs/worklog.md` — a checkmark with no output is
    not evidence.
 6. **Round gates**, then the **feature gate**: `pnpm verify`, runtime evidence,
    independent code review, remediation, re-review, quality audit.
@@ -248,7 +258,7 @@ A feature is done when **all** of these are true:
 
 **Product**
 
-- [ ] Every acceptance criterion in `docs/brief.md` is implemented
+- [ ] Every acceptance criterion in the feature's `docs/brief.md` is implemented
 - [ ] Loading, empty, error, and retry states exist
 - [ ] No forbidden scope introduced (prices, payments, signup, …)
 
@@ -280,7 +290,7 @@ A feature is done when **all** of these are true:
 - [ ] Every task gate, round gate and the feature gate is `PASS`
 - [ ] Screen opened in a browser and interacted with, at the tablet sizes
 - [ ] Android verified, or explicitly noted as unverified
-- [ ] `docs/worklog.md` carries real command output per task; nothing ticked
+- [ ] The feature's `docs/worklog.md` carries real command output per task; nothing ticked
       without it
 - [ ] Independent code review done, findings dispositioned, blocking findings
       re-reviewed
