@@ -19,7 +19,7 @@ const envSchema = z.object({
   supabasePublishableKey: z
     .string()
     .min(1, { error: "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY is required" }),
-  environment: z.enum(["local", "staging", "production"]).default("local"),
+  environment: z.enum(["local", "test", "staging", "production"]).default("local"),
 });
 
 export type Env = z.infer<typeof envSchema>;

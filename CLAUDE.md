@@ -52,7 +52,7 @@ contract from it. In particular there is no `Flavor` — the model is
 ## Commands
 
 ```bash
-pnpm install            # setup (copy .env.example to .env.local first)
+pnpm install            # setup — `.env` is committed and points at the shared test project
 pnpm web                # dev server + browser preview
 pnpm android            # dev server for an Android device
 pnpm typecheck          # tsc --noEmit

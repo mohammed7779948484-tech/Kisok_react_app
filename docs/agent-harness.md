@@ -31,31 +31,48 @@ records their source and hash. Update them with
 
 ### Expo
 
-Checked 2026-08-29, against sources rather than memory:
+Expo maintains an official skills repository at **`github.com/expo/skills`**,
+with each skill one level deep under `plugins/expo/skills/<name>/`. An earlier
+version of this file said Expo publishes no agent skills. That was wrong: the
+search looked for an npm package and a Claude Code plugin, found neither, and
+concluded the wrong thing. The repository is the distribution channel.
 
-| Looked for                                                                            | Result                                                             |
-| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `@expo/agent-skills`, `expo-agent-skills`, `@expo/claude-skills`, `@expo/claude-code` | not published on npm                                               |
-| `npx skills search expo` / `react native`                                             | no results                                                         |
-| Claude Code plugin catalogue                                                          | no Expo plugin                                                     |
-| `expo-mcp`                                                                            | **official** (`github.com/expo/expo-mcp`, maintained by Expo core) |
+Two of them are vendored, whole directories including `references/`:
 
-So Expo publishes no agent skills and no Claude Code plugin — but it does
-publish `expo-mcp`. It is **not** installed here, deliberately: it is a _local
-device-automation_ server (drives a simulator or emulator, collects device
-logs), not a platform-knowledge capability. It needs a running dev server and an
-attached device, which the environments these agents run in do not have, so
-committing it would hand every agent a tool that cannot work. A developer
-automating a local simulator may still find it useful.
+| Skill             | Why it is here                                               |
+| ----------------- | ------------------------------------------------------------ |
+| `expo-router`     | Routing is the one Expo API every KISOK feature touches      |
+| `expo-dev-client` | Building and distributing a dev client for on-device testing |
 
-Expo platform knowledge therefore comes from `pnpm doctor` (real compatibility
-checks against the installed SDK), `kisok-react-native-rules`, and the official
-documentation an agent can fetch when it has network access.
+Deliberately NOT vendored, because each conflicts with something KISOK already
+owns and a contradiction in an agent's context is worse than a missing skill:
 
-One thing was not verifiable from here: `docs.expo.dev` is blocked by this
-environment's egress proxy, so Expo's own AI-tooling guide could not be read.
-Re-check it from a machine with open network before treating this table as
-final.
+| Skill                    | Why not                                                         |
+| ------------------------ | --------------------------------------------------------------- |
+| `expo-project-structure` | Teaches a generic `src/` layout; KISOK's root layout is settled |
+| `expo-design-system`     | KISOK owns `kisok-design-system` and its token contract         |
+| `expo-tailwind-setup`    | NativeWind here is already set up and verified                  |
+
+Other Expo and EAS skills are not vendored for completeness — add one when a
+real task needs it, not before.
+
+Provenance is `.agents/expo-skills.json` (upstream URL, path, the commit the
+copies came from, and why each excluded skill is excluded).
+`tools/refresh-expo-skills.sh` re-copies them and records the new commit. They
+are not in `skills-lock.json` because the `skills` CLI expects a skill at the
+repository root, and Expo nests them under `plugins/expo/skills/`.
+
+**KISOK rules stay authoritative.** Where a vendored Expo skill and this
+repository's own instructions differ on architecture, `AGENTS.md`, `CLAUDE.md`,
+`.claude/rules/` and the `kisok-*` skills win. The Expo skills are platform
+knowledge, not project policy. Keep the copies unchanged unless a compatibility
+fix is strictly required, so they can be refreshed from upstream.
+
+`expo-mcp` (`github.com/expo/expo-mcp`, maintained by Expo core) is official and
+deliberately **not** installed: it is a _local device-automation_ server that
+needs a running dev server and an attached device, which these agents'
+environments do not have. Committing it would hand every agent a tool that
+cannot work.
 
 ## Subagents
 

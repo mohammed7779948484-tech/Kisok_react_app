@@ -10,7 +10,6 @@ Two experiences share one client: **Customer** (browse, cart, order) and
 
 ```bash
 pnpm install
-cp .env.example .env.local     # add your Supabase URL and publishable key
 pnpm web                       # browser preview — open /ui-lab to see the design system
 pnpm android                   # Android device or emulator
 ```

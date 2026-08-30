@@ -4,13 +4,59 @@
 
 ```bash
 pnpm install
-cp .env.example .env.local     # then fill it in
 pnpm web                       # browser preview
 pnpm android                   # Android device or emulator
 ```
 
+That is the whole setup. **No `.env` copying, no Supabase CLI, no Docker, no
+local Supabase stack.** `.env` is committed and already points at the shared
+hosted test project, so a fresh clone runs against a working backend.
+
 If configuration is missing, the app shows a readable "Configuration required"
 screen naming what to fix — not a blank screen.
+
+## The shared hosted test project
+
+Every agent and developer shares one hosted Supabase **test** project. It exists
+so that running the app is never blocked on infrastructure setup.
+
+|                           |                                                                          |
+| ------------------------- | ------------------------------------------------------------------------ |
+| URL                       | `https://akxigjsifwyolkadofnj.supabase.co`                               |
+| Key                       | the publishable key in `.env` — the key the client is meant to ship with |
+| `EXPO_PUBLIC_ENVIRONMENT` | `test`                                                                   |
+
+Rules for this project:
+
+- **Do not reset, recreate, or migrate it** unless explicitly asked. The project
+  owner applies migrations and manages its data.
+- **Do not add seed files or a seeding workflow.** Test data lives in the project.
+- **It does not replace `pnpm db:verify`.** That still proves the committed types
+  match the migrations deterministically, against a throwaway PostgreSQL. A
+  hosted project you can query is not evidence that the schema is what the
+  repository says it is.
+- **Nothing production goes here**, and no credential from here is reused for a
+  production account.
+
+### Test logins
+
+Disposable accounts on that project, for runtime testing only:
+
+| Role        | Email                 | Password    |
+| ----------- | --------------------- | ----------- |
+| Preparation | `preparing@gmail.com` | `777994899` |
+| Customer    | `Customer@gmail.com`  | `777994899` |
+
+These are throwaway credentials for a throwaway backend, committed so an agent
+can sign in and exercise both experiences without asking anyone. Treat them as
+public — because in a cloned repository they are. Never reuse either password,
+or this pattern, for an account that holds real data.
+
+### Pointing somewhere else
+
+Create `.env.local` (git-ignored) with the same variables. Expo loads it after
+`.env`, so it wins. That is where a staging or production value belongs, and it
+must never be committed.
 
 ## Variables
 
@@ -18,17 +64,17 @@ All client configuration is `EXPO_PUBLIC_*`, **inlined into the bundle at build
 time**. Every value here is readable by anyone with the APK. That is fine — Row
 Level Security is what protects data, not obscurity.
 
-| Variable                               | Required | Purpose                                                                |
-| -------------------------------------- | -------- | ---------------------------------------------------------------------- |
-| `EXPO_PUBLIC_SUPABASE_URL`             | yes      | Project URL, e.g. `https://xyz.supabase.co`                            |
-| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | yes      | Publishable key (`sb_publishable_…`, formerly `anon`)                  |
-| `EXPO_PUBLIC_ENVIRONMENT`              | no       | `local` \| `staging` \| `production`, shown in maintenance diagnostics |
+| Variable                               | Required | Purpose                                                                          |
+| -------------------------------------- | -------- | -------------------------------------------------------------------------------- |
+| `EXPO_PUBLIC_SUPABASE_URL`             | yes      | Project URL, e.g. `https://xyz.supabase.co`                                      |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | yes      | Publishable key (`sb_publishable_…`, formerly `anon`)                            |
+| `EXPO_PUBLIC_ENVIRONMENT`              | no       | `local` \| `test` \| `staging` \| `production`, shown in maintenance diagnostics |
 
 Because they are inlined, they must be read as static member expressions
 (`process.env.EXPO_PUBLIC_SUPABASE_URL`). A dynamic lookup yields `undefined` in
 a production build. `core/env` does this correctly — go through it.
 
-**Changing `.env.local` requires restarting the bundler.**
+**Changing `.env` or `.env.local` requires restarting the bundler.**
 
 ## Never in the client
 
@@ -38,8 +84,9 @@ a production build. `core/env` does this correctly — go through it.
 - The Cloudinary API secret
 - Any server-side credential
 
-`.env.local` is git-ignored. `.env.example` is committed and must never contain a
-real value.
+`.env.local` is git-ignored. `.env` IS committed, and holds only the shared test
+project's URL and publishable key — public client configuration, never a secret.
+`.env.example` is the variable reference and must never contain a real value.
 
 The tablet displays already-authorised Cloudinary delivery URLs from
 `media_assets.secure_url`. It never uploads or signs, so it needs no Cloudinary

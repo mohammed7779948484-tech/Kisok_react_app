@@ -29,13 +29,20 @@ expo-env.d.ts
 # Test output
 coverage/
 
-# Local environment.
-# `.env.example` is committed and documents the variables; the real values are
-# never tracked. The starter this replaced force-tracked `.env.local` with
-# `!.env.local` — do not reintroduce that.
-.env
+# Environment.
+#
+# `.env` IS committed: it holds the shared hosted TEST project's URL and
+# publishable key, so a cloned repository runs against a working backend with no
+# setup. Everything in it is public client configuration that ships inside the
+# APK anyway; Row Level Security is what protects data.
+#
+# `.env.local` is never tracked — it is the per-developer override, and it is
+# where a real staging or production value would go. The starter this replaced
+# force-tracked it with `!.env.local`; do not reintroduce that.
 .env.local
 .env.*.local
+.env.production
+.env.staging
 
 # Logs
 logs
