@@ -19,7 +19,9 @@ the task that needs it, never all of them up front. An implementer does not run
 the generator, and does not hand-write a file a capability would have produced.
 
 Writing is atomic: PLAN → RENDER → FORMAT/PARSE → VALIDATE → WRITE. If any
-planned file is invalid, nothing is written.
+planned file is invalid, nothing is written — and that includes the feature's
+own `index.ts`, which is planned as an ordinary file so it shares the same
+rollback. A failure leaves the repository exactly as it was.
 
 ## How it works
 
@@ -29,8 +31,16 @@ planned file is invalid, nothing is written.
   render through EJS first, so a template can opt itself out based on options.
 - Props: `pascalCaseName`, `camelCaseName`, `kebabCaseName`, `snakeCaseName`,
   `name`, `originalName`, plus `feature`, `featurePascal`, `featureCamel`,
-  `featureDir`, `role`, `routeDir`, and the `withSchema` / `withQuery` /
-  `withStore` / `withScreen` flags a template uses to wire itself to siblings.
+  `featureDir`, `role`, `routeDir`, `targetScreenKebab` / `targetScreenPascal`
+  (the screen a route renders), and the `withSchema` / `withQuery` /
+  `withStore` / `withScreen` / `withRoute` flags.
+- **Those `with*` flags describe the SAME request only.** A query generated
+  after a schema does not detect that schema, and a screen generated later does
+  not detect an existing query — the scaffold is neutral and the implementation
+  task wires the planned siblings. That is deliberate: filesystem introspection
+  would guess, and a wrong guess is harder to notice than an unwired scaffold.
+  `route` is the exception, because a route cannot be structurally valid without
+  a target screen, so it takes one explicitly.
 - A capability can declare `also: [...]` to share a template directory — `query`,
   `mutation` and `realtime` share one `keys.ts` template instead of three copies.
 - Output is Prettier-formatted before writing, so generated code passes
