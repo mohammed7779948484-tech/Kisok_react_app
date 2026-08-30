@@ -62,7 +62,7 @@ Examples
   # Then add exactly what the plan calls for.
   pnpm generate schema catalog catalog-response
   pnpm generate query  catalog products
-  pnpm generate screen catalog product-detail --role=customer
+  pnpm generate screen catalog product-detail
   pnpm generate component catalog availability-badge --screen=product-detail
   pnpm generate route  catalog index --role=customer --screen=catalog-home
 
@@ -298,10 +298,24 @@ export function publicScreensFor({ capability, feature, name, options }) {
  * exactly as it was.
  */
 export async function run(request, { root = ROOT } = {}) {
-  const planned = planRequest(request);
+  // Normalise the feature name ONCE, here. Every destination goes through
+  // `caseProps(feature).kebabCaseName`, but `validatePlan` and
+  // `planFeatureExport` build their paths from the raw string — so
+  // `generate feature orderHistory` planned `features/order-history/...` and was
+  // then rejected for being "outside features/orderHistory/". The generator
+  // advertises camelCase normalisation, so it has to hold end to end.
+  const feature = caseProps(request.feature).kebabCaseName;
+  request = { ...request, feature };
+
+  // `root` reaches planRequest too. Without it the existence checks (does the
+  // route's target screen exist? does the screen-local component's screen
+  // exist?) always resolved against the real repository, so a caller running
+  // against a temp root had to plant fixtures in the working tree to satisfy
+  // them — which is how a test ends up writing to tracked files.
+  const planned = planRequest({ ...request, root });
   const formatted = await formatFiles(planned);
   const files = validatePlan(formatted, {
-    feature: request.feature,
+    feature,
     routeDir: routeDirForRole(request.options.role),
   });
 
@@ -320,10 +334,10 @@ export async function run(request, { root = ROOT } = {}) {
     force: request.options.force,
     dryRun: request.options.dryRun,
     exportScreens: publicScreensFor(request),
-    feature: request.feature,
+    feature,
   });
 
-  return { files, ...result };
+  return { files, ...result, feature };
 }
 
 async function main() {
@@ -362,13 +376,13 @@ async function main() {
   let step = 1;
 
   if (request.capability === "feature") {
-    console.log(`  ${step++}. Fill in features/${request.feature}/docs/brief.md — what and why.`);
+    console.log(`  ${step++}. Fill in features/${result.feature}/docs/brief.md — what and why.`);
     console.log(
       `  ${step++}. Research, then write docs/plan.md with the kisok-feature-plan skill.`,
     );
     console.log(`  ${step++}. Generate the capabilities that plan calls for.`);
   } else {
-    console.log(`  ${step++}. Update features/${request.feature}/docs/todo.md.`);
+    console.log(`  ${step++}. Update features/${result.feature}/docs/todo.md.`);
     console.log(`  ${step++}. Write the failing test first where the behaviour is testable.`);
   }
 

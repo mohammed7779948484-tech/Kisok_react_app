@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { planRequest, run } from "./cli.mjs";
+import { planRequest, publicScreensFor, run } from "./cli.mjs";
 import { caseProps, parseFrontMatter, planFeatureExport, writeFiles } from "./render.mjs";
 
 /**
@@ -127,7 +127,16 @@ const FOLLOW_UPS = [
   { capability: "route", feature: "smoke-read", name: "detail", screen: "search" },
 ];
 
-const SCRATCH_FEATURES = [
+/**
+ * Every feature name this file may create in the REAL repository.
+ *
+ * The end-to-end section has to generate here — typechecking and linting the
+ * output only means something against the project's real config. Everything
+ * else runs in a temp root. `cleanUp()` walks this list, so a name missing from
+ * it survives a killed run; `.husky/pre-commit` refuses to commit anything
+ * matching `features/smoke-*` as the backstop.
+ */
+const SHAPE_FEATURES = [
   "smoke-bare",
   "smoke-model",
   "smoke-read",
@@ -135,6 +144,17 @@ const SCRATCH_FEATURES = [
   "smoke-write",
   "smoke-live",
 ];
+
+/**
+ * The atomicity and --force sections create these, outside the end-to-end run.
+ * They are never typechecked or linted — those sections assert that nothing was
+ * written, or restore what was — but `cleanUp()` must still know their names or
+ * a killed run leaves them in the working tree.
+ */
+const TRANSIENT_FEATURES = ["smoke-atomic", "smoke-force"];
+
+/** Everything this file may create in the real repository. */
+const SCRATCH_FEATURES = [...SHAPE_FEATURES, ...TRANSIENT_FEATURES];
 
 let failures = 0;
 
@@ -223,8 +243,11 @@ check("every capability is individually generatable", () => {
   }
 
   // `route` and screen-local `component` both need a target screen on disk, so
-  // they are exercised against a real one rather than in the abstract.
-  const featureRoot = path.join(ROOT, "features", "solo-target");
+  // they are exercised against a real one — in a TEMP root, never the working
+  // tree. A test that plants fixtures in the repository leaves them behind the
+  // moment it is killed.
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "kisok-caps-"));
+  const featureRoot = path.join(scratch, "features", "solo-target");
   try {
     fs.mkdirSync(path.join(featureRoot, "screens", "catalog-home"), { recursive: true });
     fs.writeFileSync(
@@ -238,6 +261,7 @@ check("every capability is individually generatable", () => {
       feature: "solo-target",
       name: "index",
       options: { role: "customer", screen: "catalog-home" },
+      root: scratch,
     });
     assert.ok(route.length > 0, "route planned nothing");
 
@@ -246,10 +270,11 @@ check("every capability is individually generatable", () => {
       feature: "solo-target",
       name: "chip",
       options: { role: "customer", screen: "catalog-home" },
+      root: scratch,
     });
     assert.ok(component.length > 0, "screen-local component planned nothing");
   } finally {
-    fs.rmSync(featureRoot, { recursive: true, force: true });
+    fs.rmSync(scratch, { recursive: true, force: true });
   }
 });
 check("a route renders a NAMED existing screen and generates nothing else", () => {
@@ -257,7 +282,8 @@ check("a route renders a NAMED existing screen and generates nothing else", () =
   // screen to share a name. That cannot express
   // `app/(customer)/index.tsx → CatalogHomeScreen`: it generated an unused
   // `IndexScreen` instead. The route now targets a screen explicitly.
-  const featureRoot = path.join(ROOT, "features", "solo-route");
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "kisok-route-"));
+  const featureRoot = path.join(scratch, "features", "solo-route");
   try {
     fs.mkdirSync(path.join(featureRoot, "screens", "catalog-home"), { recursive: true });
     fs.writeFileSync(
@@ -271,6 +297,7 @@ check("a route renders a NAMED existing screen and generates nothing else", () =
       feature: "solo-route",
       name: "index",
       options: { role: "customer", screen: "catalog-home" },
+      root: scratch,
     });
     const destinations = planned.map((file) => file.destination);
 
@@ -282,25 +309,35 @@ check("a route renders a NAMED existing screen and generates nothing else", () =
     );
     assert.doesNotMatch(planned[0].contents, /IndexScreen/, "no screen named after the route file");
   } finally {
-    fs.rmSync(featureRoot, { recursive: true, force: true });
+    fs.rmSync(scratch, { recursive: true, force: true });
   }
 });
 
 // The first real feature in each experience REPLACES the foundation placeholder
-// at app/(role)/index.tsx. That is a deliberate overwrite of a tracked file, and
-// it has to work — otherwise the documented first step of the first feature is
-// "the generator refuses, work around it by hand".
+// at app/(role)/index.tsx. That is a deliberate overwrite of a tracked file, so
+// it must work — otherwise the documented first step of the first feature is
+// "the generator refuses; work around it by hand".
+//
+// Exercised entirely in a TEMP root, against a COPY of the real placeholder. An
+// earlier version overwrote the tracked files and restored them in a `finally`,
+// which a SIGKILL or an OOM would skip — leaving a route in the working tree
+// importing a feature that does not exist.
 for (const [role, group] of [
   ["customer", "(customer)"],
   ["preparation", "(preparation)"],
 ]) {
   check(`replaces the ${role} index.tsx placeholder deliberately`, () => {
-    const routePath = path.join(ROOT, "app", group, "index.tsx");
-    const original = fs.readFileSync(routePath, "utf8");
+    const trackedRoute = path.join(ROOT, "app", group, "index.tsx");
+    const original = fs.readFileSync(trackedRoute, "utf8");
     assert.match(original, /FoundationPlaceholder/, "expected a placeholder to replace");
 
-    const featureRoot = path.join(ROOT, "features", `smoke-${role}-home`);
+    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), `kisok-${role}-`));
     try {
+      const routePath = path.join(scratch, "app", group, "index.tsx");
+      fs.mkdirSync(path.dirname(routePath), { recursive: true });
+      fs.writeFileSync(routePath, original, "utf8");
+
+      const featureRoot = path.join(scratch, "features", `smoke-${role}-home`);
       fs.mkdirSync(path.join(featureRoot, "screens", "home"), { recursive: true });
       fs.writeFileSync(
         path.join(featureRoot, "screens", "home", "home-screen.tsx"),
@@ -313,6 +350,7 @@ for (const [role, group] of [
         feature: `smoke-${role}-home`,
         name: "index",
         options: { role, screen: "home" },
+        root: scratch,
       });
 
       assert.deepEqual(
@@ -323,23 +361,62 @@ for (const [role, group] of [
       assert.match(planned[0].contents, /HomeScreen/);
 
       // Without --force the existing placeholder is preserved, not clobbered.
-      const guarded = writeFiles(planned, { root: ROOT });
+      const guarded = writeFiles(planned, { root: scratch });
       assert.deepEqual(guarded.written, [], "an existing route must not be overwritten silently");
       assert.deepEqual(guarded.skipped, [`app/${group}/index.tsx`]);
       assert.equal(fs.readFileSync(routePath, "utf8"), original, "placeholder was modified");
 
       // With --force it is replaced, which is the intended one-time step.
-      const forced = writeFiles(planned, { root: ROOT, force: true });
+      const forced = writeFiles(planned, { root: scratch, force: true });
       assert.deepEqual(forced.written, [`app/${group}/index.tsx`]);
       assert.match(fs.readFileSync(routePath, "utf8"), /HomeScreen/);
     } finally {
-      fs.writeFileSync(routePath, original, "utf8");
-      fs.rmSync(featureRoot, { recursive: true, force: true });
+      fs.rmSync(scratch, { recursive: true, force: true });
     }
 
-    assert.equal(fs.readFileSync(routePath, "utf8"), original, "placeholder was not restored");
+    // The tracked file was never a participant.
+    assert.equal(fs.readFileSync(trackedRoute, "utf8"), original, "the repository was written to");
   });
 }
+
+// Composing onto an EXISTING workspace is the documented first sequence:
+// `feature x --role=…` creates the workspace, then the shape is generated once
+// the plan is READY. On that second run index.ts is SKIPPED because it already
+// exists — and the export patch has to notice, or the route imports a screen
+// the public API does not export and typecheck fails with TS2305.
+check("composing onto an existing workspace still exports the routed screen", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "kisok-compose-"));
+  try {
+    const index = path.join(scratch, "features", "shopfront", "index.ts");
+    fs.mkdirSync(path.dirname(index), { recursive: true });
+    fs.writeFileSync(index, "/** doc */\nexport {};\n", "utf8");
+
+    const request = {
+      capability: "feature",
+      feature: "shopfront",
+      options: { role: "customer", with: ["screen", "route"] },
+      root: scratch,
+    };
+
+    const result = writeFiles(planRequest(request), {
+      root: scratch,
+      exportScreens: publicScreensFor(request),
+      feature: "shopfront",
+    });
+
+    assert.ok(
+      result.skipped.includes("features/shopfront/index.ts"),
+      "expected the existing index.ts to be skipped",
+    );
+    assert.match(
+      fs.readFileSync(index, "utf8"),
+      /ShopfrontScreen/,
+      "the routed screen was not exported, so the generated route cannot compile",
+    );
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
 
 check("a route whose target screen does not exist is refused", () => {
   assert.throws(
@@ -379,6 +456,28 @@ check("a screen-local component whose screen does not exist is refused", () =>
     /No screen `no-such-screen`/,
   ),
 );
+
+check("a camelCase feature name is normalised end to end", async () => {
+  // Destinations always went through caseProps, but validatePlan and the export
+  // patch built their paths from the RAW name — so `generate feature
+  // orderHistory` planned features/order-history/... and was then rejected for
+  // being "outside features/orderHistory/".
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "kisok-name-"));
+  try {
+    const result = await run(
+      { capability: "feature", feature: "orderHistory", options: { role: "customer" } },
+      { root: scratch },
+    );
+    assert.equal(result.feature, "order-history");
+    assert.ok(
+      result.written.every((file) => file.startsWith("features/order-history/")),
+      `wrote outside the normalised directory: ${result.written.join(", ")}`,
+    );
+    assert.ok(fs.existsSync(path.join(scratch, "features", "order-history", "index.ts")));
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
 
 check("role-sensitive capabilities refuse to guess a role", () => {
   for (const capability of ["feature", "route", "realtime"]) {
@@ -569,7 +668,8 @@ check("a component is feature-wide by default and screen-local with --screen", (
 
   // A screen-local component needs its screen to exist — otherwise it lands in a
   // directory nothing renders, which is usually a sign the tasks ran out of order.
-  const featureRoot = path.join(ROOT, "features", "solo");
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "kisok-component-"));
+  const featureRoot = path.join(scratch, "features", "solo");
   try {
     fs.mkdirSync(path.join(featureRoot, "screens", "detail"), { recursive: true });
     fs.writeFileSync(
@@ -583,10 +683,11 @@ check("a component is feature-wide by default and screen-local with --screen", (
       feature: "solo",
       name: "chip",
       options: { role: "customer", screen: "detail" },
+      root: scratch,
     }).map((file) => file.destination);
     assert.deepEqual(local, ["features/solo/screens/detail/components/chip.tsx"]);
   } finally {
-    fs.rmSync(featureRoot, { recursive: true, force: true });
+    fs.rmSync(scratch, { recursive: true, force: true });
   }
 });
 check("rejects --screen on anything but a component", () =>
@@ -727,7 +828,7 @@ try {
   console.log(`  ok  all ${total} generated files typecheck`);
 
   const lintTargets = [
-    ...SCRATCH_FEATURES.map((feature) => `features/${feature}`),
+    ...SHAPE_FEATURES.map((feature) => `features/${feature}`),
     "app/(customer)/smoke-read.tsx",
     "app/(customer)/smoke-write.tsx",
     "app/(preparation)/smoke-live.tsx",
@@ -737,18 +838,14 @@ try {
   shell("npx", ["eslint", "--max-warnings=0", ...lintTargets]);
   console.log("  ok  generated code lints clean (no warnings)");
 
-  shell("npx", [
-    "prettier",
-    "--check",
-    ...SCRATCH_FEATURES.map((feature) => `features/${feature}`),
-  ]);
+  shell("npx", ["prettier", "--check", ...SHAPE_FEATURES.map((feature) => `features/${feature}`)]);
   console.log("  ok  generated code is formatted");
 
   shell("npx", [
     "jest",
     "--ci",
     "--silent",
-    ...SCRATCH_FEATURES.map((feature) => `features/${feature}`),
+    ...SHAPE_FEATURES.map((feature) => `features/${feature}`),
   ]);
   console.log("  ok  generated tests pass");
 } catch (error) {
@@ -772,7 +869,7 @@ console.log("  ok  cleaned up");
 // ---------------------------------------------------------------------------
 console.log("\natomicity");
 
-const BROKEN_FEATURE = "smoke-atomic";
+const BROKEN_FEATURE = "smoke-atomic"; // in SCRATCH_FEATURES
 const brokenTemplate = path.join(ROOT, "tools/generator/templates/model/schema.ts.ejs");
 const originalTemplate = fs.readFileSync(brokenTemplate, "utf8");
 
@@ -822,7 +919,7 @@ check("the template was restored", () =>
 // ---------------------------------------------------------------------------
 console.log("\nforce rollback");
 
-const FORCE_FEATURE = "smoke-force";
+const FORCE_FEATURE = "smoke-force"; // in SCRATCH_FEATURES
 const forceDir = path.join(ROOT, "features", FORCE_FEATURE);
 
 try {
@@ -902,6 +999,48 @@ check("the force fixture was cleaned up", () => assert.ok(!fs.existsSync(forceDi
 // ---------------------------------------------------------------------------
 console.log("\nexport rollback");
 
+// The placeholder check gets its OWN root. It used to sit between the failing
+// write and the restore assertion, and its last statement rewrote index.ts —
+// so the restore assertion passed whether or not the rollback worked. Two
+// checks sharing one mutable file is how a test launders its own evidence.
+{
+  const placeholderRoot = fs.mkdtempSync(path.join(os.tmpdir(), "kisok-placeholder-"));
+  try {
+    const index = path.join(placeholderRoot, "features", "smoke-export", "index.ts");
+    fs.mkdirSync(path.dirname(index), { recursive: true });
+
+    check("the workspace placeholder is replaced, not left beside a real export", () => {
+      // `export {}` is what a workspace-only feature carries. A real export must
+      // replace it; leaving both is valid TypeScript and reads as an oversight.
+      // The semicolon is optional because a hand-edited file may not be formatted.
+      for (const placeholder of ["export {};\n", "export {}\n", "export { };\n"]) {
+        fs.writeFileSync(index, `/** doc */\n${placeholder}`, "utf8");
+        const patch = planFeatureExport({
+          root: placeholderRoot,
+          feature: "smoke-export",
+          screens: ["home"],
+          alreadyPlanned: new Set(),
+        });
+        assert.doesNotMatch(patch.contents, /export\s*\{\s*\}/, placeholder);
+        assert.match(patch.contents, /HomeScreen/);
+      }
+
+      // ...and an existing REAL export is kept, not swallowed.
+      fs.writeFileSync(index, 'export { OneScreen } from "./screens/one/one-screen";\n', "utf8");
+      const appended = planFeatureExport({
+        root: placeholderRoot,
+        feature: "smoke-export",
+        screens: ["two"],
+        alreadyPlanned: new Set(),
+      });
+      assert.match(appended.contents, /OneScreen/);
+      assert.match(appended.contents, /TwoScreen/);
+    });
+  } finally {
+    fs.rmSync(placeholderRoot, { recursive: true, force: true });
+  }
+}
+
 const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), "kisok-export-"));
 const realWriteForExport = fs.writeFileSync;
 
@@ -911,21 +1050,25 @@ try {
   fs.writeFileSync(featureIndex, "export {};\n", "utf8");
   const before = fs.readFileSync(featureIndex, "utf8");
 
-  let writes = 0;
+  // The patch is appended LAST, so a failure on any EARLIER file aborts before
+  // it is ever written — and "index.ts is unchanged" would then pass because
+  // nothing touched it, not because the rollback worked.
+  //
+  // So the failure happens DURING the patch write, after its bytes have landed.
+  // That is the state the rollback has to undo, and the only state that proves
+  // the patch is inside the transaction rather than beside it.
   fs.writeFileSync = (target, data, ...rest) => {
-    writes += 1;
-    // Fail on the SECOND write, after the index.ts patch has landed.
-    if (writes === 2) throw Object.assign(new Error("EIO: simulated"), { code: "EIO" });
-    return realWriteForExport.call(fs, target, data, ...rest);
+    const result = realWriteForExport.call(fs, target, data, ...rest);
+    if (String(target) === featureIndex) {
+      throw Object.assign(new Error("EIO: simulated"), { code: "EIO" });
+    }
+    return result;
   };
 
   let threw = null;
   try {
     writeFiles(
-      [
-        { destination: "app/(customer)/index.tsx", contents: "export default function R() {}\n" },
-        { destination: "app/(customer)/other.tsx", contents: "export default function O() {}\n" },
-      ],
+      [{ destination: "app/(customer)/index.tsx", contents: "export default function R() {}\n" }],
       { root: exportRoot, feature: "smoke-export", exportScreens: ["home"] },
     );
   } catch (error) {
@@ -934,51 +1077,24 @@ try {
 
   fs.writeFileSync = realWriteForExport;
 
-  check("the workspace placeholder is replaced, not left beside a real export", () => {
-    // `export {}` is what a workspace-only feature carries. A real export must
-    // replace it; leaving both is valid TypeScript and reads as an oversight.
-    // The semicolon is optional because a hand-edited file may not be formatted.
-    for (const placeholder of ["export {};\n", "export {}\n", "export { };\n"]) {
-      fs.writeFileSync(featureIndex, `/** doc */\n${placeholder}`, "utf8");
-      const patch = planFeatureExport({
-        root: exportRoot,
-        feature: "smoke-export",
-        screens: ["home"],
-        alreadyPlanned: new Set(),
-      });
-      assert.doesNotMatch(patch.contents, /export\s*\{\s*\}/, placeholder);
-      assert.match(patch.contents, /HomeScreen/);
-    }
+  // Nothing may touch featureIndex between the failure and this assertion.
+  const afterRollback = fs.readFileSync(featureIndex, "utf8");
 
-    // ...and an existing REAL export is kept, not swallowed.
-    fs.writeFileSync(
-      featureIndex,
-      'export { OneScreen } from "./screens/one/one-screen";\n',
-      "utf8",
-    );
-    const appended = planFeatureExport({
-      root: exportRoot,
-      feature: "smoke-export",
-      screens: ["two"],
-      alreadyPlanned: new Set(),
-    });
-    assert.match(appended.contents, /OneScreen/);
-    assert.match(appended.contents, /TwoScreen/);
-
-    fs.writeFileSync(featureIndex, before, "utf8");
-  });
-
-  check("a failure after the export patch reports the failure", () => {
+  check("a failure during the export patch reports the failure", () => {
     assert.ok(threw, "writeFiles reported success despite a failed write");
     assert.match(threw.message, /rolled back/i);
   });
 
   check("the feature index.ts is restored byte-for-byte", () =>
     assert.equal(
-      fs.readFileSync(featureIndex, "utf8"),
+      afterRollback,
       before,
       "index.ts kept an export for a feature whose files were all rolled back",
     ),
+  );
+
+  check("the created route file is removed too", () =>
+    assert.ok(!fs.existsSync(path.join(exportRoot, "app", "(customer)", "index.tsx"))),
   );
 } finally {
   fs.writeFileSync = realWriteForExport;

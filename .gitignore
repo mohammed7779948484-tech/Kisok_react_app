@@ -41,6 +41,8 @@ coverage/
 # force-tracked it with `!.env.local`; do not reintroduce that.
 .env.local
 .env.*.local
+.env.development
+.env.test
 .env.production
 .env.staging
 

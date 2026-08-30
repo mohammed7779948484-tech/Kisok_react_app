@@ -48,9 +48,24 @@ Disposable accounts on that project, for runtime testing only:
 | Customer    | `Customer@gmail.com`  | `777994899` |
 
 These are throwaway credentials for a throwaway backend, committed so an agent
-can sign in and exercise both experiences without asking anyone. Treat them as
-public — because in a cloned repository they are. Never reuse either password,
-or this pattern, for an account that holds real data.
+can sign in and exercise both experiences without asking anyone.
+
+**Be clear about what that costs.** Unlike the publishable key — which ships
+inside the APK regardless — a password is a real grant. Per
+`20260826050013_lean_rls_grants.sql`, an active `preparation` session may
+`select` from `orders`, `order_items` and `store_settings`, and may call
+`update_order_status`. So anyone who can read this repository can read and
+change order state on the shared test project. The key alone could not do that.
+
+That is an accepted trade for a disposable backend whose data the project owner
+manages. It stops being acceptable the moment this project points at anything
+real: rotate both passwords and move them out of the tree before that happens,
+and never reuse this pattern for an account holding real data.
+
+This is also the one place credentials are written down. **Maestro flows still
+must not contain any** — see `kisok-maestro-e2e`. A flow is run against whatever
+device someone has; a committed test login in a flow would follow the app
+everywhere it runs.
 
 ### Pointing somewhere else
 

@@ -67,8 +67,14 @@ as the flow, and treat removing one as a breaking change.
 ```
 
 Always start from a known state. A flow that passes only on a device someone
-already signed in on is not a test — it is a coincidence. If a flow needs data,
-it must create it through the UI or through a documented seeding step.
+already signed in on is not a test — it is a coincidence.
+
+If a flow needs data, it must create it **through the UI**. There is no seeding
+workflow and none is to be added: the shared hosted test project's data is
+managed by the project owner (see [`docs/environment.md`](../../../docs/environment.md)),
+and a flow that reseeds a shared backend breaks every other agent using it. If a
+journey genuinely cannot be reached through the UI, say so in the PR rather than
+inventing a seeding step.
 
 Cold starts on a store tablet are slower than on a dev machine; prefer
 `extendedWaitUntil` with a generous timeout over a bare assertion, so a slow

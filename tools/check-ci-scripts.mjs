@@ -165,8 +165,21 @@ if (fs.existsSync(ciPath)) {
   }
 }
 
+/**
+ * Steps the CI verify job runs that `pnpm verify` deliberately does not.
+ *
+ * Each needs a reason. This is not an escape hatch for "CI drifted" — it is for
+ * a check that CANNOT run locally in a meaningful way.
+ */
+const CI_ONLY = {
+  commitlint:
+    "lints the PR's real commit range (--from base --to head); there is no base branch locally",
+};
+
 const onlyLocal = [...verifyScript].filter((name) => !ciJobVerify.has(name)).sort();
-const onlyCi = [...ciJobVerify].filter((name) => !verifyScript.has(name)).sort();
+const onlyCi = [...ciJobVerify]
+  .filter((name) => !verifyScript.has(name) && !(name in CI_ONLY))
+  .sort();
 
 if (onlyLocal.length > 0 || onlyCi.length > 0) {
   problems.push(

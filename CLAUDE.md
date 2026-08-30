@@ -36,10 +36,14 @@ contract from it. In particular there is no `Flavor` — the model is
   migration, stop and say so.
 - **No prices, payments, delivery, shipping, public signup, or social login.**
   These are deliberate product boundaries.
-- **Use `pnpm generate` for new feature code.** `feature` creates a WORKSPACE —
+- **Structural code is generated, never hand-rolled** — but **the Lead runs
+  `pnpm generate`, an implementer never does.** `feature` creates a WORKSPACE —
   `index.ts` plus `docs/` — and nothing else, because planning decides the shape.
   `schema`, `query`, `mutation`, `store`, `component`, `screen`, `realtime` and
-  `route` then add one piece each. Do not hand-roll a feature directory.
+  `route` then add one piece each, run just-in-time before the task that needs
+  it. If you were handed ONE task, its scaffold already exists: do not generate,
+  and do not hand-write a file a capability would have produced — stop and
+  report instead.
 - **Load the `feature-delivery` skill before building a feature.** It carries the
   workflow: research, brief, plan, atomic TDD tasks, and the task/round/feature
   gates. See [`docs/agent-harness.md`](./docs/agent-harness.md).

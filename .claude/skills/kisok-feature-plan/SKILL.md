@@ -91,7 +91,7 @@ that task — never all of them up front.
 | ------------------------------------------------------------------------- | ---- |
 | `pnpm generate schema catalog catalog-response`                           | T01  |
 | `pnpm generate query catalog products`                                    | T02  |
-| `pnpm generate screen catalog catalog-home --role=customer`               | T03  |
+| `pnpm generate screen catalog catalog-home`                               | T03  |
 | `pnpm generate route catalog index --role=customer --screen=catalog-home` | T04  |
 
 Generate only what the shape needs. Empty architectural folders are not free —

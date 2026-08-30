@@ -269,10 +269,19 @@ export function writeFiles(
     root,
     feature,
     screens: exportScreens,
-    alreadyPlanned: new Set(files.map((file) => file.destination)),
+    // `planned`, not `files`: a destination that was SKIPPED because it already
+    // exists is not going to be written, so it cannot supply the export. Using
+    // every planned destination meant that composing onto an existing workspace
+    // (`feature x --with=screen,route` after `feature x`) skipped index.ts, then
+    // declined to patch it, and emitted a route importing a screen the public
+    // API did not export.
+    alreadyPlanned: new Set(planned.map((file) => file.destination)),
   });
   if (exportPatch) {
     planned.push(exportPatch);
+    // Reported ONLY here, not also in `written`: the CLI prints both lists, and
+    // naming the same file twice reads as two separate edits.
+    exportPatch.reportedAsExport = true;
     exported.push(`${exportPatch.destination} — exported ${exportScreens.join(", ")}`);
   }
 
@@ -315,7 +324,7 @@ export function writeFiles(
       // "the repository is unchanged" promise would be a lie.
       if (!existed) createdFiles.push(file.absolute);
       fs.writeFileSync(file.absolute, file.contents, "utf8");
-      written.push(file.destination);
+      if (!file.reportedAsExport) written.push(file.destination);
     }
   } catch (error) {
     for (const absolute of createdFiles.reverse()) {

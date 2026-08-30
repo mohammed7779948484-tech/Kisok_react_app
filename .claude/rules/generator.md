@@ -78,7 +78,10 @@ rollback. A failure leaves the repository exactly as it was.
   `shared` — a shared feature can be reached by a customer session, where the
   subscription can never fire.
 - **Role-sensitive capabilities require an explicit `--role`**: `feature`,
-  `route` and `realtime`. It used to default to `shared`, which meant
+  `route` and `realtime`. This catches an UNSTATED role, not a contradictory
+  one — no feature records its role, so a `shared` feature can still be given a
+  Preparation realtime hook. The plan's route table is what keeps a feature
+  coherent; RLS is what keeps it safe. It used to default to `shared`, which meant
   `pnpm generate route x y` silently wrote into top-level `app/` instead of a
   role group. A default that is wrong most of the time is worse than none. Every
   other capability is role-independent and still defaults to `shared`.

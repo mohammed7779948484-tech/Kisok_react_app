@@ -62,6 +62,23 @@ copies came from, and why each excluded skill is excluded).
 are not in `skills-lock.json` because the `skills` CLI expects a skill at the
 repository root, and Expo nests them under `plugins/expo/skills/`.
 
+**What the vendored copies get wrong for this project**, and why they are still
+worth having:
+
+- `expo-router`'s `references/tabs.md`, `search.md` and `zoom-transitions.md`
+  cover `NativeTabs`, header search bars and `Link.AppleZoom`. None of those
+  exist in the installed `expo-router` (SDK 54) — they are SDK 56+ and largely
+  iOS. KISOK ships Android tablets on SDK 54, so treat that material as **not
+  applicable**, not as something to reach for.
+- `SKILL.md` points at an `expo-native-ui` skill for colours and styling. It is
+  deliberately **not** vendored: KISOK's colour contract is
+  `kisok-design-system` plus the semantic Tailwind tokens, and a raw-hex palette
+  would contradict it. Ignore that pointer.
+
+What remains genuinely useful is the routing model itself — file-based routes,
+groups, dynamic segments, `Stack`, modals — which is what every KISOK feature
+touches.
+
 **KISOK rules stay authoritative.** Where a vendored Expo skill and this
 repository's own instructions differ on architecture, `AGENTS.md`, `CLAUDE.md`,
 `.claude/rules/` and the `kisok-*` skills win. The Expo skills are platform

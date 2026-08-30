@@ -229,9 +229,11 @@ combine into something incoherent.
 
 ### 9. Feature gate
 
-- `pnpm verify` — exactly the set the CI verify job runs, including `check:docs`.
-  `pnpm check:ci-scripts` fails if the two ever diverge, so this is not a claim
-  that can quietly go stale.
+- `pnpm verify` — every `pnpm <script>` the CI verify job runs, including
+  `check:docs`. `pnpm check:ci-scripts` fails if the two diverge, so this is not
+  a claim that can quietly go stale. CI additionally lints the PR's real commit
+  range, which has no local equivalent — so a green `pnpm verify` is necessary,
+  not sufficient.
 - Runtime evidence: browser at the tablet sizes; Android or Maestro where the
   feature warrants it (see `kisok-maestro-e2e`)
 - **Fresh** independent review — `code-reviewer`, using `kisok-code-review`.

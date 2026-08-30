@@ -49,7 +49,7 @@ planned command immediately before delegating the task that needs it:
 ```bash
 pnpm generate schema catalog catalog-response          # before T01
 pnpm generate query  catalog products                  # before T02
-pnpm generate screen catalog catalog-home --role=customer   # before T03
+pnpm generate screen catalog catalog-home   # before T03
 pnpm generate route  catalog index --role=customer --screen=catalog-home  # before T04
 ```
 

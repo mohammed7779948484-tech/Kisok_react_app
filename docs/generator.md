@@ -63,6 +63,10 @@ screen, which is why it takes one explicitly.
 | `--dry-run`                            | off                                                       | Print the plan, write nothing.                                                          |
 | `--force`                              | off                                                       | Overwrite existing files.                                                               |
 
+`screen`, `schema`, `query`, `mutation`, `store` and `component` are
+**role-independent** — no template reads the role — so passing `--role` to them
+is accepted and ignored. The examples omit it.
+
 ### Roles are explicit where they matter
 
 `feature`, `route` and `realtime` **require** `--role`. It used to default to
@@ -71,6 +75,14 @@ screen, which is why it takes one explicitly.
 the Realtime guard by not being a customer. A default that is wrong most of the
 time is worse than none. Every other capability is role-independent and still
 defaults to `shared`.
+
+**The flag is per-command, not per-feature.** Nothing records a feature's role,
+so `generate realtime shopfront live --role=preparation` is accepted even if
+`shopfront` was created `--role=shared`, and a Preparation screen can be mounted
+under `app/(customer)/`. The flag stops an _unstated_ role, not a _contradictory_
+one — what keeps roles consistent across a feature is the route table in
+`plan.md` and the reviewer checking it. RLS, not the generator, is the security
+boundary.
 
 `realtime` accepts **`preparation` only**. Only `public.orders` is published and
 RLS gives everyone else no rows, so `customer` and `shared` are both rejected —
@@ -138,7 +150,7 @@ Adding pieces later:
 pnpm generate query catalog product-detail
 pnpm generate mutation checkout submit-order
 pnpm generate component catalog product-card
-pnpm generate screen catalog search --role=customer
+pnpm generate screen catalog search
 pnpm generate component catalog search-filter --screen=search
 pnpm generate route catalog search --role=customer --screen=search
 ```
@@ -169,7 +181,7 @@ Plan first, then generate what the plan calls for:
 ```bash
 pnpm generate schema catalog catalog-response
 pnpm generate query  catalog products
-pnpm generate screen catalog product-detail --role=customer
+pnpm generate screen catalog product-detail
 pnpm generate component catalog availability-badge --screen=product-detail
 pnpm generate route  catalog index --role=customer
 ```

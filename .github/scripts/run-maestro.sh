@@ -21,6 +21,43 @@ adb install -r "$APK"
 # Clear the log first so what follows is only this run.
 adb logcat -c || true
 
+# Let the system settle before driving the UI.
+#
+# A run once failed with the app healthy and in the foreground — logcat showed
+# "Running \"main\"" and "Displayed ... MainActivity" — while a system ANR dialog
+# for the LAUNCHER ("Pixel Launcher isn't responding") sat on top of everything,
+# so uiautomator saw only that dialog. Freshly booted emulators are still busy
+# indexing, and a cold app start on top of that is enough to tip the launcher
+# over.
+sleep 5
+
+# Dismiss a system ANR dialog ONLY when it is not ours.
+#
+# Deliberately narrow: if com.kisok.kiosk is the one not responding, that is a
+# real defect and this must not paper over it. The dialog belongs to package
+# "android", so the test is the title text.
+dismiss_foreign_anr() {
+  local hierarchy
+  hierarchy=$(adb shell uiautomator dump /sdcard/pre-check.xml >/dev/null 2>&1 &&
+    adb shell cat /sdcard/pre-check.xml 2>/dev/null) || return 0
+
+  case "$hierarchy" in
+    *"isn't responding"*)
+      if printf '%s' "$hierarchy" | grep -qi "kisok"; then
+        echo "::error::KISOK itself is not responding — that is a real failure, not cleared."
+        return 0
+      fi
+      echo "::warning::Dismissing a system ANR dialog that is not KISOK's:"
+      printf '%s' "$hierarchy" | grep -o "[A-Za-z ]*isn't responding" | head -1
+      adb shell am force-stop com.google.android.apps.nexuslauncher || true
+      adb shell input keyevent KEYCODE_HOME || true
+      sleep 3
+      ;;
+  esac
+}
+
+dismiss_foreign_anr
+
 maestro test .maestro/flows --format junit --output maestro-report.xml
 status=$?
 

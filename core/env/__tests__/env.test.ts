@@ -56,15 +56,25 @@ describe("environment validation", () => {
 
     expect(result.error?.issues ?? []).toEqual([]);
     expect(result.success).toBe(true);
+
+    // ...and it must point at the shared TEST project. The whole argument for
+    // committing this file is that it is disposable and non-production; a
+    // committed production URL and key would satisfy the schema perfectly and
+    // silently invalidate that argument.
+    expect(values.EXPO_PUBLIC_ENVIRONMENT).toBe("test");
+    expect(values.EXPO_PUBLIC_SUPABASE_URL).toBe("https://akxigjsifwyolkadofnj.supabase.co");
+    expect(values.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY).toMatch(/^sb_publishable_/);
   });
 
   // The whole point of committing .env is that it is safe to. A secret in there
   // would ship in the APK and be readable by anyone holding it.
   it("the committed .env carries no secret", () => {
     const source = fs.readFileSync(path.join(process.cwd(), ".env"), "utf8");
+    // Case-INSENSITIVE: an uppercase-only pattern cannot see `db_password=…`,
+    // which is exactly the shape a stray credential takes.
     const declared = source
       .split(/\r?\n/)
-      .filter((line) => /^\s*[A-Z_]+\s*=/.test(line))
+      .filter((line) => /^\s*[A-Za-z_][A-Za-z0-9_]*\s*=/.test(line))
       .map((line) => line.split("=")[0]?.trim());
 
     // Only EXPO_PUBLIC_* may be here: anything else is not inlined by Metro
@@ -80,5 +90,11 @@ describe("environment validation", () => {
       .filter((line) => !/^\s*#/.test(line))
       .join("\n");
     expect(assignments).not.toMatch(/service_role|sb_secret_|JWT_SECRET|postgres:\/\//i);
+
+    // A legacy service_role key is a JWT and never contains the literal string
+    // "service_role" — it is base64. Since this project uses `sb_publishable_`
+    // keys, no value here has any business being a JWT at all, whatever its
+    // payload says.
+    expect(assignments).not.toMatch(/=\s*eyJ/);
   });
 });
