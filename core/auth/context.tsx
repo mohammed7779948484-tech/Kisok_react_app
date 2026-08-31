@@ -1,6 +1,6 @@
 import type { Session } from "@supabase/supabase-js";
 import { useQueryClient } from "@tanstack/react-query";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppError, toAppError } from "@/core/errors";
 import { createLogger } from "@/core/logging";
@@ -19,6 +19,8 @@ import {
 import { isTabletRole, type ActiveProfile, type AuthStatus } from "./types";
 
 const log = createLogger("auth");
+const HANDOFF_IN_FLIGHT_REASON =
+  "This tablet is still finishing the previous sign-out safely. Please try again.";
 
 type AuthState = {
   status: AuthStatus;
@@ -78,6 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     error: null,
   });
   const [retryToken, setRetryToken] = useState(0);
+  const handoffInFlight = useRef(false);
   const queryClient = useQueryClient();
 
   // ── Stage 1: listen ───────────────────────────────────────────────────────
@@ -181,6 +184,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [accessToken, known]);
 
   const signIn = useCallback(async (email: string, password: string) => {
+    // Supabase may publish SIGNED_OUT before the feature cleanup that follows
+    // has finished. Never let the next account authenticate into that same
+    // process while the previous account's cleanup is still able to mutate
+    // local state. The durable marker covers cold restarts; this ref covers the
+    // same-process concurrency window.
+    if (handoffInFlight.current) throw handoffRecoveryError(HANDOFF_IN_FLIGHT_REASON);
+
     // Signed-out startup does not resolve a profile, so recover here too before
     // a new account may authenticate onto the shared tablet.
     const handoff = await recoverPendingHandoff();
@@ -197,39 +207,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const gate = await runSignOutGuards();
     if (gate.status === "blocked") return gate;
 
-    // Persist a fail-closed marker BEFORE auth is touched. If this cannot be
-    // durable, refuse sign-out so a cold restart cannot forget an incomplete
-    // customer handoff.
-    const prepared = await prepareSignOutHandoff();
-    if (prepared.status === "failed") return prepared;
-
-    const supabase = getSupabaseClient();
-
-    // `scope: "local"` signs out THIS device only. The default is global and
-    // would revoke the same store account on every tablet.
-    let error: { message: string } | null;
-    try {
-      ({ error } = await supabase.auth.signOut({ scope: "local" }));
-    } catch (caught) {
-      log.error("Supabase sign-out threw instead of returning a result", {
-        message: toAppError(caught).technicalMessage,
-      });
-      return {
-        status: "failed",
-        reason: "We couldn't finish signing out. Please try again.",
-      };
+    // This lock spans the whole prepared handoff. A SIGNED_OUT auth event may
+    // make the sign-in route visible before cleanup resolves, but signIn() above
+    // remains fail-closed until this finally block runs.
+    if (handoffInFlight.current) {
+      return { status: "failed", reason: HANDOFF_IN_FLIGHT_REASON };
     }
+    handoffInFlight.current = true;
 
-    if (error) {
-      const remaining = await supabase.auth
-        .getSession()
-        .then(({ data }) => data.session)
-        .catch(() => undefined);
+    try {
+      // Persist a fail-closed marker BEFORE auth is touched. If this cannot be
+      // durable, refuse sign-out so a cold restart cannot forget an incomplete
+      // customer handoff.
+      const prepared = await prepareSignOutHandoff();
+      if (prepared.status === "failed") return prepared;
 
-      if (remaining !== null) {
-        log.error("Sign-out failed and the stored session may still be valid", {
-          message: error.message,
-          sessionState: remaining === undefined ? "unknown" : "still-present",
+      const supabase = getSupabaseClient();
+
+      // `scope: "local"` signs out THIS device only. The default is global and
+      // would revoke the same store account on every tablet.
+      let error: { message: string } | null;
+      try {
+        ({ error } = await supabase.auth.signOut({ scope: "local" }));
+      } catch (caught) {
+        log.error("Supabase sign-out threw instead of returning a result", {
+          message: toAppError(caught).technicalMessage,
         });
         return {
           status: "failed",
@@ -237,23 +239,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      log.warn("Supabase sign-out reported an error but the local session was cleared", {
-        message: error.message,
-      });
+      if (error) {
+        const remaining = await supabase.auth
+          .getSession()
+          .then(({ data }) => data.session)
+          .catch(() => undefined);
+
+        if (remaining !== null) {
+          log.error("Sign-out failed and the stored session may still be valid", {
+            message: error.message,
+            sessionState: remaining === undefined ? "unknown" : "still-present",
+          });
+          return {
+            status: "failed",
+            reason: "We couldn't finish signing out. Please try again.",
+          };
+        }
+
+        log.warn("Supabase sign-out reported an error but the local session was cleared", {
+          message: error.message,
+        });
+      }
+
+      // Phase 2 — feature cleanup after the local auth session is gone.
+      const cleanup = await runSignOutCleanup();
+      clearQueryCache(queryClient);
+      setSnapshot({ session: null, known: true });
+
+      // Phase 3 — prove the tablet is safe to hand to another person. Any failed
+      // feature cleanup triggers a namespace-wide KISOK reset. If that reset also
+      // fails, the durable marker remains and future sign-in/startup is fail-closed.
+      const handoff = await finishSignOutHandoff(cleanup.failures);
+      if (handoff.status === "unsafe") return handoff;
+
+      return { status: "ok" };
+    } finally {
+      handoffInFlight.current = false;
     }
-
-    // Phase 2 — feature cleanup after the local auth session is gone.
-    const cleanup = await runSignOutCleanup();
-    clearQueryCache(queryClient);
-    setSnapshot({ session: null, known: true });
-
-    // Phase 3 — prove the tablet is safe to hand to another person. Any failed
-    // feature cleanup triggers a namespace-wide KISOK reset. If that reset also
-    // fails, the durable marker remains and future sign-in/startup is fail-closed.
-    const handoff = await finishSignOutHandoff(cleanup.failures);
-    if (handoff.status === "unsafe") return handoff;
-
-    return { status: "ok" };
   }, [queryClient]);
 
   const retry = useCallback(() => setRetryToken((value) => value + 1), []);
