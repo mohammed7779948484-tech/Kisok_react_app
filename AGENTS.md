@@ -94,6 +94,15 @@ features/<name>/
 Generate only what the feature needs. Empty architectural folders are not free:
 they teach the next agent that this is the expected shape.
 
+**`features/auth` is a Foundation exception, not an example to copy.** It
+predates the generator and this anatomy: it has a flat `schemas/` instead of
+`model/`, flat `screens/*.tsx` instead of one directory per screen, no `api/`,
+`queries/`, `state/`, or `docs/`. It stays that way because it owns sensitive
+Foundation authentication behaviour (`core/auth` is what actually does the
+work; this feature only owns the sign-in SCREEN) and migrating it is not worth
+the churn for a handful of files that never change shape. Every new business
+feature uses the anatomy above — generated, not hand-shaped like `auth` was.
+
 ### The boundary rules
 
 These are enforced by ESLint, not just documented. A violation is a build

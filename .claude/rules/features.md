@@ -26,6 +26,12 @@ features/<name>/
 
 Tests live beside what they protect. Generate only what the feature needs.
 
+**Exception: `features/auth` does not match this anatomy — it predates the
+generator, has a flat `schemas/` and flat `screens/*.tsx`, and owns only the
+sign-in SCREEN (`core/auth` owns the actual session/role logic).** It is a
+Foundation exception left alone deliberately, not a shape to copy. Every new
+feature follows the layout above.
+
 ## Rules
 
 - **Import other features only via `@/features/<name>`.** Deep imports are a lint

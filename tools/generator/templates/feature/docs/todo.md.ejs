@@ -105,8 +105,25 @@ Round gate: `PENDING`
 
 ## Feature gate
 
-`PENDING` — set only when every round has passed, review findings are
-dispositioned, and the quality audit is clean. See `review.md`.
+Every line is a box, and `pnpm verify` alone is not the authority — several of
+these depend on an environment only CI has. See `review.md` for the review and
+audit findings this checklist points at.
+
+- [ ] Every Task Gate PASS
+- [ ] Every Round Gate PASS
+- [ ] Every AC verified
+- [ ] `pnpm verify` PASS after the final local change
+- [ ] required fast GitHub CI PASS on the final HEAD
+- [ ] required runtime evidence recorded
+- [ ] required native tier(s) PASS, N/A, or explicitly unverified
+- [ ] Reviewer findings dispositioned
+- [ ] blocking/major fixes re-reviewed
+- [ ] Quality Audit clean
+- [ ] anything not verified explicitly recorded
+- [ ] shared/core changes justified
+- [ ] PR evidence matches the worklog
+
+FEATURE GATE: PENDING
 
 ## Blocked
 

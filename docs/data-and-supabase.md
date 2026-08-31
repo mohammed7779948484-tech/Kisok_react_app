@@ -88,6 +88,36 @@ Customers get store settings (including
 `customer_success_reset_seconds`) from the `settings` key of the catalog
 snapshot, not from `store_settings`.
 
+**A direct table read does not go through `callRpc` and is not Zod-validated —
+and that is correct, not an inconsistency.** `callRpc` exists because the
+JSON-returning RPCs answer with `jsonb`, an untyped wire payload that has to be
+checked before anything can trust its shape. A direct `select` on a real table
+has no such gap: PostgREST returns exactly the columns the migration declares,
+and the generated `Tables<'orders'>` type already describes that shape
+precisely. Typing it is enough; validating it again would just be checking the
+database's own schema against itself.
+
+```ts
+// features/preparation/api/fetch-active-orders.ts
+import { getSupabaseClient, type Tables } from "@/core/supabase";
+import { toAppError } from "@/core/errors";
+
+export async function fetchActiveOrders(): Promise<Tables<"orders">[]> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("orders")
+    .select("*")
+    .in("status", ["new", "preparing"]);
+
+  if (error) throw toAppError(error);
+  return data;
+}
+```
+
+Still `api/`-only, still normalised to `AppError` on failure — the only
+difference from an RPC call is that there is no schema argument, because there
+is nothing left to validate.
+
 ## Calling an RPC
 
 The JSON-returning business RPCs return `jsonb`, which Supabase generates as

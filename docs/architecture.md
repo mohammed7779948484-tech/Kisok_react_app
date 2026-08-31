@@ -6,8 +6,8 @@ Several coding agents will implement KISOK features **in parallel** from the sam
 `main`. Every shared file they must edit is a merge conflict and a chance to
 destabilise someone else's work. So the primary architectural goal is:
 
-> Implementing a feature should touch **only that feature's directory, plus one
-> new route file.**
+> Implementing a feature should touch **only that feature's directory, plus its
+> explicitly planned route file(s).**
 
 Everything below follows from that.
 
@@ -24,9 +24,9 @@ supabase/       Database migrations — the data contract.
 
 ## The one shared surface to coordinate on
 
-Feature work is designed to touch only its own directory plus a route file, and
-the lint rules keep it that way. There is one honest exception worth naming
-before it surprises anyone:
+Feature work is designed to touch only its own directory plus its explicitly
+planned route file(s), and the lint rules keep it that way. There is one
+honest exception worth naming before it surprises anyone:
 
 **The customer shell.** Home, product discovery, search, the cart badge, and the
 long-press entry into hidden maintenance all live in one navigation chrome that
@@ -83,6 +83,14 @@ system under root `components/`.
 
 A feature generates only the layers it needs. A read-only screen has no business
 carrying an empty `state/` directory.
+
+**`features/auth` does not follow this anatomy, and that is deliberate.** It
+predates the generator: `schemas/` instead of `model/`, flat `screens/*.tsx`
+instead of `screens/<screen>/`, no `api/`, `queries/`, `state/`, or `docs/`. It
+owns only the sign-in SCREEN — `core/auth` (below) owns session restoration,
+role resolution, and the sign-out safety gate, which are cross-cutting and
+deliberately not a feature. It is a Foundation exception, not a second example:
+copy the anatomy above for every new business feature, never this one's shape.
 
 ### `core/` — foundation
 

@@ -21,7 +21,7 @@ pnpm typecheck      # tsc --noEmit
 pnpm lint           # eslint, including the architecture boundaries
 pnpm format:check   # prettier
 pnpm test           # jest + @testing-library/react-native
-pnpm verify         # exactly what the CI verify job runs
+pnpm verify         # every package-script check the CI verify job runs
 
 pnpm generate feature <name> --role=customer   # a feature WORKSPACE (index + docs)
 pnpm generate query <feature> <name>          # add one capability once planned

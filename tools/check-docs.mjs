@@ -128,6 +128,14 @@ const OBSOLETE = [
     pattern: /generate feature[^\n]*#[^\n]*(scaffold|slice|vertical)/i,
     fix: "`pnpm generate feature` creates a WORKSPACE — index.ts plus docs/ — and no implementation code.",
   },
+  {
+    // "One route file" was an assumption baked into the architectural headline
+    // itself: a multi-screen feature legitimately owns several routes, each
+    // explicitly planned in plan.md. This is the exact stale form that
+    // survived a prior sweep because it read as prose, not a code example.
+    pattern: /plus\s+(?:one\s+new\s+route\s+file|a\s+route\s+file)\b/i,
+    fix: 'Say "plus its explicitly planned route file(s)" — a feature may own several, each named in plan.md.',
+  },
 ];
 
 /**
