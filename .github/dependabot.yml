@@ -1,0 +1,36 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # Grouped so the repo gets a couple of reviewable PRs a week instead of
+    # dozens of single-package ones competing with feature work.
+    groups:
+      expo-sdk:
+        # Expo packages must move together with the SDK. Never merge one of
+        # these alone — see docs/adr/0001-expo-sdk-version.md.
+        patterns:
+          - "expo"
+          - "expo-*"
+          - "@expo/*"
+          - "react-native"
+          - "react-native-*"
+          - "@react-native-*"
+      dev-dependencies:
+        dependency-type: development
+      production:
+        dependency-type: production
+        exclude-patterns:
+          - "expo"
+          - "expo-*"
+          - "@expo/*"
+          - "react-native"
+          - "react-native-*"
+          - "@react-native-*"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly

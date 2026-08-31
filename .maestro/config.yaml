@@ -1,0 +1,7 @@
+# Maestro configuration for KISOK.
+#
+# Flows are opt-in per feature. Do NOT add a flow for a feature that does not
+# exist yet — a test that cannot fail is worse than no test, because it makes
+# the suite look like it covers something it does not.
+flows:
+  - "flows/*.yaml"

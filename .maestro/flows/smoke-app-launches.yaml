@@ -1,0 +1,24 @@
+# The one flow this repository has: with no stored session the app boots through
+# the startup screen and lands on sign-in without crashing. It needs no account,
+# no seeded data and no network.
+#
+# It is the only check that proves the app STARTS. It has already caught a
+# release build that died in Application.onCreate before React Native loaded —
+# something no test, typecheck or lint here can see.
+#
+# It selects by testID, not by the visible copy — see .maestro/README.md.
+#
+# The appId is written out rather than interpolated: Maestro only substitutes
+# ${VAR} from values passed with `-e`, so a shell environment variable would
+# have been left as a literal. CI asserts this matches app.config.ts.
+# Everything else waits for the feature it tests.
+appId: com.kisok.kiosk
+name: Smoke — app launches to sign-in
+---
+- launchApp:
+    clearState: true
+# Generous timeout: a cold start on a store tablet is slower than a dev machine.
+- extendedWaitUntil:
+    visible:
+      id: "sign-in-submit"
+    timeout: 30000

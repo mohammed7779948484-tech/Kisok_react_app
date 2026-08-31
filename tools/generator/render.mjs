@@ -1,0 +1,444 @@
+import fs from "node:fs";
+import path from "node:path";
+import ejs from "ejs";
+import prettier from "prettier";
+
+/**
+ * Template rendering for the KISOK generator.
+ *
+ * Templates are EJS with YAML-ish front matter. Front matter is rendered through
+ * EJS FIRST, so `destinationDir`, `filename` and `skip` can depend on the
+ * options a capability was invoked with.
+ *
+ * These conventions were modelled on Infinite Red's ignite-cli, which is a good
+ * design. The implementation is local rather than that package — see
+ * docs/adr/0005-generator.md.
+ */
+const FRONT_MATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+
+/**
+ * Parse `key: value` front matter. Values are plain strings; `true`/`false`
+ * become booleans. Nested structures are deliberately unsupported — a template
+ * that needs them is doing too much.
+ */
+export function parseFrontMatter(source) {
+  const match = FRONT_MATTER.exec(source);
+  if (!match) return { attributes: {}, body: source };
+
+  const attributes = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const separator = trimmed.indexOf(":");
+    if (separator === -1) throw new Error(`Malformed front matter line: "${line}"`);
+
+    const key = trimmed.slice(0, separator).trim();
+    const raw = trimmed.slice(separator + 1).trim();
+    attributes[key] = raw === "true" ? true : raw === "false" ? false : raw;
+  }
+
+  return { attributes, body: source.slice(match[0].length) };
+}
+
+/** Render one template into a planned file, or `null` when it opts out. */
+export function renderTemplate(templatePath, props) {
+  const source = fs.readFileSync(templatePath, "utf8");
+  const rendered = ejs.render(source, { props }, { filename: templatePath });
+  const { attributes, body } = parseFrontMatter(rendered);
+
+  if (attributes.skip === true) return null;
+
+  const defaultName = path.basename(templatePath).replace(/\.ejs$/, "");
+  const filename = String(attributes.filename ?? defaultName).replace(/NAME/g, props.kebabCaseName);
+
+  if (!attributes.destinationDir) {
+    throw new Error(`Template ${templatePath} is missing a "destinationDir" front-matter key.`);
+  }
+
+  return {
+    template: templatePath,
+    destination: path.join(String(attributes.destinationDir), filename),
+    // Exactly one trailing newline, so freshly generated code passes
+    // `prettier --check` before anyone has touched it.
+    contents: `${body.replace(/\s*$/, "")}\n`,
+  };
+}
+
+/** Render every `.ejs` template in a capability's template directory. */
+export function renderTemplateDir(templateDir, props) {
+  if (!fs.existsSync(templateDir)) {
+    throw new Error(`No templates found at ${templateDir}`);
+  }
+
+  return fs
+    .readdirSync(templateDir)
+    .filter((entry) => entry.endsWith(".ejs"))
+    .sort()
+    .map((entry) => renderTemplate(path.join(templateDir, entry), props))
+    .filter((file) => file !== null);
+}
+
+/**
+ * Longest name we accept.
+ *
+ * Generated paths nest the name several times — `features/<n>/screens/<n>/<n>-screen.test.tsx`
+ * — so a long name multiplies into filenames that hit the filesystem's 255-byte
+ * limit and module specifiers the resolver then fails to find. That failure
+ * arrives as "cannot find module" in a generated test, which reads like a
+ * generator bug rather than a bad name. Rejecting it here says what is actually
+ * wrong. Forty characters is far beyond any real feature name.
+ */
+const MAX_NAME_LENGTH = 40;
+
+/** The case conversions available to every template. */
+export function caseProps(input) {
+  const words = String(input)
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[\s_\-/]+/)
+    .filter(Boolean)
+    .map((word) => word.toLowerCase());
+
+  if (words.length === 0) throw new Error("A name is required.");
+
+  const kebab = words.join("-");
+  if (kebab.length > MAX_NAME_LENGTH) {
+    throw new GeneratorError(
+      `"${kebab}" is ${kebab.length} characters; the limit is ${MAX_NAME_LENGTH}.\n` +
+        `The name is repeated in nested paths, so a long one produces filenames the ` +
+        `filesystem or the module resolver cannot handle. Choose a shorter name.`,
+    );
+  }
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(kebab)) {
+    throw new GeneratorError(
+      `"${kebab}" is not a usable name. Use lowercase letters, digits and hyphens, ` +
+        `starting with a letter or digit — it becomes a directory name and an import path.`,
+    );
+  }
+
+  const pascalCaseName = words.map((word) => word[0].toUpperCase() + word.slice(1)).join("");
+
+  return {
+    originalName: String(input),
+    name: words.join("-"),
+    pascalCaseName,
+    camelCaseName: pascalCaseName[0].toLowerCase() + pascalCaseName.slice(1),
+    kebabCaseName: words.join("-"),
+    snakeCaseName: words.join("_"),
+  };
+}
+
+/** A generation request that was rejected before anything was written. */
+export class GeneratorError extends Error {
+  name = "GeneratorError";
+}
+
+/**
+ * Format generated files with the project's own Prettier config.
+ *
+ * Templates cannot reliably produce formatted output — line length depends on
+ * the name being interpolated — so the generator formats what it writes.
+ *
+ * A file Prettier cannot PARSE is a template bug that would put broken code in
+ * someone's feature directory. This used to warn and write the file anyway,
+ * which is the worst outcome: a half-generated feature that does not compile,
+ * mixed in with files that do, and no clean way back. Now it aborts the whole
+ * request — every failure at once, so a broken template is fixed in one pass.
+ */
+export async function formatFiles(files) {
+  const failures = [];
+
+  const formatted = await Promise.all(
+    files.map(async (file) => {
+      const config = await prettier.resolveConfig(file.destination);
+      try {
+        const contents = await prettier.format(file.contents, {
+          ...config,
+          filepath: file.destination,
+        });
+        return { ...file, contents };
+      } catch (error) {
+        failures.push(`  ${file.destination}\n    from ${file.template}\n    ${error.message}`);
+        return file;
+      }
+    }),
+  );
+
+  if (failures.length > 0) {
+    throw new GeneratorError(
+      `${failures.length} generated file(s) could not be parsed, so NOTHING was written:\n\n` +
+        `${failures.join("\n\n")}\n\n` +
+        `Fix the template, then re-run. No partial output was left behind.`,
+    );
+  }
+
+  return formatted;
+}
+
+/**
+ * Reject a plan that would write somewhere it should not, before writing.
+ *
+ * The invariant this protects is what lets several agents generate in parallel:
+ * a capability writes inside its own feature, and the single exception is one
+ * Expo Router file. Nothing may touch a shared registry, a barrel, or another
+ * feature. Enforced here rather than left to template review, because a
+ * front-matter typo is otherwise invisible until it lands in someone's branch.
+ */
+export function validatePlan(files, { feature, routeDir }) {
+  const problems = [];
+  const featureDir = `features/${feature}/`;
+  const seen = new Set();
+
+  for (const file of files) {
+    const destination = file.destination.split(path.sep).join("/");
+
+    if (destination.includes("..")) {
+      problems.push(`${destination} escapes the project root.`);
+      continue;
+    }
+    if (seen.has(destination)) {
+      problems.push(`${destination} is planned twice.`);
+      continue;
+    }
+    seen.add(destination);
+
+    if (file.contents.trim().length === 0) {
+      problems.push(`${destination} would be empty.`);
+    }
+
+    const insideFeature = destination.startsWith(featureDir);
+    const isRoute = routeDir && destination.startsWith(`${routeDir}/`);
+    if (!insideFeature && !isRoute) {
+      problems.push(
+        `${destination} is outside features/${feature}/ and is not a route. ` +
+          `Generated code must stay feature-local.`,
+      );
+    }
+  }
+
+  if (problems.length > 0) {
+    throw new GeneratorError(
+      `The plan was rejected, so NOTHING was written:\n\n` +
+        problems.map((problem) => `  - ${problem}`).join("\n"),
+    );
+  }
+
+  return files;
+}
+
+/**
+ * Write planned files, all or nothing.
+ *
+ * Never overwrites without `force`: a generator that can silently destroy a
+ * half-finished feature is worse than no generator. Re-running a capability on
+ * an existing feature is a normal, safe thing to do.
+ *
+ * If a write fails part-way — a permission error, a full disk — the filesystem
+ * is put back exactly as it was: files this call created are removed, files it
+ * OVERWROTE under `--force` are restored from an in-memory backup, and
+ * directories it created are taken away.
+ *
+ * The overwrite case is the one that actually costs someone work. `--force` on
+ * an existing feature is a normal thing to run, and rolling back by deleting
+ * only the new files would leave the earlier ones clobbered with generated
+ * content and no way back — worse than not rolling back at all.
+ */
+export function writeFiles(
+  files,
+  { root, force = false, dryRun = false, exportScreens = [], feature = null },
+) {
+  const written = [];
+  const skipped = [];
+  const exported = [];
+
+  const planned = [];
+  for (const file of files) {
+    const absolute = path.join(root, file.destination);
+    if (fs.existsSync(absolute) && !force) {
+      skipped.push(file.destination);
+      continue;
+    }
+    planned.push({ ...file, absolute });
+  }
+
+  // A route targets an EXISTING screen, so its skip/write and the screen's
+  // export must be one semantic operation: exporting a screen whose route was
+  // just SKIPPED (the placeholder at app/(role)/index.tsx already exists and
+  // `--force` was not passed) would widen the feature's public API for a
+  // screen nothing actually renders yet. The only files this generator ever
+  // writes outside `features/<feature>/` are route files — that invariant is
+  // what lets this check work without needing to know which planned file is
+  // "the" route: if none of the surviving (non-skipped) files are outside the
+  // feature, no route is being written this call, so there is nothing to
+  // export for.
+  const routeIsBeingWritten =
+    feature && planned.some((file) => !file.destination.startsWith(`features/${feature}/`));
+  const effectiveExportScreens = routeIsBeingWritten ? exportScreens : [];
+
+  // The feature's own index.ts, when a route needs a screen exported from it.
+  // Planned as a normal file so it goes through the SAME write and the same
+  // rollback: patching it afterwards meant a later failure left it modified
+  // while every generated file had been removed.
+  const exportPatch = planFeatureExport({
+    root,
+    feature,
+    screens: effectiveExportScreens,
+    // `planned`, not `files`: a destination that was SKIPPED because it already
+    // exists is not going to be written, so it cannot supply the export. Using
+    // every planned destination meant that composing onto an existing workspace
+    // (`feature x --with=screen,route` after `feature x`) skipped index.ts, then
+    // declined to patch it, and emitted a route importing a screen the public
+    // API did not export.
+    alreadyPlanned: new Set(planned.map((file) => file.destination)),
+  });
+  if (exportPatch) {
+    planned.push(exportPatch);
+    // Reported ONLY here, not also in `written`: the CLI prints both lists, and
+    // naming the same file twice reads as two separate edits.
+    exportPatch.reportedAsExport = true;
+    exported.push(`${exportPatch.destination} — exported ${effectiveExportScreens.join(", ")}`);
+  }
+
+  if (dryRun) {
+    return {
+      written: planned.map((file) => file.destination),
+      skipped,
+      exported,
+    };
+  }
+
+  const createdFiles = [];
+  const createdDirs = [];
+  /** Content and mode of every file this call is about to overwrite. */
+  const overwritten = [];
+
+  try {
+    for (const file of planned) {
+      const directory = path.dirname(file.absolute);
+      // Remember which directories did not exist, so a rollback can take them
+      // away too rather than leaving empty scaffolding behind.
+      for (const candidate of missingAncestors(directory, root)) createdDirs.push(candidate);
+      fs.mkdirSync(directory, { recursive: true });
+
+      const existed = fs.existsSync(file.absolute);
+      // Read BEFORE writing — afterwards the original is gone. Generated files
+      // are small, so holding them in memory for the duration of one request is
+      // cheaper and far more robust than a temp-file dance.
+      if (existed) {
+        overwritten.push({
+          absolute: file.absolute,
+          contents: fs.readFileSync(file.absolute),
+          mode: fs.statSync(file.absolute).mode,
+        });
+      }
+
+      // Record BEFORE writing, not after. A write that throws part-way
+      // (ENOSPC, EIO) still leaves a truncated file on disk; recording it
+      // afterwards would mean the rollback never learned it existed, and the
+      // "the repository is unchanged" promise would be a lie.
+      if (!existed) createdFiles.push(file.absolute);
+      fs.writeFileSync(file.absolute, file.contents, "utf8");
+      if (!file.reportedAsExport) written.push(file.destination);
+    }
+  } catch (error) {
+    for (const absolute of createdFiles.reverse()) {
+      try {
+        fs.rmSync(absolute, { force: true });
+      } catch {
+        // Best effort: report the original failure, not the cleanup's.
+      }
+    }
+    for (const backup of overwritten.reverse()) {
+      try {
+        fs.writeFileSync(backup.absolute, backup.contents);
+        fs.chmodSync(backup.absolute, backup.mode);
+      } catch {
+        // Best effort: report the original failure, not the cleanup's.
+      }
+    }
+    for (const directory of createdDirs.reverse()) {
+      try {
+        fs.rmdirSync(directory);
+      } catch {
+        // Non-empty because something else lives there — correct to keep.
+      }
+    }
+    throw new GeneratorError(
+      `Writing failed part-way and was rolled back; the repository is unchanged.\n  ${error.message}`,
+    );
+  }
+
+  return { written, skipped, exported };
+}
+
+/** Directories between `root` and `directory` that do not exist yet, outermost first. */
+function missingAncestors(directory, root) {
+  const missing = [];
+  let current = directory;
+  while (current.startsWith(root) && current !== root && !fs.existsSync(current)) {
+    missing.unshift(current);
+    current = path.dirname(current);
+  }
+  return missing;
+}
+
+/**
+ * Append a screen's export to the feature's own `index.ts` when it is missing.
+ *
+ * A route renders its screen through the feature's public API, so adding a
+ * screen to an EXISTING feature has to be exported there or the route will not
+ * compile — and "generated code compiles immediately" has to stay true.
+ *
+ * This is the ONLY file the generator appends to, and it is deliberately safe:
+ * `features/<name>/index.ts` belongs to exactly one feature, so unlike a shared
+ * registry it is never a cross-agent conflict. It appends only when the exact
+ * export is absent, never reorders, and never rewrites existing lines.
+ */
+/**
+ * The export line `features/<feature>/index.ts` needs for one screen.
+ *
+ * Exported for the smoke test, which asserts the exact text rather than merely
+ * that something was appended.
+ */
+export function screenExportLine(screen) {
+  const componentName = `${screen
+    .split("-")
+    .filter(Boolean)
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join("")}Screen`;
+
+  return `export { ${componentName} } from "./screens/${screen}/${screen}-screen";`;
+}
+
+/**
+ * Plan the feature index.ts content that makes `screens` publicly importable.
+ *
+ * Returns `null` when nothing needs to change — the file is being generated in
+ * this same request (its template already has the export), does not exist yet,
+ * or already carries every line.
+ *
+ * This produces CONTENT rather than writing, so the caller can put it through
+ * the same atomic write as everything else.
+ */
+export function planFeatureExport({ root, feature, screens, alreadyPlanned }) {
+  if (!feature || screens.length === 0) return null;
+
+  const destination = `features/${feature}/index.ts`;
+  if (alreadyPlanned.has(destination)) return null;
+
+  const absolute = path.join(root, destination);
+  if (!fs.existsSync(absolute)) return null;
+
+  const current = fs.readFileSync(absolute, "utf8");
+  let next = current;
+  for (const screen of screens) {
+    const line = screenExportLine(screen);
+    if (next.includes(line)) continue;
+    // `export {}` is the placeholder a workspace-only feature carries; a real
+    // export replaces it rather than sitting beside it. The semicolon is
+    // optional because a hand-edited file may not have been formatted yet.
+    next = `${next.replace(/\nexport\s*\{\s*\};?[ \t]*\n?/, "\n").replace(/\s*$/, "")}\n${line}\n`;
+  }
+
+  return next === current ? null : { destination, absolute, contents: next };
+}

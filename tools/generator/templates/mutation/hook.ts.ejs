@@ -1,0 +1,32 @@
+---
+destinationDir: features/<%= props.feature %>/queries
+filename: use-NAME-mutation.ts
+---
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+import { <%= props.camelCaseName %>, type <%= props.pascalCaseName %>Input } from "../api/<%= props.kebabCaseName %>";
+
+import { <%= props.featureCamel %>Keys } from "./keys";
+
+/**
+ * A write, with the cache invalidation it implies.
+ *
+ * Mutations never retry automatically — the shared QueryClient disables it —
+ * because a blind retry of a write can duplicate it. Retry deliberately, from
+ * the UI, reusing the same request identity where the server expects one.
+ *
+ * Guard against double submission in the UI too: disable the control while
+ * `isPending` and ignore repeat presses. That is a usability guard; the server's
+ * idempotency contract is what actually prevents a duplicate.
+ */
+export function use<%= props.pascalCaseName %>Mutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: <%= props.pascalCaseName %>Input) => <%= props.camelCaseName %>(input),
+    onSuccess: () => {
+      // TODO: narrow this to the keys this write actually affects.
+      void queryClient.invalidateQueries({ queryKey: <%= props.featureCamel %>Keys.all });
+    },
+  });
+}

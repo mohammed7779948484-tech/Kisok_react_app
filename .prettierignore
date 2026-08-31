@@ -1,0 +1,10 @@
+node_modules/
+.expo/
+dist/
+pnpm-lock.yaml
+supabase/migrations/
+core/supabase/database.types.ts
+ignite/templates/
+
+# Documentation and generator templates are formatted by their own tooling.
+KISOK_FLUTTER_PRODUCT_REFERENCE.md

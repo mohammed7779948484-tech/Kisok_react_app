@@ -1,0 +1,132 @@
+---
+destinationDir: features/<%= props.feature %>/docs
+filename: todo.md
+---
+# <%= props.pascalCaseName %> — execution state
+
+**This file is the working memory.** After a context compaction, an interrupted
+session, or a handoff, this is what tells the next agent exactly where the work
+stopped and what the next legal move is. Keep it current as you go, not at the
+end.
+
+Reasoning lives in `plan.md`; evidence lives in `worklog.md`. Do not restate
+either here — a `todo.md` that duplicates the plan stops being scannable, which
+defeats its only purpose.
+
+## Current checkpoint
+
+The single answer to "where are we?". Update it whenever any of it changes; it
+is the first thing the next agent reads.
+
+```
+Current round     : —
+Current task      : —
+Current stage     : not started
+Last gate         : —
+Next legal action : write brief.md, then plan.md; no task starts while the plan is DRAFT
+Blocked by        : —
+```
+
+## Rules
+
+- A task is **DONE only at `GATE: PASS`**.
+- **Task N+1 does not start until every dependency is `PASS`.**
+- A failed gate is fixed **in that task**, not compensated in a later one.
+- Every task declares a **verification mode** first — see the
+  `test-driven-development` skill. The mode decides the entry evidence:
+  `behavior` / `bug` / `behavior-change` need a failing test, `refactor` needs a
+  named green baseline, `config` needs the command that exercises the artifact.
+- **No task starts while `plan.md` is `DRAFT`.**
+- **The Lead runs the scaffold**, immediately before delegating the task. The
+  implementer starts only once `Scaffold status` is `READY`.
+
+## Status board
+
+Scan this first. Detail is below.
+
+| Task | Mode | Acceptance | Objective | Deps | Stage | Gate |
+| --- | --- | --- | --- | --- | --- | --- |
+| T01 | behavior | AC-01 | TODO | — | not started | PENDING |
+
+Stage is one of: `not started` · `scaffolding` · `red/baseline` ·
+`implementing` · `green` · `checks` · `diff review` · `done`.
+
+This board is the only summary. Do not add a second task-checkbox list beside
+it — two summaries disagree the moment one is updated and the other is not.
+
+## Round 1 — TODO
+
+### T01 — TODO
+
+<!-- PLACEHOLDER. T01 and "Round 1" are not a plan. Replace this whole block
+     with the real rounds and tasks from plan.md once its status is READY. -->
+
+- **Mode**: behavior | bug | behavior-change | refactor | config
+- **Acceptance**: `Acceptance: AC-xx` | `Supporting: AC-xx` | `N/A — <reason>`
+- **Depends on**: —
+- **Skills**: test-driven-development, TODO
+- **Lead scaffold**: — <!-- the exact command, e.g. pnpm generate query catalog products -->
+- **Expected generated files**: — <!-- what the plan says that command creates -->
+- **Allowed manual files**: — <!-- planned artifacts no capability covers, with the reason -->
+- **Scaffold status**: `N/A — no generator capability applies` <!-- PENDING | READY | BLOCKED | N/A -->
+- **Allowed file scope**: `features/<%= props.feature %>/...` <!-- anything else must be justified in plan.md -->
+
+```
+[ ] SCAFFOLD                                  (Lead — before delegating)
+    command             : <exact command, or n/a>
+    created             :
+    skipped / replaced  :
+    manual artifacts    :
+
+[ ] RED / BASELINE
+    check defined      : <test name, or the command for a config task>
+    entry evidence      : <failed for the intended reason | baseline green | n/a>
+    worklog             : <task id in worklog.md>
+
+[ ] IMPLEMENT
+    state               : not started | in progress | complete
+
+[ ] GREEN / VERIFICATION
+    focused             : <command + result>
+    affected tests      :
+    typecheck           :
+    lint                :
+    format              :
+
+[ ] TASK DIFF REVIEW
+    only allowed files  :
+    nothing unrelated   :
+    acceptance holds    :
+
+GATE: PENDING
+```
+
+Round gate: `PENDING`
+
+## Feature gate
+
+Every line is a box, and `pnpm verify` alone is not the authority — several of
+these depend on an environment only CI has. See `review.md` for the review and
+audit findings this checklist points at.
+
+- [ ] Every Task Gate PASS
+- [ ] Every Round Gate PASS
+- [ ] Every AC verified
+- [ ] `pnpm verify` PASS after the final local change
+- [ ] required fast GitHub CI PASS on the final HEAD
+- [ ] required runtime evidence recorded
+- [ ] required native tier(s) PASS, N/A, or explicitly unverified
+- [ ] Reviewer findings dispositioned
+- [ ] blocking/major fixes re-reviewed
+- [ ] Quality Audit clean
+- [ ] anything not verified explicitly recorded
+- [ ] shared/core changes justified
+- [ ] PR evidence matches the worklog
+
+FEATURE GATE: PENDING
+
+## Blocked
+
+What cannot proceed, and what it is waiting for. Empty is good.
+
+- —

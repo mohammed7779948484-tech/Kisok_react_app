@@ -1,0 +1,84 @@
+---
+destinationDir: features/<%= props.feature %>/docs
+filename: brief.md
+---
+# <%= props.pascalCaseName %> — brief
+
+**WHAT this feature is, and how we will know it is done.** No implementation
+sequencing here; that belongs in `plan.md`.
+
+Status: `DRAFT` — replace every TODO before writing code.
+
+## Objective
+
+TODO: one paragraph. What does this let a person in the store do that they
+cannot do today?
+
+## User-visible behaviour
+
+TODO: what the <%= props.role %> experience actually shows and allows. Describe
+it as a person using the tablet would, not as components.
+
+## Acceptance criteria
+
+Each one must be observable and checkable. These become tests.
+
+**IDs are stable.** Every task in `plan.md` links to one by ID. Once the plan is
+`READY`, never renumber or reuse an ID: a new criterion gets a new ID, and a
+removed one stays here marked superseded, with the reason. Renumbering silently
+invalidates every reference in `worklog.md`.
+
+| ID    | Criterion | Observable how |
+| ----- | --------- | -------------- |
+| AC-01 | TODO      | TODO           |
+| AC-02 | TODO      | TODO           |
+
+Add more rows as `AC-03`, `AC-04`, … when the feature genuinely needs them.
+Never use placeholder pseudo-IDs: every criterion referenced by a task must have
+one real stable ID.
+
+State requirements are **capability-aware**. Put a state into an AC only when
+that feature can actually reach it — inventing an empty state for a screen that
+cannot be empty produces a test asserting something impossible.
+
+| If the feature has…     | The states to specify                                             |
+| ----------------------- | ----------------------------------------------------------------- |
+| a data-backed read      | loading, empty, error with retry, success — only as applicable     |
+| a mutation              | pending, success, business conflict, error — only as applicable    |
+| static or local-only UI | only the states that genuinely exist                               |
+
+## General delivery requirements
+
+These are Definition-of-Done checks, not extra Acceptance Criteria, so they do
+not get fake AC IDs and tasks do not link to them as if they described product
+behaviour.
+
+- [ ] Applicable read/mutation states above are handled.
+- [ ] Works at the tablet sizes in `docs/design-system.md` (landscape and portrait).
+- [ ] Accessible: roles and labels on interactive elements; no colour-only meaning.
+
+## Scope
+
+TODO: the specific screens, flows and data in this change.
+
+## Out of scope
+
+Be explicit. This is what stops a feature growing while it is being built.
+
+- Prices, payments, delivery, shipping, public signup, social login — permanent
+  product boundaries, not deferrals. See `docs/product-boundaries.md`.
+- TODO: anything else deliberately left out.
+
+## Constraints
+
+- Backend contracts come from `supabase/migrations/*.sql`. If an RPC you need
+  does not exist there, STOP and raise it — do not invent one.
+- Never weaken RLS, add a grant, or write a security-definer workaround.
+- TODO: constraints specific to this feature.
+
+## Evidence
+
+Link what this brief is based on: migration files, the Flutter reference for
+BEHAVIOUR only, existing screens, research findings.
+
+- TODO

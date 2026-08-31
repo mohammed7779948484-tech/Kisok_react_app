@@ -1,0 +1,26 @@
+---
+destinationDir: features/<%= props.feature %>/model
+filename: NAME.schema.test.ts
+---
+import { <%= props.camelCaseName %>Schema } from "./<%= props.kebabCaseName %>.schema";
+
+/**
+ * Colocated with the schema it protects: the test is right there when the
+ * schema changes, instead of in a __tests__ bucket nobody opens.
+ *
+ * Schema tests are the cheapest guard against a backend contract change.
+ * Extend these as you replace the placeholder fields with the real ones.
+ */
+describe("<%= props.kebabCaseName %> schema", () => {
+  it("accepts a well-formed payload", () => {
+    const result = <%= props.camelCaseName %>Schema.safeParse({
+      id: "8f1b0a1e-2c3d-4e5f-8a9b-0c1d2e3f4a5b",
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a payload whose id is not a uuid", () => {
+    expect(<%= props.camelCaseName %>Schema.safeParse({ id: "not-a-uuid" }).success).toBe(false);
+  });
+});

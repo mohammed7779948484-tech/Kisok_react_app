@@ -1,0 +1,36 @@
+# Fast by design. `pnpm verify` belongs in CI, not in front of every commit —
+# a slow hook gets bypassed with --no-verify, and a hook that is routinely
+# bypassed protects nothing.
+
+# `branch --show-current` also works on an unborn branch, where `rev-parse
+# --abbrev-ref HEAD` fails and would let the commit through.
+branch="$(git branch --show-current)"
+if [ "$branch" = "main" ]; then
+  echo "✖ Direct commits to main are not allowed."
+  echo "  KISOK develops on branches and merges through a pull request, so that"
+  echo "  CI and review actually run. Create a branch and commit there:"
+  echo ""
+  echo "      git switch -c <type>/<short-description>"
+  echo ""
+  exit 1
+fi
+
+# The generator smoke test creates scratch features (features/smoke-*) and
+# removes them in a `finally`. A killed process — a timeout, a cancelled agent —
+# skips that, and the fixtures sit there looking like real work. This has
+# already happened twice, and committing them would put dead scaffolding into
+# the baseline every feature branches from.
+scratch="$(git diff --cached --name-only | grep -E '^(features/smoke-[a-z-]+/|app/\([a-z]+\)/smoke-[a-z-]+\.tsx$)' || true)"
+if [ -n "$scratch" ]; then
+  echo "✖ Refusing to commit generator scratch fixtures:"
+  echo "$scratch" | sed 's/^/    /'
+  echo ""
+  echo '  These come from `pnpm generate:smoke` and are removed by it normally.'
+  echo "  Delete them and commit again:"
+  echo ""
+  echo "      git rm -r --cached <paths> && rm -rf features/smoke-*"
+  echo ""
+  exit 1
+fi
+
+pnpm exec lint-staged

@@ -1,0 +1,88 @@
+---
+destinationDir: features/<%= props.feature %>/state
+filename: NAME-store.test.ts
+---
+import { createJsonStorage, storageKey } from "@/core/storage";
+import { createMemoryStore } from "@/core/testing";
+import { resetLogging, setLogSink } from "@/core/logging";
+
+import { create<%= props.pascalCaseName %>Store } from "./<%= props.kebabCaseName %>-store";
+
+const KEY = storageKey("<%= props.feature %>", "<%= props.kebabCaseName %>");
+
+// The failure paths below log by design (see the store's `clear()`); keep the
+// suite silent so an expected failure does not look like a broken run.
+beforeEach(() => setLogSink(() => {}));
+afterEach(resetLogging);
+
+describe("use<%= props.pascalCaseName %>Store", () => {
+  it("hydrates from a previously persisted value", async () => {
+    const backend = createMemoryStore();
+    backend.map.set(KEY, JSON.stringify(["a"]));
+    const useStore = create<%= props.pascalCaseName %>Store(createJsonStorage(backend));
+
+    await useStore.getState().hydrate();
+
+    expect(useStore.getState().items).toEqual(["a"]);
+    expect(useStore.getState().persistence).toBe("persisted");
+  });
+
+  it("clears both the in-memory state and the durable value", async () => {
+    const backend = createMemoryStore();
+    backend.map.set(KEY, JSON.stringify(["a"]));
+    const useStore = create<%= props.pascalCaseName %>Store(createJsonStorage(backend));
+    await useStore.getState().hydrate();
+
+    await useStore.getState().clear();
+
+    expect(useStore.getState().items).toEqual([]);
+    expect(useStore.getState().persistence).toBe("persisted");
+    expect(backend.map.has(KEY)).toBe(false);
+  });
+
+  // This is the KISOK safety property, not a nuisance: a shared kiosk tablet
+  // must never hand one customer's leftover data to the next one because a
+  // single native call happened to fail.
+  it("does not let stale data reappear after a cold start when removeItem fails", async () => {
+    const backend = createMemoryStore({ failOn: "removeItem" });
+    backend.map.set(KEY, JSON.stringify(["stale-customer-data"]));
+    const useStore = create<%= props.pascalCaseName %>Store(createJsonStorage(backend));
+    await useStore.getState().hydrate();
+
+    await useStore.getState().clear();
+
+    // The fallback overwrite recovered: the durable value is gone even though
+    // `removeItem` itself failed, so this is reported as a genuine success —
+    // never as `memoryOnly`, which would undersell what actually happened.
+    expect(useStore.getState().persistence).toBe("persisted");
+
+    // Simulate a COLD START: a fresh store instance reading the SAME backend,
+    // the way the next customer's session would.
+    const useStoreAfterRestart = create<%= props.pascalCaseName %>Store(createJsonStorage(backend));
+    await useStoreAfterRestart.getState().hydrate();
+
+    expect(useStoreAfterRestart.getState().items).toEqual([]);
+  });
+
+  it("reports clearFailed — never persisted or memoryOnly — when nothing durable succeeds", async () => {
+    // Both the remove AND the fallback write fail: there is genuinely no way
+    // left to durably clear this key. `clearFailed` must not be reported as
+    // `memoryOnly` — that status means "an edit only exists in memory", which
+    // is a much smaller problem than "the previous customer's data is still
+    // on disk and will come back".
+    const backend = createJsonStorage({
+      getItem: async () => null,
+      setItem: async () => {
+        throw new Error("disk full");
+      },
+      removeItem: async () => {
+        throw new Error("disk full");
+      },
+    });
+    const useStore = create<%= props.pascalCaseName %>Store(backend);
+
+    await useStore.getState().clear();
+
+    expect(useStore.getState().persistence).toBe("clearFailed");
+  });
+});

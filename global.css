@@ -1,3 +1,92 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * KISOK design tokens.
+ *
+ * Contract: semantic HSL triples (no `hsl()` wrapper), consumed by
+ * tailwind.config.js as `hsl(var(--token))`. This is the same contract React
+ * Native Reusables generates, so components added later via
+ * `npx @react-native-reusables/cli@latest add <name>` theme correctly with no
+ * edits. Do not rename these variables.
+ *
+ * Never hardcode a colour in a component. Use a semantic class
+ * (`bg-primary`, `text-muted-foreground`, `border-border`) so light/dark and
+ * any future re-theme stay correct in one place.
+ */
+@layer base {
+  :root {
+    --background: 40 20% 99%;
+    --foreground: 200 12% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 200 12% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 200 12% 10%;
+
+    --primary: 165 62% 26%;
+    --primary-foreground: 160 40% 97%;
+
+    --secondary: 40 16% 94%;
+    --secondary-foreground: 200 12% 18%;
+
+    --muted: 40 14% 95%;
+    --muted-foreground: 205 8% 42%;
+
+    --accent: 32 90% 48%;
+    --accent-foreground: 30 60% 99%;
+
+    --success: 150 62% 30%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 44%;
+    --warning-foreground: 200 20% 12%;
+
+    --destructive: 4 72% 46%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 40 12% 88%;
+    --input: 40 12% 88%;
+    --ring: 165 62% 32%;
+
+    --radius: 0.875rem;
+  }
+
+  .dark:root {
+    --background: 200 16% 8%;
+    --foreground: 40 14% 94%;
+
+    --card: 200 14% 11%;
+    --card-foreground: 40 14% 94%;
+
+    --popover: 200 14% 11%;
+    --popover-foreground: 40 14% 94%;
+
+    --primary: 165 52% 48%;
+    --primary-foreground: 200 20% 8%;
+
+    --secondary: 200 12% 16%;
+    --secondary-foreground: 40 14% 94%;
+
+    --muted: 200 12% 16%;
+    --muted-foreground: 200 8% 64%;
+
+    --accent: 32 88% 56%;
+    --accent-foreground: 200 20% 8%;
+
+    --success: 150 50% 46%;
+    --success-foreground: 200 20% 8%;
+
+    --warning: 38 88% 56%;
+    --warning-foreground: 200 20% 8%;
+
+    --destructive: 4 66% 56%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 200 10% 20%;
+    --input: 200 10% 22%;
+    --ring: 165 52% 52%;
+  }
+}

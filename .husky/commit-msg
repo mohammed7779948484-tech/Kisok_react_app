@@ -1,0 +1,3 @@
+# Conventional Commits. The history is read by humans AND by agents deciding
+# what changed and why, so the type and scope carry real information.
+pnpm exec commitlint --edit "$1"

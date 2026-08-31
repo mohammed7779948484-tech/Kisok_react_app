@@ -1,0 +1,191 @@
+name: CI
+
+# Runs on every pull request. Requires NO secrets, so a PR from any contributor
+# — human or agent — gets the same fast, honest signal.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege: nothing here writes to the repository.
+permissions:
+  contents: read
+
+# A new push supersedes the previous run for the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  # PostgreSQL 16 ships on the GitHub runner image but is not on PATH.
+  KISOK_PG_BIN: /usr/lib/postgresql/16/bin
+  # Expo reads these at bundle time. They are placeholders so `expo export`
+  # can run; no real project is contacted and nothing is deployed.
+  EXPO_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+  EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+  EXPO_PUBLIC_ENVIRONMENT: local
+
+jobs:
+  verify:
+    name: Verify (typecheck, lint, format, tests, guards, db, generator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The job never pushes, so do not leave a token in .git/config.
+          persist-credentials: false
+          # Full history: the commit-range lint below needs the merge base, and
+          # a shallow clone does not have it.
+          fetch-depth: 0
+
+      # pnpm must be installed BEFORE setup-node, or `cache: pnpm` cannot find it.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Test
+        run: pnpm test:ci
+
+      # Applies the migrations to a throwaway PostgreSQL and proves the checked-in
+      # database types still match the real schema. Also proves the migrations
+      # apply cleanly, which nothing else here does.
+      - name: Verify database types against migrations
+        # REQUIRED here: if the verifier cannot start PostgreSQL it FAILS rather
+        # than reporting inconclusive, so a green CI always means the schema was
+        # actually checked. Locally the same command still skips gracefully.
+        env:
+          KISOK_DB_VERIFY_REQUIRED: "1"
+        run: pnpm db:verify
+
+      # The harness guards. These were previously enforced only by `pnpm verify`
+      # and the git hooks — both of which live on a developer's machine and are
+      # bypassed by --no-verify. A PR that reintroduced a stale workflow into
+      # .claude/skills/, or a commit scope nobody can grep, merged green.
+      - name: Check documentation matches the current workflow
+        run: pnpm check:docs
+
+      # Proves the RULES behave — that a feature agent's commit is accepted and a
+      # shapeless one is not. It lints sample messages, not this PR's commits.
+      - name: Check the commit convention still accepts what agents write
+        run: pnpm check:commits
+
+      # Lints THIS PR's actual commits. The commit-msg hook is bypassed by
+      # --no-verify, so without this the convention is a suggestion. Skipped on
+      # pushes to main, where the range has already been reviewed.
+      - name: Lint this pull request's commits
+        if: github.event_name == 'pull_request'
+        run: |
+          pnpm exec commitlint \
+            --from "${{ github.event.pull_request.base.sha }}" \
+            --to "${{ github.event.pull_request.head.sha }}" \
+            --verbose
+
+      - name: Check Maestro flows target the app this project builds
+        run: pnpm check:e2e-appid
+
+      # A workflow step that silently runs pnpm's own subcommand instead of our
+      # script is a job that cannot fail. This proves every `pnpm <name>` above
+      # resolves to the script it names.
+      - name: Check workflow script invocations
+        run: pnpm check:ci-scripts
+
+      # Proves the generator still emits code that compiles, lints, formats and
+      # passes its own tests. Without this, template rot is invisible until an
+      # agent hits it.
+      - name: Generator smoke test
+        run: pnpm generate:smoke
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "### CI result"
+            echo ""
+            echo "| Check | Status |"
+            echo "| --- | --- |"
+            echo "| Typecheck, lint, format, tests | ${{ job.status }} |"
+            echo "| Database types vs migrations (db:verify) | ${{ job.status }} |"
+            echo "| Documentation freshness (check:docs) | ${{ job.status }} |"
+            echo "| Commit convention (check:commits) | ${{ job.status }} |"
+            echo "| Maestro appId (check:e2e-appid) | ${{ job.status }} |"
+            echo "| Workflow script invocations (check:ci-scripts) | ${{ job.status }} |"
+            echo "| Generator smoke test | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  web-export:
+    name: Web bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The web bundle is how agents preview the UI, so a broken web build is a
+      # broken developer workflow. `expo export` needs no login or EXPO_TOKEN.
+      - name: Export web bundle
+        run: pnpm export:web
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-bundle
+          path: dist
+          retention-days: 7
+          if-no-files-found: error
+
+  doctor:
+    name: Expo doctor
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Fails on a real incompatibility; treats an unreachable Expo service as
+      # inconclusive. See tools/doctor.mjs — an always-green check would have
+      # swallowed a genuine SDK mismatch.
+      - name: Run expo-doctor
+        # `pnpm run doctor`, NOT `pnpm doctor`: pnpm has a built-in `doctor`
+        # subcommand that shadows the package script, so `pnpm doctor` checked
+        # pnpm's own installation and exited 0 without ever running
+        # tools/doctor.mjs. `pnpm check:ci-scripts` now fails on that mistake.
+        run: pnpm run doctor

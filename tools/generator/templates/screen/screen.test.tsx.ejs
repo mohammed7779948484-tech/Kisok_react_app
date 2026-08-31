@@ -1,0 +1,83 @@
+---
+destinationDir: features/<%= props.feature %>/screens/<%= props.kebabCaseName %>
+filename: NAME-screen.test.tsx
+---
+<% if (props.withQuery) { -%>
+import { AppError } from "@/core/errors";
+import { renderWithProviders, screen, waitFor } from "@/core/testing";
+
+import { <%= props.pascalCaseName %>Screen } from "./<%= props.kebabCaseName %>-screen";
+
+/**
+ * Mock the feature's own api module — that is the seam the architecture is
+ * built around. Do not mock `@/core/supabase` here: a screen test should not
+ * know that Supabase exists.
+ */
+jest.mock("../../api/fetch-<%= props.kebabCaseName %>", () => ({
+  fetch<%= props.pascalCaseName %>: jest.fn(),
+}));
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { fetch<%= props.pascalCaseName %> } = require("../../api/fetch-<%= props.kebabCaseName %>") as {
+  fetch<%= props.pascalCaseName %>: jest.Mock;
+};
+
+describe("<%= props.pascalCaseName %>Screen", () => {
+  beforeEach(() => {
+    fetch<%= props.pascalCaseName %>.mockReset();
+  });
+
+  it("renders the loaded data", async () => {
+    fetch<%= props.pascalCaseName %>.mockResolvedValue({ id: "8f1b0a1e-2c3d-4e5f-8a9b-0c1d2e3f4a5b" });
+
+    // `render` is async in @testing-library/react-native v14 — always await it.
+    await renderWithProviders(<<%= props.pascalCaseName %>Screen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("<%= props.pascalCaseName %>")).toBeOnTheScreen();
+    });
+  });
+
+  it("shows the customer-safe message and a retry when loading fails", async () => {
+    fetch<%= props.pascalCaseName %>.mockRejectedValue(
+      new AppError({
+        kind: "network",
+        userMessage: "We couldn't reach the network. Check the connection and try again.",
+      }),
+    );
+
+    await renderWithProviders(<<%= props.pascalCaseName %>Screen />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/couldn't reach the network/i)).toBeOnTheScreen();
+    });
+    expect(screen.getByRole("button", { name: "Try again" })).toBeOnTheScreen();
+  });
+});
+<% } else { -%>
+import { renderWithProviders, screen } from "@/core/testing";
+
+import { <%= props.pascalCaseName %>Screen } from "./<%= props.kebabCaseName %>-screen";
+
+/**
+ * Baseline for a screen with no data source yet.
+ *
+ * It asserts only what is structurally true today: the screen mounts inside the
+ * real providers without throwing, and renders. That is worth having — a screen
+ * that crashes on mount is the most common way a route breaks, and nothing else
+ * in the suite would catch it.
+ *
+ * It deliberately does NOT assert business behaviour that does not exist yet.
+ * A test written against imagined behaviour passes for the wrong reason and has
+ * to be rewritten the moment the screen is real. Behaviour-specific tests are
+ * owned by the task that adds the behaviour, written RED first.
+ */
+describe("<%= props.pascalCaseName %>Screen", () => {
+  it("mounts without throwing", async () => {
+    // `render` is async in @testing-library/react-native v14 — always await it.
+    await renderWithProviders(<<%= props.pascalCaseName %>Screen />);
+
+    expect(screen.getByText("<%= props.pascalCaseName %>")).toBeOnTheScreen();
+  });
+});
+<% } -%>

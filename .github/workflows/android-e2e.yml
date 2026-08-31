@@ -1,0 +1,154 @@
+name: Android E2E
+
+# TIERED CI, like the Android build.
+#
+# This boots an emulator, installs a self-contained RELEASE build and drives the
+# real UI with Maestro. It is minutes of runtime, so it runs only when asked:
+# add the `e2e` label to a pull request, or dispatch it manually. Paying that
+# cost on a docs change would train everyone to ignore the result.
+on:
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  maestro:
+    name: Maestro flows
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'e2e')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      EXPO_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+      EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+      EXPO_PUBLIC_ENVIRONMENT: local
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Cheap, and it fails before an emulator is booted for nothing.
+      - name: Check Maestro flows target the app this build produces
+        run: pnpm check:e2e-appid
+
+      - name: Expo prebuild (Android)
+        run: npx --yes expo prebuild --platform android --no-install --clean
+
+      # RELEASE, not debug, and the reason matters: React Native's Gradle plugin
+      # only embeds the JS bundle for variants outside `debuggableVariants`,
+      # which defaults to ["debug"]. A debug APK therefore expects a Metro
+      # server and shows the "Unable to load script" red screen without one —
+      # Maestro would just time out waiting for a screen that never renders.
+      # The release variant is self-contained, and Expo's template signs it with
+      # the checked-in debug keystore, so this needs no secrets.
+      #
+      # ONE ABI, matching the emulator below. A multi-ABI APK crashed on launch
+      # with SoLoaderDSONotFoundError: libreactnative.so — the system resolved
+      # the app's native library directory to arm64 while the only libs SoLoader
+      # could reach inside the APK were x86_64, so MainApplication.onCreate died
+      # before React Native loaded and Maestro saw the launcher, not the app.
+      # Building for exactly the emulator's ABI removes the ambiguity, and an
+      # ABI that does not match now fails loudly at install
+      # (INSTALL_FAILED_NO_MATCHING_ABIS) instead of as a mystery timeout.
+      # It is also a much faster build.
+      - name: Assemble release APK (self-contained, bundled JS, emulator ABI)
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=x86_64
+
+      - name: Confirm the APK really contains a JS bundle
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          if unzip -l "$apk" | grep -q "assets/index.android.bundle"; then
+            echo "JS bundle present in $apk"
+          else
+            echo "::error::$apk has no assets/index.android.bundle — it would need Metro to start."
+            unzip -l "$apk" | head -40
+            exit 1
+          fi
+          # Which ABIs are actually in the APK. A mismatch with the emulator is
+          # a launch-time crash, and this is the cheapest place to see it.
+          echo "native libraries in the APK:"
+          unzip -l "$apk" | grep -oE "lib/[^/]+/" | sort -u
+
+      # NOT PINNED, and that is a known reproducibility gap: this installer takes
+      # whatever is newest, so a Maestro release can change selector or timeout
+      # behaviour and turn a green flow red with no change in this repository.
+      #
+      # It is left unpinned deliberately rather than pinned wrongly. The
+      # installer's own version-selection interface could not be verified from
+      # the environment this was written in (egress to the host is blocked), and
+      # a pin that silently does nothing is worse than an honest unpinned
+      # install — it reads as a guarantee that is not there.
+      #
+      # To close this: check the installer's supported version variable, or
+      # fetch a specific release archive by URL, then record the version here.
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      # Until it is pinned, at least every run states which version produced its
+      # result, so a sudden failure can be checked against a version change.
+      - name: Report the Maestro version
+        run: maestro --version
+
+      # KVM must be enabled or the emulator falls back to software rendering and
+      # times out. This is the documented setup for the emulator runner action.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # A tablet profile, because that is the deployment target: a phone-sized
+      # emulator would not exercise the landscape layouts at all.
+      - name: Run Maestro flows on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_tablet
+          ram-size: 4096M
+          disable-animations: true
+          # ONE line, so it is ONE shell. This action runs the script line by
+          # line, each in its own `sh -c`: an inline `set +e` does not survive
+          # to the next line and `$?` reads the wrong shell, which is why an
+          # earlier version's failure diagnostics silently never ran.
+          script: bash .github/scripts/run-maestro.sh
+
+      - name: Upload Maestro report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: maestro-report
+          path: |
+            maestro-report.xml
+            failure.png
+            ~/.maestro/tests/**
+          retention-days: 7
+          if-no-files-found: warn

@@ -1,49 +1,118 @@
-# Mobile System Starter — واجهة التصميم
+# KISOK — product and design overview
 
-## نطاق المشروع
+The design index for the project. The reusable pieces — tokens, components,
+responsive rules, accessibility — are documented in
+[`docs/design-system.md`](./docs/design-system.md). This file describes **what
+KISOK is** and the surfaces it will grow.
 
-هذا المشروع هو **أساس mobile app مستقل** لتطبيقات Expo وReact Native المستقبلية، وليس تطبيقًا نهائيًا لمجال أعمال محدد. وظيفته أن يبدأ ببنية iOS-native نظيفة، وبنظام تنظيم واضح للميزات، بحيث يمكن تطوير نظام جديد فوقه دون خلط كود المجال المستقبلي بملفات القالب أو مشروع التجارب السابق.
+> Replaces the generic mobile-starter design document that shipped with the
+> template. That document described a phone-first iOS starter and was wrong for
+> this project in almost every respect.
 
-يُصمم المشروع على شاشة هاتف طولية بنسبة 9:16، مع سهولة الوصول باليد الواحدة، واستخدام أنماط iOS المألوفة مثل Safe Areas، عناوين كبيرة، قوائم grouped، وتباين واضح للحالات.
+## What we are building
 
-## قائمة الشاشات
+A **private in-store catalog and ordering system** running on store-owned
+Android tablets. A customer standing in the shop browses the catalog, chooses a
+product variant, builds a local cart, and submits one order. A preparation
+employee works that order through fulfilment.
 
-| الشاشة | المحتوى الرئيسي | الوظيفة |
-|---|---|---|
-| Home | ملخص هوية المشروع، حالة البنية، وإجراءات بداية واضحة | نقطة الدخول التي تتحول لاحقًا إلى شاشة النظام الفعلية بحسب المجال المختار |
-| Feature Catalog | قائمة بالميزات المهيأة أو المضافة | يمنح المطور والمستخدم تصورًا مرئيًا لتنظيم الميزات؛ يمكن استبداله لاحقًا بتدفق المجال الفعلي |
-| Architecture Guide | طبقات التطبيق: routes، features، components، lib، providers | يوثق المكان الصحيح لإضافة كل نوع من الملفات عند بدء التطوير |
-| Settings | المظهر وبيانات البيئة المستقبلية | صفحة إعدادات معيارية قابلة للتوسع؛ لا تضيف مصادقة أو تخزين سحابي قبل طلبهما |
+It is not an e-commerce app. See
+[`docs/product-boundaries.md`](./docs/product-boundaries.md).
 
-## المحتوى والسلوك
+## Design principles
 
-تستخدم Home شاشة بسيطة موجهة للمطور: بطاقة حالة للـExpo Router وTypeScript وNativeWind، وإجراء بارز لتحديد أول Feature. لا ينبغي أن تحتوي على أرقام تجريبية أو بيانات وهمية؛ في غياب معلومات النظام النهائي تعرض حالة واضحة بأن المجال لم يُحدد بعد.
+**Tablet-first, touch-first.** The real device is a store tablet used standing
+up, at arm's length, often in both orientations. Not a phone, not a desktop.
+Every layout must work in portrait and landscape.
 
-تعرض Feature Catalog قائمة قابلة للتمرير، وتستخدم `FlatList` عندما تصبح الميزات بيانات ديناميكية. أما Architecture Guide فتشرح مسؤولية كل طبقة بصورة قابلة للاستبدال أو الحذف بمجرد بدء بناء التطبيق المتخصص. يجب أن تستخدم كل شاشة `ScreenContainer` لضمان احترام Safe Area وعدم التداخل مع شريط التبويب.
+**Premium and calm.** Retail, not admin dashboard. Generous type, generous
+spacing, restrained colour, real photography given room. The customer is
+choosing a product, not operating software.
 
-## تدفقات الاستخدام الرئيسية
+**Legible at a distance.** Larger base sizes than a phone app. Touch targets
+never below 48dp.
 
-1. يفتح المستخدم المشروع فيرى Home، ويتعرف على أنه أساس جاهز لتطبيق Expo منظم.
-2. ينتقل إلى Feature Catalog ليرى الميزات المخطط لها أو لتحديد ما يحتاج إلى بناء.
-3. يفتح Architecture Guide ليتحقق من موضع route أو screen أو API أو state قبل إضافة كود جديد.
-4. ينتقل إلى Settings لتغيير المظهر محليًا فقط؛ لا تظهر عناصر مصادقة أو مزامنة أو خادم بلا متطلبات واضحة.
+**Quiet.** An idle kiosk sits in a shop. No looping animation, no shimmer,
+nothing that pulls the eye. A slow fade at most.
 
-## الهيكل المعماري المقصود
+**Honest about state.** Loading, empty, error, and retry are designed states,
+not afterthoughts. A customer who hits a dead end asks an employee for help —
+which is the failure we are designing against.
 
-```text
-app/                 # Expo Router routes فقط
-features/            # كل feature تجمع screen/state/api/types/tests الخاصة بها
-components/          # واجهة مشتركة لا تخص feature واحدة
-lib/                 # clients، helpers، وإعدادات عامة
-providers/           # providers للتطبيق عند الحاجة
-hooks/               # hooks عامة قابلة لإعادة الاستخدام
-constants/           # ثوابت وتكوين عام
+**No financial UI.** No prices, no totals, no payment. A deliberate boundary.
+
+## Colour
+
+A warm near-white ground with deep ink text, a **deep emerald** primary, and an
+**amber** accent. Emerald reads fresh and retail rather than defaulting to the
+generic software blue; amber gives a warm highlight for featured content without
+competing with the primary action.
+
+Full token list and the dark palette:
+[`docs/design-system.md`](./docs/design-system.md).
+
+## Layout sizes
+
+| Size       | Width    | Context                                                |
+| ---------- | -------- | ------------------------------------------------------ |
+| `compact`  | < 768    | Narrow browser preview during development              |
+| `medium`   | 768–1023 | **Tablet portrait — the primary in-store orientation** |
+| `expanded` | ≥ 1024   | Tablet landscape                                       |
+
+Web preview is a first-class _development_ target: agents verify UI in a browser
+without an Android device for every change. It is not a shipping surface.
+
+---
+
+## Surfaces
+
+Planned product surfaces. **These are not instructions to build now** — they
+describe the shape the foundation must support. Each will be its own feature,
+generated with `pnpm generate feature`.
+
+### Customer
+
+| Surface                      | Purpose                                                                  |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| Home                         | Store identity and fast discovery: featured products, brands, categories |
+| Products                     | Every visible orderable product                                          |
+| Brands · Brand detail        | Discovery by brand, then products scoped to it                           |
+| Categories · Category detail | Visual category browsing, subcategories, brand filter                    |
+| Search                       | Fast local search over the catalog snapshot                              |
+| Product detail               | Variant/option selection, availability, quantity, add to cart            |
+| Cart sheet                   | The adaptive surface: side panel in landscape, bottom sheet otherwise    |
+| Cart                         | Full cart management before review                                       |
+| Review                       | Final confirmation before submission                                     |
+| Success                      | Order reference, submitted items, safe reset for the next customer       |
+| Track order                  | **Blocked** — no secure backend contract yet (ADR 0006)                  |
+| Maintenance                  | Hidden employee diagnostics, refresh, safe reset, sign out               |
+
+### Preparation
+
+| Surface          | Purpose                                                                  |
+| ---------------- | ------------------------------------------------------------------------ |
+| Active workspace | New / Preparing / Ready — three columns in landscape, tabs when narrower |
+| Order details    | One order, its immutable item snapshots, and the allowed actions         |
+| History          | Completed and cancelled orders for the store day                         |
+
+## Design freedom, and its limits
+
+The Flutter application is a **behavioural** reference. Do not reproduce its UI
+pixel for pixel. The React implementation should improve navigation, hierarchy,
+density, the option selector, the success screen, and the preparation board.
+
+What must **not** change casually are the reliability guarantees:
+idempotent checkout, an ambiguous result treated differently from a failure, the
+cart clearing only after confirmed success, a stock conflict never silently
+mutating the cart, and reset or sign-out never risking a duplicate order. Those
+are listed in
+[`docs/product-boundaries.md`](./docs/product-boundaries.md#invariants-that-must-not-be-casually-changed).
+
+## Seeing the design system
+
+```bash
+pnpm web    # then open /ui-lab
 ```
 
-كل feature مستقبلية تتبع المسار `features/<feature-name>/` وتحتوي فقط الطبقات التي تحتاجها فعليًا. لا يضيف المولد API أو store أو اختبارًا إلا إذا كان نوع الميزة يحتاجه.
-
-## الألوان
-
-لأن هذا مشروع أساس تقني وليس علامة تجارية نهائية، يستخدم هوية هادئة تشير إلى الوضوح والموثوقية: **أزرق Indigo داكن `#3451B2`** للون الرئيسي، و**أبيض مزرق `#F8FAFF`** للخلفية الفاتحة، و**كحلي فحمي `#111827`** للنص الأساسي، و**أخضر زمردي `#167C5A`** للحالات السليمة، و**كهرماني `#A85F00`** للتحذيرات، و**أحمر قرمزي `#C83C3C`** للأخطاء. تستخدم البطاقات لون `#FFFFFF` في الوضع الفاتح و`#1B2232` في الوضع الداكن.
-
-يجب أن تحافظ الشاشات على التباين وسهولة القراءة في وضعي light وdark، وألا تستخدم مؤثرات بصرية زائدة. تتبع التفاعلات press feedback خفيفًا: opacity أو scale بين 0.97 و0.98 فقط، مع haptics عند الإجراءات المهمة إذا أضيفت لاحقًا.
+Every token, component, and state in one page, with the current width and
+orientation shown. Development-only.

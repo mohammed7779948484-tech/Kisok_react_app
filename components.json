@@ -1,0 +1,20 @@
+{
+  "$schema": "https://reactnativereusables.com/schema.json",
+  "style": "default",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "tailwind.config.js",
+    "css": "global.css",
+    "baseColor": "neutral",
+    "cssVariables": true
+  },
+  "aliases": {
+    "components": "@/components",
+    "ui": "@/components/ui",
+    "lib": "@/core",
+    "utils": "@/core/utils",
+    "hooks": "@/core"
+  },
+  "iconLibrary": "lucide-react-native"
+}
