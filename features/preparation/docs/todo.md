@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : Round 1 — Domain and data layer
-Current task      : T01
-Current stage     : ready to scaffold T01 (plan is READY)
-Last gate         : — (planning complete; Lead Planning Review passed)
-Next legal action : Lead runs `pnpm generate schema preparation order-status-update`, then delegates T01
+Current task      : T02
+Current stage     : ready to scaffold T02 (T01 PASS)
+Last gate         : T01 GATE: PASS
+Next legal action : Lead runs `pnpm generate query preparation active-orders`, then delegates T02
 Blocked by        : —
 ```
 
@@ -39,7 +39,7 @@ Scan this first. Detail is below.
 
 | Task | Mode     | Acceptance                        | Objective                                                            | Deps                              | Stage       | Gate    |
 | ---- | -------- | --------------------------------- | -------------------------------------------------------------------- | --------------------------------- | ----------- | ------- |
-| T01  | behavior | Sup: AC-04/05/06                  | Zod schema for `update_order_status` result                          | —                                 | not started | PENDING |
+| T01  | behavior | Sup: AC-04/05/06                  | Zod schema for `update_order_status` result                          | —                                 | done        | PASS    |
 | T02  | behavior | Sup: AC-01/02/03                  | Active-orders read (api + hook + keys)                               | —                                 | not started | PENDING |
 | T03  | behavior | Sup: AC-07                        | Order-detail read (api + hook)                                       | T02 (scaffold ordering)           | not started | PENDING |
 | T04  | behavior | Sup: AC-03/07/08                  | Store-settings read (api + hook)                                     | T02 (scaffold ordering)           | not started | PENDING |
