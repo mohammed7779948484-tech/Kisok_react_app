@@ -160,3 +160,68 @@ features/preparation/model/order-status-update.schema.test.ts (new)
 Nothing else; git status shows only features/preparation/model/.
 
 GATE: PASS
+
+### T02 — active-orders read
+
+MODE: behavior
+ACCEPTANCE: Supporting: AC-01/AC-02/AC-03
+
+SCAFFOLD
+$ pnpm generate query preparation active-orders
+created : features/preparation/api/fetch-active-orders.ts,
+features/preparation/queries/use-active-orders.ts,
+features/preparation/queries/keys.ts
+skipped : —
+replaced : —
+manual : features/preparation/api/fetch-active-orders.test.ts (planned:
+the query capability generates no test)
+
+RED
+$ npx jest features/preparation/api/fetch-active-orders.test.ts
+✕ resolves the rows the orders table returns, in one read
+✕ maps a PostgREST error to an AppError via toAppError
+Tests: 2 failed
+Failure: the placeholder's AppError NOT_IMPLEMENTED surfaced (imports
+resolved; AppError instanceof ran in test 2) — the intended missing
+behaviour.
+
+IMPLEMENT
+fetchActiveOrders(): direct read, select("_, order_items(_)"),
+in("status", ["new","preparing","ready"] as const),
+order("created_at", { ascending: false }), error → toAppError.
+Exported ActiveOrderRow = Tables<"orders"> & { order_items:
+Tables<"order_items">[] }. Hook keeps the generated key shape.
+Embed typechecks via the order_items_order_id_fkey relationship — the
+plan's two-reads fallback was NOT needed (risk R-1 resolved).
+
+GREEN
+$ npx jest features/preparation/api/fetch-active-orders.test.ts
+Tests: 3 passed, 3 total (4 after remediation)
+
+AFFECTED CHECKS (Lead re-ran)
+$ npx jest features/preparation/api/ → 4/4 (after remediation)
+$ pnpm typecheck → clean
+$ pnpm test:ci (implementer) → 19 suites / 152 tests green, zero console
+
+TASK REVIEW (fresh code-reviewer, Super Z agent-2c94e2fe)
+T02-R02 MAJOR: status filter + ordering had no enforcement; the test
+header falsely claimed TypeScript covers them (in() checks enum
+membership only; ascending is a plain boolean; the .from() stub
+discards builder args). T02-R01 minor: self-contradictory .order()
+comment. T02-R03 minor: fixture variant_options keys wrong (real
+snapshot is {type,value} per migration 07:282-292).
+Remediation (implementer resumed, agent-d46a460e): recording chain stub
+added INSIDE the test file asserting select string, .in values, .order
+args deep-equal; mutation-verified (dropping "ready", flipping
+ascending, dropping the embed each fail the suite). Header comment
+corrected. .order() comment corrected. Fixture fixed to {type,value}.
+Lead re-verified: 4/4, typecheck clean, comments and fixture confirmed.
+
+DIFF
+features/preparation/api/fetch-active-orders.ts (new)
+features/preparation/api/fetch-active-orders.test.ts (new, manual)
+features/preparation/queries/use-active-orders.ts (new)
+features/preparation/queries/keys.ts (new, verbatim template)
+Nothing else.
+
+GATE: PASS
