@@ -326,7 +326,13 @@ invariants, accessibility; not coverage for its own sake.
 - **T08–T10 components** (`renderWithProviders`): badge label text per
   status; card content, action visibility per rules, read-only mode,
   press/assignment semantics via `getByRole`/`getByLabelText`; cancel dialog
-  confirm → mutation call, busy disable, error feedback.
+  confirm → mutation call, busy disable. (Reconciled at the T10 gate,
+  T10-R01: "error feedback" was mis-attached to the dialog — the dialog is
+  deliberately presentational with no error surface; the rejection half of
+  AC-06 is screen-owned. The cancel-rejection flow — dialog `open=false`,
+  feedback near the card, invalidate/refetch, with its own screen test — is
+  a REQUIRED constraint on the T11/T13 packets. No acceptance criterion,
+  capability, dependency, or scaffold changed.)
 - **T11–T14 screens**: loading/empty/error+retry for reads; grouped
   membership + counts; tabs vs columns driven by the responsive layer
   (mocked `useLayout`); pending disable + repeat-guard; conflict (K1004/42501

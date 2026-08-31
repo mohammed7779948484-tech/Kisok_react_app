@@ -746,3 +746,67 @@ features/preparation/api/fetch-active-orders.test.ts (modified: the
 T07-R01 pin, Lead-granted)
 
 GATE: PASS
+
+### T10 — CancelOrderDialog component
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-06
+
+NOTE: the original T10 implementer's session was interrupted after
+GREEN (its report and this entry were lost); the Lead re-verified every
+claim below from the working tree this session, including reconstructing
+RED by restoring the generator stub.
+
+SCAFFOLD
+$ pnpm generate component preparation cancel-order-dialog
+created : features/preparation/components/cancel-order-dialog.tsx
+skipped : —
+replaced : —
+manual : features/preparation/components/cancel-order-dialog.test.tsx
+(planned: the component capability generates no test)
+
+RED (Lead-reconstructed after the interruption: implementation moved
+aside, stub regenerated, test run against it)
+$ npx jest features/preparation/components/cancel-order-dialog.test.tsx
+Tests: 4 failed, 1 passed, 5 total — the placeholder rendered; the one
+pass was the vacuous no-target case (same class as T09's RED)
+
+IMPLEMENT
+Composes the shared ConfirmDialog only (decision 4): destructive=true
+(the action removes an order), title names the display number,
+description states stock-return + irreversibility, confirmLabel "Cancel
+order" vs dismiss "Keep order" (a Cancel inside a cancel dialog is
+ambiguous), busy passes through to the primitive's Working… swap, and
+onConfirm fires the order echo — never the press event, never closing
+the dialog (the screen closes on success). Presentational: single
+import @/components/feedback; no fetch/store/Supabase. Null-guard:
+`if (!open || !order) return null`.
+
+GREEN
+$ npx jest features/preparation/components/cancel-order-dialog.test.tsx
+Tests: 5 passed, 5 total (5/5 after the T10-R02 docblock fix)
+
+AFFECTED CHECKS (Lead re-ran)
+$ npx jest features/preparation/ → 14 suites / 117 tests green
+$ pnpm typecheck → clean
+$ npx eslint <both files> --max-warnings=0 → clean (re-ran post-fix)
+$ npx prettier --check <both files + plan.md> → clean
+
+TASK REVIEW (fresh code-reviewer, Super Z agent-8b18c646)
+No blocking, no major. T10-R01 minor: AC-06's rejection half unowned at
+the dialog layer — feedback near the action is invisible behind an open
+modal, so the screen must close the dialog on a rejected cancel → FIXED
+Lead-side: plan.md test-strategy line reconciled (screen-owned error
+feedback, recorded per the T06-revision precedent) + REQUIRED constraint
+added to the T11/T13 packets (todo.md carried constraints). T10-R02
+minor: test docblock misattributed "presentational" to decision 4 →
+FIXED (one comment line, Lead-applied and disclosed here: the original
+implementer context was lost to the interruption; re-verified 5/5).
+
+DIFF
+features/preparation/components/cancel-order-dialog.tsx (new)
+features/preparation/components/cancel-order-dialog.test.tsx (new,
+manual; one Lead-applied docblock line)
+features/preparation/docs/plan.md (reconciled line, T10-R01)
+
+GATE: PASS
