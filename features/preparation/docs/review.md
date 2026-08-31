@@ -18,6 +18,8 @@ Implementation notes do not belong here; they belong in `worklog.md`.
 | T03-R02 | minor    | Recording stub blind to ADDED builder calls — an added `.in("status",…)` on the detail read would pass silently and break history→details (AC-07 requires terminal orders to resolve)                                                            | fetch-order-detail.test.ts:105-114                                                                              | fix               | Stub strengthened: every builder method records; exact sequence ["select","eq","maybeSingle"] pinned; mutation-verified                                                                                                                                                                      |
 | T03-R03 | minor    | The "no enabled guard" decision rests on T13 mounting with a real id; a missing query-param would stringify to `id=eq.undefined` → retryable server error before unavailable state                                                               | use-order-detail.ts:19-22; postgrest-js index.cjs:1517-1519                                                     | accept (deferred) | REQUIRED constraint recorded for T13's task packet: the details screen branches on a missing route param and renders the unavailable state without fabricating an id                                                                                                                         |
 | T03-R04 | minor    | `ActiveOrderRow \| null` misreads at the detail boundary (detail legitimately resolves terminal orders via history) — reuse was mandated; shape identical                                                                                        | fetch-order-detail.ts:4,29                                                                                      | accept            | Docblocks document it; revisit only if T13/T14 find it confusing (Lead decision)                                                                                                                                                                                                             |
+| T04-R01 | minor    | Test header overstated TypeScript blindness: select-string projection IS typed for literals; the real blind spots are single-vs-maybeSingle and added chain calls                                                                                | fetch-store-settings.test.ts:17-23; postgrest-js index.d.mts:1143,971                                           | fix               | Comment reworded to credit projection typing and claim only the real blind spots (implementer resumed; re-verified 5/5)                                                                                                                                                                      |
+| T04-R02 | minor    | Stale doc in shared core/testing/supabase.ts: "orders and order_items" — store_settings is also an allowed preparation direct read (migration 13:24-31,189-205)                                                                                  | core/testing/supabase.ts:11-15                                                                                  | accept            | Shared-file doc fix belongs to a Lead-owned foundation chore, not this feature PR; recorded so the next agent knows the list is incomplete                                                                                                                                                   |
 
 Severity means: **blocking** — must not merge; **major** — fix in this feature;
 **minor** — worth doing, safe to defer with a note.
@@ -58,6 +60,20 @@ re-run independently (20 suites/157 tests at review time, zero console
 output). Observations for the Lead: O-1 dead detail key factory in keys.ts
 (ACCEPTED — template verbatim, feature invalidates .all); O-2 stale T02
 board row (fixed by the Lead).
+
+### T04 review coverage statement (reviewer agent-85c0f59b, fresh context)
+
+Examined and clean: contract fidelity (singleton read, null-not-error on
+zero rows per plan decision 8, toAppError verified against core/errors),
+minimal-read justification (singleton constraint), schema/RLS docblock
+claims (migrations 02/13), test quality (all 5 walked; every failure mode
+traced; compile proof follows the rpc.test.ts precedent plus a drift
+guard), hook semantics (null as cacheable success value — sound; generated
+key shape), boundaries (api/-only verified against eslint.config.mjs;
+keys.ts untouched), zero convention divergence, RED coherence
+reconstructed. Observations for the Lead: transport-level throws are not
+AppError at screens (→ T11/T13/T14 packets); unresolvable IANA zone must
+degrade like an absent row in T06's model (→ T06 packet).
 
 ## Re-review
 

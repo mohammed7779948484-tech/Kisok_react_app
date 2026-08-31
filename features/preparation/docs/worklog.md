@@ -296,3 +296,62 @@ features/preparation/queries/use-order-detail.test.tsx (new, remediation)
 keys.ts NOT modified.
 
 GATE: PASS
+
+### T04 — store-settings read
+
+MODE: behavior
+ACCEPTANCE: Supporting: AC-03/AC-07/AC-08
+
+SCAFFOLD
+$ pnpm generate query preparation store-settings
+created : features/preparation/api/fetch-store-settings.ts,
+features/preparation/queries/use-store-settings.ts
+skipped : features/preparation/queries/keys.ts (exists)
+replaced : —
+manual : features/preparation/api/fetch-store-settings.test.ts (planned)
+
+RED
+$ npx jest features/preparation/api/fetch-store-settings.test.ts
+Tests: 4 failed, 1 passed, 5 total
+Failure: placeholder NOT_IMPLEMENTED AppError on the four behaviour tests;
+the type-proof passes at runtime by design (enforced by typecheck, which
+fails at RED because StoreSettingsRow does not exist yet) — the intended
+missing behaviour.
+
+IMPLEMENT
+fetchStoreSettings(): .from("store_settings").select("\*").maybeSingle();
+error → toAppError; returns StoreSettingsRow | null. Null — not an error,
+not a fabricated default — when the singleton row is absent (plan
+decision 8; degradation to device tz is T06's model concern). Minimal
+read justified by the singleton constraint (id boolean pk check(id) caps
+the table at one row). Hook keeps the generated key shape.
+
+GREEN
+$ npx jest features/preparation/api/fetch-store-settings.test.ts
+Tests: 5 passed, 5 total
+
+AFFECTED CHECKS (Lead re-ran)
+$ npx jest features/preparation/ → 5 suites / 25 tests green
+$ pnpm typecheck → clean
+$ pnpm lint / prettier (implementer + reviewer) → clean
+
+TASK REVIEW (fresh code-reviewer, Super Z agent-85c0f59b)
+No blocking, no major. T04-R01 minor: test header comment overstated
+TypeScript blindness (select-string projection IS typed for literals);
+remediated — comment reworded to credit the projection typing and claim
+only the single-vs-maybeSingle + added-call blind spots. T04-R02 minor:
+stale doc in SHARED core/testing/supabase.ts (lists two tables; store
+settings is also allowed) — ACCEPTED with note: a shared-file doc fix
+belongs to a future Lead-owned foundation chore, not this feature PR.
+Observations carried forward: O-1 (transport-level throws are not
+AppError at screens — error-state rendering must not assume kind) goes
+into T11/T13/T14 packets; O-2 (unresolvable IANA zone must degrade like
+an absent row in T06's model, with a test) goes into T06's packet.
+
+DIFF
+features/preparation/api/fetch-store-settings.ts (new)
+features/preparation/api/fetch-store-settings.test.ts (new, manual)
+features/preparation/queries/use-store-settings.ts (new)
+keys.ts NOT modified.
+
+GATE: PASS
