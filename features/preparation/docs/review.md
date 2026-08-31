@@ -30,6 +30,11 @@ Implementation notes do not belong here; they belong in `worklog.md`.
 | T06-R06 | minor    | Two unpinned failure paths: history read's own error; wire-format timestamps (microseconds + offset) never fed through the model                                                                                                                 | use-store-day-history.test.tsx (absence); model/store-day.ts:196-204                                            | fix               | Both tests added: history AppError identity preserved; wire-format strings through orderTerminalInstant/isTerminalInDay                                                                                                                                                                      |
 | T07-R01 | minor    | The model's "every Tables<"orders"> row satisfies it" claim is unpinned (status drift IS caught transitively via the shared OrderStatus, but an assignment-column rename would surface only at T09/T11 compile time)                             | status-actions.ts:50-52; contrast the T06 pin convention                                                        | accept (deferred) | Carried as a REQUIRED item into T09's packet: one-line Equals<Tables<"orders"> extends OrderActionOrder…> pin in fetch-active-orders.test.ts (the model cannot import generated types — ESLint)                                                                                              |
 | T07-R02 | minor    | Test comment said "both of its rows" for cancelled's matrix rows — there are three (all reachable)                                                                                                                                               | status-actions.test.ts:105-107                                                                                  | fix               | Comment corrected to "all three of its rows" (implementer resumed; 17/17)                                                                                                                                                                                                                    |
+| R1-01   | minor    | Carried constraints for Rounds 2/3 were scattered across review/worklog prose; todo.md (the declared working memory) carried none                                                                                                                | todo.md T08-T14 sections; review.md:19,24,31                                                                    | fix               | Lead added a "Carried constraints" block to todo.md (five REQUIRED items + three shared-file notes) and populated review.md's Accepted-risks section                                                                                                                                         |
+| R1-02   | minor    | Worklog cited a nonexistent commit hash (5ab7a01) for the T06 plan reconciliation — the real commit is 1d78e8f                                                                                                                                   | worklog.md:477; git show 5ab7a01 fails                                                                          | fix               | One-line append-only correction added to the worklog                                                                                                                                                                                                                                         |
+| R1-03   | minor    | T02's recording stub was the weak variant (3 methods, no exact-sequence pin) — an added builder call on the board read would pass silently, changing which orders get action affordances                                                         | fetch-active-orders.test.ts:58,84-87                                                                            | fix               | Stub strengthened to the every-method convention + exact sequence ["select","in","order"] pinned; mutation-verified (.limit(10) now fails); implementer resumed                                                                                                                              |
+| R1-04   | minor    | Mutation hook's .all comment overclaimed ("every query reads the same rows" — store-settings does not)                                                                                                                                           | use-update-order-status-mutation.ts:23-29                                                                       | fix               | Comment reworded to justify by key topology; the harmless extra singleton read named; implementer resumed                                                                                                                                                                                    |
+| R1-05   | minor    | History dayKey rollover is re-render-driven, not refetch-driven; the docblock overclaimed                                                                                                                                                        | use-store-day-history.ts:40-46,49-57; queryObserver.js:84-108                                                   | fix               | Docblock states the actual render-driven semantics; the rollover policy decision carried to T14's packet; implementer resumed                                                                                                                                                                |
 
 Severity means: **blocking** — must not merge; **major** — fix in this feature;
 **minor** — worth doing, safe to defer with a note.
@@ -131,6 +136,23 @@ row), consumer-readiness for T09/T10/T11 (actor id semantics, docblock
 authority statement). Evidence independently reproduced (17/17; 11 suites /
 88 tests; typecheck/lint/prettier clean).
 
+### Round 1 gate review coverage statement (reviewer agent-7120f845, fresh context)
+
+Examined and clean: cross-task contract coherence (one orders contract
+across reads/mutation/models; the board/history filters partition the enum
+exactly; assignee semantics coherent; T05's input union honest), key
+topology / invalidation / realtime readiness (all keys nest under
+["preparation"]; CRITICALLY verified against installed query-core that
+invalidateQueries skips disabled queries — the .all invalidation cannot
+re-expose the T06-R05 raw-Error path), T06-T04 composition (public-surface
+only, no internals leak), architecture/boundaries (zero files outside the
+feature; Supabase confined to api/\*\* verified file-by-file; no store; no
+suppressions), test-suite coherence (11/88 and 28/226 re-run green, exactly
+the Lead's numbers; no test contradicts another), control docs vs reality
+(plan post-reconciliation matches the implementation; board matches the
+gates; worklog complete). Verdict: Round 1 is coherent as one system; all
+five findings minor, none blocking.
+
 ## Re-review
 
 After remediation, re-run the reviewer against the same scope.
@@ -143,7 +165,23 @@ After remediation, re-run the reviewer against the same scope.
 
 Anything deliberately not fixed, with the reason and who decided.
 
-- —
+- **T03-R03** (Lead): no `enabled` guard on useOrderDetail — the details
+  screen (T13) branches on a missing route param instead; carried as a
+  REQUIRED constraint in T13's packet.
+- **T03-R04** (Lead): `ActiveOrderRow` name at the detail boundary —
+  shape identical, reuse mandated; docblocks document it.
+- **T04-R02** (Lead): stale two-table doc in shared core/testing/supabase.ts
+  — a shared-file fix is a Lead-owned foundation chore, not this feature's
+  PR; recorded in todo.md's shared-file notes.
+- **T05-R02** (Lead): the mutation hook invalidates on success only (per
+  plan) — the rejected-transition refresh is screen-owned; carried as a
+  REQUIRED constraint in T10/T11/T13 packets.
+- **T06 shared-mock gap** (Lead): core/testing's mock chain has no `or`
+  method — the feature's api test uses an in-file recording stub;
+  adding `or` to the shared mock is a Lead-owned foundation chore.
+- **R1-05** (Lead): store-day rollover is render-driven — the history
+  rollover policy (accept vs refetchInterval) is T14's decision; the
+  docblock now states the actual semantics.
 
 ## Quality audit
 

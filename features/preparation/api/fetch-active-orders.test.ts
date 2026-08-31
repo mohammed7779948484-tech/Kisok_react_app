@@ -16,8 +16,12 @@ import { fetchActiveOrders } from "./fetch-active-orders";
  *   TypeScript enforces on this query is only the embed relationship typing
  *   (the compile-time proof at the bottom of this file): postgrest-js `in()`
  *   accepts any enum member — `["completed"]` compiles — and `ascending` is a
- *   plain boolean, so the status filter contents and the ordering direction
- *   are enforced HERE, by the recording-stub assertions, and nowhere else.
+ *   plain boolean, so the status filter contents, the ordering direction AND
+ *   the exact builder sequence are enforced HERE, by the recording-stub
+ *   assertions, and nowhere else. Every read-builder chain method records, so
+ *   a call ADDED to the read (e.g. a `.limit(10)` narrowing that would change
+ *   which orders get action affordances) fails the sequence pin rather than
+ *   passing silently.
  */
 
 /** An active order with its embedded item snapshot — one board-shaped row. */
@@ -55,35 +59,57 @@ const activeOrder = {
   ],
 };
 
-type RecordedCall = { method: "select" | "in" | "order"; args: unknown[] };
+type RecordedCall = { method: string; args: unknown[] };
 
 /**
- * A chain stub that RECORDS the builder arguments of the orders read — the
+ * A chain stub that RECORDS the builder arguments of the board read — the
  * shared mock discards them by design, and the query shape is behaviour worth
- * pinning. Only `select`, `in` and `order` are recorded: the read under test
- * is built from exactly those. Installs itself through `setSupabaseClient`
+ * pinning. EVERY read-builder chain method records, not just the three this
+ * read uses today, so the exact-sequence assertion in the tests below fails on
+ * a call ADDED to the chain (a status narrowing, a `.limit(10)`) as well as on
+ * a removed or reordered one. Terminal `single`/`maybeSingle` are recorded too
+ * (resolving the list, as supabase-js would) so a stray terminal call fails the
+ * sequence pin instead of passing. Installs itself through `setSupabaseClient`
  * (the same seam `installMockSupabase` uses); call `restore()` when done.
  */
 function installRecordingOrdersStub(row: unknown) {
   const fromCalls: string[] = [];
   const builderCalls: RecordedCall[] = [];
 
+  const rows = Promise.resolve({ data: [row], error: null });
+
   const builder: Record<string, unknown> = {
     then: (
       onFulfilled: (value: { data: unknown; error: unknown }) => unknown,
       onRejected?: (reason: unknown) => unknown,
-    ) => Promise.resolve({ data: [row], error: null }).then(onFulfilled, onRejected),
+    ) => rows.then(onFulfilled, onRejected),
   };
 
-  for (const method of ["select", "in", "order"] as const) {
+  for (const method of [
+    "select",
+    "eq",
+    "in",
+    "or",
+    "neq",
+    "is",
+    "gte",
+    "lte",
+    "order",
+    "limit",
+    "range",
+  ]) {
     builder[method] = (...args: unknown[]) => {
       builderCalls.push({ method, args });
       return builder;
     };
   }
-  // Chainability for the rest of the read-builder surface, unrecorded.
-  for (const method of ["eq", "neq", "is", "gte", "lte", "limit", "range"]) {
-    builder[method] = () => builder;
+  // Terminal methods that resolve one row rather than the list — recorded so
+  // a stray `.single()` fails the sequence assertion instead of passing.
+  for (const method of ["single", "maybeSingle"]) {
+    builder[method] = (...args: unknown[]) => {
+      builderCalls.push({ method, args });
+      return rows;
+    };
   }
 
   const client = {
@@ -161,6 +187,12 @@ describe("fetchActiveOrders", () => {
     expect(recording.builderCalls.filter((call) => call.method === "order")).toEqual([
       { method: "order", args: ["created_at", { ascending: false }] },
     ]);
+    // The EXACT builder sequence, and nothing more. Every chain method is
+    // recorded above, so a call ADDED to this read fails here rather than
+    // passing silently — e.g. a future `.eq` assignment filter or `.limit(10)`
+    // would narrow which orders reach the board and silently change which
+    // ones get action affordances (T07 reads this query's result).
+    expect(recording.builderCalls.map((call) => call.method)).toEqual(["select", "in", "order"]);
   });
 });
 

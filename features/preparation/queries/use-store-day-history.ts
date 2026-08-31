@@ -46,11 +46,20 @@ export function useStoreDayHistory() {
       : null;
 
   const historyQuery = useQuery({
-    // The day rides the key as the window's startUtc ISO string, so a screen
-    // left open across the store-day boundary refetches for the new day
-    // instead of showing the old one's cache. While settings are unresolved
-    // the key holds a placeholder segment — the query is disabled then, so it
-    // never fetches under it.
+    // The day rides the key as the window's startUtc ISO string — and the
+    // window (and therefore the key) is recomputed on every RENDER, because
+    // the day boundary is a property of `new Date()` at render time. So the
+    // key rolls to the new day on the next render after the store-day
+    // boundary — any re-render (navigation, dialogs, data changes, realtime
+    // invalidation, window focus) recomputes the window and rolls the query
+    // to the new day's key and queryFn. A mounted screen with ZERO renders
+    // across the boundary keeps serving the previous day until one happens,
+    // and a refetch of the still-cached old-day key re-runs that key's
+    // captured closure (its own window) rather than the new day. Deliberately
+    // no refetchInterval here: a timed rollover policy is the history screen's
+    // decision (T14), not the read's. While settings are unresolved the key
+    // holds a placeholder segment — the query is disabled then, so it never
+    // fetches under it.
     queryKey: [
       ...preparationKeys.all,
       "store-day-history",

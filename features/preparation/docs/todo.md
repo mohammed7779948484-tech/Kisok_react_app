@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : Round 1 — Domain and data layer
-Current task      : —
-Current stage     : ROUND 1 GATE — all seven tasks PASS; round review in progress
-Last gate         : T07 GATE: PASS
-Next legal action : Lead runs Round 1 verification, then launches the fresh Round reviewer
+Current task      : T08
+Current stage     : ready to scaffold T08 (Round 1 GATE: PASS)
+Last gate         : ROUND 1 GATE: PASS
+Next legal action : Lead runs `pnpm generate component preparation order-status-badge`, then delegates T08
 Blocked by        : —
 Blocked by        : —
 ```
@@ -33,6 +33,39 @@ Blocked by        : —
 - **No task starts while `plan.md` is `DRAFT`.**
 - **The Lead runs the scaffold**, immediately before delegating the task. The
   implementer starts only once `Scaffold status` is `READY`.
+
+## Carried constraints (from reviews — REQUIRED in the named task's packet)
+
+The working memory for pending tasks. Each item was a review finding whose
+fix belongs to a FUTURE task; the task's packet MUST include it.
+
+- **T09** — add the `Equals<Tables<"orders"> extends OrderActionOrder…>`
+  compile-time pin in fetch-active-orders.test.ts (T07-R01; the model
+  cannot import generated types — ESLint confines @/core/supabase to
+  api/\*\*).
+- **T10/T11/T13** — screens own AC-10's rejected-transition refresh:
+  onError → invalidate/refetch (T05-R02; the hook invalidates on success
+  only).
+- **T11/T13/T14** — error-state rendering must NOT assume `error.kind`
+  (T04 O-1: transport-level throws are not AppError at screens).
+- **T13** — the details screen MUST branch on a missing `orderId` route
+  param and render the unavailable state without fabricating an id
+  (T03-R03; a fabricated id stringifies into a doomed retryable request).
+- **T14** — decide the history rollover policy: accept event-driven
+  rollover (realtime + focus refetch self-correct) or add a screen-level
+  refetchInterval (R1-05; the dayKey rolls on the next render, not on a
+  timer).
+
+Shared-file notes (ACCEPTED — Lead-owned foundation chores, NOT feature
+work; do not edit core/\*\* from this feature):
+
+- core/testing/supabase.ts doc lists two tables; store_settings is also
+  an allowed preparation direct read (T04-R02).
+- core/testing's installMockSupabase chain has no `or` method (T06);
+  feature api tests use the in-file recording stub instead.
+- useMutation tests need mutations.gcTime: Infinity for jest to exit
+  (T05); test-local createMutationTestClient until the shared helper
+  gains it.
 
 ## Status board
 
@@ -221,7 +254,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Allowed manual files**: —
 - **Allowed file scope**: `features/preparation/screens/store-day-history/**`, `app/(preparation)/history.tsx`, `features/preparation/index.ts`
 
-Round gates: R1 `PENDING` · R2 `PENDING` · R3 `PENDING`
+Round gates: R1 `PASS` · R2 `PENDING` · R3 `PENDING`
 
 ## Feature gate
 

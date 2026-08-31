@@ -572,3 +572,40 @@ features/preparation/model/status-actions.test.ts (new, manual)
 Nothing else.
 
 GATE: PASS
+
+### Round 1 gate — correction (append-only)
+
+R1-02: the T06 entry's "commit 5ab7a01" hash was wrong — the plan
+reconciliation commit is 1d78e8f ("docs(preparation): reconcile the history
+read contract after T06 review"), which does precede the T06 code commit
+8f727cc. The reconciliation description itself was accurate.
+
+### Round 1 GATE
+
+MODE: round gate (all seven task gates PASS: T01-T07)
+
+ROUND VERIFICATION (Lead)
+$ pnpm verify → ALL green (typecheck, lint, format, 28 suites / 226
+tests, db:verify, check:docs, generator smoke — 61 ok lines)
+$ git diff main --name-only | grep -v '^features/preparation/' → EMPTY
+(zero files outside the feature; 31 files / +4888 / -0)
+$ npx jest features/preparation/ → 11 suites / 88 tests green
+
+ROUND REVIEW (fresh code-reviewer, ROUND scope, Super Z agent-7120f845)
+No blocking, no major. Five minors:
+R1-01 carried constraints scattered → FIXED by the Lead (todo.md
+"Carried constraints" block with the five REQUIRED items + three
+shared-file notes; review.md Accepted-risks populated).
+R1-02 dead commit hash → FIXED by the Lead (append-only correction;
+the reconciliation commit is 1d78e8f).
+R1-03 T02 stub weak variant → FIXED (T02 implementer resumed:
+every-method recording + exact sequence ["select","in","order"]
+pinned; mutation-verified — a silent .limit narrowing now fails).
+R1-04 mutation .all comment overclaim → FIXED (T05 implementer
+resumed: justified by key topology; harmless singleton read named).
+R1-05 dayKey rollover overclaim → FIXED (T06 implementer resumed:
+render-driven semantics stated; rollover policy carried to T14).
+All re-verified: focused suites green after each fix; full suite
+28/226 green.
+
+GATE: PASS

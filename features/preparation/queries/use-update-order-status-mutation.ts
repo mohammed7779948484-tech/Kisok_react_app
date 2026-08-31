@@ -21,11 +21,15 @@ export function useUpdateOrderStatusMutation() {
   return useMutation({
     mutationFn: (input: UpdateOrderStatusInput) => updateOrderStatus(input),
     onSuccess: () => {
-      // `.all` IS the narrow scope for this write: a status change can move
-      // an order between board groups, move it out of the board into
-      // history, and change the detail projection — every query in this
-      // feature reads the same rows. Narrowing further (per-id) would leave
-      // the board and history serving stale membership.
+      // Invalidate the whole feature by KEY TOPOLOGY: every key this feature
+      // registers nests under ["preparation"], and a status change can move
+      // an order between board groups, out of the board into history, and
+      // change the detail projection — so orders-derived queries are all
+      // stale together. One `.all` invalidation is simpler and safer than
+      // enumerating per-key scopes, which drift the moment a query is added
+      // (T06's history read is next). The trade it accepts: the store-settings
+      // singleton does NOT read orders, so it is refetched too — one harmless
+      // extra read of a single row, accepted for that simplicity.
       void queryClient.invalidateQueries({ queryKey: preparationKeys.all });
     },
   });
