@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : Round 1 — Domain and data layer
-Current task      : T03
-Current stage     : ready to scaffold T03 (T02 PASS)
-Last gate         : T02 GATE: PASS
-Next legal action : Lead runs `pnpm generate query preparation order-detail`, then delegates T03
+Current task      : T04
+Current stage     : ready to scaffold T04 (T03 PASS)
+Last gate         : T03 GATE: PASS
+Next legal action : Lead runs `pnpm generate query preparation store-settings`, then delegates T04
 Blocked by        : —
 ```
 
@@ -40,8 +40,8 @@ Scan this first. Detail is below.
 | Task | Mode     | Acceptance                        | Objective                                                            | Deps                              | Stage       | Gate    |
 | ---- | -------- | --------------------------------- | -------------------------------------------------------------------- | --------------------------------- | ----------- | ------- |
 | T01  | behavior | Sup: AC-04/05/06                  | Zod schema for `update_order_status` result                          | —                                 | done        | PASS    |
-| T02  | behavior | Sup: AC-01/02/03                  | Active-orders read (api + hook + keys)                               | —                                 | not started | PENDING |
-| T03  | behavior | Sup: AC-07                        | Order-detail read (api + hook)                                       | T02 (scaffold ordering)           | not started | PENDING |
+| T02  | behavior | Sup: AC-01/02/03                  | Active-orders read (api + hook + keys)                               | —                                 | done        | PASS    |
+| T03  | behavior | Sup: AC-07                        | Order-detail read (api + hook)                                       | T02 (scaffold ordering)           | done        | PASS    |
 | T04  | behavior | Sup: AC-03/07/08                  | Store-settings read (api + hook)                                     | T02 (scaffold ordering)           | not started | PENDING |
 | T05  | behavior | Sup: AC-04/05/06/10               | update-order-status mutation (api + hook)                            | T01                               | not started | PENDING |
 | T06  | behavior | Sup: AC-08                        | Store-day-history read + store-day model                             | T04                               | not started | PENDING |

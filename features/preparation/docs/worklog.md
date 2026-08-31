@@ -225,3 +225,74 @@ features/preparation/queries/keys.ts (new, verbatim template)
 Nothing else.
 
 GATE: PASS
+
+### T03 — order-detail read
+
+MODE: behavior
+ACCEPTANCE: Supporting: AC-07
+
+SCAFFOLD
+$ pnpm generate query preparation order-detail
+created : features/preparation/api/fetch-order-detail.ts,
+features/preparation/queries/use-order-detail.ts
+skipped : features/preparation/queries/keys.ts (exists from T02)
+replaced : —
+manual : features/preparation/api/fetch-order-detail.test.ts (planned);
+features/preparation/queries/use-order-detail.test.tsx
+(added during remediation with Lead-approved scope extension)
+
+RED
+$ npx jest features/preparation/api/fetch-order-detail.test.ts
+Tests: 4 failed, 1 passed, 5 total
+Failure: placeholder NOT_IMPLEMENTED AppError rejected all four behaviour
+tests; the compile-time proof passed (module loaded) — the intended
+missing behaviour, imports resolved.
+
+IMPLEMENT
+fetchOrderDetail(orderId): select("_, order_items(_)").eq("id", orderId)
+.maybeSingle(); error → toAppError; returns ActiveOrderRow | null
+(type reused from T02, not duplicated). Hook wires the id into BOTH
+key ([...preparationKeys.all, "order-detail", orderId]) and queryFn.
+maybeSingle distinguishes "no such order" (null) from failure.
+
+GREEN
+$ npx jest features/preparation/api/fetch-order-detail.test.ts
+Tests: 5 passed, 5 total
+
+AFFECTED CHECKS (Lead re-ran)
+$ npx jest features/preparation/ → 4 suites / 20 tests green
+$ pnpm typecheck → clean
+$ pnpm lint / prettier (implementer + reviewer re-ran) → clean
+
+TASK REVIEW (fresh code-reviewer, Super Z agent-850be56c)
+T03-R01 MAJOR: no hook-level key-shape test for the feature's first
+parameterized read (plan's test strategy promised it); a queryKey
+regression would cross-contaminate the shared cache. T03-R02 minor:
+recording stub blind to ADDED builder calls. T03-R03 minor: missing-param
+branch deferred to T13 (Lead disposition — REQUIRED constraint in T13's
+packet). T03-R04 minor: ActiveOrderRow name at the detail boundary —
+accepted with note (docblocks document it).
+Remediation (implementer resumed, agent-1fe6ec8a): NEW hook test
+use-order-detail.test.tsx (two ids, one shared client, distinct cache
+entries asserted); recording stub strengthened so every builder method
+records; exact sequence ["select","eq","maybeSingle"] pinned. Mutation-
+verified: dropping the id from the key fails with cross-contamination
+(both probes served order A); adding .in("status",...) fails the
+sequence assertion (was silent before).
+Lead re-verified: 4/20 green, typecheck clean.
+
+OBSERVATIONS (Lead disposition)
+O-1 dead `detail` key factory in keys.ts — ACCEPTED: keys.ts stays the
+verbatim generator template per plan; the feature invalidates
+preparationKeys.all; recorded here so nobody uses the stale factory.
+O-2 stale T02 board row — fixed by the Lead (prettier had reformatted
+the table so an earlier sed silently missed).
+
+DIFF
+features/preparation/api/fetch-order-detail.ts (new)
+features/preparation/api/fetch-order-detail.test.ts (new, manual)
+features/preparation/queries/use-order-detail.ts (new)
+features/preparation/queries/use-order-detail.test.tsx (new, remediation)
+keys.ts NOT modified.
+
+GATE: PASS
