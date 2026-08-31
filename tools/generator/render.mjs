@@ -261,6 +261,20 @@ export function writeFiles(
     planned.push({ ...file, absolute });
   }
 
+  // A route targets an EXISTING screen, so its skip/write and the screen's
+  // export must be one semantic operation: exporting a screen whose route was
+  // just SKIPPED (the placeholder at app/(role)/index.tsx already exists and
+  // `--force` was not passed) would widen the feature's public API for a
+  // screen nothing actually renders yet. The only files this generator ever
+  // writes outside `features/<feature>/` are route files — that invariant is
+  // what lets this check work without needing to know which planned file is
+  // "the" route: if none of the surviving (non-skipped) files are outside the
+  // feature, no route is being written this call, so there is nothing to
+  // export for.
+  const routeIsBeingWritten =
+    feature && planned.some((file) => !file.destination.startsWith(`features/${feature}/`));
+  const effectiveExportScreens = routeIsBeingWritten ? exportScreens : [];
+
   // The feature's own index.ts, when a route needs a screen exported from it.
   // Planned as a normal file so it goes through the SAME write and the same
   // rollback: patching it afterwards meant a later failure left it modified
@@ -268,7 +282,7 @@ export function writeFiles(
   const exportPatch = planFeatureExport({
     root,
     feature,
-    screens: exportScreens,
+    screens: effectiveExportScreens,
     // `planned`, not `files`: a destination that was SKIPPED because it already
     // exists is not going to be written, so it cannot supply the export. Using
     // every planned destination meant that composing onto an existing workspace
@@ -282,7 +296,7 @@ export function writeFiles(
     // Reported ONLY here, not also in `written`: the CLI prints both lists, and
     // naming the same file twice reads as two separate edits.
     exportPatch.reportedAsExport = true;
-    exported.push(`${exportPatch.destination} — exported ${exportScreens.join(", ")}`);
+    exported.push(`${exportPatch.destination} — exported ${effectiveExportScreens.join(", ")}`);
   }
 
   if (dryRun) {

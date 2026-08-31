@@ -167,9 +167,14 @@ const SCRATCH_FEATURES = [...SHAPE_FEATURES, ...TRANSIENT_FEATURES];
 
 let failures = 0;
 
-function check(label, fn) {
+// `fn` may be async (several checks drive `run()`, which formats with
+// Prettier). Always awaited, even for a synchronous `fn`, so a rejected
+// promise is caught HERE rather than surfacing later as an unhandled
+// rejection with no failing-check attribution — which previously let an
+// async check's assertion fail silently while this still logged "ok".
+async function check(label, fn) {
   try {
-    fn();
+    await fn();
     console.log(`  ok  ${label}`);
   } catch (error) {
     failures += 1;
@@ -180,26 +185,26 @@ function check(label, fn) {
 console.log("\nKISOK generator smoke test\n");
 
 console.log("case conversion");
-check("derives every case from a multi-word name", () => {
+await check("derives every case from a multi-word name", () => {
   const props = caseProps("order-tracking");
   assert.equal(props.pascalCaseName, "OrderTracking");
   assert.equal(props.camelCaseName, "orderTracking");
   assert.equal(props.kebabCaseName, "order-tracking");
   assert.equal(props.snakeCaseName, "order_tracking");
 });
-check("normalises camelCase and spaced input identically", () => {
+await check("normalises camelCase and spaced input identically", () => {
   assert.equal(caseProps("orderTracking").kebabCaseName, "order-tracking");
   assert.equal(caseProps("Order Tracking").kebabCaseName, "order-tracking");
 });
-check("rejects an empty name", () => assert.throws(() => caseProps("   ")));
-check("rejects a name too long to survive nested paths", () => {
+await check("rejects an empty name", () => assert.throws(() => caseProps("   ")));
+await check("rejects a name too long to survive nested paths", () => {
   // The name is repeated in features/<n>/screens/<n>/<n>-screen.test.tsx, so a
   // very long one produced files whose imports the resolver could not find —
   // a confusing "cannot find module" in generated code rather than a clear
   // complaint about the name.
   assert.throws(() => caseProps("seg".repeat(80)), /the limit is/);
 });
-check("rejects a name that is not a usable directory or import path", () => {
+await check("rejects a name that is not a usable directory or import path", () => {
   // Separators are normalised away, so the reachable bad case is a character
   // that survives the split and would end up in a directory name.
   assert.throws(() => caseProps("cart!"), /not a usable name/);
@@ -207,7 +212,7 @@ check("rejects a name that is not a usable directory or import path", () => {
 });
 
 console.log("\nfront matter");
-check("parses keys and strips the block", () => {
+await check("parses keys and strips the block", () => {
   const { attributes, body } = parseFrontMatter(
     "---\ndestinationDir: a/b\nskip: true\n---\nbody\n",
   );
@@ -215,13 +220,13 @@ check("parses keys and strips the block", () => {
   assert.equal(attributes.skip, true);
   assert.equal(body.trim(), "body");
 });
-check("leaves a file without front matter untouched", () =>
+await check("leaves a file without front matter untouched", () =>
   assert.equal(parseFrontMatter("plain body").body, "plain body"),
 );
 
 console.log("\nplanning");
 for (const shape of SHAPES) {
-  check(`plans ${shape.label}`, () => {
+  await check(`plans ${shape.label}`, () => {
     const destinations = planRequest(shape.request).map((file) => file.destination);
     assert.ok(destinations.length > 0, "planned nothing");
 
@@ -240,7 +245,7 @@ for (const shape of SHAPES) {
   });
 }
 
-check("every capability is individually generatable", () => {
+await check("every capability is individually generatable", () => {
   for (const capability of ["schema", "query", "mutation", "store", "component", "screen"]) {
     const planned = planRequest({
       capability,
@@ -286,7 +291,7 @@ check("every capability is individually generatable", () => {
     fs.rmSync(scratch, { recursive: true, force: true });
   }
 });
-check("a route renders a NAMED existing screen and generates nothing else", () => {
+await check("a route renders a NAMED existing screen and generates nothing else", () => {
   // A route used to imply `also: ["screen"]`, forcing the route file and the
   // screen to share a name. That cannot express
   // `app/(customer)/index.tsx → CatalogHomeScreen`: it generated an unused
@@ -335,7 +340,7 @@ for (const [role, group] of [
   ["customer", "(customer)"],
   ["preparation", "(preparation)"],
 ]) {
-  check(`replaces the ${role} index.tsx placeholder deliberately`, () => {
+  await check(`replaces the ${role} index.tsx placeholder deliberately`, async () => {
     const trackedRoute = path.join(ROOT, "app", group, "index.tsx");
     const original = fs.readFileSync(trackedRoute, "utf8");
     assert.match(original, /FoundationPlaceholder/, "expected a placeholder to replace");
@@ -353,32 +358,54 @@ for (const [role, group] of [
         "export function HomeScreen() {\n  return null;\n}\n",
         "utf8",
       );
+      // The screen is feature-private until a route actually renders it — the
+      // fixture matches that: index.ts starts with the neutral placeholder a
+      // real feature workspace carries.
+      const indexPath = path.join(featureRoot, "index.ts");
+      fs.writeFileSync(indexPath, "export {};\n", "utf8");
 
-      const planned = planRequest({
+      const request = {
         capability: "route",
         feature: `smoke-${role}-home`,
         name: "index",
         options: { role, screen: "home" },
-        root: scratch,
-      });
+      };
 
-      assert.deepEqual(
-        planned.map((file) => file.destination),
-        [`app/${group}/index.tsx`],
-        "the route must target the placeholder's exact path",
-      );
-      assert.match(planned[0].contents, /HomeScreen/);
-
-      // Without --force the existing placeholder is preserved, not clobbered.
-      const guarded = writeFiles(planned, { root: scratch });
+      // Driven through `run()` — the normal execution path a `pnpm generate`
+      // invocation takes — not `writeFiles` called by hand, so this exercises
+      // the same plan → format → validate → write sequence a real command does.
+      //
+      // Without --force the existing placeholder is preserved, not clobbered —
+      // and the screen must NOT be exported either. A route write and its
+      // screen's export are one semantic operation: exporting a screen whose
+      // route was just SKIPPED would widen the feature's public API for a
+      // screen nothing actually renders yet.
+      const guarded = await run(request, { root: scratch });
       assert.deepEqual(guarded.written, [], "an existing route must not be overwritten silently");
       assert.deepEqual(guarded.skipped, [`app/${group}/index.tsx`]);
+      assert.deepEqual(
+        guarded.exported,
+        [],
+        "a skipped route must not still export the screen it would have rendered",
+      );
       assert.equal(fs.readFileSync(routePath, "utf8"), original, "placeholder was modified");
+      assert.equal(
+        fs.readFileSync(indexPath, "utf8"),
+        "export {};\n",
+        "the feature's public API widened for a screen nothing renders yet",
+      );
 
-      // With --force it is replaced, which is the intended one-time step.
-      const forced = writeFiles(planned, { root: scratch, force: true });
+      // With --force it is replaced, which is the intended one-time step, and
+      // the screen becomes public in the SAME call — the write and the export
+      // are one operation, not two independently-timed ones.
+      const forced = await run(
+        { ...request, options: { ...request.options, force: true } },
+        { root: scratch },
+      );
       assert.deepEqual(forced.written, [`app/${group}/index.tsx`]);
       assert.match(fs.readFileSync(routePath, "utf8"), /HomeScreen/);
+      assert.deepEqual(forced.exported, [`features/smoke-${role}-home/index.ts — exported home`]);
+      assert.match(fs.readFileSync(indexPath, "utf8"), /HomeScreen/);
     } finally {
       fs.rmSync(scratch, { recursive: true, force: true });
     }
@@ -397,7 +424,7 @@ for (const [role, group] of [
 // what an agent copies. Two of them did not run: one omitted the now-required
 // --screen on `route`, the other named a screen its own preceding examples
 // never created. Prose is not executable, so this executes it.
-check("the documented command sequence runs end to end", async () => {
+await check("the documented command sequence runs end to end", async () => {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "kisok-docseq-"));
   try {
     const sequence = [
@@ -430,7 +457,7 @@ check("the documented command sequence runs end to end", async () => {
   }
 });
 
-check("composing onto an existing workspace still exports the routed screen", () => {
+await check("composing onto an existing workspace still exports the routed screen", () => {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "kisok-compose-"));
   try {
     const index = path.join(scratch, "features", "shopfront", "index.ts");
@@ -464,7 +491,7 @@ check("composing onto an existing workspace still exports the routed screen", ()
   }
 });
 
-check("a route whose target screen does not exist is refused", () => {
+await check("a route whose target screen does not exist is refused", () => {
   assert.throws(
     () =>
       planRequest({
@@ -477,7 +504,7 @@ check("a route whose target screen does not exist is refused", () => {
   );
 });
 
-check("a route with no target screen is refused", () =>
+await check("a route with no target screen is refused", () =>
   assert.throws(
     () =>
       planRequest({
@@ -490,7 +517,7 @@ check("a route with no target screen is refused", () =>
   ),
 );
 
-check("a screen-local component whose screen does not exist is refused", () =>
+await check("a screen-local component whose screen does not exist is refused", () =>
   assert.throws(
     () =>
       planRequest({
@@ -503,7 +530,7 @@ check("a screen-local component whose screen does not exist is refused", () =>
   ),
 );
 
-check("a camelCase feature name is normalised end to end", async () => {
+await check("a camelCase feature name is normalised end to end", async () => {
   // Destinations always went through caseProps, but validatePlan and the export
   // patch built their paths from the RAW name — so `generate feature
   // orderHistory` planned features/order-history/... and was then rejected for
@@ -525,7 +552,7 @@ check("a camelCase feature name is normalised end to end", async () => {
   }
 });
 
-check("role-sensitive capabilities refuse to guess a role", () => {
+await check("role-sensitive capabilities refuse to guess a role", () => {
   for (const capability of ["feature", "route", "realtime"]) {
     assert.throws(
       () => planRequest({ capability, feature: "solo", name: "thing", options: {} }),
@@ -540,7 +567,7 @@ check("role-sensitive capabilities refuse to guess a role", () => {
   );
 });
 
-check("realtime accepts preparation only", () => {
+await check("realtime accepts preparation only", () => {
   for (const role of ["customer", "shared"]) {
     assert.throws(
       () =>
@@ -560,7 +587,7 @@ check("realtime accepts preparation only", () => {
   );
 });
 
-check("feature --with=route requires a screen in the same request", () => {
+await check("feature --with=route requires a screen in the same request", () => {
   assert.throws(
     () =>
       planRequest({
@@ -579,25 +606,25 @@ check("feature --with=route requires a screen in the same request", () => {
     }).length > 0,
   );
 });
-check("rejects an unknown capability", () =>
+await check("rejects an unknown capability", () =>
   assert.throws(
     () => planRequest({ capability: "nope", feature: "x", options: {} }),
     /Unknown capability/,
   ),
 );
-check("rejects an unknown --with value", () =>
+await check("rejects an unknown --with value", () =>
   assert.throws(
     () => planRequest({ capability: "feature", feature: "x", options: { with: ["nope"] } }),
     /Unknown --with/,
   ),
 );
-check("rejects --with on a non-feature capability", () =>
+await check("rejects --with on a non-feature capability", () =>
   assert.throws(
     () => planRequest({ capability: "screen", feature: "x", options: { with: ["query"] } }),
     /--with only applies/,
   ),
 );
-check("refuses realtime for the customer experience", () =>
+await check("refuses realtime for the customer experience", () =>
   // Only `public.orders` is published and RLS gives a customer no rows, so the
   // subscription could never fire — generating it would be dead code.
   assert.throws(
@@ -611,13 +638,13 @@ check("refuses realtime for the customer experience", () =>
     /preparation-only/,
   ),
 );
-check("rejects an unknown role", () =>
+await check("rejects an unknown role", () =>
   assert.throws(
     () => planRequest({ capability: "feature", feature: "x", options: { role: "admin" } }),
     /Unknown --role/,
   ),
 );
-check("a feature is a workspace by default: public API plus control documents", () => {
+await check("a feature is a workspace by default: public API plus control documents", () => {
   const destinations = planRequest({
     capability: "feature",
     feature: "bare",
@@ -636,7 +663,7 @@ check("a feature is a workspace by default: public API plus control documents", 
 // The control documents are the workflow a feature agent actually follows. If
 // one of them keeps an older shape — a bare RED heading with no mode, say —
 // every future feature inherits the contradiction the harness exists to remove.
-check("every control document teaches the same five verification modes", () => {
+await check("every control document teaches the same five verification modes", () => {
   const MODES = ["behavior", "bug", "behavior-change", "refactor", "config"];
   const rendered = planRequest({
     capability: "feature",
@@ -655,7 +682,7 @@ check("every control document teaches the same five verification modes", () => {
 // live in comments. `check:docs` cannot see them either — it scans .md and
 // .md.ejs, not .ts.ejs. A wrong example in a template is copied by every future
 // feature, so it is worth asserting the text directly.
-check("no template teaches a zero-argument RPC with an argument object", () => {
+await check("no template teaches a zero-argument RPC with an argument object", () => {
   const offenders = [];
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -680,7 +707,7 @@ check("no template teaches a zero-argument RPC with an argument object", () => {
   );
 });
 
-check("no template repeats the false 'every RPC returns jsonb' contract", () => {
+await check("no template repeats the false 'every RPC returns jsonb' contract", () => {
   const offenders = [];
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -703,7 +730,7 @@ check("no template repeats the false 'every RPC returns jsonb' contract", () => 
   );
 });
 
-check("a component is feature-wide by default and screen-local with --screen", () => {
+await check("a component is feature-wide by default and screen-local with --screen", () => {
   const wide = planRequest({
     capability: "component",
     feature: "solo",
@@ -736,7 +763,7 @@ check("a component is feature-wide by default and screen-local with --screen", (
     fs.rmSync(scratch, { recursive: true, force: true });
   }
 });
-check("rejects --screen on anything but a component", () =>
+await check("rejects --screen on anything but a component", () =>
   assert.throws(
     () =>
       planRequest({
@@ -748,7 +775,7 @@ check("rejects --screen on anything but a component", () =>
     /--screen applies to `component`/,
   ),
 );
-check("tests are colocated with the code they protect", () => {
+await check("tests are colocated with the code they protect", () => {
   const destinations = planRequest({
     capability: "feature",
     feature: "colo",
@@ -767,7 +794,7 @@ check("tests are colocated with the code they protect", () => {
     );
   }
 });
-check("leaves no unrendered template syntax and ends every file with a newline", () => {
+await check("leaves no unrendered template syntax and ends every file with a newline", () => {
   for (const shape of SHAPES) {
     for (const file of planRequest(shape.request)) {
       assert.ok(!file.contents.includes("<%"), `${file.destination} still contains EJS syntax`);
@@ -776,7 +803,7 @@ check("leaves no unrendered template syntax and ends every file with a newline",
     }
   }
 });
-check("touches no shared file beyond one route per screen", () => {
+await check("touches no shared file beyond one route per screen", () => {
   for (const shape of SHAPES) {
     for (const file of planRequest(shape.request)) {
       const inFeature = file.destination.startsWith(`features/${shape.request.feature}/`);
@@ -940,12 +967,12 @@ try {
     threw = error;
   }
 
-  check("a template that produces invalid syntax aborts the request", () => {
+  await check("a template that produces invalid syntax aborts the request", () => {
     assert.ok(threw, "the generator accepted a template that produces invalid syntax");
     assert.match(threw.message, /NOTHING was written/);
   });
 
-  check("no partial feature is left behind", () => {
+  await check("no partial feature is left behind", () => {
     const featureDir = path.join(ROOT, "features", BROKEN_FEATURE);
     assert.ok(
       !fs.existsSync(featureDir),
@@ -957,7 +984,7 @@ try {
   fs.rmSync(path.join(ROOT, "features", BROKEN_FEATURE), { recursive: true, force: true });
 }
 
-check("the template was restored", () =>
+await check("the template was restored", () =>
   assert.equal(fs.readFileSync(brokenTemplate, "utf8"), originalTemplate),
 );
 
@@ -1023,12 +1050,12 @@ try {
     threw = error;
   }
 
-  check("a failed --force run reports the failure", () => {
+  await check("a failed --force run reports the failure", () => {
     assert.ok(threw, "the generator reported success despite an unwritable target");
     assert.match(threw.message, /rolled back/i);
   });
 
-  check("every overwritten file is restored byte-for-byte", () => {
+  await check("every overwritten file is restored byte-for-byte", () => {
     const clobbered = [];
     for (const [target, expected] of before) {
       const actual = fs.existsSync(target) ? fs.readFileSync(target, "utf8") : "(missing)";
@@ -1040,7 +1067,7 @@ try {
   fs.rmSync(forceDir, { recursive: true, force: true });
 }
 
-check("the force fixture was cleaned up", () => assert.ok(!fs.existsSync(forceDir)));
+await check("the force fixture was cleaned up", () => assert.ok(!fs.existsSync(forceDir)));
 
 // ---------------------------------------------------------------------------
 // The feature's index.ts export must be INSIDE the rollback.
@@ -1061,7 +1088,7 @@ console.log("\nexport rollback");
     const index = path.join(placeholderRoot, "features", "smoke-export", "index.ts");
     fs.mkdirSync(path.dirname(index), { recursive: true });
 
-    check("the workspace placeholder is replaced, not left beside a real export", () => {
+    await check("the workspace placeholder is replaced, not left beside a real export", () => {
       // `export {}` is what a workspace-only feature carries. A real export must
       // replace it; leaving both is valid TypeScript and reads as an oversight.
       // The semicolon is optional because a hand-edited file may not be formatted.
@@ -1132,12 +1159,12 @@ try {
   // Nothing may touch featureIndex between the failure and this assertion.
   const afterRollback = fs.readFileSync(featureIndex, "utf8");
 
-  check("a failure during the export patch reports the failure", () => {
+  await check("a failure during the export patch reports the failure", () => {
     assert.ok(threw, "writeFiles reported success despite a failed write");
     assert.match(threw.message, /rolled back/i);
   });
 
-  check("the feature index.ts is restored byte-for-byte", () =>
+  await check("the feature index.ts is restored byte-for-byte", () =>
     assert.equal(
       afterRollback,
       before,
@@ -1145,7 +1172,7 @@ try {
     ),
   );
 
-  check("the created route file is removed too", () =>
+  await check("the created route file is removed too", () =>
     assert.ok(!fs.existsSync(path.join(exportRoot, "app", "(customer)", "index.tsx"))),
   );
 } finally {
@@ -1195,26 +1222,26 @@ try {
 
   fs.writeFileSync = realWriteFileSync;
 
-  check("a partial write reports the failure", () => {
+  await check("a partial write reports the failure", () => {
     assert.ok(threw, "writeFiles reported success despite a failed write");
     assert.match(threw.message, /rolled back/i);
   });
 
-  check("the truncated file is removed", () =>
+  await check("the truncated file is removed", () =>
     assert.ok(
       !fs.existsSync(path.join(partialRoot, "features/smoke-partial/b.ts")),
       "a half-written file survived the rollback",
     ),
   );
 
-  check("the earlier file is removed too", () =>
+  await check("the earlier file is removed too", () =>
     assert.ok(
       !fs.existsSync(path.join(partialRoot, "features/smoke-partial/a.ts")),
       "a file written before the failure survived the rollback",
     ),
   );
 
-  check("no scaffolding directory is left behind", () =>
+  await check("no scaffolding directory is left behind", () =>
     assert.ok(
       !fs.existsSync(path.join(partialRoot, "features/smoke-partial")),
       "an empty generated directory survived the rollback",

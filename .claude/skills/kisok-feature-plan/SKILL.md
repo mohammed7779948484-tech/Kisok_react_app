@@ -76,23 +76,31 @@ empty `state/` nobody can explain.
 | realtime     |      NO | customer role; Realtime is Preparation-only          |
 | route        |     YES | replaces the `(customer)/index.tsx` placeholder      |
 
-Routes are planned explicitly, one line each:
+Routes are planned explicitly, one line each — and "replaces placeholder" is
+itself part of the plan, because it decides whether the command needs
+`--force`:
 
 ```
 route path → role/group → target screen → existing placeholder or new file
-app/(customer)/index.tsx → customer → catalog-home → replaces placeholder
+app/(customer)/index.tsx → customer → catalog-home → replaces placeholder (--force)
 ```
+
+A route that replaces `app/(role)/index.tsx` is overwriting the Foundation's
+`FoundationPlaceholder` route — a deliberate, one-time step, not the normal
+case. Without `--force` the generator refuses the write, and correctly does
+not export the screen either: a route that was skipped renders nothing, so
+exporting its screen would widen the feature's public API for no reason.
 
 **Capabilities to generate.** The exact commands, in order, each mapped to the
 task that will use it. The Lead runs each command immediately before delegating
 that task — never all of them up front.
 
-| Generator command                                                         | Task |
-| ------------------------------------------------------------------------- | ---- |
-| `pnpm generate schema catalog catalog-response`                           | T01  |
-| `pnpm generate query catalog products`                                    | T02  |
-| `pnpm generate screen catalog catalog-home`                               | T03  |
-| `pnpm generate route catalog index --role=customer --screen=catalog-home` | T04  |
+| Generator command                                                                 | Task |
+| --------------------------------------------------------------------------------- | ---- |
+| `pnpm generate schema catalog catalog-response`                                   | T01  |
+| `pnpm generate query catalog products`                                            | T02  |
+| `pnpm generate screen catalog catalog-home`                                       | T03  |
+| `pnpm generate route catalog index --role=customer --screen=catalog-home --force` | T04  |
 
 Generate only what the shape needs. Empty architectural folders are not free —
 they teach the next agent that this is the expected structure.

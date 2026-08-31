@@ -50,8 +50,15 @@ planned command immediately before delegating the task that needs it:
 pnpm generate schema catalog catalog-response          # before T01
 pnpm generate query  catalog products                  # before T02
 pnpm generate screen catalog catalog-home   # before T03
-pnpm generate route  catalog index --role=customer --screen=catalog-home  # before T04
+pnpm generate route  catalog index --role=customer --screen=catalog-home --force  # before T04, replaces the Foundation placeholder
 ```
+
+`--force` there is deliberate, not a habit: `app/(customer)/index.tsx` already
+exists as the Foundation's `FoundationPlaceholder` route, so the first real
+route into an experience is a planned, one-time replacement of a tracked file.
+Every route after that targets a path nothing occupies, so it needs no flag.
+Without `--force` the generator refuses the write — and correctly does not
+export the screen either, since a route that was skipped renders nothing.
 
 Bulk-generating the future tree before T01 fills the feature with files nobody
 has justified, and the honest question at review is why they exist.
@@ -96,7 +103,7 @@ just the last task.
 ## 5. Verify for real
 
 ```bash
-pnpm verify    # exactly what the CI verify job runs — check:ci-scripts proves it
+pnpm verify    # every package-script check the CI verify job runs — check:ci-scripts proves it
 pnpm web       # then actually look at it
 ```
 

@@ -14,17 +14,17 @@ checkout, and a Realtime preparation board equally well.
 
 ## Capabilities
 
-| Capability  | Produces                                                                  |
-| ----------- | ------------------------------------------------------------------------- |
-| `feature`   | A WORKSPACE: `index.ts` plus `docs/` — and no implementation code.        |
-| `schema`    | A Zod schema validating one payload, plus its test.                       |
-| `query`     | A read: an `api/` function, a query hook, and the feature's query keys.   |
-| `mutation`  | A write: an `api/` function and a mutation hook with invalidation.        |
-| `store`     | A Zustand store for client-owned state, with explicit persistence status. |
-| `component` | A presentational, feature-private component.                              |
-| `screen`    | A screen composing the feature's hooks, plus its test.                    |
-| `realtime`  | A Realtime subscription that invalidates a query.                         |
-| `route`     | A thin Expo Router route rendering an EXISTING, named screen.             |
+| Capability  | Produces                                                                                 |
+| ----------- | ---------------------------------------------------------------------------------------- |
+| `feature`   | A WORKSPACE: `index.ts` plus `docs/` — and no implementation code.                       |
+| `schema`    | A Zod schema validating one payload, plus its test.                                      |
+| `query`     | A read: an `api/` function, a query hook, and the feature's query keys.                  |
+| `mutation`  | A write: an `api/` function and a mutation hook with invalidation.                       |
+| `store`     | A Zustand store for client-owned state, with explicit persistence status, plus its test. |
+| `component` | A presentational, feature-private component.                                             |
+| `screen`    | A screen composing the feature's hooks, plus its test.                                   |
+| `realtime`  | A Realtime subscription that invalidates a query.                                        |
+| `route`     | A thin Expo Router route rendering an EXISTING, named screen.                            |
 
 Each is independent and feature-local. `feature` can run several at once via
 `--with`; the rest can be added to an existing feature at any time.
@@ -92,7 +92,7 @@ could never fire.
 ### A route names the screen it renders
 
 ```bash
-pnpm generate route catalog index --role=customer --screen=catalog-home
+pnpm generate route catalog index --role=customer --screen=catalog-home --force
 #   → app/(customer)/index.tsx rendering CatalogHomeScreen
 ```
 
@@ -103,6 +103,17 @@ used to generate its own same-named screen, leaving an unused `IndexScreen`.
 
 Route generation refuses when the target screen does not exist, and
 `feature --with=route` refuses unless `screen` is in the same request.
+
+**`--force` here is deliberate, not a habit.** `app/(customer)/index.tsx` and
+`app/(preparation)/index.tsx` are not empty — the Foundation ships them as
+`FoundationPlaceholder` routes, so each experience is demonstrably wired end to
+end before any feature exists. The first real route into an experience
+REPLACES that placeholder, which is exactly what `--force` is for: a one-time,
+planned overwrite of a tracked file, not the default way to generate a route.
+Every route after that targets a path nothing occupies yet, so it needs no
+flag. Without `--force` the generator refuses to touch the placeholder at
+all — it does not, and must not, silently export the new screen anyway; the
+route's write and the screen's export are one operation, never two.
 
 ### Screens are private by default
 
@@ -127,7 +138,7 @@ pnpm generate feature catalog --role=customer         # workspace only
 pnpm generate schema  catalog catalog-response        # before T01
 pnpm generate query   catalog products                # before T02
 pnpm generate screen  catalog catalog-home                   # before T03
-pnpm generate route   catalog index --role=customer --screen=catalog-home  # before T04
+pnpm generate route   catalog index --role=customer --screen=catalog-home --force  # before T04, replaces the Foundation placeholder
 ```
 
 `--with` composes a shape that is genuinely known up front:
@@ -183,7 +194,7 @@ pnpm generate schema catalog catalog-response
 pnpm generate query  catalog products
 pnpm generate screen catalog product-detail
 pnpm generate component catalog availability-badge --screen=product-detail
-pnpm generate route  catalog index --role=customer --screen=product-detail
+pnpm generate route  catalog index --role=customer --screen=product-detail --force  # replaces the Foundation placeholder
 ```
 
 Which fills in the anatomy:
