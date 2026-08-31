@@ -117,11 +117,11 @@ screen that cannot be empty, or a retry action for a deterministic conflict.
 Those become tests for impossible behaviour and make the UI harder to reason
 about.
 
-| The feature has…        | Handle                                                                                                                            |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| a data-backed read      | loading, empty, error with retry when retry can help, success — only where each state is genuinely reachable                       |
-| a mutation              | pending, success, business conflict, error — only the outcomes the contract can actually produce                                   |
-| static or local-only UI | only the local states that genuinely exist                                                                                         |
+| The feature has…        | Handle                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------ |
+| a data-backed read      | loading, empty, error with retry when retry can help, success — only where each state is genuinely reachable |
+| a mutation              | pending, success, business conflict, error — only the outcomes the contract can actually produce             |
+| static or local-only UI | only the local states that genuinely exist                                                                   |
 
 For a real empty state, give the user somewhere to go next. On a kiosk a dead
 end means a customer looks for an employee, which is the outcome the product is

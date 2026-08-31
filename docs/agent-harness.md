@@ -20,7 +20,7 @@ lives in one place instead of being restated in every feature's `todo.md`.
 | `kisok-code-review`        | Reviewing a diff, a PR, or a feature before merge              |
 | `kisok-quality-audit`      | Checking a delivery matches what was promised                  |
 | `kisok-design-system`      | Writing or reviewing any UI                                    |
-| `kisok-react-native-rules` | Growing lists, animation, images, crashes, performance/runtime  |
+| `kisok-react-native-rules` | Growing lists, animation, images, crashes, performance/runtime |
 | `kisok-maestro-e2e`        | Adding device-level end-to-end coverage                        |
 
 Official Supabase skills (`supabase`, `supabase-postgres-best-practices`) are

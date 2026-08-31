@@ -60,16 +60,19 @@ mismatch gets swallowed.
 Locally, `pnpm verify` runs every **package-script** check the `verify` job
 runs — and that is enforced, not asserted: `pnpm check:ci-scripts` compares the
 two sets and fails if they diverge. It used to be false in both directions, and
-every document that told an agent to run `pnpm verify` before opening a PR was
-quietly wrong.
+every document claiming `pnpm verify` and the CI verify job checked the same
+things was quietly wrong.
 
 The verify job runs one thing `pnpm verify` cannot: `commitlint --from <base>
 --to <head>` over this PR's actual commit range (see the table above). That
 step only makes sense against a real base/head pair, so it cannot be a
 package script `pnpm verify` calls locally — `pnpm check:commits` is the local
 stand-in, and it checks the RULES against sample messages, not this branch's
-real history. Running `pnpm verify` before opening a PR is still the right
-habit; it just does not replace what CI does with the commit range.
+real history. `pnpm verify` is still the local package-script check set
+mirrored by CI, worth running as you work — it is not a precondition for
+opening the draft PR, which happens early (see
+[feature-workflow.md](./feature-workflow.md)), and it does not replace what CI
+does with the commit range.
 
 ## On request — `.github/workflows/android-build.yml`
 

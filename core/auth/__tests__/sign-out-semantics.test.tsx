@@ -176,7 +176,9 @@ describe("signOut", () => {
     await waitFor(() => expect(outcome?.status).toBe("unsafe"));
     // The auth session really is gone, but the durable marker remains to block
     // the next sign-in (including after a cold restart) until recovery succeeds.
-    await expect(AsyncStorage.getItem(storageKey("auth", "handoff-pending"))).resolves.not.toBeNull();
+    await expect(
+      AsyncStorage.getItem(storageKey("auth", "handoff-pending")),
+    ).resolves.not.toBeNull();
     supabase.restore();
   });
 
