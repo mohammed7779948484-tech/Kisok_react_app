@@ -10,13 +10,7 @@ import {
 import { AppError } from "@/core/errors";
 import { resetLogging, setLogSink } from "@/core/logging";
 import { setSupabaseClient } from "@/core/supabase";
-import {
-  act,
-  installMockAuth,
-  renderWithProviders,
-  screen,
-  waitFor,
-} from "@/core/testing";
+import { act, installMockAuth, renderWithProviders, screen, waitFor } from "@/core/testing";
 
 let actions: Pick<ReturnType<typeof useAuth>, "signIn" | "signOut"> | null = null;
 
