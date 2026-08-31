@@ -1,3 +1,5 @@
+import { AuthApiError } from "@supabase/supabase-js";
+
 import { AppError, shouldRetry, toAppError } from "@/core/errors";
 
 /**
@@ -52,6 +54,49 @@ describe("toAppError", () => {
     const context = toAppError(postgrestError("K1006")).toLogContext();
 
     expect(Object.keys(context).sort()).toEqual(["code", "detail", "kind", "retryable"]);
+  });
+
+  describe("an @supabase/auth-js AuthError — the shape signInWithPassword returns", () => {
+    it("does NOT report 'session expired' for rejected sign-in credentials", () => {
+      // This is the regression: `isAuthError` is true for a plain wrong password
+      // too, so without a code-based split every failed sign-in was reported as
+      // an expired SESSION — false (nothing had a session to expire) and useless
+      // to a customer typing their password wrong.
+      const error = toAppError(
+        new AuthApiError("Invalid login credentials", 400, "invalid_credentials"),
+        "We couldn't sign you in. Check the email and password.",
+      );
+
+      expect(error.userMessage).toBe("We couldn't sign you in. Check the email and password.");
+      expect(error.userMessage).not.toMatch(/session expired/i);
+      expect(error.kind).toBe("auth");
+    });
+
+    it("does not reveal whether an account exists when there is no fallback", () => {
+      const error = toAppError(
+        new AuthApiError("Invalid login credentials", 400, "invalid_credentials"),
+      );
+
+      // No caller-specific fallback was given, so this falls back to the
+      // default — which, like every credential-failure message, names neither
+      // "wrong password" nor "no such account".
+      expect(error.userMessage).toBe("Something went wrong.");
+    });
+
+    it.each([
+      "session_expired",
+      "session_not_found",
+      "refresh_token_not_found",
+      "refresh_token_already_used",
+      "bad_jwt",
+    ])("still reports 'session expired' for the auth-js code %s", (code) => {
+      const error = toAppError(
+        new AuthApiError("boom", 401, code),
+        "We couldn't sign you in. Check the email and password.",
+      );
+
+      expect(error.userMessage).toBe("Your session expired. Please sign in again.");
+    });
   });
 });
 

@@ -1,9 +1,12 @@
+import { AuthApiError } from "@supabase/supabase-js";
+import { useState } from "react";
 import { Text } from "react-native";
 
 import { AuthProvider, useAuth } from "@/core/auth";
+import { toAppError } from "@/core/errors";
 import { resetLogging, setLogSink } from "@/core/logging";
 import { setSupabaseClient, type KisokSupabaseClient } from "@/core/supabase";
-import { act, renderWithProviders, screen, waitFor } from "@/core/testing";
+import { act, renderWithProviders, screen, userEvent, waitFor } from "@/core/testing";
 
 type AuthCallback = (event: string, session: unknown | null) => void;
 
@@ -28,11 +31,14 @@ function installAuthClient({
   profileRows = [PROFILE],
   onProfileFetch,
   failProfile = false,
+  signInError = null,
 }: {
   initialSession?: unknown | null;
   profileRows?: unknown[];
   onProfileFetch?: () => void;
   failProfile?: boolean;
+  /** What `signInWithPassword` reports as its `error`. Defaults to none. */
+  signInError?: unknown;
 } = {}) {
   const calls: string[] = [];
   let callback: AuthCallback | null = null;
@@ -56,7 +62,7 @@ function installAuthClient({
       },
       signInWithPassword: async () => {
         guard("signInWithPassword");
-        return { data: {}, error: null };
+        return { data: {}, error: signInError };
       },
       signOut: async () => {
         guard("signOut");
@@ -122,6 +128,24 @@ function renderAuth() {
     <AuthProvider>
       <Probe />
     </AuthProvider>,
+  );
+}
+
+/** Drives `signIn()` and surfaces the SAME message a screen would render. */
+function SignInProbe() {
+  const { signIn } = useAuth();
+  const [message, setMessage] = useState<string | null>(null);
+  return (
+    <Text
+      accessibilityRole="button"
+      onPress={() => {
+        void signIn("shopper@example.com", "wrong-password").catch((error: unknown) => {
+          setMessage(toAppError(error).userMessage);
+        });
+      }}
+    >
+      {message ?? "idle"}
+    </Text>
   );
 }
 
@@ -247,6 +271,58 @@ describe("AuthProvider lifecycle", () => {
     await supabase.emit("SIGNED_IN", sessionFor("user-1"));
 
     await waitFor(() => expect(screen.getByText(/^error:/)).toBeOnTheScreen());
+    supabase.restore();
+  });
+});
+
+describe("signIn", () => {
+  it("reports a generic credential failure, never 'session expired', for wrong credentials", async () => {
+    // This is exactly the shape `supabase.auth.signInWithPassword` returns for a
+    // wrong password: an AuthApiError, which `isAuthError` also matches. Before
+    // this was fixed, EVERY such rejection — including a plain typo, on a tablet
+    // that was never signed in — was reported as "Your session expired. Please
+    // sign in again.", which is both false and reveals nothing useful to the
+    // user about what actually went wrong.
+    const supabase = installAuthClient({
+      signInError: new AuthApiError("Invalid login credentials", 400, "invalid_credentials"),
+    });
+    const user = userEvent.setup();
+    await renderWithProviders(
+      <AuthProvider>
+        <SignInProbe />
+      </AuthProvider>,
+    );
+
+    await user.press(screen.getByRole("button"));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("We couldn't sign you in. Check the email and password."),
+      ).toBeOnTheScreen(),
+    );
+    expect(screen.queryByText(/session expired/i)).not.toBeOnTheScreen();
+    supabase.restore();
+  });
+
+  it("still reports 'session expired' for an actually-invalid session/token", async () => {
+    // A DIFFERENT auth-js error family — the refresh token itself is gone, not
+    // the credentials. This must keep the "expired" wording; it is the case the
+    // message exists for.
+    const supabase = installAuthClient({
+      signInError: new AuthApiError("Refresh token not found", 401, "refresh_token_not_found"),
+    });
+    const user = userEvent.setup();
+    await renderWithProviders(
+      <AuthProvider>
+        <SignInProbe />
+      </AuthProvider>,
+    );
+
+    await user.press(screen.getByRole("button"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Your session expired. Please sign in again.")).toBeOnTheScreen(),
+    );
     supabase.restore();
   });
 });

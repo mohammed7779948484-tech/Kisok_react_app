@@ -123,6 +123,27 @@ const SQLSTATE_MAP: Record<string, { kind: AppErrorKind; userMessage: string }> 
   "22023": { kind: "validation", userMessage: "We couldn't process that request." },
 };
 
+/**
+ * `@supabase/auth-js` error codes that mean an EXISTING session or refresh
+ * token is no longer valid — as opposed to a sign-IN attempt being rejected,
+ * which has no session to have expired. `isAuthError` is true for both, so
+ * without this split every failed sign-in (wrong password, typo'd email) was
+ * reported as "Your session expired. Please sign in again." — which is both
+ * false (nothing had expired; the credentials were never valid) and a safety
+ * problem: it tells an attacker their guess produced a DIFFERENT error family
+ * than "invalid_credentials" would for a nonexistent account, on servers old
+ * enough to still distinguish them.
+ *
+ * Codes: @supabase/auth-js `ErrorCode`, `node_modules/@supabase/auth-js/src/lib/error-codes.ts`.
+ */
+const SESSION_INVALID_AUTH_CODES = new Set([
+  "session_expired",
+  "session_not_found",
+  "refresh_token_not_found",
+  "refresh_token_already_used",
+  "bad_jwt",
+]);
+
 function isPostgrestError(value: unknown): value is PostgrestError {
   return (
     typeof value === "object" &&
@@ -150,9 +171,17 @@ export function toAppError(
   if (isAppError(value)) return value;
 
   if (isAuthError(value)) {
+    // Only an actually-invalid SESSION gets the "expired" wording. Anything
+    // else here is a rejected sign-in attempt (bad credentials, unconfirmed
+    // email, rate limiting, …) with no session to expire, so it gets the
+    // caller's own fallback — which is where `signIn()` puts its generic,
+    // account-existence-safe "check the email and password" message.
+    const sessionInvalid = value.code != null && SESSION_INVALID_AUTH_CODES.has(value.code);
     return new AppError({
       kind: "auth",
-      userMessage: "Your session expired. Please sign in again.",
+      userMessage: sessionInvalid
+        ? "Your session expired. Please sign in again."
+        : fallbackUserMessage,
       technicalMessage: value.message,
       code: value.code ?? String(value.status ?? ""),
       cause: value,
