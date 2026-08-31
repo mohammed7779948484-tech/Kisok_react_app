@@ -420,3 +420,100 @@ features/preparation/queries/use-update-order-status-mutation.test.tsx
 keys.ts / index.ts NOT modified.
 
 GATE: PASS
+
+### T06 — store-day-history read + store-day model
+
+MODE: behavior
+ACCEPTANCE: Supporting: AC-08
+
+SCAFFOLD
+$ pnpm generate query preparation store-day-history
+created : features/preparation/api/fetch-store-day-history.ts,
+features/preparation/queries/use-store-day-history.ts
+skipped : keys.ts (exists)
+replaced : —
+manual : model/store-day.ts + store-day.test.ts (planned);
+api/fetch-store-day-history.test.ts (planned);
+queries/use-store-day-history.test.tsx (Lead-approved during
+the task: the packet's entry evidence required "all three
+test files" — the packet's 5-file list was a Lead miscount;
+the file is inside todo.md's T06 scope and follows the
+T03/T05 hook-test precedent)
+
+RED
+
+1. model: npx jest …/store-day.test.ts → "Cannot find module './store-day'"
+2. api: Tests: 3 failed, 1 passed (placeholder NOT_IMPLEMENTED AppError)
+3. hook: Tests: 4 failed (scaffold had no settings composition, no
+   dayKey, no filter)
+
+IMPLEMENT (as reconciled — see TASK REVIEW below)
+Model (pure, zero imports): StoreDayWindow; resolveStoreTimezone /
+effectiveTimezone (garbage-zone degradation per T04-R02/O-2, pinned);
+isResolvableZone; currentStoreDayWindow (Intl two-pass round-trip +
+existence check for 00:00-transition zones; endUtc = the NEXT local
+date's midnight — 23h/25h/24h windows); orderTerminalInstant /
+isTerminalInDay ([start,end)); groupTerminalOrders (newest-first by
+terminal instant).
+Api: .from("orders").select("\*").in("status",
+["completed","cancelled"]).or("completed_at.gte.X,cancelled_at.gte.X")
+.order("created_at",{ascending:false}) — the TERMINAL timestamps are the
+prefilter bound (exact decision-2 semantics); no items embed; error →
+toAppError; input { terminalSince }.
+Hook: settings (T04) → window → read → client-side in-day filter;
+dayKey (window startUtc ISO) in the query key; settings loading/error
+as hook states with the R04 data-preserving gate; composed refetch
+(settings first — R05); no store mirroring; no retry override.
+
+GREEN
+3 suites / 37 tests (26 model + 4 api + 7 hook); full feature 10 suites
+/ 71 tests; full repo test:ci 27 suites / 209 tests, zero console.
+
+AFFECTED CHECKS (Lead re-ran)
+$ npx jest features/preparation/ → 71/71
+$ pnpm typecheck → clean
+$ pnpm lint / prettier (implementer + reviewer) → clean
+
+PLAN RECONCILIATION (Lead, commit 5ab7a01 preceding the code fix)
+The fresh reviewer's T06-R01/T06-R02 revealed decision 2's prescribed
+read shape was semantically wrong (a 24h created_at lookback misses
+orders terminal >24h after creation; a fixed start+24h window drops
+the fall-back day's final local hour). The Lead reconciled plan.md
+decision 2 + the data contract to the exact terminal-timestamp shape;
+no AC, capability, dependency, or scaffold changed — plan stayed READY
+with the reconciliation recorded in the plan itself.
+
+TASK REVIEW (fresh code-reviewer, Super Z agent-0101f749)
+T06-R01 MAJOR (24h lookback insufficiency — plan-level defect) → FIX.
+T06-R02 MAJOR (DST fall-back last hour dropped) → FIX.
+T06-R03 minor (round-trip non-convergence for 00:00-transition zones,
+e.g. Havana) → FIX.
+T06-R04 minor (merged error overrides cached data) → FIX.
+T06-R05 minor (spread-through refetch bypasses enabled; raw Error path)
+→ FIX (composed refetch).
+T06-R06 minor (history-read failure unpinned; no wire-format timestamp
+test) → FIX (both tests).
+Remediation (implementer resumed, agent-8ce174b0): all six fixed;
+mutation-verified per finding (.or bound; endUtc revert; existence
+check removal; gating revert; composed refetch removal; hook bound
+revert — each fails the suite). 37/37, 71/71, 209/209 green.
+Structural types justified: ESLint confines @/core/supabase (even type
+imports) to api/\*\*; the api test carries compile-time assignability
+proofs (Tables<"orders"> extends StoreDayOrder etc.).
+Shared-mock gap noted: core/testing's installMockSupabase chain has no
+`or` method — the api test uses a full recording stub (in-file) for
+data/error assertions too. ACCEPTED: adding `or` to the shared mock is
+a Lead-owned foundation chore (recorded with T04-R02 and T05's gcTime
+note); the in-file stub is sound and convention-documented.
+
+DIFF
+features/preparation/model/store-day.ts (new, manual)
+features/preparation/model/store-day.test.ts (new, manual)
+features/preparation/api/fetch-store-day-history.ts (new)
+features/preparation/api/fetch-store-day-history.test.ts (new, manual)
+features/preparation/queries/use-store-day-history.ts (new)
+features/preparation/queries/use-store-day-history.test.tsx (new,
+Lead-approved addition)
+keys.ts NOT modified.
+
+GATE: PASS

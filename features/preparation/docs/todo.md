@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : Round 1 — Domain and data layer
-Current task      : T06
-Current stage     : ready to scaffold T06 (T05 PASS)
-Last gate         : T05 GATE: PASS
-Next legal action : Lead runs `pnpm generate query preparation store-day-history`, then delegates T06
+Current task      : T07
+Current stage     : ready to implement T07 (manual model task, no scaffold)
+Last gate         : T06 GATE: PASS
+Next legal action : Lead delegates T07 (status-actions rules — pure model, no generator)
 Blocked by        : —
 ```
 
@@ -43,8 +43,8 @@ Scan this first. Detail is below.
 | T02  | behavior | Sup: AC-01/02/03                  | Active-orders read (api + hook + keys)                               | —                                 | done        | PASS    |
 | T03  | behavior | Sup: AC-07                        | Order-detail read (api + hook)                                       | T02 (scaffold ordering)           | done        | PASS    |
 | T04  | behavior | Sup: AC-03/07/08                  | Store-settings read (api + hook)                                     | T02 (scaffold ordering)           | done        | PASS    |
-| T05  | behavior | Sup: AC-04/05/06/10               | update-order-status mutation (api + hook)                            | T01                               | not started | PENDING |
-| T06  | behavior | Sup: AC-08                        | Store-day-history read + store-day model                             | T04                               | not started | PENDING |
+| T05  | behavior | Sup: AC-04/05/06/10               | update-order-status mutation (api + hook)                            | T01                               | done        | PASS    |
+| T06  | behavior | Sup: AC-08                        | Store-day-history read + store-day model                             | T04                               | done        | PASS    |
 | T07  | behavior | Sup: AC-04/05/06/10               | status-actions eligibility rules                                     | —                                 | not started | PENDING |
 | T08  | behavior | Sup: AC-03/07/08                  | OrderStatusBadge component                                           | —                                 | not started | PENDING |
 | T09  | behavior | AC-03                             | OrderCard component                                                  | T07, T08                          | not started | PENDING |
