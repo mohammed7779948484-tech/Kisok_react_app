@@ -1,12 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Text } from "react-native";
 
-import {
-  AuthProvider,
-  clearSignOutTasks,
-  registerSignOutCleanup,
-  useAuth,
-} from "@/core/auth";
+import { AuthProvider, clearSignOutTasks, registerSignOutCleanup, useAuth } from "@/core/auth";
 import { AppError } from "@/core/errors";
 import { resetLogging, setLogSink } from "@/core/logging";
 import { setSupabaseClient } from "@/core/supabase";
