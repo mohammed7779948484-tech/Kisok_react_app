@@ -1,6 +1,6 @@
 ---
 name: kisok-quality-audit
-description: Audit whether a KISOK feature was actually delivered as promised — comparing brief, plan, todo, worklog, review, the real git diff, and the commands that were genuinely run. Finds scope drift, forgotten acceptance criteria, tasks marked DONE without a passing gate, claims with no evidence, skipped verification, stale docs, and Definition-of-Done violations. Use this at the end of a feature, before opening or approving a pull request, after code review is complete.
+description: Audit whether a KISOK feature was actually delivered as promised — comparing brief, plan, todo, worklog, review, the real git diff, and the commands that were genuinely run. Finds scope drift, forgotten acceptance criteria, tasks marked DONE without a passing gate, claims with no evidence, skipped verification, stale docs, and Definition-of-Done violations. Use this at the end of a feature, after code review, before the Feature Gate can PASS and before a draft pull request is marked ready.
 ---
 
 # Auditing a KISOK delivery
@@ -62,19 +62,13 @@ This is the heart of the audit. For each claim, ask what would prove it.
 - Does `worklog.md` contain **actual command output**, or checkmarks?
 - Does each task's `SCAFFOLD` block name a real command, and do the paths it
   claims to have created actually exist? Follow the chain both ways:
-  `plan command → command run → filesystem`. A generated-looking file with no
-  recorded command, or a recorded command whose files are absent, means the
-  record and the repository disagree — and one of them is wrong about what was
-  built.
+  `plan command → command run → filesystem`.
 - Did the Lead run the scaffolds, or did an implementer generate structure it
-  was not given? Structural files absent from the plan mean the feature's shape
-  widened without anyone deciding to.
+  was not given?
 - Does the RED evidence show a failure for the intended missing behaviour — or
   an import error, a typo, or nothing at all?
-- Do the claimed commands match what the repo can actually run? A worklog citing
-  a script that does not exist in `package.json` is fabricated evidence.
-- Was `pnpm verify` genuinely run at the end, after the last change? Running it
-  before the final commit proves nothing about the final state.
+- Do the claimed commands match what the repo can actually run?
+- Was `pnpm verify` genuinely run at the end, after the last local change?
 - Is runtime verification claimed without saying at which sizes, on what device,
   or what was observed?
 
@@ -96,8 +90,7 @@ This is the heart of the audit. For each claim, ask what would prove it.
 ### Are shared surfaces touched?
 
 - Anything outside `features/<name>/` and the route file(s) the plan names: is
-  it justified in the
-  plan, or did it appear silently?
+  it justified in the plan, or did it appear silently?
 - New dependencies: recorded and justified?
 - Migrations, RLS, grants: any change here needs an explicit backend decision.
 

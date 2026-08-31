@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthApiError } from "@supabase/supabase-js";
 import { useState } from "react";
 import { Text } from "react-native";
@@ -5,6 +6,7 @@ import { Text } from "react-native";
 import { AuthProvider, useAuth } from "@/core/auth";
 import { toAppError } from "@/core/errors";
 import { resetLogging, setLogSink } from "@/core/logging";
+import { storageKey } from "@/core/storage";
 import { setSupabaseClient, type KisokSupabaseClient } from "@/core/supabase";
 import { act, renderWithProviders, screen, userEvent, waitFor } from "@/core/testing";
 
@@ -21,11 +23,6 @@ function sessionFor(userId: string, accessToken = "token-1") {
   return { access_token: accessToken, user: { id: userId } };
 }
 
-/**
- * A client that records the ORDER of interactions, so a test can prove the auth
- * callback did not call back into Supabase while it was running — the condition
- * that deadlocks the real client.
- */
 function installAuthClient({
   initialSession = null,
   profileRows = [PROFILE],
@@ -37,7 +34,6 @@ function installAuthClient({
   profileRows?: unknown[];
   onProfileFetch?: () => void;
   failProfile?: boolean;
-  /** What `signInWithPassword` reports as its `error`. Defaults to none. */
   signInError?: unknown;
 } = {}) {
   const calls: string[] = [];
@@ -92,10 +88,6 @@ function installAuthClient({
   return {
     calls,
     violations,
-    /**
-     * Drive an auth event the way supabase-js does: synchronously, with the
-     * lock conceptually held for the duration of the callback.
-     */
     async emit(event: string, session: unknown | null) {
       await act(async () => {
         insideCallback = true;
@@ -115,7 +107,6 @@ function Probe() {
   return <Text>{`${status}:${profile?.display_name ?? "-"}`}</Text>;
 }
 
-/** Surfaces the session token, to prove it does not go stale. */
 function TokenProbe() {
   const { session } = useAuth();
   return (
@@ -131,7 +122,6 @@ function renderAuth() {
   );
 }
 
-/** Drives `signIn()` and surfaces the SAME message a screen would render. */
 function SignInProbe() {
   const { signIn } = useAuth();
   const [message, setMessage] = useState<string | null>(null);
@@ -149,24 +139,24 @@ function SignInProbe() {
   );
 }
 
-beforeEach(() => setLogSink(() => {}));
-afterEach(() => {
+beforeEach(async () => {
+  await AsyncStorage.clear();
+  setLogSink(() => {});
+});
+afterEach(async () => {
   resetLogging();
   setSupabaseClient(null);
+  jest.restoreAllMocks();
+  await AsyncStorage.clear();
 });
 
 describe("AuthProvider lifecycle", () => {
   it("does NOT call Supabase from inside the auth callback", async () => {
-    // Supabase runs onAuthStateChange while holding an internal lock; calling
-    // back into the client from there can deadlock the app on startup.
     const supabase = installAuthClient();
     await renderAuth();
-
     await supabase.emit("SIGNED_IN", sessionFor("user-1"));
-
     await waitFor(() => expect(screen.getByText("ready:Kiosk")).toBeOnTheScreen());
     expect(supabase.violations).toEqual([]);
-    // The profile lookup still happened — just afterwards, not inside.
     expect(supabase.calls).toContain("rpc:current_active_profile");
     supabase.restore();
   });
@@ -174,10 +164,41 @@ describe("AuthProvider lifecycle", () => {
   it("reports signedOut when there is no session", async () => {
     const supabase = installAuthClient();
     await renderAuth();
-
     await supabase.emit("INITIAL_SESSION", null);
-
     await waitFor(() => expect(screen.getByText("signedOut:-")).toBeOnTheScreen());
+    supabase.restore();
+  });
+
+  it("recovers a pending kiosk handoff before an existing session becomes ready after restart", async () => {
+    const staleCartKey = storageKey("cart", "lines");
+    await AsyncStorage.setItem(
+      storageKey("auth", "handoff-pending"),
+      JSON.stringify({ version: 1, pending: true }),
+    );
+    await AsyncStorage.setItem(staleCartKey, "previous-customer-cart");
+    const supabase = installAuthClient({ initialSession: sessionFor("user-1") });
+
+    await renderAuth();
+
+    await waitFor(() => expect(screen.getByText("ready:Kiosk")).toBeOnTheScreen());
+    await expect(AsyncStorage.getItem(staleCartKey)).resolves.toBeNull();
+    await expect(AsyncStorage.getItem(storageKey("auth", "handoff-pending"))).resolves.toBeNull();
+    expect(supabase.calls).toContain("rpc:current_active_profile");
+    supabase.restore();
+  });
+
+  it("does not make an existing session ready when pending-handoff recovery fails", async () => {
+    await AsyncStorage.setItem(
+      storageKey("auth", "handoff-pending"),
+      JSON.stringify({ version: 1, pending: true }),
+    );
+    jest.spyOn(AsyncStorage, "multiRemove").mockRejectedValueOnce(new Error("disk unavailable"));
+    const supabase = installAuthClient({ initialSession: sessionFor("user-1") });
+
+    await renderAuth();
+
+    await waitFor(() => expect(screen.getByText("error:-")).toBeOnTheScreen());
+    expect(supabase.calls).not.toContain("rpc:current_active_profile");
     supabase.restore();
   });
 
@@ -185,23 +206,16 @@ describe("AuthProvider lifecycle", () => {
     let fetches = 0;
     const supabase = installAuthClient({ onProfileFetch: () => (fetches += 1) });
     await renderAuth();
-
     await supabase.emit("SIGNED_IN", sessionFor("user-1", "token-1"));
     await waitFor(() => expect(screen.getByText("ready:Kiosk")).toBeOnTheScreen());
-
-    // Same user, new token — the profile has not changed.
     await supabase.emit("TOKEN_REFRESHED", sessionFor("user-1", "token-2"));
     await supabase.emit("SIGNED_IN", sessionFor("user-1", "token-3"));
-
     await waitFor(() => expect(screen.getByText("ready:Kiosk")).toBeOnTheScreen());
     expect(fetches).toBe(1);
     supabase.restore();
   });
 
   it("keeps the exposed session current across a token refresh", async () => {
-    // The profile is deliberately not re-resolved on refresh, so the session must
-    // come from the listener rather than being copied into derived state — or a
-    // consumer would read an expired access token.
     let fetches = 0;
     const supabase = installAuthClient({ onProfileFetch: () => (fetches += 1) });
     await renderWithProviders(
@@ -209,12 +223,9 @@ describe("AuthProvider lifecycle", () => {
         <TokenProbe />
       </AuthProvider>,
     );
-
     await supabase.emit("SIGNED_IN", sessionFor("user-1", "token-1"));
     await waitFor(() => expect(screen.getByText("token:token-1")).toBeOnTheScreen());
-
     await supabase.emit("TOKEN_REFRESHED", sessionFor("user-1", "token-2"));
-
     await waitFor(() => expect(screen.getByText("token:token-2")).toBeOnTheScreen());
     expect(fetches).toBe(1);
     supabase.restore();
@@ -224,10 +235,8 @@ describe("AuthProvider lifecycle", () => {
     let fetches = 0;
     const supabase = installAuthClient({ onProfileFetch: () => (fetches += 1) });
     await renderAuth();
-
     await supabase.emit("SIGNED_IN", sessionFor("user-1"));
     await waitFor(() => expect(screen.getByText("ready:Kiosk")).toBeOnTheScreen());
-
     await supabase.emit("SIGNED_IN", sessionFor("user-2"));
     await waitFor(() => expect(fetches).toBe(2));
     supabase.restore();
@@ -236,7 +245,6 @@ describe("AuthProvider lifecycle", () => {
   it("keeps Realtime's token in step with the session", async () => {
     const supabase = installAuthClient();
     await renderAuth();
-
     await supabase.emit("SIGNED_IN", sessionFor("user-1", "token-1"));
     await waitFor(() => expect(supabase.calls).toContain("realtime.setAuth"));
     supabase.restore();
@@ -245,9 +253,7 @@ describe("AuthProvider lifecycle", () => {
   it("treats an account with no active profile as unauthorized, not signed out", async () => {
     const supabase = installAuthClient({ profileRows: [] });
     await renderAuth();
-
     await supabase.emit("SIGNED_IN", sessionFor("user-1"));
-
     await waitFor(() => expect(screen.getByText("unauthorized:-")).toBeOnTheScreen());
     supabase.restore();
   });
@@ -257,9 +263,7 @@ describe("AuthProvider lifecycle", () => {
       profileRows: [{ ...PROFILE, role: "admin", display_name: "Owner" }],
     });
     await renderAuth();
-
     await supabase.emit("SIGNED_IN", sessionFor("user-1"));
-
     await waitFor(() => expect(screen.getByText("unauthorized:Owner")).toBeOnTheScreen());
     supabase.restore();
   });
@@ -267,25 +271,21 @@ describe("AuthProvider lifecycle", () => {
   it("surfaces a failed profile lookup as an error the user can retry", async () => {
     const supabase = installAuthClient({ failProfile: true });
     await renderAuth();
-
     await supabase.emit("SIGNED_IN", sessionFor("user-1"));
-
     await waitFor(() => expect(screen.getByText(/^error:/)).toBeOnTheScreen());
     supabase.restore();
   });
 });
 
 describe("signIn", () => {
-  it("reports a generic credential failure, never 'session expired', for wrong credentials", async () => {
-    // This is exactly the shape `supabase.auth.signInWithPassword` returns for a
-    // wrong password: an AuthApiError, which `isAuthError` also matches. Before
-    // this was fixed, EVERY such rejection — including a plain typo, on a tablet
-    // that was never signed in — was reported as "Your session expired. Please
-    // sign in again.", which is both false and reveals nothing useful to the
-    // user about what actually went wrong.
-    const supabase = installAuthClient({
-      signInError: new AuthApiError("Invalid login credentials", 400, "invalid_credentials"),
-    });
+  it("recovers a durable unsafe-handoff marker before authenticating a new account", async () => {
+    const supabase = installAuthClient();
+    const staleCartKey = storageKey("cart", "lines");
+    await AsyncStorage.setItem(
+      storageKey("auth", "handoff-pending"),
+      JSON.stringify({ version: 1, pending: true }),
+    );
+    await AsyncStorage.setItem(staleCartKey, "previous-customer-cart");
     const user = userEvent.setup();
     await renderWithProviders(
       <AuthProvider>
@@ -295,6 +295,44 @@ describe("signIn", () => {
 
     await user.press(screen.getByRole("button"));
 
+    await waitFor(() => expect(supabase.calls).toContain("signInWithPassword"));
+    await expect(AsyncStorage.getItem(staleCartKey)).resolves.toBeNull();
+    await expect(AsyncStorage.getItem(storageKey("auth", "handoff-pending"))).resolves.toBeNull();
+    supabase.restore();
+  });
+
+  it("blocks authentication when unsafe-handoff recovery cannot clear durable state", async () => {
+    const supabase = installAuthClient();
+    await AsyncStorage.setItem(
+      storageKey("auth", "handoff-pending"),
+      JSON.stringify({ version: 1, pending: true }),
+    );
+    jest.spyOn(AsyncStorage, "multiRemove").mockRejectedValueOnce(new Error("disk unavailable"));
+    const user = userEvent.setup();
+    await renderWithProviders(
+      <AuthProvider>
+        <SignInProbe />
+      </AuthProvider>,
+    );
+
+    await user.press(screen.getByRole("button"));
+
+    await waitFor(() => expect(screen.getByText(/previous session safely/i)).toBeOnTheScreen());
+    expect(supabase.calls).not.toContain("signInWithPassword");
+    supabase.restore();
+  });
+
+  it("reports a generic credential failure, never 'session expired', for wrong credentials", async () => {
+    const supabase = installAuthClient({
+      signInError: new AuthApiError("Invalid login credentials", 400, "invalid_credentials"),
+    });
+    const user = userEvent.setup();
+    await renderWithProviders(
+      <AuthProvider>
+        <SignInProbe />
+      </AuthProvider>,
+    );
+    await user.press(screen.getByRole("button"));
     await waitFor(() =>
       expect(
         screen.getByText("We couldn't sign you in. Check the email and password."),
@@ -305,9 +343,6 @@ describe("signIn", () => {
   });
 
   it("still reports 'session expired' for an actually-invalid session/token", async () => {
-    // A DIFFERENT auth-js error family — the refresh token itself is gone, not
-    // the credentials. This must keep the "expired" wording; it is the case the
-    // message exists for.
     const supabase = installAuthClient({
       signInError: new AuthApiError("Refresh token not found", 401, "refresh_token_not_found"),
     });
@@ -317,9 +352,7 @@ describe("signIn", () => {
         <SignInProbe />
       </AuthProvider>,
     );
-
     await user.press(screen.getByRole("button"));
-
     await waitFor(() =>
       expect(screen.getByText("Your session expired. Please sign in again.")).toBeOnTheScreen(),
     );

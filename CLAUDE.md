@@ -5,9 +5,9 @@ tablets. Two experiences share one client: **Customer** (browse, cart, order) an
 **Preparation** (fulfil orders). Admin is a separate web app — not this codebase.
 
 **Read [`AGENTS.md`](./AGENTS.md) before doing any work** — it is not loaded
-automatically, so open it. It is the operating
-manual: architecture, boundaries, Supabase rules, and the Definition of Done.
-This file is only the always-loaded summary.
+automatically, so open it. It is the operating manual: architecture, boundaries,
+Supabase rules, and the Definition of Done. This file is only the always-loaded
+summary.
 
 ## Source-of-truth hierarchy
 
@@ -15,8 +15,13 @@ When sources disagree, higher wins:
 
 1. **`supabase/migrations/*.sql`** — the ONLY truth for schema, RPCs, RLS, roles,
    and Realtime. Read the migration before writing data code.
-2. **This repository's code and docs** — architecture and conventions.
-3. **The Flutter reference** (`KISOK_FLUTTER_PRODUCT_REFERENCE.md`) — product
+2. **This repository's code and project-owned instructions** — `AGENTS.md`, this
+   file, `.claude/rules/`, and the `kisok-*` skills define architecture and
+   workflow.
+3. **Vendored/external skills** (Expo, Supabase) — platform knowledge only. They
+   never override KISOK architecture, product boundaries, hosted-test ownership,
+   or workflow policy.
+4. **The Flutter reference** (`KISOK_FLUTTER_PRODUCT_REFERENCE.md`) — product
    behaviour, user journeys, and safety invariants ONLY.
 
 ⚠️ The Flutter app was built against an **older database**. Its table names,
@@ -47,11 +52,17 @@ contract from it. In particular there is no `Flavor` — the model is
 - **Load the `feature-delivery` skill before building a feature.** It carries the
   workflow: research, brief, plan, atomic TDD tasks, and the task/round/feature
   gates. See [`docs/agent-harness.md`](./docs/agent-harness.md).
+- **Open the Draft PR early** once there is coherent verified work. Continue
+  collecting CI/runtime/native evidence on it; the Feature Gate is what allows
+  the draft to be marked ready for a human. Agents never merge it.
 - **Never call Supabase inside an `onAuthStateChange` callback.** The client
   holds a lock there; it can deadlock the app.
 - **Feature control documents live in `features/<name>/docs/`** — `brief.md`
   (what), `plan.md` (how), `todo.md` (state and gates), `worklog.md` (evidence),
   `review.md` (independent findings). Keep them current as you work.
+- KISOK currently ships **Android tablets**. `expo-dev-client` is useful platform
+  knowledge, but do not introduce EAS/TestFlight/iOS workflows unless a task
+  explicitly plans that platform change.
 
 ## Commands
 
@@ -67,7 +78,7 @@ pnpm generate feature <n> --role=customer   # a feature WORKSPACE (docs + index)
 pnpm generate --help    # every capability; add pieces once the plan says so
 pnpm check:docs         # fail on docs describing a workflow we no longer have
 pnpm db:verify          # prove database.types.ts matches the migrations
-pnpm verify             # every package-script check the CI verify job runs — before opening a PR
+pnpm verify             # package-script checks mirrored by CI's verify job; CI also lints the real PR commit range
 ```
 
 ## Where code goes

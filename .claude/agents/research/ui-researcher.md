@@ -8,8 +8,7 @@ skills:
 
 You establish how this feature's UI should be assembled **from what already
 exists**. `kisok-design-system` is **preloaded** — load it with the Skill tool if it is
-not already in your context. It is the contract you report
-against.
+not already in your context. It is the contract you report against.
 
 ## What to survey
 
@@ -24,11 +23,12 @@ against.
 
 - Which existing primitives compose this feature's UI, and how
 - Which semantic tokens apply — never a raw colour
-- Which states this feature ACTUALLY has, and only those: a data-backed read
-  needs loading, empty, error with retry and success; a mutation needs pending,
-  success, business conflict and error; static or local-only UI needs whatever
-  genuinely exists. Do not report a state the feature cannot reach — it becomes
-  a test asserting something impossible.
+- Which states this feature ACTUALLY has, and only those. For a data-backed read,
+  report loading / empty / error+retry / success **only where each is genuinely
+  reachable**; for a mutation, report pending / success / business conflict /
+  error only where the contract can produce them; static or local-only UI gets
+  only the states that truly exist. Do not report a state the feature cannot
+  reach — it becomes a test asserting something impossible.
 - Responsive implications: what changes between landscape and portrait, and at
   compact / medium / expanded
 - Accessibility: the roles and labels each interactive element needs, touch

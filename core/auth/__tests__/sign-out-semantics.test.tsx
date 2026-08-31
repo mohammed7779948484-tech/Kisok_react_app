@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Text } from "react-native";
 
 import {
@@ -7,6 +8,7 @@ import {
   clearSignOutTasks,
 } from "@/core/auth";
 import { resetLogging, setLogSink } from "@/core/logging";
+import { storageKey } from "@/core/storage";
 import { installMockAuth, renderWithProviders, screen, waitFor } from "@/core/testing";
 import { setSupabaseClient } from "@/core/supabase";
 
@@ -16,7 +18,8 @@ import type { SignOutOutcome } from "../sign-out";
  * These cover the kiosk safety properties of sign-out, not its happy path:
  *   - it must sign out THIS device only,
  *   - it must never report success while the session may still be usable,
- *   - and the safety gate must still be able to veto it.
+ *   - every guard must run before destructive cleanup,
+ *   - and a signed-out tablet must never hand stale durable state to the next customer.
  */
 
 let outcome: SignOutOutcome | null = null;
@@ -43,16 +46,18 @@ async function renderProbe() {
   screen.getByRole("button").props.onPress();
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   outcome = null;
-  // Sign-out logs on the failure paths by design; keep the suite silent.
+  await AsyncStorage.clear();
   setLogSink(() => {});
 });
 
-afterEach(() => {
+afterEach(async () => {
   clearSignOutTasks();
   resetLogging();
   setSupabaseClient(null);
+  jest.restoreAllMocks();
+  await AsyncStorage.clear();
 });
 
 describe("signOut", () => {
@@ -62,15 +67,11 @@ describe("signOut", () => {
     await renderProbe();
 
     await waitFor(() => expect(outcome).toEqual({ status: "ok" }));
-    // The supabase-js default is "global", which would revoke the refresh
-    // tokens of every other tablet signed in to the same store account.
     expect(supabase.signOutCalls).toEqual([{ scope: "local" }]);
     supabase.restore();
   });
 
   it("reports failure when the session may still be usable", async () => {
-    // Errors AND leaves the stored session in place — the supabase-js path that
-    // fails while reading the session does exactly this.
     const supabase = installMockAuth({
       signOut: async () => ({ error: { message: "network down" } }),
       sessionAfterSignOut: { access_token: "still-here", user: { id: "u1" } },
@@ -79,14 +80,11 @@ describe("signOut", () => {
     await renderProbe();
 
     await waitFor(() => expect(outcome?.status).toBe("failed"));
-    // Still signed in, because that is the truth.
     expect(screen.getByText("ready")).toBeOnTheScreen();
     supabase.restore();
   });
 
   it("reports success when only the server call failed", async () => {
-    // Errored, but the local session is gone, so the next customer cannot
-    // inherit it. That is a successful sign-out from the kiosk's point of view.
     const supabase = installMockAuth({
       signOut: async () => ({ error: { message: "504" } }),
       sessionAfterSignOut: null,
@@ -113,7 +111,6 @@ describe("signOut", () => {
         reason: "An order is still being confirmed.",
       }),
     );
-    // The gate runs first: Supabase was never asked to sign out.
     expect(supabase.signOutCalls).toEqual([]);
     supabase.restore();
   });
@@ -146,11 +143,10 @@ describe("signOut", () => {
     supabase.restore();
   });
 
-  it("does not report success — or destroy anything a guard could have protected — when a cleanup task throws", async () => {
-    // The session is already gone by the time cleanup runs, so a broken
-    // cleanup task must not flip the outcome back to "failed" and claim the
-    // customer is still signed in when they are not.
+  it("falls back to a KISOK-wide durable reset when a cleanup task throws", async () => {
     const supabase = installMockAuth();
+    const staleCartKey = storageKey("cart", "lines");
+    await AsyncStorage.setItem(staleCartKey, JSON.stringify([{ variantId: "old" }]));
     registerSignOutCleanup({
       name: "cart",
       run: () => {
@@ -161,13 +157,42 @@ describe("signOut", () => {
     await renderProbe();
 
     await waitFor(() => expect(outcome).toEqual({ status: "ok" }));
+    await expect(AsyncStorage.getItem(staleCartKey)).resolves.toBeNull();
+    supabase.restore();
+  });
+
+  it("reports unsafe when both feature cleanup and the emergency durable reset fail", async () => {
+    const supabase = installMockAuth();
+    registerSignOutCleanup({
+      name: "cart",
+      run: () => {
+        throw new Error("storage full");
+      },
+    });
+    jest.spyOn(AsyncStorage, "multiRemove").mockRejectedValueOnce(new Error("disk unavailable"));
+
+    await renderProbe();
+
+    await waitFor(() => expect(outcome?.status).toBe("unsafe"));
+    // The auth session really is gone, but the durable marker remains to block
+    // the next sign-in (including after a cold restart) until recovery succeeds.
+    await expect(AsyncStorage.getItem(storageKey("auth", "handoff-pending"))).resolves.not.toBeNull();
+    supabase.restore();
+  });
+
+  it("fails before touching Supabase when the durable handoff marker cannot be written", async () => {
+    const supabase = installMockAuth();
+    jest.spyOn(AsyncStorage, "setItem").mockRejectedValueOnce(new Error("disk unavailable"));
+
+    await renderProbe();
+
+    await waitFor(() => expect(outcome?.status).toBe("failed"));
+    expect(supabase.signOutCalls).toEqual([]);
+    expect(screen.getByText("ready")).toBeOnTheScreen();
     supabase.restore();
   });
 
   it("fails CLOSED — reports 'failed', never throws — when the Supabase call itself throws", async () => {
-    // Not every failure comes back as `{ error }`; this proves an actual
-    // exception from the Supabase client is caught here rather than
-    // surfacing as an unhandled rejection from `signOut()`.
     const supabase = installMockAuth({
       signOut: () => {
         throw new Error("native module crashed");
@@ -177,8 +202,6 @@ describe("signOut", () => {
     await renderProbe();
 
     await waitFor(() => expect(outcome?.status).toBe("failed"));
-    // Still signed in, because that is the truth — the same invariant as the
-    // returned-error case above.
     expect(screen.getByText("ready")).toBeOnTheScreen();
     supabase.restore();
   });
@@ -195,8 +218,6 @@ describe("signOut", () => {
     await renderProbe();
 
     await waitFor(() => expect(outcome?.status).toBe("blocked"));
-    // The gate never resolved, so Supabase was never asked to sign out —
-    // exactly as if it had returned an explicit block.
     expect(supabase.signOutCalls).toEqual([]);
     supabase.restore();
   });

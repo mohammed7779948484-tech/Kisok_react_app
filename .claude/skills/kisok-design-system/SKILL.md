@@ -46,8 +46,8 @@ Need a colour that does not exist? Add the token to `global.css` and
 Ownership follows the **nearest stable consumer**:
 
 ```
-used by one screen         → features/<f>/screens/<s>/components/
-used by 2+ screens, 1 feature → features/<f>/components/
+used by one screen             → features/<f>/screens/<s>/components/
+used by 2+ screens, 1 feature  → features/<f>/components/
 reused across features, stable → components/ (the design system)
 ```
 
@@ -110,19 +110,30 @@ const columns = useResponsiveValue({ compact: 2, medium: 3, expanded: 4 });
   bottom sheet otherwise — use it rather than branching by hand.
 - Verify in a browser at 1280×800, 800×1180 and 480×900 before claiming done.
 
-## Every state, every time
+## Handle the states the capability actually has
 
-A screen that handles only the happy path is not finished. Handle **loading**,
-**empty**, **error with a retry**, and success.
+State requirements are **capability-aware**. Do not invent an empty state for a
+screen that cannot be empty, or a retry action for a deterministic conflict.
+Those become tests for impossible behaviour and make the UI harder to reason
+about.
 
-Empty states need somewhere to go next. On a kiosk a dead end means a customer
-looks for an employee, which is the outcome the whole product exists to reduce.
+| The feature has…        | Handle                                                                                                                            |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| a data-backed read      | loading, empty, error with retry when retry can help, success — only where each state is genuinely reachable                       |
+| a mutation              | pending, success, business conflict, error — only the outcomes the contract can actually produce                                   |
+| static or local-only UI | only the local states that genuinely exist                                                                                         |
+
+For a real empty state, give the user somewhere to go next. On a kiosk a dead
+end means a customer looks for an employee, which is the outcome the product is
+trying to reduce.
 
 ```tsx
 if (isPending) return <SkeletonList />;
 if (isError) return <ErrorState error={error} onRetry={() => void refetch()} />;
 if (items.length === 0) return <EmptyState … />;
 ```
+
+Use the example only when those branches are possible for that screen.
 
 ## Errors people can act on
 

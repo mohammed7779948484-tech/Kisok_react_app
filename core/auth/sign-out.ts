@@ -1,7 +1,12 @@
 import { toAppError } from "@/core/errors";
 import { createLogger } from "@/core/logging";
+import { clearKisokStorage, storage, storageKey } from "@/core/storage";
 
 const log = createLogger("auth.signOut");
+const HANDOFF_MARKER_KEY = storageKey("auth", "handoff-pending");
+const HANDOFF_MARKER_VERSION = 1;
+const HANDOFF_REASON =
+  "This tablet couldn't finish clearing the previous session safely. Please retry before signing in again.";
 
 /**
  * A GUARD run before anything about the session is touched.
@@ -44,16 +49,16 @@ export type SignOutCleanupTask = {
 /**
  * What actually happened when the user asked to sign out.
  *
- * `failed` exists because the alternative is dishonest. Supabase can return an
- * error from a path that leaves the persisted session in storage, and a screen
- * that says "signed out" while the tablet can still silently restore the
- * previous account is precisely the bug that matters on a shared kiosk. Callers
- * must handle `failed` by keeping the user signed in and offering a retry.
+ * `failed` means the session may still be usable, so the current account must
+ * remain in control of the tablet. `unsafe` means the auth session is gone but
+ * local kiosk handoff could not be proven clean; a new sign-in is blocked until
+ * the durable handoff recovery succeeds.
  */
 export type SignOutOutcome =
   | { status: "ok" }
   | { status: "blocked"; reason: string }
-  | { status: "failed"; reason: string };
+  | { status: "failed"; reason: string }
+  | { status: "unsafe"; reason: string };
 
 const guards = new Map<string, SignOutGuard>();
 const cleanupTasks = new Map<string, SignOutCleanupTask>();
@@ -62,14 +67,6 @@ const cleanupTasks = new Map<string, SignOutCleanupTask>();
  * Register a pre-sign-out guard from inside a feature module. Deliberately a
  * registry that features WRITE TO rather than a central list they must EDIT —
  * two feature agents can add a guard without ever touching the same file.
- *
- *   registerSignOutGuard({
- *     name: "checkout",
- *     run: () =>
- *       hasUnresolvedAttempt()
- *         ? { status: "blocked", reason: "An order submission is still unresolved." }
- *         : { status: "ok" },
- *   });
  */
 export function registerSignOutGuard(guard: SignOutGuard) {
   guards.set(guard.name, guard);
@@ -79,12 +76,7 @@ export function unregisterSignOutGuard(name: string) {
   guards.delete(name);
 }
 
-/**
- * Register destructive cleanup from inside a feature module. Runs only once
- * every guard — from every feature — has approved the sign-out.
- *
- *   registerSignOutCleanup({ name: "cart", run: () => clearCart() });
- */
+/** Register destructive cleanup from inside a feature module. */
 export function registerSignOutCleanup(task: SignOutCleanupTask) {
   cleanupTasks.set(task.name, task);
 }
@@ -102,11 +94,6 @@ export function clearSignOutTasks() {
 /**
  * Phase 1 — run every registered guard, in registration order, stopping at
  * the first block so no LATER guard and no cleanup task ever runs.
- *
- * A guard that THROWS is exactly as uncertain as one that returns `blocked`:
- * there is no way to tell whether it is safe to destroy checkout recovery
- * state, and KISOK's answer to "we don't know" is "assume it is not safe" —
- * never "assume it is fine and proceed to tear the session down".
  */
 export async function runSignOutGuards(): Promise<SignOutGuardResult> {
   for (const guard of guards.values()) {
@@ -132,15 +119,8 @@ export async function runSignOutGuards(): Promise<SignOutGuardResult> {
 }
 
 /**
- * Phase 2 — run every registered cleanup task. Call this ONLY after
- * `runSignOutGuards()` has returned `ok` and the session itself is already
- * gone: cleanup never gets to veto sign-out, so calling it earlier would let
- * a feature destroy its own state ahead of a sibling's guard blocking.
- *
- * One task's failure does not stop the others — a customer's stale cart
- * matters as much as a search feature's stale filters, and by this point the
- * account really is signed out either way, so every task gets its chance
- * rather than the first failure leaving the rest untouched.
+ * Phase 2 — run every registered cleanup task after the session is gone.
+ * Every task gets a chance even if an earlier cleanup fails.
  */
 export async function runSignOutCleanup(): Promise<{ failures: string[] }> {
   const failures: string[] = [];
@@ -156,4 +136,107 @@ export async function runSignOutCleanup(): Promise<{ failures: string[] }> {
     }
   }
   return { failures };
+}
+
+function parseHandoffMarker(raw: unknown): true {
+  if (
+    typeof raw === "object" &&
+    raw !== null &&
+    "version" in raw &&
+    "pending" in raw &&
+    (raw as { version?: unknown }).version === HANDOFF_MARKER_VERSION &&
+    (raw as { pending?: unknown }).pending === true
+  ) {
+    return true;
+  }
+  throw new Error("Invalid kiosk handoff marker");
+}
+
+/**
+ * Persist a fail-closed marker BEFORE the local auth session is removed. If
+ * this write cannot be made durable, sign-out must not proceed: otherwise a
+ * later cleanup failure followed by a cold restart could forget that the
+ * tablet was unsafe and expose stale customer state to the next person.
+ */
+export async function prepareSignOutHandoff(): Promise<
+  { status: "ok" } | { status: "failed"; reason: string }
+> {
+  const result = await storage.write(HANDOFF_MARKER_KEY, {
+    version: HANDOFF_MARKER_VERSION,
+    pending: true,
+  });
+  if (result.status === "persisted") return { status: "ok" };
+
+  log.error("Could not persist kiosk handoff marker; refusing to sign out", {
+    error: result.error.message,
+  });
+  return {
+    status: "failed",
+    reason: "We couldn't prepare this tablet to sign out safely. Please try again.",
+  };
+}
+
+/**
+ * Complete a sign-out handoff. Normal cleanup success removes only the marker.
+ * If any feature cleanup failed, wipe the whole KISOK-owned storage namespace
+ * as an emergency fallback so no stale cart/draft can survive for the next
+ * customer. If even that cannot be proven, return `unsafe` and leave the
+ * durable marker in place.
+ */
+export async function finishSignOutHandoff(
+  cleanupFailures: readonly string[],
+): Promise<{ status: "ok" } | { status: "unsafe"; reason: string }> {
+  if (cleanupFailures.length === 0) {
+    const removed = await storage.remove(HANDOFF_MARKER_KEY);
+    if (removed.status === "persisted") return { status: "ok" };
+    log.error("Could not remove kiosk handoff marker after clean sign-out", {
+      error: removed.error.message,
+    });
+  } else {
+    log.error("Feature cleanup failed; using emergency KISOK storage reset", {
+      failures: cleanupFailures,
+    });
+  }
+
+  const reset = await clearKisokStorage();
+  if (reset.status === "persisted") return { status: "ok" };
+
+  log.error("Emergency KISOK storage reset failed; handoff remains unsafe", {
+    error: reset.error.message,
+  });
+  return { status: "unsafe", reason: HANDOFF_REASON };
+}
+
+/**
+ * Called before every sign-in. A marker means a prior sign-out reached the
+ * point where the previous session may have left durable feature state behind.
+ * Recover by clearing ONLY KISOK-owned storage. A corrupt/unreadable marker is
+ * treated the same as a present one: uncertainty is not permission to hand the
+ * kiosk to another customer.
+ */
+export async function recoverPendingHandoff(): Promise<
+  { status: "ok" } | { status: "blocked"; reason: string }
+> {
+  const marker = await storage.read(HANDOFF_MARKER_KEY, parseHandoffMarker);
+  if (marker.status === "miss") return { status: "ok" };
+
+  if (marker.status === "rejected") {
+    log.error("Kiosk handoff marker could not be read; attempting emergency reset", {
+      error: marker.error.message,
+    });
+  } else {
+    log.warn("Pending kiosk handoff detected before sign-in; attempting emergency reset");
+  }
+
+  const reset = await clearKisokStorage();
+  if (reset.status === "rejected") {
+    log.error("Pending kiosk handoff recovery failed", { error: reset.error.message });
+    return { status: "blocked", reason: HANDOFF_REASON };
+  }
+
+  const confirmation = await storage.read(HANDOFF_MARKER_KEY, parseHandoffMarker);
+  if (confirmation.status === "miss") return { status: "ok" };
+
+  log.error("Kiosk handoff marker still present after emergency reset");
+  return { status: "blocked", reason: HANDOFF_REASON };
 }

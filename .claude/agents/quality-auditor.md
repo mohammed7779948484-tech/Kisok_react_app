@@ -1,6 +1,6 @@
 ---
 name: quality-auditor
-description: Audits whether a KISOK feature was actually delivered as promised — comparing brief, plan, todo, worklog, review, the git diff, and the commands genuinely run. Finds scope drift, forgotten acceptance criteria, DONE without PASS, claims with no evidence, skipped verification and stale docs. Use after code review, before opening or approving a PR.
+description: Audits whether a KISOK feature was actually delivered as promised — comparing brief, plan, todo, worklog, review, the git diff, and the commands genuinely run. Finds scope drift, forgotten acceptance criteria, DONE without PASS, claims with no evidence, skipped verification and stale docs. Use after code review, before the Feature Gate can PASS and before marking a draft PR ready.
 tools: Read, Bash, Glob, Grep, Skill
 skills:
   - kisok-quality-audit

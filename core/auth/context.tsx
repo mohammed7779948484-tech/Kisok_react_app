@@ -8,17 +8,18 @@ import { clearQueryCache } from "@/core/query";
 import { getSupabaseClient } from "@/core/supabase";
 
 import { fetchActiveProfile } from "./profile";
-import { runSignOutCleanup, runSignOutGuards, type SignOutOutcome } from "./sign-out";
+import {
+  finishSignOutHandoff,
+  prepareSignOutHandoff,
+  recoverPendingHandoff,
+  runSignOutCleanup,
+  runSignOutGuards,
+  type SignOutOutcome,
+} from "./sign-out";
 import { isTabletRole, type ActiveProfile, type AuthStatus } from "./types";
 
 const log = createLogger("auth");
 
-/**
- * Derived state. The session itself is NOT stored here — it lives in the
- * snapshot below and is exposed from there, so there is exactly one copy. A
- * second copy would go stale on token refresh, which deliberately does not
- * re-resolve the profile.
- */
 type AuthState = {
   status: AuthStatus;
   profile: ActiveProfile | null;
@@ -30,22 +31,31 @@ type AuthContextValue = AuthState & {
   session: Session | null;
   signIn: (email: string, password: string) => Promise<void>;
   /**
-   * Resolves to `blocked` when a registered task vetoes the sign-out, and to
-   * `failed` when the session may still be usable. Only `ok` means signed out.
+   * `blocked` means a guard vetoed before sign-out. `failed` means the auth
+   * session may still be usable. `unsafe` means auth is gone but durable kiosk
+   * cleanup could not be proven; a later sign-in/startup is blocked until recovery.
    */
   signOut: () => Promise<SignOutOutcome>;
-  /** Re-runs profile resolution after a failure. */
+  /** Re-runs session/profile resolution after a failure. */
   retry: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-/** What the auth listener knows, kept separate from what we derive from it. */
 type SessionSnapshot = {
   session: Session | null;
   /** False until the first auth event or the initial getSession lands. */
   known: boolean;
 };
+
+function handoffRecoveryError(reason: string) {
+  return new AppError({
+    kind: "unknown",
+    userMessage: reason,
+    technicalMessage: "Kiosk handoff recovery did not complete",
+    retryable: true,
+  });
+}
 
 /**
  * Owns session restoration and identity resolution for the whole app.
@@ -56,22 +66,9 @@ type SessionSnapshot = {
  *
  * Must be rendered inside `QueryProvider` — sign-out clears the query cache.
  *
- * ── Lifecycle, in three separate stages ────────────────────────────────────
- *
- * The stages are split on purpose. Supabase runs `onAuthStateChange` callbacks
- * while it holds an internal auth lock, and calling back into the Supabase
- * client from inside one can deadlock — the client waits on a lock the callback
- * is holding, and the app hangs on the startup screen with no error. So:
- *
- *   1. LISTEN   — the callback does nothing but record the session in state.
- *                 No awaits, no Supabase calls, no async work of any kind.
- *   2. RESOLVE  — a separate effect, running outside the callback, fetches the
- *                 active profile whenever the signed-in USER changes.
- *   3. REALTIME — another effect keeps Realtime's token current.
- *
- * Stage 2 keys on the user id rather than the session object: a token refresh
- * produces a new session for the same user, and re-fetching the profile on every
- * refresh would be pointless load and would flicker the UI.
+ * Supabase runs `onAuthStateChange` callbacks while it holds an internal auth
+ * lock. The callback therefore records the session synchronously and returns;
+ * profile/handoff work happens in effects outside that callback.
  */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [snapshot, setSnapshot] = useState<SessionSnapshot>({ session: null, known: false });
@@ -95,9 +92,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (active) setSnapshot({ session, known: true });
     });
 
-    // Belt and braces alongside the listener's INITIAL_SESSION event. If that
-    // event ever fails to arrive the app would sit on the startup screen
-    // forever, and stage 2 de-duplicates by user id so this costs nothing.
     void supabase.auth
       .getSession()
       .then(({ data }) => {
@@ -117,11 +111,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       active = false;
       listener.subscription.unsubscribe();
     };
-    // `retryToken` re-runs this stage too: if `getSession` failed, retrying only
-    // stage 2 would do nothing, because `known` never became true.
   }, [retryToken]);
 
-  // ── Stage 2: resolve the profile, outside the auth callback ───────────────
+  // ── Stage 2: recover handoff + resolve profile, outside auth callback ─────
   const userId = snapshot.session?.user.id ?? null;
   const { known } = snapshot;
 
@@ -133,26 +125,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Cleanup flips this, so a slow lookup that lands after the user changed —
-    // or after sign-out — cannot overwrite newer state.
     let cancelled = false;
     setState((previous) => ({ ...previous, status: "resolving", error: null }));
 
     void (async () => {
       try {
+        // A failed/uncertain sign-out may leave BOTH a valid store-account
+        // session and a durable handoff marker. Recover before making the app
+        // ready, otherwise a cold restart could expose the previous customer's
+        // cart/draft even though sign-out had already entered handoff mode.
+        const handoff = await recoverPendingHandoff();
+        if (cancelled) return;
+        if (handoff.status === "blocked") {
+          const error = handoffRecoveryError(handoff.reason);
+          log.error("Pending kiosk handoff blocked authenticated startup", error.toLogContext());
+          setState({ status: "error", profile: null, error });
+          return;
+        }
+
         const profile = await fetchActiveProfile();
         if (cancelled) return;
 
         if (!profile) {
-          // Authenticated, but no active profile row. Client routing is UX only —
-          // the database would refuse the work anyway.
           log.warn("Signed-in account has no active profile");
           setState({ status: "unauthorized", profile: null, error: null });
           return;
         }
 
         if (!isTabletRole(profile.role)) {
-          // Admin is a web application, not a tablet experience.
           log.warn("Signed-in role has no tablet experience", { role: profile.role });
           setState({ status: "unauthorized", profile, error: null });
           return;
@@ -163,8 +163,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
         const error = toAppError(caught, "We couldn't finish preparing the app.");
         log.error("Failed to resolve profile", error.toLogContext());
-        // A network blip at startup must offer a retry, not strand the tablet on
-        // a blank screen.
         setState({ status: "error", profile: null, error });
       }
     })();
@@ -172,9 +170,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-    // Keyed on the user, not the session: a token refresh produces a new session
-    // for the same user and must not re-fetch an unchanged profile. The session
-    // is read from the snapshot, so nothing goes stale by leaving it out.
   }, [userId, known, retryToken]);
 
   // ── Stage 3: keep Realtime's token current ────────────────────────────────
@@ -182,12 +177,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!known) return;
-    // Also outside the auth callback: `setAuth` goes through the same client.
-    // Without this, subscriptions silently stop delivering after a token refresh.
     void getSupabaseClient().realtime.setAuth(accessToken);
   }, [accessToken, known]);
 
   const signIn = useCallback(async (email: string, password: string) => {
+    // Signed-out startup does not resolve a profile, so recover here too before
+    // a new account may authenticate onto the shared tablet.
+    const handoff = await recoverPendingHandoff();
+    if (handoff.status === "blocked") throw handoffRecoveryError(handoff.reason);
+
     const supabase = getSupabaseClient();
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw toAppError(error, "We couldn't sign you in. Check the email and password.");
@@ -195,29 +193,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async (): Promise<SignOutOutcome> => {
-    // Phase 1 — GUARDS. Side-effect-free by contract, run to completion before
-    // anything below is touched. Nothing below this line is reversible: an
-    // unresolved checkout must never have its recovery state destroyed, and a
-    // guard that throws is treated exactly like one that blocks (see
-    // `runSignOutGuards`) — "uncertain" is never treated as "safe to proceed".
+    // Phase 1 — all side-effect-free guards approve before anything is changed.
     const gate = await runSignOutGuards();
     if (gate.status === "blocked") return gate;
 
+    // Persist a fail-closed marker BEFORE auth is touched. If this cannot be
+    // durable, refuse sign-out so a cold restart cannot forget an incomplete
+    // customer handoff.
+    const prepared = await prepareSignOutHandoff();
+    if (prepared.status === "failed") return prepared;
+
     const supabase = getSupabaseClient();
 
-    // `scope: "local"` signs out THIS device only. The supabase-js default is
-    // "global", which revokes every refresh token for the account — and KISOK
-    // tablets share store-provisioned accounts, so one tablet signing out would
-    // knock out every other tablet in the shop. Revoking everywhere is a
-    // deliberate admin action, not what a customer finishing an order means.
+    // `scope: "local"` signs out THIS device only. The default is global and
+    // would revoke the same store account on every tablet.
     let error: { message: string } | null;
     try {
       ({ error } = await supabase.auth.signOut({ scope: "local" }));
     } catch (caught) {
-      // An unexpected THROW is exactly as uncertain as a returned error: we
-      // cannot tell whether the stored session survived it, so fail closed the
-      // same way the "may still be usable" branch below does, rather than
-      // letting this escape as a rejected promise.
       log.error("Supabase sign-out threw instead of returning a result", {
         message: toAppError(caught).technicalMessage,
       });
@@ -228,18 +221,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (error) {
-      // Ambiguous: most supabase-js error paths still clear the stored session,
-      // but the one that fails while READING the session returns early and
-      // leaves it in place. From out here the two are indistinguishable, so ask
-      // rather than assume — the next customer must not inherit this session.
       const remaining = await supabase.auth
         .getSession()
         .then(({ data }) => data.session)
         .catch(() => undefined);
 
       if (remaining !== null) {
-        // Either a session is still stored, or we could not even determine that.
-        // Both mean: do not tell anyone they are signed out.
         log.error("Sign-out failed and the stored session may still be valid", {
           message: error.message,
           sessionState: remaining === undefined ? "unknown" : "still-present",
@@ -250,20 +237,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      // The local session is genuinely gone; only the server call failed.
       log.warn("Supabase sign-out reported an error but the local session was cleared", {
         message: error.message,
       });
     }
 
-    // Phase 2 — CLEANUP. Reached only now that we are COMMITTED to reporting
-    // success: the actual session is gone, so there is nothing left to protect
-    // by holding off. A cleanup task's own failure is logged inside
-    // `runSignOutCleanup`, never re-thrown — the account really is signed out
-    // at this point; only a feature's own stale local state is at stake.
-    await runSignOutCleanup();
+    // Phase 2 — feature cleanup after the local auth session is gone.
+    const cleanup = await runSignOutCleanup();
     clearQueryCache(queryClient);
     setSnapshot({ session: null, known: true });
+
+    // Phase 3 — prove the tablet is safe to hand to another person. Any failed
+    // feature cleanup triggers a namespace-wide KISOK reset. If that reset also
+    // fails, the durable marker remains and future sign-in/startup is fail-closed.
+    const handoff = await finishSignOutHandoff(cleanup.failures);
+    if (handoff.status === "unsafe") return handoff;
+
     return { status: "ok" };
   }, [queryClient]);
 
@@ -283,11 +272,6 @@ export function useAuth(): AuthContextValue {
   return context;
 }
 
-/**
- * Convenience for feature code that only runs once a profile exists.
- * Throws rather than returning null so a screen behind the auth gate can rely on
- * the profile without null-checking it everywhere.
- */
 export function useActiveProfile(): ActiveProfile {
   const { profile } = useAuth();
   if (!profile) throw new Error("useActiveProfile called outside an authenticated experience.");

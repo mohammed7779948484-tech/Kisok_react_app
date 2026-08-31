@@ -57,8 +57,6 @@ const OBSOLETE = [
     fix: "A zero-argument RPC is typed `Args: never`; call it as `callRpc(name, schema)` with no argument object.",
   },
   {
-    // The old pipeline made a failing test look mandatory for every task,
-    // including config and docs work, where it produces a fabricated test.
     pattern: /RED\s*→\s*IMPLEMENT/,
     fix: "The task pipeline is `CLASSIFY → RED / BASELINE → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF REVIEW → GATE`. A task declares a verification mode first; only the behaviour-bearing modes need a failing test.",
   },
@@ -67,8 +65,6 @@ const OBSOLETE = [
     fix: "The minimum touch target is 48dp — the `touch` token in tailwind.config.js. Say 48dp.",
   },
   {
-    // KISOK has no pricing UI at all; an example that implies one teaches a
-    // future agent to build forbidden product behaviour.
     pattern: /price-badge|pricing-rules/,
     fix: "KISOK has no pricing. Use a real KISOK concept: availability-badge, stock-status, variant-summary, option-selector, catalog-filter, order-status.",
   },
@@ -78,63 +74,69 @@ const OBSOLETE = [
     fix: "Do not hard-code the number of generator smoke shapes; say 'the generator smoke shapes'.",
   },
   {
-    // The narrower `features/…/TODO.md` pattern missed a bare `TODO.md` in an
-    // anatomy listing, which is exactly where it did survive.
     pattern: /^[\s│├└─]*TODO\.md\b/,
     fix: "A feature's working memory is `features/<name>/docs/todo.md`. There is no feature-root TODO.md.",
   },
   {
-    // Same blind spot for the old test-bucket convention.
     pattern: /^[\s│├└─]*__tests__\//,
     fix: "Feature tests sit directly beside their subject — `catalog.schema.test.ts` next to `catalog.schema.ts`. Foundation and core/ suites keep their existing __tests__/.",
   },
   {
-    // The generator's old populated default. `feature` now creates a workspace
-    // and nothing else, so prose promising these files is an instruction to
-    // expect code that will not be there.
     pattern: /schema,\s*query,\s*component,\s*screen,\s*route/,
     fix: "`pnpm generate feature` defaults to NOTHING — a workspace. Capabilities are generated one at a time as the plan calls for them.",
   },
   {
-    // Expo does publish official skills, at github.com/expo/skills.
     pattern: /Expo\s+publishes\s+no\s+agent\s+skills|no\s+official\s+Expo\s+skills/i,
     fix: "Expo publishes official skills at github.com/expo/skills, under plugins/expo/skills/. expo-router and expo-dev-client are vendored here.",
   },
   {
-    // `route` no longer implies a screen; it targets one by name.
     pattern: /route\s+(?:also\s+)?(?:brings|generates|creates)\s+(?:its|the)\s+screen/i,
     fix: "A route renders an EXISTING screen named with --screen=<name>. It generates only the route file.",
   },
   {
-    // The five control documents live in features/<name>/docs/. A bare
-    // `docs/plan.md` in a root document reads as THIS repository's docs/, and
-    // an agent following it literally writes a feature's control document into
-    // shared documentation — the merge-conflict hotspot everything else here is
-    // shaped to avoid.
     pattern: /`docs\/(brief|plan|todo|worklog|review)\.md`/,
     unless: /features\/|feature's|the feature|docs\/…/,
     fix: 'Write `features/<name>/docs/<doc>.md`, or say "the feature\'s `docs/<doc>.md`" — the control documents are feature-local.',
   },
   {
-    // A debug APK has no embedded JS bundle, so the E2E job could never have
-    // reached the app. Prose that still says it assembles one teaches the
-    // reasoning the release-APK change exists to refute.
     pattern: /assembles?\s+a\s+debug\s+APK/i,
     fix: 'The Android E2E job assembles a RELEASE APK. A debug APK carries no JS bundle (`debuggableVariants` defaults to ["debug"]) and would need Metro.',
   },
   {
-    // `generate feature` creates a workspace, not an implementation. Describing
-    // it as scaffolding a slice is what the neutral default exists to undo.
     pattern: /generate feature[^\n]*#[^\n]*(scaffold|slice|vertical)/i,
     fix: "`pnpm generate feature` creates a WORKSPACE — index.ts plus docs/ — and no implementation code.",
   },
   {
-    // "One route file" was an assumption baked into the architectural headline
-    // itself: a multi-screen feature legitimately owns several routes, each
-    // explicitly planned in plan.md. This is the exact stale form that
-    // survived a prior sweep because it read as prose, not a code example.
     pattern: /plus\s+(?:one\s+new\s+route\s+file|a\s+route\s+file)\b/i,
     fix: 'Say "plus its explicitly planned route file(s)" — a feature may own several, each named in plan.md.',
+  },
+  {
+    pattern: /Every state, every time/i,
+    fix: "UI states are capability-aware: handle only read/mutation/local states that can actually occur.",
+  },
+  {
+    pattern: /Every KISOK RPC returns\s+[`']?jsonb/i,
+    fix: "Only the JSON-returning business RPCs return jsonb; current_active_profile() is table-returning. Validate every RPC result.",
+  },
+  {
+    pattern: /Only then does the PR open/i,
+    fix: "Open a Draft PR early once there is coherent verified work; the Feature Gate marks it ready later.",
+  },
+  {
+    pattern: /before opening or approving a pull request/i,
+    fix: "The quality audit runs after code review, before the Feature Gate passes and before a Draft PR is marked ready.",
+  },
+  {
+    pattern: /Use at a feature gate, before a PR\b/i,
+    fix: "Review at the Feature Gate or before marking a Draft PR ready; the Draft PR itself opens early.",
+  },
+  {
+    pattern: /\bAC-0n\b/,
+    fix: "Acceptance criteria use real stable IDs only: AC-01, AC-02, AC-03, … . General DoD checks are not fake ACs.",
+  },
+  {
+    pattern: /pnpm verify[^\n]*before opening a PR/i,
+    fix: "`pnpm verify` is the local package-script check set mirrored by CI; open the Draft PR early and collect CI evidence on it.",
   },
 ];
 
@@ -167,25 +169,17 @@ const isDocument = (file) => file.endsWith(".md") || file.endsWith(".md.ejs");
  * describe what things used to be called — that is its job.
  */
 const ALLOWED = [
-  // Explains why the generator is project-owned rather than the ignite package.
   "docs/adr/0005-generator.md",
   "docs/adr/README.md",
-  // Records the anatomy change itself, including the names it replaced.
   "docs/adr/0009-feature-anatomy.md",
 ];
 
 /**
  * Directories we deliberately do not police, and why.
  *
- * The exclusion is NARROW on purpose. A previous version skipped any directory
- * named `skills`, which silently excluded all of `.claude/skills` — our own
- * workflow instructions, and the single most dangerous place for stale guidance.
- * A contradiction lived there undetected precisely because of that.
- *
- * `.agents/skills` holds skills installed from an external source
- * (`npx skills add ...`); their wording is not ours to change, and it is
- * symlinked into `.claude/skills`, so skipping the real directory also avoids
- * scanning the same file twice through the link.
+ * `.agents/skills` holds skills installed from an external source. Their wording
+ * is not ours to change, and they are symlinked into `.claude/skills`, so skip
+ * the real directory and the symlinked copy.
  */
 const VENDORED = [path.join(ROOT, ".agents", "skills")];
 
@@ -197,8 +191,6 @@ function isVendored(absolute) {
 function walk(target) {
   const absolute = path.join(ROOT, target);
   if (!fs.existsSync(absolute)) return [];
-  // Resolves symlinks, so a vendored skill linked into .claude/skills is
-  // recognised as vendored rather than scanned as if it were ours.
   if (isVendored(absolute)) return [];
   if (fs.statSync(absolute).isFile()) return isDocument(absolute) ? [absolute] : [];
 

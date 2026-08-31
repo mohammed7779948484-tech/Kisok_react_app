@@ -1,6 +1,6 @@
 ---
 name: kisok-react-native-rules
-description: React Native and Expo rules that matter for KISOK on Android store tablets — crash-avoidance in JSX, list performance and when virtualization is actually warranted, state that represents ground truth, animation on the UI thread, images, and re-render discipline. Each rule states the failure mode it prevents. Use this whenever you are writing or reviewing React Native components, screens, lists, animations, or diagnosing sluggishness or a crash on device.
+description: React Native and Expo rules that matter for KISOK on Android store tablets — crash-avoidance in JSX, list performance and when virtualization is actually warranted, long-lived-session leaks, animation on the UI thread, image-heavy surfaces, and measurable re-render discipline. Load it when a task includes a growing list, animation, image-performance concern, device crash, sluggishness, or other React Native performance/runtime risk; ordinary UI composition uses kisok-design-system alone.
 ---
 
 # React Native rules for KISOK

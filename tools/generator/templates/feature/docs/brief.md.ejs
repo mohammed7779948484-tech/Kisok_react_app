@@ -33,18 +33,27 @@ invalidates every reference in `worklog.md`.
 | AC-01 | TODO      | TODO           |
 | AC-02 | TODO      | TODO           |
 
-State requirements are **capability-aware**. Claim only the states this feature
-actually has — inventing an empty state for a screen that cannot be empty
-produces a test asserting something impossible, which is worse than no test.
+Add more rows as `AC-03`, `AC-04`, … when the feature genuinely needs them.
+Never use placeholder pseudo-IDs: every criterion referenced by a task must have
+one real stable ID.
 
-| If the feature has…              | The states to specify                                   |
-| -------------------------------- | ------------------------------------------------------- |
-| a data-backed read               | loading, empty, error with retry, success — as applicable |
-| a mutation                       | pending, success, business conflict, error — as applicable |
-| static or local-only UI          | only the states that genuinely exist                     |
+State requirements are **capability-aware**. Put a state into an AC only when
+that feature can actually reach it — inventing an empty state for a screen that
+cannot be empty produces a test asserting something impossible.
 
-- [ ] AC-0n: data states above are handled for the reads and mutations this
-      feature actually has
+| If the feature has…     | The states to specify                                             |
+| ----------------------- | ----------------------------------------------------------------- |
+| a data-backed read      | loading, empty, error with retry, success — only as applicable     |
+| a mutation              | pending, success, business conflict, error — only as applicable    |
+| static or local-only UI | only the states that genuinely exist                               |
+
+## General delivery requirements
+
+These are Definition-of-Done checks, not extra Acceptance Criteria, so they do
+not get fake AC IDs and tasks do not link to them as if they described product
+behaviour.
+
+- [ ] Applicable read/mutation states above are handled.
 - [ ] Works at the tablet sizes in `docs/design-system.md` (landscape and portrait).
 - [ ] Accessible: roles and labels on interactive elements; no colour-only meaning.
 

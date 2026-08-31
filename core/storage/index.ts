@@ -28,9 +28,12 @@ export type KeyValueStore = {
   removeItem(key: string): Promise<void>;
 };
 
+/** Prefix reserved for KISOK-owned client state. */
+export const KISOK_STORAGE_PREFIX = "kisok:";
+
 /** Namespaced so a feature cannot accidentally collide with another's keys. */
 export function storageKey(feature: string, name: string): string {
-  return `kisok:${feature}:${name}`;
+  return `${KISOK_STORAGE_PREFIX}${feature}:${name}`;
 }
 
 function asError(value: unknown): Error {
@@ -83,3 +86,20 @@ export type JsonStorage = ReturnType<typeof createJsonStorage>;
 
 /** The app-wide instance. Features should use this rather than AsyncStorage directly. */
 export const storage = createJsonStorage();
+
+/**
+ * Emergency kiosk handoff reset. Removes only KISOK-owned client state, never
+ * arbitrary browser/device storage. This is the fallback when a feature-level
+ * cleanup cannot prove that the previous customer's durable state was erased.
+ */
+export async function clearKisokStorage(): Promise<StorageWriteResult> {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const ownedKeys = keys.filter((key) => key.startsWith(KISOK_STORAGE_PREFIX));
+    if (ownedKeys.length > 0) await AsyncStorage.multiRemove(ownedKeys);
+    return { status: "persisted" };
+  } catch (error) {
+    log.error("Failed to clear KISOK storage namespace", { error: asError(error).message });
+    return { status: "rejected", error: asError(error) };
+  }
+}

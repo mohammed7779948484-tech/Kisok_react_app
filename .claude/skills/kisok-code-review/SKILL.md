@@ -23,8 +23,8 @@ independent.
    believed the behaviour was. A test that asserts on a mock, or that would pass
    against an empty function, is itself a finding.
 3. **Then the implementation**, against the checklist below.
-4. **Then look for what is missing** — the error branch, the empty state, the
-   loading state, the accessibility label.
+4. **Then look for what is missing** — the error branch, applicable empty/loading
+   states, the accessibility label.
 
 ## What actually goes wrong here
 
@@ -34,10 +34,11 @@ Ordered by how expensive it is when missed.
 
 - Is every RPC and column in `supabase/migrations/*.sql`? Names taken from the
   Flutter reference are wrong — that app targets an older database.
-- Is every RPC payload validated with Zod through `callRpc`? Every KISOK RPC
-  returns `jsonb`, typed as the wide `Json`; an unvalidated payload is untyped.
-  `current_active_profile()` is table-returning rather than `jsonb`, and is
-  validated against a rows schema — not every RPC returns `jsonb`.
+- Is every mobile RPC result runtime-validated with Zod through `callRpc`? The
+  JSON-returning business RPCs (`get_customer_catalog`, `create_order`,
+  `update_order_status`) return `jsonb`, typed as the wide `Json`; an
+  unvalidated payload is untyped. `current_active_profile()` is table-returning
+  and is validated against a rows schema instead.
 - Is `create_order` returning `kind: "stock_conflict"` treated as a **successful
   call**? It is a normal outcome, not an error.
 - Is checkout correctness left to the server? Idempotency, request fingerprint,
@@ -63,10 +64,12 @@ rule — check for suppressions:
 
 - Nothing async inside an `onAuthStateChange` callback — it runs while Supabase
   holds its auth lock and can deadlock the app.
-- Is `signOut`'s three-way outcome handled? `void signOut()` discards both
-  `blocked` and `failed`. Use `useSignOutAction`.
+- Is `signOut`'s outcome handled? `void signOut()` discards blocked/failed/unsafe
+  handoff outcomes. Use `useSignOutAction`.
 - Is the sign-out safety gate intact? Nothing may clear pending checkout
-  recovery state before the gate allows it.
+  recovery state before every pre-sign-out guard allows it.
+- If auth is gone but local cleanup fails, does durable kiosk handoff remain
+  fail-closed so the next customer cannot inherit stale cart/checkout state?
 
 ### State ownership
 
@@ -81,14 +84,15 @@ rule — check for suppressions:
 
 See `kisok-design-system`. In review, look for: raw hex colours or inline
 dimensions instead of tokens; a new shared primitive that duplicates an existing
-one; missing loading, empty and error states; a dead end with nowhere to go
+one; missing **applicable** read/mutation states; a dead end with nowhere to go
 next; interactive elements without a role or label; meaning carried by colour
 alone; layouts that assume one orientation.
 
 ### React Native performance
 
-See `kisok-react-native-rules`. Judge by measurable failure modes, not dogma —
-"this list is unbounded and re-renders every row on each keystroke" is a
+See `kisok-react-native-rules` when the change includes a growing list, animation,
+image-heavy surface, device crash or measurable performance concern. Judge by
+failure modes, not dogma — "this list is unbounded and mounts every row" is a
 finding; "this should be memoized" on its own is not.
 
 ### Tests
@@ -105,8 +109,7 @@ finding; "this should be memoized" on its own is not.
 must have been used. Check for files that look generated-shaped but were
 hand-written:
 
-- a `queries/keys.ts` or `api/fetch-*.ts` that does not match the template's
-  shape
+- a `queries/keys.ts` or `api/fetch-*.ts` that does not match the template's shape
 - a `screens/<name>/` assembled by hand
 - a route file that is not thin
 

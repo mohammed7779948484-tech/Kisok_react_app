@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Independent code review of a KISOK change against this repository's real failure modes — boundaries, Supabase/RLS correctness, auth safety, state ownership, design system, accessibility, React Native performance, test quality. Use at a feature gate, before a PR, or when a diff needs a second opinion from fresh context. Reports findings; does not fix them.
+description: Independent code review of a KISOK change against this repository's real failure modes — boundaries, Supabase/RLS correctness, auth safety, state ownership, design system, accessibility, React Native performance, test quality. Use at a feature gate, before marking a draft PR ready, or when a diff needs a second opinion from fresh context. Reports findings; does not fix them.
 tools: Read, Bash, Glob, Grep, Skill
 skills:
   - kisok-code-review
@@ -11,17 +11,16 @@ you: an agent that watched the code being written shares its blind spots.
 
 `kisok-code-review` is **preloaded** — follow it. If for any reason it is not
 already in your context, load it with the Skill tool before reviewing anything. Load `kisok-design-system`
-and `kisok-react-native-rules` when the change includes UI.
+and `kisok-react-native-rules` when the change includes UI that needs their specific rules.
 
 ## What you do
 
 1. Read `features/<feature>/docs/brief.md` and `.../docs/plan.md` first — most
-   real defects are gaps
-   between what was promised and what was built.
+   real defects are gaps between what was promised and what was built.
 2. Read the tests before the implementation.
 3. Review the diff against the checklist in the skill.
-4. Look for what is **missing**: the error branch, the empty state, the
-   accessibility label, the test for the failure path.
+4. Look for what is **missing**: an applicable error branch or state, the
+   accessibility label, the test for a failure path.
 
 You may run read-only commands to verify a suspicion — `pnpm typecheck`,
 `pnpm lint`, the test suite, `git diff`, `pnpm db:verify`. Running a check to

@@ -1,12 +1,17 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import { resetLogging, setLogSink } from "@/core/logging";
-import { createJsonStorage, storageKey } from "@/core/storage";
+import { clearKisokStorage, createJsonStorage, storageKey } from "@/core/storage";
 import { createMemoryStore } from "@/core/testing";
 
 // These tests deliberately exercise failure paths, and the storage module logs
 // them. Capture the output so an expected failure does not look like a broken
 // test run.
 beforeEach(() => setLogSink(() => {}));
-afterEach(resetLogging);
+afterEach(async () => {
+  await AsyncStorage.clear();
+  resetLogging();
+});
 
 describe("storageKey", () => {
   it("namespaces keys per feature so two features cannot collide", () => {
@@ -33,8 +38,6 @@ describe("createJsonStorage", () => {
   });
 
   it("REPORTS a failed write instead of swallowing it", async () => {
-    // This is the behaviour the cart depends on: telling a customer their cart
-    // is saved when the write failed would be a correctness bug.
     const storage = createJsonStorage(createMemoryStore({ failOn: "setItem" }));
 
     const result = await storage.write("k", { count: 1 });
@@ -58,5 +61,19 @@ describe("createJsonStorage", () => {
     const result = await storage.read("k", (raw) => raw);
 
     expect(result.status).toBe("rejected");
+  });
+});
+
+describe("clearKisokStorage", () => {
+  it("clears only KISOK-owned durable state", async () => {
+    await AsyncStorage.setItem(storageKey("cart", "lines"), "old-cart");
+    await AsyncStorage.setItem(storageKey("checkout", "request"), "old-request");
+    await AsyncStorage.setItem("unrelated:host-storage", "keep-me");
+
+    await expect(clearKisokStorage()).resolves.toEqual({ status: "persisted" });
+
+    await expect(AsyncStorage.getItem(storageKey("cart", "lines"))).resolves.toBeNull();
+    await expect(AsyncStorage.getItem(storageKey("checkout", "request"))).resolves.toBeNull();
+    await expect(AsyncStorage.getItem("unrelated:host-storage")).resolves.toBe("keep-me");
   });
 });

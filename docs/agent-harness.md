@@ -12,22 +12,29 @@ and what the gates actually mean.
 Project-owned skills live in `.claude/skills/`. They carry the workflow so it
 lives in one place instead of being restated in every feature's `todo.md`.
 
-| Skill                      | Load it when                                      |
-| -------------------------- | ------------------------------------------------- |
-| `feature-delivery`         | Building any feature — the orchestration workflow |
-| `kisok-feature-plan`       | Turning a brief into the feature's `docs/plan.md` |
-| `test-driven-development`  | Any implementation, bug fix, or behaviour change  |
-| `kisok-code-review`        | Reviewing a diff, a PR, or a feature before merge |
-| `kisok-quality-audit`      | Checking a delivery matches what was promised     |
-| `kisok-design-system`      | Writing or reviewing any UI                       |
-| `kisok-react-native-rules` | Lists, animation, images, performance, crashes    |
-| `kisok-maestro-e2e`        | Adding device-level end-to-end coverage           |
+| Skill                      | Load it when                                                   |
+| -------------------------- | -------------------------------------------------------------- |
+| `feature-delivery`         | Building any feature — the orchestration workflow              |
+| `kisok-feature-plan`       | Turning a brief into the feature's `docs/plan.md`              |
+| `test-driven-development`  | Any implementation, bug fix, or behaviour change               |
+| `kisok-code-review`        | Reviewing a diff, a PR, or a feature before merge              |
+| `kisok-quality-audit`      | Checking a delivery matches what was promised                  |
+| `kisok-design-system`      | Writing or reviewing any UI                                    |
+| `kisok-react-native-rules` | Growing lists, animation, images, crashes, performance/runtime  |
+| `kisok-maestro-e2e`        | Adding device-level end-to-end coverage                        |
 
 Official Supabase skills (`supabase`, `supabase-postgres-best-practices`) are
 installed project-scoped from `supabase/agent-skills`. They live once in
 `.agents/skills/` and are symlinked into `.claude/skills/`; `skills-lock.json`
 records their source and hash. Update them with
 `npx skills add supabase/agent-skills`, not by hand.
+
+**External skills provide platform knowledge, not project policy.** Where any
+vendored Expo or Supabase skill conflicts with KISOK's architecture, product
+boundaries, hosted-test ownership, or workflow, `AGENTS.md`, `CLAUDE.md`,
+`.claude/rules/` and the project-owned `kisok-*` skills win. In particular an
+external Supabase skill must never be read as permission for a feature agent to
+reset, reseed, migrate, or weaken the shared hosted test project.
 
 ### Expo
 
@@ -74,16 +81,18 @@ worth having:
   deliberately **not** vendored: KISOK's colour contract is
   `kisok-design-system` plus the semantic Tailwind tokens, and a raw-hex palette
   would contradict it. Ignore that pointer.
+- `expo-dev-client` contains iOS/TestFlight/EAS material because it is a general
+  Expo skill. KISOK currently targets Android tablets and uses the repository's
+  existing Gradle/GitHub Actions workflows. Do not introduce EAS, TestFlight or
+  iOS workflows unless a future task explicitly plans that platform change.
 
 What remains genuinely useful is the routing model itself — file-based routes,
 groups, dynamic segments, `Stack`, modals — which is what every KISOK feature
 touches.
 
-**KISOK rules stay authoritative.** Where a vendored Expo skill and this
-repository's own instructions differ on architecture, `AGENTS.md`, `CLAUDE.md`,
-`.claude/rules/` and the `kisok-*` skills win. The Expo skills are platform
-knowledge, not project policy. Keep the copies unchanged unless a compatibility
-fix is strictly required, so they can be refreshed from upstream.
+Keep external copies unchanged unless a compatibility fix is strictly required,
+so they can be refreshed from upstream; put KISOK-specific policy here or in the
+project-owned rules instead.
 
 `expo-mcp` (`github.com/expo/expo-mcp`, maintained by Expo core) is official and
 deliberately **not** installed: it is a _local device-automation_ server that
@@ -186,9 +195,12 @@ is required evidence alongside the local run: several checks depend on an
 environment only CI has, so `pnpm verify` alone is not the fail-closed authority
 for all of them.
 
-Full `pnpm verify`, runtime evidence, independent code review, remediation,
-re-review of blocking findings, then the quality audit. Only then does the PR
-open.
+Open the **Draft PR early**, once there is coherent verified work, so PR CI and
+label-gated native jobs can run while implementation continues. The final
+sequence is: full `pnpm verify`, required runtime/native evidence, independent
+code review, remediation, re-review of blocking/major findings, then the quality
+audit. Only after the Feature Gate passes is the draft marked ready for a human.
+Agents never merge it.
 
 ## Control documents
 
