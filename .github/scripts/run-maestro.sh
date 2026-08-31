@@ -10,6 +10,7 @@
 set -uo pipefail
 
 APK=android/app/build/outputs/apk/release/app-release.apk
+DISMISSED_FOREIGN_ANR=0
 
 # The device's ABI order decides which lib/<abi> the system extracts. If it
 # disagrees with what the APK contains, the app dies in Application.onCreate
@@ -35,8 +36,11 @@ sleep 5
 #
 # Deliberately narrow: if com.kisok.kiosk is the one not responding, that is a
 # real defect and this must not paper over it. The dialog belongs to package
-# "android", so the test is the title text.
+# "android", so the test is the title text. The global flag tells the caller
+# whether a foreign dialog was actually cleared, so Maestro may be retried once.
 dismiss_foreign_anr() {
+  DISMISSED_FOREIGN_ANR=0
+
   local hierarchy
   hierarchy=$(adb shell uiautomator dump /sdcard/pre-check.xml >/dev/null 2>&1 &&
     adb shell cat /sdcard/pre-check.xml 2>/dev/null) || return 0
@@ -61,6 +65,7 @@ dismiss_foreign_anr() {
       adb shell am force-stop com.google.android.apps.nexuslauncher || true
       adb shell input keyevent KEYCODE_HOME || true
       sleep 3
+      DISMISSED_FOREIGN_ANR=1
       ;;
   esac
 }
@@ -69,6 +74,20 @@ dismiss_foreign_anr
 
 maestro test .maestro/flows --format junit --output maestro-report.xml
 status=$?
+
+# A launcher ANR can appear after the pre-check while Maestro is waiting for the
+# sign-in screen. If — and only if — the failed run is currently covered by a
+# foreign system ANR, clear it and rerun the same smoke flow once. A second
+# failure is preserved and diagnosed normally; KISOK's own ANR is never cleared.
+if [ "$status" -ne 0 ]; then
+  dismiss_foreign_anr
+  if [ "$DISMISSED_FOREIGN_ANR" -eq 1 ]; then
+    echo "::warning::Retrying Maestro once after clearing the foreign launcher ANR."
+    rm -f maestro-report.xml
+    maestro test .maestro/flows --format junit --output maestro-report.xml
+    status=$?
+  fi
+fi
 
 if [ "$status" -ne 0 ]; then
   echo "::group::What was actually on screen"
