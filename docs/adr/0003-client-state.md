@@ -33,8 +33,12 @@ Zustand for client state, writing through `@/core/storage` rather than the
 { status: "persisted" } | { status: "rejected", error }
 ```
 
-A store keeps an honest `persistence: "persisted" | "memoryOnly"` flag the UI can
-render. The generated `state/` template demonstrates the pattern.
+A store keeps an honest `persistence` flag the UI can render — `"persisted"`,
+`"memoryOnly"` (a plain write failed), or `"clearFailed"` (a durable CLEAR could
+not remove the previous value, even after the template's own fallback write
+also failed — a shared-kiosk safety issue, since the next cold start would read
+the previous customer's data back, not merely "your edit might not save"). The
+generated `state/` template demonstrates the pattern.
 
 ## Consequences
 
