@@ -20,6 +20,8 @@ Implementation notes do not belong here; they belong in `worklog.md`.
 | T03-R04 | minor    | `ActiveOrderRow \| null` misreads at the detail boundary (detail legitimately resolves terminal orders via history) — reuse was mandated; shape identical                                                                                        | fetch-order-detail.ts:4,29                                                                                      | accept            | Docblocks document it; revisit only if T13/T14 find it confusing (Lead decision)                                                                                                                                                                                                             |
 | T04-R01 | minor    | Test header overstated TypeScript blindness: select-string projection IS typed for literals; the real blind spots are single-vs-maybeSingle and added chain calls                                                                                | fetch-store-settings.test.ts:17-23; postgrest-js index.d.mts:1143,971                                           | fix               | Comment reworded to credit projection typing and claim only the real blind spots (implementer resumed; re-verified 5/5)                                                                                                                                                                      |
 | T04-R02 | minor    | Stale doc in shared core/testing/supabase.ts: "orders and order_items" — store_settings is also an allowed preparation direct read (migration 13:24-31,189-205)                                                                                  | core/testing/supabase.ts:11-15                                                                                  | accept            | Shared-file doc fix belongs to a Lead-owned foundation chore, not this feature PR; recorded so the next agent knows the list is incomplete                                                                                                                                                   |
+| T05-R01 | minor    | Api test pinned only K1004 → state-conflict; AC-10 names both branches and AC-05's assignee-only path is the RPC's 42501                                                                                                                         | update-order-status.test.ts:92-121; migration 08:158-162                                                        | fix               | 42501 assignee-only rejection test added (kind forbidden, code 42501); both AC-10 branches pinned at the feature seam (implementer resumed; 6/6)                                                                                                                                             |
+| T05-R02 | minor    | Hook invalidates on success only (per plan) — AC-10's "refresh on rejected transition" must be screen-owned; stale cache until realtime/refresh after a K1004                                                                                    | use-update-order-status-mutation.ts:23-30; plan.md:306-309                                                      | accept (deferred) | REQUIRED constraint carried into T10/T11/T13 packets: screens implement onError → invalidate/refetch                                                                                                                                                                                         |
 
 Severity means: **blocking** — must not merge; **major** — fix in this feature;
 **minor** — worth doing, safe to defer with a note.
@@ -74,6 +76,22 @@ keys.ts untouched), zero convention divergence, RED coherence
 reconstructed. Observations for the Lead: transport-level throws are not
 AppError at screens (→ T11/T13/T14 packets); unresolvable IANA zone must
 degrade like an absent row in T06's model (→ T06 packet).
+
+### T05 review coverage statement (reviewer agent-0ca47f51, fresh context)
+
+Examined and clean: RPC fidelity (exact argument names/types vs migration
+08:5-9 and generated Args; schema validated at the boundary; correct
+RpcInvocation form; zero client-side transition re-implementation), input
+union honesty (Equals compile proof; nothing widens it), reason semantics
+verified end-to-end through postgrest-js serialization (undefined key
+dropped → RPC default null; mock pin accurate), hook (.all invalidation
+genuinely narrow — every feature key nests under ["preparation"]; no
+retry override verified against core/query/client.ts; hook exposes what
+T10/T11/T13 need), test quality (every test names a contract; negative
+controls verified; RED coherent), the gcTime workaround verified against
+query-core source (scheduleGc skips Infinity), boundaries and scope
+(exactly four files; api/-only; no suppressions). Full-repo test:ci
+re-run: 24 suites / 171 tests, zero console output.
 
 ## Re-review
 

@@ -355,3 +355,68 @@ features/preparation/queries/use-store-settings.ts (new)
 keys.ts NOT modified.
 
 GATE: PASS
+
+### T05 — update-order-status mutation
+
+MODE: behavior
+ACCEPTANCE: Supporting: AC-04/AC-05/AC-06/AC-10
+
+SCAFFOLD
+$ pnpm generate mutation preparation update-order-status
+created : features/preparation/api/update-order-status.ts,
+features/preparation/queries/use-update-order-status-mutation.ts
+skipped : —
+replaced : —
+manual : features/preparation/api/update-order-status.test.ts,
+features/preparation/queries/use-update-order-status-mutation.test.tsx
+(both planned: api contract + hook invalidation contract)
+
+RED
+$ npx jest features/preparation/api/update-order-status.test.ts
+Tests: 4 failed, 1 passed, 5 total
+Failure: placeholder NOT_IMPLEMENTED AppError on all four behaviour tests
+(K1004 expectation visible in the diff) — the intended missing write
+behaviour; type-proof passes at runtime by design (typecheck fails at
+RED — UpdateOrderStatusInput placeholder does not match).
+
+IMPLEMENT
+updateOrderStatus(input): callRpc("update_order_status", { order_id,
+target_status, reason }, orderStatusUpdateSchema). Input union
+"preparing" | "ready" | "cancelled" (the honest client boundary;
+completed is admin-only, new is not a tablet target). No client-side
+transition-rule re-implementation — the RPC is authoritative. Hook
+invalidates preparationKeys.all on success (justified: a status change
+moves rows across board/detail/history); no retry override.
+
+GREEN
+$ npx jest features/preparation/ → 7 suites / 33 tests (34 after
+remediation) — all pass, jest exits cleanly.
+
+AFFECTED CHECKS (Lead re-ran)
+$ npx jest features/preparation/ → 33/33 at verification (34 after)
+$ pnpm typecheck → clean
+$ pnpm lint / prettier (implementer + reviewer re-ran) → clean
+$ pnpm test:ci (reviewer) → 24 suites / 171 tests, zero console output
+
+TASK REVIEW (fresh code-reviewer, Super Z agent-0ca47f51)
+No blocking, no major. T05-R01 minor: only K1004 → state-conflict was
+pinned; AC-10 names both branches — remediated: 42501 assignee-only
+rejection test added (kind forbidden, code 42501); 6/6 in the api file.
+T05-R02 observation (per-plan, NOT a T05 defect): the hook invalidates
+on success only; AC-10's "refresh the affected data" on a REJECTED
+transition must be screen-owned — carried as a REQUIRED constraint into
+T10/T11/T13 packets (screens implement onError → invalidate/refetch).
+Implementer notes: useMutation tests need mutations.gcTime: Infinity to
+let jest exit (test-local createMutationTestClient; reviewer verified
+against query-core source) — a shared core/testing fix would be a
+Lead-owned foundation chore, recorded, NOT done in this feature.
+
+DIFF
+features/preparation/api/update-order-status.ts (new)
+features/preparation/api/update-order-status.test.ts (new, manual)
+features/preparation/queries/use-update-order-status-mutation.ts (new)
+features/preparation/queries/use-update-order-status-mutation.test.tsx
+(new, manual)
+keys.ts / index.ts NOT modified.
+
+GATE: PASS
