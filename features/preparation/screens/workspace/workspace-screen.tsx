@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ScrollView, View } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { EmptyState, ErrorState, SkeletonList } from "@/components/feedback";
+import { EmptyState, ErrorState, InlineError, SkeletonList } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
 import { Button, Tabs, TabsContent, TabsList, TabsTrigger, Text } from "@/components/ui";
 import { useAuth, useSignOutAction } from "@/core/auth";
@@ -15,6 +15,7 @@ import { orderStatusLabel } from "../../components/order-status-badge";
 import { effectiveTimezone, resolveStoreTimezone } from "../../model/store-day";
 import { preparationKeys } from "../../queries/keys";
 import { useActiveOrders } from "../../queries/use-active-orders";
+import { useOrdersRealtime } from "../../queries/use-orders-realtime";
 import { useStoreSettings } from "../../queries/use-store-settings";
 import { useUpdateOrderStatusMutation } from "../../queries/use-update-order-status-mutation";
 
@@ -48,6 +49,11 @@ import {
  * ticking timer (decision 10), and new-order arrivals are announced through a
  * polite live region (decision 9) — no toast, no sound. The workspace also
  * carries the sign-out affordance and a manual refresh (decision 10).
+ *
+ * While this screen is mounted it holds the orders Realtime subscription
+ * (AC-09, `useOrdersRealtime`): an `orders` change is an INVALIDATION signal
+ * only — the hook invalidates the feature's queries and the refetched query
+ * result is what re-renders the board. Nothing here reads a Realtime payload.
  */
 const BOARD_STATUSES = ["new", "preparing", "ready"] as const;
 
@@ -63,18 +69,33 @@ const PENDING_ACTION_BY_TARGET: Record<"preparing" | "ready" | "cancelled", Boar
 };
 
 /**
+ * How long an arrival announcement stays on screen (T11-R02): long enough to
+ * read, short enough that an all-shift board never accumulates stale captions.
+ */
+export const ANNOUNCEMENT_CLEAR_MILLIS = 6000;
+
+/**
  * The created time as the board shows it: wall-clock time in the effective
  * (store, else device) timezone — a fixed 24-hour clock, deterministic and
  * unambiguous on a shared kiosk. Screen-local on purpose: the card stays dumb
  * about timezones and receives the label as a prop.
+ *
+ * Built from `formatToParts` so the hour can be absorbed with `% 24` — the
+ * same guard model/store-day.ts documents (:113-114): some ICU builds (Hermes
+ * tablets) run an h24 cycle and would otherwise render midnight as "24:00"
+ * with a 24-hour clock (T11-R05).
  */
 function formatCreatedAt(isoTimestamp: string, timezone: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
+  const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-  }).format(new Date(isoTimestamp));
+  }).formatToParts(new Date(isoTimestamp));
+  const component = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((part) => part.type === type)?.value ?? "00";
+  const hour = Number(component("hour")) % 24;
+  return `${String(hour).padStart(2, "0")}:${component("minute")}`;
 }
 
 export function WorkspaceScreen() {
@@ -91,6 +112,12 @@ export function WorkspaceScreen() {
   const activeOrders = useActiveOrders();
   const storeSettings = useStoreSettings();
   const mutation = useUpdateOrderStatusMutation();
+
+  // AC-09: while this screen is mounted, `orders` changes arrive as Realtime
+  // events whose ONLY job is to invalidate the feature's queries — the
+  // refetched query result is the rendered truth, never the payload. The hook
+  // owns the channel's lifecycle (one channel, removed on unmount).
+  useOrdersRealtime();
 
   const [selectedTab, setSelectedTab] = useState<BoardStatus>("new");
   const [cancelTarget, setCancelTarget] = useState<ActiveOrderRow | null>(null);
@@ -118,6 +145,18 @@ export function WorkspaceScreen() {
         : `${arrivals.length} new orders`,
     );
   }, [activeOrders.data]);
+
+  // T11-R02: the caption is transient — cleared after a short delay, so an
+  // all-shift board never keeps a stale arrival announcement on screen until
+  // the NEXT arrival. A newer arrival with a DIFFERENT caption replaces it
+  // and restarts the timer (the effect re-runs on the new value); React's
+  // same-value setState bailout means an identical caption string keeps the
+  // existing window (T12-R01 — accepted, benign). Unmount always clears it.
+  useEffect(() => {
+    if (announcement === null) return;
+    const timeout = setTimeout(() => setAnnouncement(null), ANNOUNCEMENT_CLEAR_MILLIS);
+    return () => clearTimeout(timeout);
+  }, [announcement]);
 
   // Decision 8: prefer the store timezone, degrade to the device zone when
   // the settings row is absent OR its read failed — never a board failure.
@@ -273,6 +312,15 @@ export function WorkspaceScreen() {
           <Text variant="caption" tone="muted" accessibilityLiveRegion="polite">
             {announcement}
           </Text>
+        ) : null}
+        {/* T11-R04: a failed background/manual refetch while the board still
+            shows (stale) data is not silent — a transient inline notice beside
+            the board. It clears itself on the next successful read (`isError`
+            flips back); the full ErrorState stays reserved for a board with NO
+            data. Realtime multiplies background refetches, so this window is
+            no longer rare. */}
+        {activeOrders.isError && activeOrders.data !== undefined ? (
+          <InlineError error={activeOrders.error} />
         ) : null}
         {board}
       </ScrollView>

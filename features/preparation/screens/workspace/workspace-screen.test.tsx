@@ -20,7 +20,7 @@ import { fetchStoreSettings, type StoreSettingsRow } from "../../api/fetch-store
 import { updateOrderStatus } from "../../api/update-order-status";
 import { type OrderStatusUpdate } from "../../model/order-status-update.schema";
 
-import { WorkspaceScreen } from "./workspace-screen";
+import { ANNOUNCEMENT_CLEAR_MILLIS, WorkspaceScreen } from "./workspace-screen";
 
 /**
  * The workspace board's observable contract (AC-01/02/04/05/10, plan decisions
@@ -36,14 +36,25 @@ import { WorkspaceScreen } from "./workspace-screen";
  *   screen-owned refresh (T05-R02: the hook invalidates on success ONLY), with
  *   the cancel-rejection flow given its own test (T10-R01: dialog closes,
  *   feedback near the card, then refetch);
- * - the polite live region announcing new-order arrivals (decision 9), the
+ * - the polite live region announcing new-order arrivals (decision 9) and
+ *   clearing again after a short delay (T11-R02, with fake timers), the
  *   sign-out and manual refresh affordances (decision 10), and the store
  *   timezone for created times degrading silently when settings are absent
- *   (decision 8).
+ *   (decision 8), with midnight pinned to "00:00" — the h24-cycle ICU hour
+ *   absorption the model documents (T11-R05);
+ * - an inline notice when a refetch fails while the board still shows data
+ *   (T11-R04: realtime multiplies background refetches, so this window is no
+ *   longer rare);
+ * - the realtime wiring (AC-09): while the screen is mounted it holds ONE
+ *   orders channel (removed on unmount), and an incoming event invalidates
+ *   the feature's queries so the refetched result — never the payload —
+ *   re-renders the board.
  *
  * Mocked at the feature's own `api/` boundary (plus `useLayout`, per the plan's
  * screen test strategy, and `expo-router` for the details navigation wiring) —
- * a screen test must not know Supabase exists.
+ * a screen test must not know Supabase exists. The realtime tests layer the
+ * channel-recording spy of core/realtime's own tests onto `installMockAuth`'s
+ * client, so the subscription can be asserted and a fake event FIRED at it.
  */
 
 jest.mock("../../api/fetch-active-orders", () => ({ fetchActiveOrders: jest.fn() }));
@@ -168,6 +179,41 @@ const routerPush = jest.fn();
 
 let mockSupabase: ReturnType<typeof installMockAuth> | undefined;
 
+/**
+ * Records every channel the installed mock client opens — core/realtime's own
+ * test pattern, layered on `installMockAuth`: a test can assert which
+ * subscriptions a render opened, FIRE a fake payload at the recorded handler,
+ * and assert the channel was removed on unmount.
+ */
+type ChannelSpy = {
+  created: string[];
+  removed: unknown[];
+  handlers: ((payload: unknown) => void)[];
+};
+
+function spyOnChannels(client: unknown): ChannelSpy {
+  const spy: ChannelSpy = { created: [], removed: [], handlers: [] };
+  const mutable = client as {
+    channel: (name: string) => unknown;
+    removeChannel: (channel: unknown) => Promise<void>;
+  };
+  mutable.channel = (name: string) => {
+    spy.created.push(name);
+    const channel = {
+      on: (_event: string, _filter: unknown, handler: (payload: unknown) => void) => {
+        spy.handlers.push(handler);
+        return channel;
+      },
+      subscribe: () => channel,
+    };
+    return channel;
+  };
+  mutable.removeChannel = async (channel: unknown) => {
+    spy.removed.push(channel);
+  };
+  return spy;
+}
+
 type RenderOptions = {
   orders?: ActiveOrderRow[];
   size?: LayoutSize;
@@ -176,6 +222,8 @@ type RenderOptions = {
   settingsFails?: boolean;
   /** Lets a test fail the first read, or swap the board between fetches. */
   fetchImpl?: () => Promise<ActiveOrderRow[]>;
+  /** Records the client's channel plumbing, for the realtime tests. */
+  channelSpy?: boolean;
 };
 
 async function renderWorkspace({
@@ -184,6 +232,7 @@ async function renderWorkspace({
   settings = STORE_SETTINGS,
   settingsFails = false,
   fetchImpl,
+  channelSpy = false,
 }: RenderOptions = {}) {
   setLayout(size);
   fetchOrdersMock.mockImplementation(fetchImpl ?? (() => Promise.resolve(orders)));
@@ -199,11 +248,13 @@ async function renderWorkspace({
       is_active: true,
     },
   });
+  const spy = channelSpy ? spyOnChannels(mockSupabase.client) : null;
 
-  await renderWithProviders(<WorkspaceScreen />, {
+  const view = await renderWithProviders(<WorkspaceScreen />, {
     withAuth: true,
     queryClient: createMutationTestClient(),
   });
+  return { view, spy };
 }
 
 beforeEach(() => {
@@ -272,6 +323,40 @@ describe("WorkspaceScreen board read", () => {
     expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
     expect(fetchOrdersMock).toHaveBeenCalledTimes(2);
   });
+
+  it("shows a transient inline notice when a refetch fails while the board still shows data", async () => {
+    // A transport-level throw (T04 O-1: not an AppError at the screen).
+    const order = makeOrder();
+    let failReads = false;
+    await renderWorkspace({
+      fetchImpl: () =>
+        failReads ? Promise.reject(new Error("Network request failed")) : Promise.resolve([order]),
+    });
+
+    expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
+
+    // T11-R04: the next read fails, but the board still has its (stale) data —
+    // full silence is wrong now that realtime multiplies background refetches.
+    failReads = true;
+    await userEvent.setup().press(screen.getByRole("button", { name: "Refresh" }));
+
+    expect(
+      await screen.findByText("We couldn't reach the network. Check the connection and try again."),
+    ).toBeOnTheScreen();
+    // The stale board stays the rendered truth; the full error state stays
+    // reserved for a board with NO data to show.
+    expect(screen.getByText("AB2CD4")).toBeOnTheScreen();
+    expect(screen.queryByText("Something went wrong")).toBeNull();
+
+    // Transient: the notice clears again on the next successful read.
+    failReads = false;
+    await userEvent.setup().press(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByText("We couldn't reach the network. Check the connection and try again."),
+      ).toBeNull(),
+    );
+  });
 });
 
 describe("WorkspaceScreen grouping", () => {
@@ -321,6 +406,19 @@ describe("WorkspaceScreen grouping", () => {
     await userEvent.setup().press(screen.getByRole("tab", { name: "Preparing (1)" }));
 
     expect(await screen.findByText("C5D6E7")).toBeOnTheScreen();
+  });
+
+  it("renders empty groups as No orders within a populated expanded board", async () => {
+    // A board where only New has work — Preparing and Ready are legitimately
+    // empty while their sibling is not.
+    await renderWorkspace({ orders: [makeOrder()] });
+
+    // T11-R03: the empty groups render words, not blank panels — pinned so
+    // the empty-within-populated state cannot regress silently.
+    expect(await screen.findByText("New (1)")).toBeOnTheScreen();
+    expect(screen.getByText("Preparing (0)")).toBeOnTheScreen();
+    expect(screen.getByText("Ready (0)")).toBeOnTheScreen();
+    expect(screen.getAllByText("No orders")).toHaveLength(2);
   });
 });
 
@@ -422,6 +520,17 @@ describe("WorkspaceScreen transitions", () => {
 
     // 05:00 UTC renders as 08:00 in the settings row's Asia/Riyadh.
     expect(await screen.findByText("08:00")).toBeOnTheScreen();
+  });
+
+  it("renders a midnight order as 00:00, never 24:00", async () => {
+    // 21:00:08 UTC is 00:00:08 the next day in Asia/Riyadh — the hour an
+    // h24-cycle ICU build (Hermes tablets) would render as "24" with a
+    // 24-hour clock (T11-R05, the model's own % 24 absorption).
+    const midnightOrder = makeOrder({ created_at: "2026-08-26T21:00:08.123456+00:00" });
+    await renderWorkspace({ orders: [midnightOrder] });
+
+    expect(await screen.findByText("00:00")).toBeOnTheScreen();
+    expect(screen.queryByText("24:00")).toBeNull();
   });
 
   it("keeps rendering the board when the settings row is absent", async () => {
@@ -551,6 +660,38 @@ describe("WorkspaceScreen affordances", () => {
     expect(fetchOrdersMock).toHaveBeenCalledTimes(2);
   });
 
+  it("clears the arrival announcement again after a short delay", async () => {
+    const firstOrder = makeOrder();
+    const secondOrder = makeOrder({
+      id: "b2c3d4e5-6f7a-8b9c-0d1e-2f3a4b5c6d7e",
+      display_number: "J4K5L6",
+    });
+    let board = [firstOrder];
+    await renderWorkspace({ fetchImpl: () => Promise.resolve([...board]) });
+
+    expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
+
+    // Fake timers from here on, so the delay can be advanced deterministically
+    // instead of slept out (the announcement's timer starts when the caption
+    // is set, i.e. after the refresh below).
+    jest.useFakeTimers();
+    try {
+      board = [firstOrder, secondOrder];
+      await userEvent.setup().press(screen.getByRole("button", { name: "Refresh" }));
+
+      expect(await screen.findByText("New order J4K5L6")).toBeOnTheScreen();
+
+      // T11-R02: an all-shift board must not keep a stale arrival caption on
+      // screen until the next arrival — it clears after a short delay.
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(ANNOUNCEMENT_CLEAR_MILLIS);
+      });
+      expect(screen.queryByText("New order J4K5L6")).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("offers a sign-out affordance", async () => {
     await renderWorkspace({ orders: [makeOrder()] });
 
@@ -569,5 +710,61 @@ describe("WorkspaceScreen affordances", () => {
       pathname: "/order-details",
       params: { orderId: newOrder.id },
     });
+  });
+});
+
+describe("WorkspaceScreen realtime (AC-09)", () => {
+  it("subscribes to orders changes while mounted and removes the channel on unmount", async () => {
+    const { view, spy } = await renderWorkspace({ orders: [makeOrder()], channelSpy: true });
+    if (spy === null) throw new Error("channel spy was not installed");
+
+    expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
+    // ONE channel for the orders table, opened under the feature's own name.
+    expect(spy.created).toEqual(["preparation-orders"]);
+
+    // A tablet runs all day — a channel that survives navigation leaks.
+    await view.unmount();
+    expect(spy.removed).toHaveLength(1);
+  });
+
+  it("refetches the board when an orders event arrives; the rendered truth is the query result, never the payload", async () => {
+    const newOrder = makeOrder();
+    const movedOrder = makeOrder({
+      status: "preparing",
+      assigned_preparation_id: COLLEAGUE_ID,
+    });
+    let board = [newOrder];
+    const { spy } = await renderWorkspace({
+      fetchImpl: () => Promise.resolve([...board]),
+      channelSpy: true,
+    });
+    if (spy === null) throw new Error("channel spy was not installed");
+
+    expect(await screen.findByText("New (1)")).toBeOnTheScreen();
+    expect(fetchOrdersMock).toHaveBeenCalledTimes(1);
+
+    // The order moves on the server while the board is open.
+    board = [movedOrder];
+
+    // The realtime event fires — carrying row content the query never returns,
+    // to pin that the payload itself is never rendered.
+    await act(async () => {
+      spy.handlers[0]?.({
+        schema: "public",
+        table: "orders",
+        eventType: "UPDATE",
+        new: { id: movedOrder.id, display_number: "ZZ9Y8X", status: "preparing" },
+        old: { id: newOrder.id, status: "new" },
+        errors: null,
+      });
+    });
+
+    // The event only INVALIDATED the feature's queries — the refetch re-called
+    // the api boundary and the refetched result re-rendered the board.
+    await waitFor(() => expect(fetchOrdersMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Preparing (1)")).toBeOnTheScreen();
+    expect(screen.queryByText("New (1)")).toBeNull();
+    // AC-09's second half: the payload's own content never reaches the screen.
+    expect(screen.queryByText("ZZ9Y8X")).toBeNull();
   });
 });

@@ -890,3 +890,76 @@ app/(preparation)/index.tsx (replaced — Lead scaffold, planned --force)
 features/preparation/index.ts (appended — Lead scaffold, generator-owned)
 
 GATE: PASS
+
+### T12 — Orders realtime invalidation wired into workspace
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-09
+
+SCAFFOLD
+$ pnpm generate realtime preparation orders --role=preparation
+created : features/preparation/queries/use-orders-realtime.ts
+skipped : features/preparation/queries/keys.ts (exists — correct)
+
+RED
+$ npx jest features/preparation/screens/workspace/
+Tests: 4 failed, 22 total — spy.created empty (no subscription), fetch
+re-call missing, banner absent, announcement clear absent (all the
+missing-behaviour class; the 16 pre-existing T11 tests stayed green)
+
+IMPLEMENT
+useOrdersRealtime() called unconditionally in WorkspaceScreen (the hook
+owns the channel lifecycle; AC-09 signal-only — no payload → state
+path). The four T11 carried minors: ANNOUNCEMENT_CLEAR_MILLIS=6000
+exported test seam + effect keyed on [announcement] with clearTimeout
+cleanup (R02); empty-group sibling test pinning Preparing (0)/Ready (0)
+
+- two "No orders" texts (R03 — own test rather than folding, which
+  would have weakened the existing grouping test); InlineError banner
+  when isError && data !== undefined (R04 — OfflineNotice is
+  onlineManager-driven and cannot see an online 5xx; InlineError takes
+  unknown per T04 O-1 and is transient on the next successful read);
+  formatCreatedAt rebuilt from formatToParts with hour % 24 absorption
+  mirroring model/store-day.ts (R05 — h24-cycle ICU guard; pinned by a
+  midnight "00:00"/not-"24:00" characterization, honestly disclosed as
+  un-RED-able on this Node's h23 ICU). Channel spy layered onto
+  installMockAuth's client (no @/core/supabase import in the feature).
+
+GREEN
+$ npx jest features/preparation/screens/workspace/ → 22/22
+$ npx jest features/preparation/ → 15 suites / 139 tests
+$ npx jest (repo-wide) → 32 suites / 277 tests
+
+AFFECTED CHECKS (Lead re-ran)
+$ pnpm typecheck → clean; eslint --max-warnings=0 → clean; prettier
+→ clean; zero console output
+
+TASK REVIEW (fresh code-reviewer, Super Z agent-30a5de1b)
+No blocking, no major; one minor. All four judgement calls upheld
+(no separate hook test SUFFICIENT — the wrapper is byte-identical to
+the template and the core layer is unit-tested; sibling test BETTER
+than the remediation's letter; InlineError CORRECT; R05 disclosure
+HONEST). AC-09 truth clause verified structurally (handler ignores
+the payload; render solely from activeOrders.data; no payload→state
+path anywhere in the feature).
+
+- T12-R01 minor: comment claimed a newer arrival restarts the timer —
+  false for an identical caption string (React same-value setState
+  bailout); the older timer clears the new caption early; benign
+  consequence → ACCEPTED with the comment corrected (Lead-applied,
+  one comment line, disclosed; 22/22 re-verified). Epoch-keyed
+  captions recorded as an optional future alternative.
+- Out-of-scope observation (pre-existing core, NOT this diff):
+  core/realtime removeChannel's void promise rejection is unhandled —
+  carried to the Lead's foundation-chore notes (review.md), not this
+  feature.
+
+DIFF
+features/preparation/queries/use-orders-realtime.ts (new, Lead
+scaffold — byte-identical to the template, reviewer-verified)
+features/preparation/screens/workspace/workspace-screen.tsx
+(modified: wiring + R02/R04/R05)
+features/preparation/screens/workspace/workspace-screen.test.tsx
+(modified: +6 tests, channel spy, R03 pin)
+
+GATE: PASS
