@@ -1,7 +1,11 @@
 import { Text } from "react-native";
 
-import { useAuth } from "@/core/auth";
-import { registerSignOutTask, clearSignOutTasks } from "@/core/auth";
+import {
+  useAuth,
+  registerSignOutCleanup,
+  registerSignOutGuard,
+  clearSignOutTasks,
+} from "@/core/auth";
 import { resetLogging, setLogSink } from "@/core/logging";
 import { installMockAuth, renderWithProviders, screen, waitFor } from "@/core/testing";
 import { setSupabaseClient } from "@/core/supabase";
@@ -96,7 +100,7 @@ describe("signOut", () => {
 
   it("lets a safety task veto it before anything is torn down", async () => {
     const supabase = installMockAuth();
-    registerSignOutTask({
+    registerSignOutGuard({
       name: "checkout",
       run: () => ({ status: "blocked", reason: "An order is still being confirmed." }),
     });
@@ -110,6 +114,89 @@ describe("signOut", () => {
       }),
     );
     // The gate runs first: Supabase was never asked to sign out.
+    expect(supabase.signOutCalls).toEqual([]);
+    supabase.restore();
+  });
+
+  it("never runs cleanup when a guard blocks", async () => {
+    const supabase = installMockAuth();
+    const cleaned: string[] = [];
+    registerSignOutGuard({
+      name: "checkout",
+      run: () => ({ status: "blocked", reason: "An order is still being confirmed." }),
+    });
+    registerSignOutCleanup({ name: "cart", run: () => void cleaned.push("cart") });
+
+    await renderProbe();
+
+    await waitFor(() => expect(outcome?.status).toBe("blocked"));
+    expect(cleaned).toEqual([]);
+    supabase.restore();
+  });
+
+  it("runs cleanup only after the session is actually gone", async () => {
+    const supabase = installMockAuth();
+    const cleaned: string[] = [];
+    registerSignOutCleanup({ name: "cart", run: () => void cleaned.push("cart") });
+
+    await renderProbe();
+
+    await waitFor(() => expect(outcome).toEqual({ status: "ok" }));
+    expect(cleaned).toEqual(["cart"]);
+    supabase.restore();
+  });
+
+  it("does not report success — or destroy anything a guard could have protected — when a cleanup task throws", async () => {
+    // The session is already gone by the time cleanup runs, so a broken
+    // cleanup task must not flip the outcome back to "failed" and claim the
+    // customer is still signed in when they are not.
+    const supabase = installMockAuth();
+    registerSignOutCleanup({
+      name: "cart",
+      run: () => {
+        throw new Error("storage full");
+      },
+    });
+
+    await renderProbe();
+
+    await waitFor(() => expect(outcome).toEqual({ status: "ok" }));
+    supabase.restore();
+  });
+
+  it("fails CLOSED — reports 'failed', never throws — when the Supabase call itself throws", async () => {
+    // Not every failure comes back as `{ error }`; this proves an actual
+    // exception from the Supabase client is caught here rather than
+    // surfacing as an unhandled rejection from `signOut()`.
+    const supabase = installMockAuth({
+      signOut: () => {
+        throw new Error("native module crashed");
+      },
+    });
+
+    await renderProbe();
+
+    await waitFor(() => expect(outcome?.status).toBe("failed"));
+    // Still signed in, because that is the truth — the same invariant as the
+    // returned-error case above.
+    expect(screen.getByText("ready")).toBeOnTheScreen();
+    supabase.restore();
+  });
+
+  it("fails CLOSED — blocks, never proceeds — when a guard itself throws", async () => {
+    const supabase = installMockAuth();
+    registerSignOutGuard({
+      name: "checkout",
+      run: () => {
+        throw new Error("boom");
+      },
+    });
+
+    await renderProbe();
+
+    await waitFor(() => expect(outcome?.status).toBe("blocked"));
+    // The gate never resolved, so Supabase was never asked to sign out —
+    // exactly as if it had returned an explicit block.
     expect(supabase.signOutCalls).toEqual([]);
     supabase.restore();
   });

@@ -72,8 +72,18 @@ const result = await storage.write(key, value);
 // { status: "persisted" } | { status: "rejected", error }
 ```
 
-So a store can hold an honest `persistence: "persisted" | "memoryOnly"` and the
-UI can say so. The generated `state/` template shows the pattern.
+So a store can hold an honest `persistence` status and the UI can say so. The
+generated `state/` template shows the pattern, and distinguishes two DIFFERENT
+failures rather than collapsing them into one `memoryOnly`:
+
+- `memoryOnly` — the current value only exists in memory; a plain write failed.
+  Worth a small warning ("your changes may not be saved"), nothing more.
+- `clearFailed` — a durable **clear** could not remove the previous value from
+  disk, even after the template's own fallback (overwriting the key with an
+  explicit empty value) also failed. On a shared kiosk this is a safety bug,
+  not a nuisance: the NEXT customer's cold start would read the previous
+  customer's data straight back. Never report this as `memoryOnly` — that
+  status undersells what actually happened.
 
 Storage is AsyncStorage-backed: it works unchanged on Android and, via
 localStorage, on the web dev preview. See
@@ -131,13 +141,16 @@ log.warn("Cart saved in memory only", { reason: result.error.message });
 **Never log a token, password, or key** — and do not defeat redaction by
 stringifying an object before passing it.
 
-## The sign-out gate
+## The sign-out lifecycle
 
-`core/auth` runs registered tasks before tearing down a session, and **a task can
-block sign-out**:
+`core/auth` runs sign-out in two separate PHASES, in two separate registries,
+so that a later blocker can never be undone by an earlier task's cleanup.
+
+**Phase 1 — guards.** Side-effect-free checks, run to completion before
+anything is touched. Any guard can veto the whole sign-out:
 
 ```ts
-registerSignOutTask({
+registerSignOutGuard({
   name: "checkout",
   run: () =>
     hasUnresolvedAttempt()
@@ -147,7 +160,29 @@ registerSignOutTask({
 ```
 
 This encodes a hard KISOK invariant: wiping the cart and its idempotency metadata
-while a submission's outcome is unknown could produce a duplicate order.
+while a submission's outcome is unknown could produce a duplicate order. A guard
+that throws is treated exactly like one that returns `blocked` — an exception is
+just as uncertain, and "we don't know" must never be read as "safe to proceed".
 
-Features register their own tasks from their own modules — there is no central
-cleanup list to edit.
+**Phase 2 — cleanup.** Destructive teardown of a feature's own state, run only
+after every guard (from every feature) has approved AND the session is actually
+gone:
+
+```ts
+registerSignOutCleanup({ name: "cart", run: () => clearCart() });
+```
+
+A cleanup task never gets a say in whether sign-out proceeds — by the time it
+runs, the account is already signed out, so there is nothing left to protect by
+blocking there. One task's failure is logged and does not stop the others, and
+does not turn a successful sign-out back into a failure.
+
+**Never combine the two.** A single function that both checks a condition and
+performs cleanup makes the safety property depend on registration order: if it
+ran before another feature's guard blocked, its cleanup would already have
+happened by the time the block was discovered. Register a guard and a cleanup
+task separately — even under the same `name`, since they are different
+registries.
+
+Features register their own guards and cleanup from their own modules — there is
+no central list to edit.

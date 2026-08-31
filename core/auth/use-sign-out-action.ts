@@ -1,6 +1,11 @@
 import { useCallback, useRef, useState } from "react";
 
+import { toAppError } from "@/core/errors";
+import { createLogger } from "@/core/logging";
+
 import { useAuth } from "./context";
+
+const log = createLogger("auth.signOutAction");
 
 type SignOutActionState = {
   /** Run the sign-out. Safe to wire straight to `onPress`. */
@@ -47,6 +52,15 @@ export function useSignOutAction(): SignOutActionState {
         if (outcome.status === "blocked" || outcome.status === "failed") {
           setMessage(outcome.reason);
         }
+      } catch (error) {
+        // Fail CLOSED. `signOut()` catches its own known failure points (a
+        // guard throwing, the Supabase call throwing, a cleanup task
+        // throwing), but this is the backstop for whatever is left: an
+        // unexpected throw must never become an unhandled rejection that
+        // leaves `pending` stuck true and the customer staring at a kiosk
+        // that looks frozen with no explanation.
+        log.error("signOut() threw unexpectedly", { message: toAppError(error).technicalMessage });
+        setMessage("We couldn't finish signing out. Please try again.");
       } finally {
         inFlight.current = false;
         setPending(false);

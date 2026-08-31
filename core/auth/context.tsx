@@ -8,7 +8,7 @@ import { clearQueryCache } from "@/core/query";
 import { getSupabaseClient } from "@/core/supabase";
 
 import { fetchActiveProfile } from "./profile";
-import { runSignOutTasks, type SignOutOutcome } from "./sign-out";
+import { runSignOutCleanup, runSignOutGuards, type SignOutOutcome } from "./sign-out";
 import { isTabletRole, type ActiveProfile, type AuthStatus } from "./types";
 
 const log = createLogger("auth");
@@ -195,9 +195,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async (): Promise<SignOutOutcome> => {
-    // The safety gate runs FIRST and can veto. Nothing below it is reversible:
-    // an unresolved checkout must never have its recovery state cleared.
-    const gate = await runSignOutTasks();
+    // Phase 1 — GUARDS. Side-effect-free by contract, run to completion before
+    // anything below is touched. Nothing below this line is reversible: an
+    // unresolved checkout must never have its recovery state destroyed, and a
+    // guard that throws is treated exactly like one that blocks (see
+    // `runSignOutGuards`) — "uncertain" is never treated as "safe to proceed".
+    const gate = await runSignOutGuards();
     if (gate.status === "blocked") return gate;
 
     const supabase = getSupabaseClient();
@@ -207,7 +210,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // tablets share store-provisioned accounts, so one tablet signing out would
     // knock out every other tablet in the shop. Revoking everywhere is a
     // deliberate admin action, not what a customer finishing an order means.
-    const { error } = await supabase.auth.signOut({ scope: "local" });
+    let error: { message: string } | null;
+    try {
+      ({ error } = await supabase.auth.signOut({ scope: "local" }));
+    } catch (caught) {
+      // An unexpected THROW is exactly as uncertain as a returned error: we
+      // cannot tell whether the stored session survived it, so fail closed the
+      // same way the "may still be usable" branch below does, rather than
+      // letting this escape as a rejected promise.
+      log.error("Supabase sign-out threw instead of returning a result", {
+        message: toAppError(caught).technicalMessage,
+      });
+      return {
+        status: "failed",
+        reason: "We couldn't finish signing out. Please try again.",
+      };
+    }
 
     if (error) {
       // Ambiguous: most supabase-js error paths still clear the stored session,
@@ -238,9 +256,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    // Only now is it true. Drop cached server data so the next account cannot
-    // read it, then let stage 2 transition to `signedOut` and cancel any
-    // in-flight profile lookup.
+    // Phase 2 — CLEANUP. Reached only now that we are COMMITTED to reporting
+    // success: the actual session is gone, so there is nothing left to protect
+    // by holding off. A cleanup task's own failure is logged inside
+    // `runSignOutCleanup`, never re-thrown — the account really is signed out
+    // at this point; only a feature's own stale local state is at stake.
+    await runSignOutCleanup();
     clearQueryCache(queryClient);
     setSnapshot({ session: null, known: true });
     return { status: "ok" };
