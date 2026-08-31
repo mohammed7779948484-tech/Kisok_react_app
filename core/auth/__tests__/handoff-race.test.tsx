@@ -1,6 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useState } from "react";
-import { Text, View } from "react-native";
+import { Text } from "react-native";
 
 import {
   AuthProvider,
@@ -8,7 +7,7 @@ import {
   registerSignOutCleanup,
   useAuth,
 } from "@/core/auth";
-import { toAppError } from "@/core/errors";
+import { AppError } from "@/core/errors";
 import { resetLogging, setLogSink } from "@/core/logging";
 import { setSupabaseClient } from "@/core/supabase";
 import {
@@ -16,49 +15,26 @@ import {
   installMockAuth,
   renderWithProviders,
   screen,
-  userEvent,
   waitFor,
 } from "@/core/testing";
 
+let actions: Pick<ReturnType<typeof useAuth>, "signIn" | "signOut"> | null = null;
+
 function HandoffRaceProbe() {
   const { signIn, signOut, status } = useAuth();
-  const [message, setMessage] = useState("idle");
-
-  return (
-    <View>
-      <Text>{status}</Text>
-      <Text
-        accessibilityRole="button"
-        accessibilityLabel="Start sign out"
-        onPress={() => {
-          void signOut().then((outcome) => setMessage(`sign-out:${outcome.status}`));
-        }}
-      >
-        Sign out
-      </Text>
-      <Text
-        accessibilityRole="button"
-        accessibilityLabel="Attempt sign in"
-        onPress={() => {
-          void signIn("next@example.com", "password").catch((error: unknown) => {
-            setMessage(toAppError(error).userMessage);
-          });
-        }}
-      >
-        Sign in
-      </Text>
-      <Text>{message}</Text>
-    </View>
-  );
+  actions = { signIn, signOut };
+  return <Text>{status}</Text>;
 }
 
 beforeEach(async () => {
+  actions = null;
   await AsyncStorage.clear();
   clearSignOutTasks();
   setLogSink(() => {});
 });
 
 afterEach(async () => {
+  actions = null;
   clearSignOutTasks();
   resetLogging();
   setSupabaseClient(null);
@@ -85,7 +61,6 @@ describe("kiosk handoff concurrency", () => {
 
     const supabase = installMockAuth();
     const signInSpy = jest.spyOn(supabase.client.auth, "signInWithPassword");
-    const user = userEvent.setup();
 
     await renderWithProviders(
       <AuthProvider>
@@ -94,22 +69,21 @@ describe("kiosk handoff concurrency", () => {
     );
     await waitFor(() => expect(screen.getByText("ready")).toBeOnTheScreen());
 
-    await user.press(screen.getByLabelText("Start sign out"));
+    if (!actions) throw new Error("Auth actions were not captured");
+    const signOutPromise = actions.signOut();
     await cleanupStarted;
-    await user.press(screen.getByLabelText("Attempt sign in"));
 
-    await waitFor(() =>
-      expect(screen.getByText(/still finishing the previous sign-out/i)).toBeOnTheScreen(),
-    );
+    await expect(actions.signIn("next@example.com", "password")).rejects.toBeInstanceOf(AppError);
     expect(signInSpy).not.toHaveBeenCalled();
 
     await act(async () => {
       releaseCleanup?.();
     });
+    await expect(signOutPromise).resolves.toEqual({ status: "ok" });
     await waitFor(() => expect(screen.getByText("signedOut")).toBeOnTheScreen());
 
-    await user.press(screen.getByLabelText("Attempt sign in"));
-    await waitFor(() => expect(signInSpy).toHaveBeenCalledTimes(1));
+    await expect(actions.signIn("next@example.com", "password")).resolves.toBeUndefined();
+    expect(signInSpy).toHaveBeenCalledTimes(1);
     supabase.restore();
   });
 });
