@@ -1,5 +1,5 @@
 import type { OrderStatus } from "../model/store-day";
-import { OrderStatusBadge } from "./order-status-badge";
+import { OrderStatusBadge, orderStatusLabel } from "./order-status-badge";
 
 import { renderWithProviders, screen } from "@/core/testing";
 
@@ -29,6 +29,15 @@ const STATUS_CASES: readonly {
   { status: "completed", label: "Completed", variantClass: "bg-transparent" },
   { status: "cancelled", label: "Cancelled", variantClass: "bg-destructive" },
 ];
+
+describe("orderStatusLabel", () => {
+  it("exposes the badge's own label for composing accessible names elsewhere", () => {
+    // One representative mapping: the render tests above pin the whole table
+    // (the badge renders through this function), so this only pins the export
+    // surface the order card's accessible name consumes.
+    expect(orderStatusLabel("preparing")).toBe("Preparing");
+  });
+});
 
 describe("OrderStatusBadge", () => {
   it.each([...STATUS_CASES])(

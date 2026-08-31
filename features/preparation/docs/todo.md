@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : Round 1 — Domain and data layer
-Current task      : T09
-Current stage     : ready to scaffold T09 (T08 PASS)
-Last gate         : T08 GATE: PASS
-Next legal action : Lead runs `pnpm generate component preparation order-card`, then delegates T09
+Current task      : T10
+Current stage     : ready to scaffold T10 (T09 PASS)
+Last gate         : T09 GATE: PASS
+Next legal action : Lead runs `pnpm generate component preparation cancel-order-dialog`, then delegates T10
 Blocked by        : —
 Blocked by        : —
 ```

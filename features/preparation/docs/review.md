@@ -166,6 +166,23 @@ typecheck, prettier; scoped eslint 0 errors/1 warning → fixed), RED
 evidence accepted as recorded, consumer-readiness for T09/T13/T14,
 RN performance (pure leaf; list concerns belong to T09/T11).
 
+### T09 review coverage statement (reviewer agent-26b2a373, fresh context)
+
+Examined and clean: AC-03 content hierarchy (all seven elements), action
+wiring (affordance && callback && !readOnly; !readOnly guard genuinely
+pinned; action press does not fire onPress; card-press fires with the
+order), presentational purity (type-only ActiveOrderRow import; no
+client/query/store/navigation; lint-clean against the boundary rule),
+RN hazards (no falsy-&& renders; explicit length comparison; no
+effects; no speculative memoization; h-touch via the sanctioned compact
+size), test quality (14/14; RED internally consistent with the
+placeholder; fixtures per the T02 {type,value} convention; the
+async-unmount fix matches the core/realtime precedent), boundaries
+(exactly the scoped files), honest docblocks, the pin deviation accepted
+as disclosed (legitimate minimum shape, load-bearing, correct
+direction, nothing else changed). Pin negative-check verified by the
+reviewer against database.types.ts.
+
 ## Re-review
 
 After remediation, re-run the reviewer against the same scope.
@@ -220,3 +237,8 @@ Audit result: `PENDING`
 | T08-R01 | minor | ReadonlyArray<T> spelling trips the repo's --max-warnings=0 lint-staged hook (file would be silently rewritten at commit) | order-status-badge.test.tsx:20; package.json:103 | fix | Changed to `readonly {…}[]`; scoped eslint zero warnings (implementer resumed; 5/5) |
 | T08-R02 | minor | Variant assertion walks getByText(label).parent.props.className — sound (host-only tree; mutually distinguishing tokens) but couples to host-tree shape and cva class strings | order-status-badge.test.tsx:45-46; test-renderer index.cjs:119-140 | accept | Sound and honestly documented; the data-level STATUS_BADGE export pin is an optional future alternative — deferred with the docblock trade-off note |
 | T08-R03 | minor | completed→outline mapping had no plan/worklog trace (exists only in the task packet + docblock) | rg outline features/preparation/docs → no matches | fix | Recorded in the T08 worklog entry (Lead-decreed gap-fill, terminal-calm rationale) |
+| T09-R01 | major | No per-card in-flight state surface — plan decision 5 (per-card disabled + label swap + repeat guard, AC-04/10) unimplementable at T11/T13 (scopes exclude components/\*\*) | order-card.tsx:37-57,78-103; plan.md:136-140; todo.md:220,244 | fix | pendingAction prop added: disabled + label swap per the sign-in-form convention, per-action; mutation-verified; implementer resumed |
+| T09-R02 | minor | Accessible name composed from the raw status word, bypassing T08's label mapping — drift risk | order-card.tsx:156 | fix | orderStatusLabel(status) exported from order-status-badge.tsx; the badge itself renders through it (one source); the card name composes from it |
+| T09-R03 | minor | The "assigned to you" accessible-name branch unpinned | order-card.tsx:146-151; test :253,266 | fix | One focused test added (actor-assigned preparing order) |
+| T09-R04 | minor | Header row (mono number + badge) overflow risk at 200% text scaling / narrow columns — no flex-wrap | order-card.tsx:121; .claude/rules/ui.md:39 | fix | flex-wrap added (the repo's dense-row idiom) |
+| T09-R05 | minor | Card Pressable had no press feedback | order-card.tsx:154-158; button.tsx:13 | fix | active:opacity-90 added (the Button primitive's own idiom) |

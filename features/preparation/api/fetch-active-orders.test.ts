@@ -2,6 +2,8 @@ import { AppError } from "@/core/errors";
 import { setSupabaseClient, type KisokSupabaseClient, type Tables } from "@/core/supabase";
 import { installMockSupabase } from "@/core/testing";
 
+import type { OrderActionOrder } from "../model/status-actions";
+
 import { fetchActiveOrders } from "./fetch-active-orders";
 
 /**
@@ -213,11 +215,21 @@ type BoardRow = Awaited<ReturnType<typeof fetchActiveOrders>>[number];
 type RowCarriesEmbeddedItems = Expect<Equals<BoardRow["order_items"], Tables<"order_items">[]>>;
 const rowCarriesEmbeddedItems: RowCarriesEmbeddedItems = true;
 
+// T07-R01: the status-actions model cannot import the generated types (the
+// Supabase boundary is api/-only), so OrderActionOrder is structural — and the
+// generated row must keep satisfying it, or the T07 rules the card consumes no
+// longer describe the rows this read returns.
+type OrderRowSatisfiesActionOrder = Expect<
+  Equals<Tables<"orders"> extends OrderActionOrder ? true : false, true>
+>;
+const orderRowSatisfiesActionOrder: OrderRowSatisfiesActionOrder = true;
+
 describe("the board read contract", () => {
   it("returns rows with the order_items snapshot embedded", () => {
-    // The type assertion above is the real check; asserting the value here
-    // keeps the constant referenced and gives a failure a readable message,
+    // The type assertions above are the real check; asserting the values here
+    // keeps the constants referenced and gives a failure a readable message,
     // the same way the RPC-surface proof in core/supabase works.
     expect(rowCarriesEmbeddedItems).toBe(true);
+    expect(orderRowSatisfiesActionOrder).toBe(true);
   });
 });

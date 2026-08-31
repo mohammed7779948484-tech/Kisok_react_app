@@ -665,3 +665,84 @@ manual)
 Nothing else.
 
 GATE: PASS
+
+### T09 — OrderCard component
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-03
+
+SCAFFOLD
+$ pnpm generate component preparation order-card
+created : features/preparation/components/order-card.tsx
+skipped : —
+replaced : —
+manual : features/preparation/components/order-card.test.tsx (planned);
+model/order-display.ts NOT created (the card needed nothing
+beyond an inline count fallback — the "if needed" condition
+unmet)
+
+RED
+$ npx jest features/preparation/components/order-card.test.tsx
+Tests: 12 failed, 2 passed, 14 total — the placeholder rendered; the
+2 passes were nothing-should-render cases (vacuous until content
+existed)
+
+IMPLEMENT
+Content: mono display number + OrderStatusBadge in a flex-wrap header;
+screen-computed createdAtLabel/itemSummaryLabel captions with an
+inline "N items" count fallback; assignment indicator "You"/"Assigned
+to another employee" (outline Badge, words never colour-only, null
+when unassigned). Actions in CardFooter gated on T07 affordance &&
+callback && !readOnly (compact h-touch Buttons; primary Start/Ready,
+destructive Cancel). Card-press via Pressable accessibilityRole=
+"button" with an accessible name composed from orderStatusLabel
+(post-remediation); NO wrapper when onPress is absent. The card is
+purely presentational (callbacks only).
+Mid-task test defect fixed by the implementer: RNTL v14 unmount is
+async — await oneItem.unmount() (core/realtime precedent).
+
+GREEN
+$ npx jest features/preparation/components/order-card.test.tsx → 14/14
+(20/20 after remediation: +6)
+
+AFFECTED CHECKS (Lead re-ran)
+$ npx jest features/preparation/ → 13 suites / 112 tests green
+$ pnpm typecheck → clean
+$ pnpm lint / prettier (implementer + reviewer) → clean
+$ pnpm test:ci (implementer) → 30 suites / 250 tests, zero console
+
+TASK REVIEW (fresh code-reviewer, Super Z agent-26b2a373)
+T09-R01 MAJOR: no per-card pending-state surface — plan decision 5
+(per-card disabled + label swap + repeat guard, AC-04/10) would be
+unimplementable at T11/T13 (scopes exclude components/\*\*). → FIXED:
+pendingAction?: "startPreparing"|"markReady"|"cancel" prop renders
+disabled + label swap ("Starting…"/"Marking ready…"/"Cancelling…")
+per the sign-in-form convention; per-action (other affordance stays
+enabled); mutation-verified (removing the disabled wiring fails).
+T09-R02 minor: accessible name used the raw status word (drift risk
+vs T08's labels) → FIXED: orderStatusLabel(status) exported from
+order-status-badge.tsx and the badge itself renders through it (one
+source); the card's name composes from it.
+T09-R03 minor: the "assigned to you" name branch unpinned → FIXED:
+one focused test.
+T09-R04 minor: header overflow risk at 200% scaling → FIXED: flex-wrap
+(the repo's dense-row idiom).
+T09-R05 minor: no press feedback on the card → FIXED:
+active:opacity-90 (the Button primitive's own idiom).
+Pin deviation (T07-R01 in fetch-active-orders.test.ts): ~7 additive
+lines vs the granted "one line" — the file's own type+const+expect
+idiom (a bare type alias trips no-unused-vars under
+--max-warnings=0); load-bearing (negative-checked by the implementer;
+direction verified by the reviewer). ACCEPTED as disclosed.
+
+DIFF
+features/preparation/components/order-card.tsx (new)
+features/preparation/components/order-card.test.tsx (new, manual)
+features/preparation/components/order-status-badge.tsx (modified:
+orderStatusLabel export, badge renders through it)
+features/preparation/components/order-status-badge.test.tsx
+(modified: one export test)
+features/preparation/api/fetch-active-orders.test.ts (modified: the
+T07-R01 pin, Lead-granted)
+
+GATE: PASS

@@ -38,6 +38,16 @@ const STATUS_BADGE: Record<OrderStatus, { label: string; variant: BadgeVariant }
   cancelled: { label: "Cancelled", variant: "destructive" },
 };
 
+/**
+ * The status's display label — the exact words the badge renders, exported so
+ * other surfaces (the order card's accessible name) can compose the SAME
+ * words instead of re-deriving them and drifting from the badge. The badge
+ * itself renders through this function, so the two cannot disagree.
+ */
+export function orderStatusLabel(status: OrderStatus): string {
+  return STATUS_BADGE[status].label;
+}
+
 export type OrderStatusBadgeProps = {
   status: OrderStatus;
   className?: string;
@@ -49,11 +59,11 @@ export type OrderStatusBadgeProps = {
  * alone. The badge text is the accessible name.
  */
 export function OrderStatusBadge({ status, className }: OrderStatusBadgeProps) {
-  const { label, variant } = STATUS_BADGE[status];
+  const { variant } = STATUS_BADGE[status];
 
   return (
     <Badge variant={variant} className={className}>
-      <Text>{label}</Text>
+      <Text>{orderStatusLabel(status)}</Text>
     </Badge>
   );
 }
