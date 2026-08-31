@@ -104,3 +104,59 @@ PLANNING
 - plan.md Status: READY.
 
 GATE: N/A (planning; Task gates begin at T01)
+
+### T01 — order-status-update schema
+
+MODE: behavior
+ACCEPTANCE: Supporting: AC-04/AC-05/AC-06
+
+SCAFFOLD
+$ pnpm generate schema preparation order-status-update
+created : features/preparation/model/order-status-update.schema.ts,
+features/preparation/model/order-status-update.schema.test.ts
+skipped : —
+replaced : —
+manual : —
+
+RED
+$ npx jest features/preparation/model/order-status-update.schema.test.ts
+✕ accepts the migration-08 projection with null optionals
+✕ accepts a fully-populated cancellation result
+✓ (all 6 rejection tests)
+Tests: 2 failed, 6 passed
+Failure: ZodError at path ["id"] ("expected string, received undefined") —
+the PLACEHOLDER schema ({id: uuid}) executed and rejected the real
+migration-08 shape: the intended missing behaviour, not a typo or import
+error (imports resolved; rejection tests prove the schema ran).
+
+IMPLEMENT
+Schema replaced with the exact migration-08 projection (186-195):
+order_id uuid, display_number ^[A-HJ-NP-Z2-9]{6}$, status z.enum(5 values),
+assigned_preparation_id uuid|null, completed_at/cancelled_at
+iso|null, cancellation_reason string|null, updated_at iso.
+z.iso.datetime({ offset: true }) — Postgres renders timestamptz→jsonb with
+a numeric offset, never bare Z.
+
+GREEN
+$ npx jest features/preparation/model/order-status-update.schema.test.ts
+Tests: 8 passed, 8 total
+
+AFFECTED CHECKS (Lead re-ran all)
+$ npx jest features/preparation/model/… → 10/10 (after remediation)
+$ pnpm typecheck → clean (exit 0)
+$ pnpm lint → clean
+$ npx prettier --check features/preparation/model/ → pass
+
+TASK REVIEW (fresh code-reviewer, Super Z agent-3b9ee103)
+Findings: R01 minor — no rejection test for offset-less timestamps;
+R02 minor — required-field nullability unpinned. No blocking/major.
+Remediation: implementer resumed (agent-535680cf); both one-test fixes
+added to the test file; schema unchanged. Re-verified: 10/10 green,
+typecheck/lint/format clean.
+
+DIFF
+features/preparation/model/order-status-update.schema.ts (new)
+features/preparation/model/order-status-update.schema.test.ts (new)
+Nothing else; git status shows only features/preparation/model/.
+
+GATE: PASS

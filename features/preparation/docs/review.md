@@ -7,12 +7,23 @@ Implementation notes do not belong here; they belong in `worklog.md`.
 
 ## Findings
 
-| ID  | Severity                 | Finding | Evidence                | Disposition           | Remediation |
-| --- | ------------------------ | ------- | ----------------------- | --------------------- | ----------- |
-| R01 | blocking / major / minor | TODO    | file:line, or a command | fix / accept / reject | TODO        |
+| ID      | Severity | Finding                                                                                                                           | Evidence                                                                      | Disposition | Remediation                                                                                                                    |
+| ------- | -------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| T01-R01 | minor    | No rejection test pinning the required-UTC-offset invariant of `isoTimestamp`; an offset-accepting regression would pass silently | order-status-update.schema.test.ts (missing case); verified against zod 4.2.1 | fix         | One test added: "rejects an ISO timestamp without a UTC offset" (implementer resumed; re-verified 10/10)                       |
+| T01-R02 | minor    | Required-field non-nullability unpinned (only `cancellation_reason` had the null boundary test)                                   | order-status-update.schema.test.ts:76-81                                      | fix         | One test added: "rejects null for a required field" covering all four required fields (implementer resumed; re-verified 10/10) |
 
 Severity means: **blocking** — must not merge; **major** — fix in this feature;
 **minor** — worth doing, safe to defer with a note.
+
+### T01 review coverage statement (reviewer agent-3b9ee103, fresh context)
+
+Examined and clean: contract fidelity vs migration 08 (all 8 fields,
+nullability, enum values, display_number regex), zod v4 timestamp handling
+(verified against installed zod 4.2.1 source), model purity and boundaries
+(no Supabase imports, colocated test, generator-compatible naming),
+scope (only the two scaffolded files), verification re-run (8/8, typecheck,
+lint, prettier), RED consistency by reconstruction. Not applicable: auth,
+state ownership, Realtime, design system, RN performance (pure model file).
 
 ## Re-review
 
