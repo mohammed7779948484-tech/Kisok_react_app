@@ -11,7 +11,14 @@ import {
 import { toAppError } from "@/core/errors";
 import { resetLogging, setLogSink } from "@/core/logging";
 import { setSupabaseClient } from "@/core/supabase";
-import { act, installMockAuth, renderWithProviders, screen, userEvent, waitFor } from "@/core/testing";
+import {
+  act,
+  installMockAuth,
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/core/testing";
 
 function HandoffRaceProbe() {
   const { signIn, signOut, status } = useAuth();
