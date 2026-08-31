@@ -153,6 +153,19 @@ the Lead's numbers; no test contradicts another), control docs vs reality
 gates; worklog complete). Verdict: Round 1 is coherent as one system; all
 five findings minor, none blocking.
 
+### T08 review coverage statement (reviewer agent-c91f425f, fresh context)
+
+Examined and clean: mapping fidelity (ui-lab demo + plan + brief words),
+composition honesty (Badge/Text/badgeVariants from the barrel only;
+TextClassContext propagation exactly as ui-lab), variant drift-proofing
+(both directions pinned), totality (compile-time Record; no fallback dead
+code), scope/boundaries (two files; no suppressions; no raw colours;
+presentational-only), design system compliance (words never colour-only;
+no role needed for a display element), verification re-run (5/5,
+typecheck, prettier; scoped eslint 0 errors/1 warning → fixed), RED
+evidence accepted as recorded, consumer-readiness for T09/T13/T14,
+RN performance (pure leaf; list concerns belong to T09/T11).
+
 ## Re-review
 
 After remediation, re-run the reviewer against the same scope.
@@ -204,3 +217,6 @@ dispositioned. It returns findings; the Lead records them here.
 - Definition of Done (`AGENTS.md`) met: TODO
 
 Audit result: `PENDING`
+| T08-R01 | minor | ReadonlyArray<T> spelling trips the repo's --max-warnings=0 lint-staged hook (file would be silently rewritten at commit) | order-status-badge.test.tsx:20; package.json:103 | fix | Changed to `readonly {…}[]`; scoped eslint zero warnings (implementer resumed; 5/5) |
+| T08-R02 | minor | Variant assertion walks getByText(label).parent.props.className — sound (host-only tree; mutually distinguishing tokens) but couples to host-tree shape and cva class strings | order-status-badge.test.tsx:45-46; test-renderer index.cjs:119-140 | accept | Sound and honestly documented; the data-level STATUS_BADGE export pin is an optional future alternative — deferred with the docblock trade-off note |
+| T08-R03 | minor | completed→outline mapping had no plan/worklog trace (exists only in the task packet + docblock) | rg outline features/preparation/docs → no matches | fix | Recorded in the T08 worklog entry (Lead-decreed gap-fill, terminal-calm rationale) |

@@ -609,3 +609,59 @@ All re-verified: focused suites green after each fix; full suite
 28/226 green.
 
 GATE: PASS
+
+### T08 — OrderStatusBadge component
+
+MODE: behavior
+ACCEPTANCE: Supporting: AC-03/AC-07/AC-08
+
+SCAFFOLD
+$ pnpm generate component preparation order-status-badge
+created : features/preparation/components/order-status-badge.tsx
+skipped : —
+replaced : —
+manual : features/preparation/components/order-status-badge.test.tsx
+(planned: the component capability generates no test)
+
+RED
+$ npx jest features/preparation/components/order-status-badge.test.tsx
+Tests: 5 failed, 5 total — "Unable to find an element with text: New"
+(the placeholder rendered; the mapping behaviour absent)
+
+IMPLEMENT
+STATUS_BADGE: Record<OrderStatus, {label, variant}> — the ui-lab
+precedent mapping (new→neutral, preparing→primary, ready→success,
+completed→outline [Lead-decreed gap-fill: terminal-calm, recorded per
+T08-R03], cancelled→destructive); Record makes it compile-time total.
+Variant type derived from the primitive's own cva
+(NonNullable<VariantProps<typeof badgeVariants>["variant"]>) so it
+cannot drift. Composes the shared Badge + Text only; the label text is
+the accessible name (never colour-only).
+
+GREEN
+$ npx jest features/preparation/components/order-status-badge.test.tsx
+Tests: 5 passed, 5 total
+
+AFFECTED CHECKS (Lead re-ran)
+$ npx jest features/preparation/components/ → 5/5
+$ pnpm typecheck → clean
+$ pnpm lint / prettier (implementer + reviewer) → clean
+
+TASK REVIEW (fresh code-reviewer, Super Z agent-c91f425f)
+No blocking, no major. T08-R01 minor: ReadonlyArray spelling would be
+auto-rewritten by the lint-staged hook → fixed (readonly T[]; zero
+warnings under --max-warnings=0). T08-R02 minor: the variant assertion
+walks getByText(label).parent.props.className — verified sound today
+(test-renderer host-only tree; mutually distinguishing tokens) but
+couples to host-tree shape and cva class strings → ACCEPTED as-is
+(honest docblock documents the trade; the data-level pin is an optional
+future alternative). T08-R03 minor: completed→outline had no plan
+trace → recorded here (Lead-decreed, terminal-calm rationale).
+
+DIFF
+features/preparation/components/order-status-badge.tsx (new)
+features/preparation/components/order-status-badge.test.tsx (new,
+manual)
+Nothing else.
+
+GATE: PASS

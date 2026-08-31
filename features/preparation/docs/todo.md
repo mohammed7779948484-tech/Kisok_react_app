@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : Round 1 — Domain and data layer
-Current task      : T08
-Current stage     : ready to scaffold T08 (Round 1 GATE: PASS)
-Last gate         : ROUND 1 GATE: PASS
-Next legal action : Lead runs `pnpm generate component preparation order-status-badge`, then delegates T08
+Current task      : T09
+Current stage     : ready to scaffold T09 (T08 PASS)
+Last gate         : T08 GATE: PASS
+Next legal action : Lead runs `pnpm generate component preparation order-card`, then delegates T09
 Blocked by        : —
 Blocked by        : —
 ```
@@ -80,7 +80,7 @@ Scan this first. Detail is below.
 | T05  | behavior | Sup: AC-04/05/06/10               | update-order-status mutation (api + hook)                            | T01                               | done        | PASS    |
 | T06  | behavior | Sup: AC-08                        | Store-day-history read + store-day model                             | T04                               | done        | PASS    |
 | T07  | behavior | Sup: AC-04/05/06/10               | status-actions eligibility rules                                     | —                                 | done        | PASS    |
-| T08  | behavior | Sup: AC-03/07/08                  | OrderStatusBadge component                                           | —                                 | not started | PENDING |
+| T08  | behavior | Sup: AC-03/07/08                  | OrderStatusBadge component                                           | —                                 | done        | PASS    |
 | T09  | behavior | AC-03                             | OrderCard component                                                  | T07, T08                          | not started | PENDING |
 | T10  | behavior | AC-06                             | CancelOrderDialog component                                          | T05                               | not started | PENDING |
 | T11  | behavior | AC-01, AC-02, AC-04, AC-05, AC-10 | WorkspaceScreen + board-section + index route (replaces placeholder) | T02, T04, T05, T07, T08, T09, T10 | not started | PENDING |
