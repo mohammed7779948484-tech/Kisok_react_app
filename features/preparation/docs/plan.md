@@ -106,14 +106,23 @@ For each: the decision, and the alternative rejected and why.
 2. **History keys the store day on the terminal timestamp** — an order
    belongs to the day it _became_ terminal: `completed_at` for completed,
    `cancelled_at` for cancelled, evaluated in `store_timezone`. The read
-   pre-filters server-side on `status in ('completed','cancelled')` with
-   `created_at ≥ dayStart − 24h` (bounding transfer), then the model filters
-   exactly on the terminal timestamp within the day window. Rejected: keying
-   on `created_at` — an order created before midnight and cancelled after
-   would land in _yesterday's_ history, splitting the day's finished work;
-   the Completed/Cancelled grouping itself is keyed on the terminal event.
+   pre-filters server-side on `status in ('completed','cancelled')` AND
+   `(completed_at ≥ dayStart OR cancelled_at ≥ dayStart)` — the terminal
+   timestamps themselves are the prefilter bound, giving EXACT decision-2
+   semantics — then the model filters to the day window `[start, end)`.
+   Rejected: keying on `created_at` — an order created before midnight and
+   cancelled after would land in _yesterday's_ history, splitting the day's
+   finished work. Also rejected (T06 review, T06-R01): a `created_at ≥
+dayStart − 24h` transfer bound — an order created days earlier and
+   cancelled today (a weekend-stale order cancelled Monday is reachable)
+   would be silently excluded from today's history, violating decision 2's
+   own keying. The window end is the next LOCAL date's midnight (23h on
+   spring-forward days, 25h on fall-back days — T06-R02), not start+24h.
    The contract does not fix this (research R-09, MEDIUM) — this is a Lead
-   decision from the product reading.
+   decision from the product reading, REVISED at the T06 gate after review
+   (T06-R01/T06-R02); no acceptance criterion, capability, dependency, or
+   scaffold changed, so the plan stays READY with this reconciliation
+   recorded here.
 3. **Assignment is shown as "you" vs "another employee"** by comparing
    `assigned_preparation_id` with `useAuth().profile.id`. Rejected: showing
    names — `profiles` is revoked from `authenticated` and no RPC resolves
@@ -171,8 +180,9 @@ Read shapes:
   ordered `created_at desc`, with `order_items(*)` embedded.
 - Order detail: one `orders` row by `id` with `order_items(*)` embedded.
 - History: `orders` where `status in ('completed','cancelled')` and
-  `created_at ≥ <dayStart−24h>`, ordered `created_at desc`; the model filters
-  to the current store-day window by terminal timestamp.
+  `(completed_at ≥ dayStart or cancelled_at ≥ dayStart)`, ordered
+  `created_at desc`; the model filters to the current store-day window by
+  terminal timestamp. (Revised at the T06 gate — see decision 2.)
 - Settings: the `store_settings` singleton row.
 
 Realtime: `public.orders` changes → invalidate `preparationKeys.all` →
