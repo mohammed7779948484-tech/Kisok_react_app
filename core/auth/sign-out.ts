@@ -1,10 +1,7 @@
+import { toAppError } from "@/core/errors";
 import { createLogger } from "@/core/logging";
 
 const log = createLogger("auth.signOut");
-
-function messageOf(value: unknown): string {
-  return value instanceof Error ? value.message : String(value);
-}
 
 /**
  * A GUARD run before anything about the session is touched.
@@ -119,7 +116,7 @@ export async function runSignOutGuards(): Promise<SignOutGuardResult> {
     } catch (error) {
       log.error("Sign-out guard threw; treating sign-out as blocked", {
         guard: guard.name,
-        error: messageOf(error),
+        error: toAppError(error).technicalMessage,
       });
       return {
         status: "blocked",
@@ -154,7 +151,7 @@ export async function runSignOutCleanup(): Promise<{ failures: string[] }> {
       failures.push(task.name);
       log.error("Sign-out cleanup task failed; the session is already gone", {
         task: task.name,
-        error: messageOf(error),
+        error: toAppError(error).technicalMessage,
       });
     }
   }

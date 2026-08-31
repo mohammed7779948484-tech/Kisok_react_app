@@ -1,12 +1,20 @@
 import { Text } from "react-native";
 
 import { useActiveProfile, useAuth } from "@/core/auth";
+import { resetLogging, setLogSink } from "@/core/logging";
 import { installMockAuth, renderWithProviders, screen, waitFor } from "@/core/testing";
 
 /**
  * Proves the helper a feature agent will reach for actually works, so nobody has
  * to hand-roll an auth fake to test a screen behind the gate.
  */
+
+// `AuthProvider`'s listener logs every auth event at debug level; keep the
+// suite silent rather than let that be the one file where the "zero console
+// output" rule quietly does not hold.
+beforeEach(() => setLogSink(() => {}));
+afterEach(resetLogging);
+
 function Probe() {
   const { status } = useAuth();
   if (status !== "ready") return <Text>{status}</Text>;

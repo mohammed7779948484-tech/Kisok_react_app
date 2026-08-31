@@ -45,9 +45,10 @@ type <%= props.pascalCaseName %>State = {
 /**
  * A factory, not a bare `create(...)`, so a test can inject a fake backend
  * instead of the real `AsyncStorage` singleton — in particular
- * `createMemoryStore({ failOn: "removeItem" })` from `@/core/testing`, which
- * exists specifically to prove what `clear()` does when the durable remove
- * fails. Real code never passes an argument here; see `use<%= props.pascalCaseName %>Store` below.
+ * `createJsonStorage(createMemoryStore({ failOn: "removeItem" }))` from
+ * `@/core/storage` and `@/core/testing`, which exists specifically to prove
+ * what `clear()` does when the durable remove fails. Real code never passes
+ * an argument here; see `use<%= props.pascalCaseName %>Store` below.
  */
 export function create<%= props.pascalCaseName %>Store(backend: JsonStorage = storage) {
   return create<<%= props.pascalCaseName %>State>((set, get) => ({
