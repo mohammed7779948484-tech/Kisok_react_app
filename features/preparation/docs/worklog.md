@@ -517,3 +517,58 @@ Lead-approved addition)
 keys.ts NOT modified.
 
 GATE: PASS
+
+### T07 — status-actions eligibility rules
+
+MODE: behavior
+ACCEPTANCE: Supporting: AC-04/AC-05/AC-06/AC-10
+
+SCAFFOLD
+N/A — no generator capability applies (planned manual artifact:
+pure domain rules; the Lead delegated directly)
+
+RED
+$ npx jest features/preparation/model/status-actions.test.ts
+→ Test suite failed to run: Cannot find module './status-actions'
+(the sanctioned absent-module RED for a new pure module)
+
+IMPLEMENT
+canStartPreparing (new AND unassigned — mirrors the RPC's K1004
+already-assigned guard); canMarkReady (preparing AND assigned to the
+actor — mirrors the 42501 IS DISTINCT FROM guard); canCancel (new |
+preparing, NOT assignment-restricted — the one transition with no
+assignee check; any preparation employee may cancel a colleague's
+order); allowedOrderActions composed from the three so it cannot
+drift. OrderActionOrder structural; OrderStatus imported from
+./store-day (T06 precedent, no duplication). Module docblock: rules
+MIRROR migration 08 for UI affordances; the RPC is authoritative.
+
+GREEN
+$ npx jest features/preparation/model/status-actions.test.ts
+Tests: 17 passed, 17 total (15-row exhaustive matrix: 5 statuses ×
+3 assignment classes + the cancel-not-restricted pin + the
+foreign-status pin)
+
+AFFECTED CHECKS (Lead re-ran)
+$ npx jest features/preparation/ → 11 suites / 88 tests green
+$ pnpm typecheck → clean
+$ pnpm lint / prettier (implementer + reviewer re-ran) → clean
+$ pnpm test:ci (implementer) → 28 suites / 226 tests, zero console
+
+TASK REVIEW (fresh code-reviewer, Super Z agent-91c3f6b5)
+No blocking, no major. T07-R01 minor: the docblock's "every
+Tables<"orders"> row satisfies it" claim is unpinned — carried as a
+REQUIRED item into T09's packet (one-line Equals pin in
+fetch-active-orders.test.ts, Lead-approved there; the model itself
+cannot import generated types). T07-R02 minor: comment said "both of
+its rows" where cancelled has three — remediated (one word).
+Implementer mutation-verified 4 regressions (exclusion-based canCancel,
+dropped assignee check, dropped unassigned guard, assignment-restricted
+cancel — each caught by the intended tests).
+
+DIFF
+features/preparation/model/status-actions.ts (new, manual)
+features/preparation/model/status-actions.test.ts (new, manual)
+Nothing else.
+
+GATE: PASS

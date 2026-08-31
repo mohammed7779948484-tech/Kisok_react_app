@@ -28,6 +28,8 @@ Implementation notes do not belong here; they belong in `worklog.md`.
 | T06-R04 | minor    | Merged status forced error while cached history data present — a later settings refetch failure would drop good data on a standard screen ladder                                                                                                 | use-store-day-history.ts:83-97                                                                                  | fix               | Gated: settingsErrorDominates = settingsQuery.isError && historyQuery.data === undefined; cached-data case tested; docblock corrected; mutation-verified                                                                                                                                     |
 | T06-R05 | minor    | Spread-through refetch() bypasses enabled (query-core manual refetch never consults enabled) — settings-error retry would throw a raw Error under the placeholder key                                                                            | use-store-day-history.ts:59-68; query-core queryObserver.ts:336-348                                             | fix               | Composed refetch: settings first, then history; retry test asserts the settings query is re-called; docblock claim removed; mutation-verified                                                                                                                                                |
 | T06-R06 | minor    | Two unpinned failure paths: history read's own error; wire-format timestamps (microseconds + offset) never fed through the model                                                                                                                 | use-store-day-history.test.tsx (absence); model/store-day.ts:196-204                                            | fix               | Both tests added: history AppError identity preserved; wire-format strings through orderTerminalInstant/isTerminalInDay                                                                                                                                                                      |
+| T07-R01 | minor    | The model's "every Tables<"orders"> row satisfies it" claim is unpinned (status drift IS caught transitively via the shared OrderStatus, but an assignment-column rename would surface only at T09/T11 compile time)                             | status-actions.ts:50-52; contrast the T06 pin convention                                                        | accept (deferred) | Carried as a REQUIRED item into T09's packet: one-line Equals<Tables<"orders"> extends OrderActionOrder…> pin in fetch-active-orders.test.ts (the model cannot import generated types — ESLint)                                                                                              |
+| T07-R02 | minor    | Test comment said "both of its rows" for cancelled's matrix rows — there are three (all reachable)                                                                                                                                               | status-actions.test.ts:105-107                                                                                  | fix               | Comment corrected to "all three of its rows" (implementer resumed; 17/17)                                                                                                                                                                                                                    |
 
 Severity means: **blocking** — must not merge; **major** — fix in this feature;
 **minor** — worth doing, safe to defer with a note.
@@ -113,6 +115,21 @@ pre-remediation tests walked; RED coherent). Full-repo test:ci re-run:
 27 suites / 204 tests zero console at review time. The reviewer also
 verified the TanStack enabled-bypass premise against query-core source
 and reproduced both DST repros live.
+
+### T07 review coverage statement (reviewer agent-91c3f6b5, fresh context)
+
+Examined and clean: matrix fidelity all 15 cells (terminal guard, cancel
+status-only, claim K1004 guard, mark-ready IS DISTINCT FROM semantics with
+NULL distinct from any actor, ready display-only), totality (incoherent rows
+match the RPC's own defensive answers), purity and boundaries (single type
+import from ./store-day; ESLint-verified), non-duplication (OrderStatus
+identical to the generated enum; ActiveOrderRow feeds OrderActionOrder
+directly so T09 passes board rows unmodified), test quality (equivalence
+classes genuinely exhaustive; foreign-status pin has real mutation value;
+the as unknown as cast is the right tool; allowedOrderActions equality per
+row), consumer-readiness for T09/T10/T11 (actor id semantics, docblock
+authority statement). Evidence independently reproduced (17/17; 11 suites /
+88 tests; typecheck/lint/prettier clean).
 
 ## Re-review
 

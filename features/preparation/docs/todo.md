@@ -13,10 +13,11 @@ defeats its only purpose.
 
 ```
 Current round     : Round 1 — Domain and data layer
-Current task      : T07
-Current stage     : ready to implement T07 (manual model task, no scaffold)
-Last gate         : T06 GATE: PASS
-Next legal action : Lead delegates T07 (status-actions rules — pure model, no generator)
+Current task      : —
+Current stage     : ROUND 1 GATE — all seven tasks PASS; round review in progress
+Last gate         : T07 GATE: PASS
+Next legal action : Lead runs Round 1 verification, then launches the fresh Round reviewer
+Blocked by        : —
 Blocked by        : —
 ```
 
@@ -45,7 +46,7 @@ Scan this first. Detail is below.
 | T04  | behavior | Sup: AC-03/07/08                  | Store-settings read (api + hook)                                     | T02 (scaffold ordering)           | done        | PASS    |
 | T05  | behavior | Sup: AC-04/05/06/10               | update-order-status mutation (api + hook)                            | T01                               | done        | PASS    |
 | T06  | behavior | Sup: AC-08                        | Store-day-history read + store-day model                             | T04                               | done        | PASS    |
-| T07  | behavior | Sup: AC-04/05/06/10               | status-actions eligibility rules                                     | —                                 | not started | PENDING |
+| T07  | behavior | Sup: AC-04/05/06/10               | status-actions eligibility rules                                     | —                                 | done        | PASS    |
 | T08  | behavior | Sup: AC-03/07/08                  | OrderStatusBadge component                                           | —                                 | not started | PENDING |
 | T09  | behavior | AC-03                             | OrderCard component                                                  | T07, T08                          | not started | PENDING |
 | T10  | behavior | AC-06                             | CancelOrderDialog component                                          | T05                               | not started | PENDING |
