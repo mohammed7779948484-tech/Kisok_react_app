@@ -13,13 +13,11 @@ defeats its only purpose.
 
 ```
 Current round     : Round 2 — The workspace board
-Current task      : T11
-Current stage     : ready to scaffold T11 (T10 PASS)
-Last gate         : T10 GATE: PASS
-Next legal action : Lead runs `pnpm generate screen preparation workspace` +
-                    `pnpm generate component preparation board-section --screen=workspace` +
-                    `pnpm generate route preparation index --role=preparation --screen=workspace --force`,
-                    then delegates T11
+Current task      : T12
+Current stage     : ready to scaffold T12 (T11 PASS)
+Last gate         : T11 GATE: PASS
+Next legal action : Lead runs `pnpm generate realtime preparation orders --role=preparation`,
+                    then delegates T12 (packet includes the four T11 carried minors)
 Blocked by        : —
 ```
 
@@ -49,7 +47,15 @@ OrderActionOrder…>` compile-time pin in fetch-active-orders.test.ts
 - **T11/T13** — the cancel-rejection flow specifically (T10-R01): on a
   rejected cancel → dialog `open=false`, feedback near the card, then
   invalidate/refetch — with its own screen test (not only
-  start-preparing/mark-ready rejections).
+  start-preparing/mark-ready rejections). ~~DONE at the T11 gate (own
+  dedicated test).~~
+- **T12** — four T11 carried minors (all in files T12 already touches):
+  (R02) clear the arrival announcement after a short delay — timer with
+  cleanup per RN rules; (R03) one-line `getByText("No orders")` pin in the
+  expanded grouping test; (R04) transient banner when `isError &&
+data !== undefined` (failed background refetch with stale data);
+  (R05) `formatCreatedAt` hour `% 24` absorption (the model's own guard
+  against h24-cycle ICU builds).
 - **T11/T13** — screens own AC-10's rejected-transition refresh:
   onError → invalidate/refetch (T05-R02; the hook invalidates on success
   only).
@@ -90,7 +96,7 @@ Scan this first. Detail is below.
 | T08  | behavior | Sup: AC-03/07/08                  | OrderStatusBadge component                                           | —                                 | done        | PASS    |
 | T09  | behavior | AC-03                             | OrderCard component                                                  | T07, T08                          | done        | PASS    |
 | T10  | behavior | AC-06                             | CancelOrderDialog component                                          | T05                               | done        | PASS    |
-| T11  | behavior | AC-01, AC-02, AC-04, AC-05, AC-10 | WorkspaceScreen + board-section + index route (replaces placeholder) | T02, T04, T05, T07, T08, T09, T10 | not started | PENDING |
+| T11  | behavior | AC-01, AC-02, AC-04, AC-05, AC-10 | WorkspaceScreen + board-section + index route (replaces placeholder) | T02, T04, T05, T07, T08, T09, T10 | done        | PASS    |
 | T12  | behavior | AC-09                             | Orders realtime invalidation wired into workspace                    | T11                               | not started | PENDING |
 | T13  | behavior | AC-07, AC-10                      | OrderDetailsScreen + route                                           | T03, T04, T05, T07, T08, T10      | not started | PENDING |
 | T14  | behavior | AC-08                             | StoreDayHistoryScreen + route                                        | T04, T06, T08, T09                | not started | PENDING |

@@ -810,3 +810,83 @@ manual; one Lead-applied docblock line)
 features/preparation/docs/plan.md (reconciled line, T10-R01)
 
 GATE: PASS
+
+### T11 — WorkspaceScreen + board-section + index route
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-01, AC-02, AC-04, AC-05, AC-10
+
+SCAFFOLD
+$ pnpm generate screen preparation workspace
+created : features/preparation/screens/workspace/workspace-screen.tsx,
+features/preparation/screens/workspace/workspace-screen.test.tsx
+$ pnpm generate component preparation board-section --screen=workspace
+created : features/preparation/screens/workspace/components/board-section.tsx
+$ pnpm generate route preparation index --role=preparation --screen=workspace --force
+replaced : app/(preparation)/index.tsx (the planned Foundation-placeholder
+overwrite — the ONLY sanctioned --force in this feature)
+appended : features/preparation/index.ts (WorkspaceScreen export,
+generator-owned)
+
+RED
+$ npx jest features/preparation/screens/workspace/
+Tests: 16 failed, 16 total — every failure "Unable to find an element …"
+against the TODO stub (behaviour missing, not a typo/import error)
+
+IMPLEMENT
+Screen owns the queries (active-orders, store-settings), the mutation
+(useUpdateOrderStatusMutation with mutate-level onError → setActionError +
+dialog close + invalidateQueries(preparationKeys.all) — T05-R02), the
+assignment comparison (useAuth().profile.id — decision 3), per-card
+pendingAction derived from isPending+variables (decision 5), the
+seen-ids-diff announcement effect (decision 9, polite live region),
+effectiveTimezone with silent degrade on absent OR FAILED settings read
+(decision 8), screen-local formatCreatedAt (decision 10), Tabs on
+compact/medium vs columns on expanded via useLayout, Refresh + Sign out
+affordances, error passed as unknown (T04 O-1). board-section: title+count
+header (tab mode omits it), card list, InlineError under the rejected
+card. Zero edits to the route file and the barrel (generator shape kept).
+
+GREEN
+$ npx jest features/preparation/screens/workspace/ → 16/16
+$ npx jest features/preparation/ → 15 suites / 133 tests
+$ npx jest (repo-wide) → 32 suites / 271 tests
+
+AFFECTED CHECKS (Lead re-ran)
+$ pnpm typecheck → clean; eslint --max-warnings=0 → clean;
+prettier --check → clean; zero console output (setLogSink pattern)
+
+TASK REVIEW (fresh code-reviewer, Super Z agent-bd3e03cb)
+No blocking, no major; five minors. Judgement calls: card-press
+navigation to /order-details KEPT (AC-03's observable + decision 1;
+deferral impossible — T13's scope excludes screens/workspace/\*\*);
+board-section intra-feature imports CORRECT (privacy reading; the
+generator stub itself imports @/components/ui); single-flight guard
+ACCEPTABLE (the un-tracking scenario cannot occur — the :134 guard
+blocks a second dispatch).
+
+- T11-R01 minor: other cards look enabled while a transition is in
+  flight but presses are no-ops → ACCEPTED (single-RPC-window trade;
+  the reference itself blocks interactions during mutation processing;
+  per-order in-flight map recorded as an optional future enhancement;
+  one tablet = one session).
+- T11-R02 minor: arrival caption persists until the next arrival →
+  CARRIED to T12 (timer + cleanup per RN rules).
+- T11-R03 minor: empty-group-within-populated-board unpinned → CARRIED
+  to T12 (one-line assertion).
+- T11-R04 minor: failed background refetch with stale data is silent →
+  CARRIED to T12 (transient banner when isError && data !== undefined;
+  T12's realtime multiplies background refetches).
+- T11-R05 minor: formatCreatedAt can render 24:00 on h24-cycle ICU
+  builds (Hermes tablets) → CARRIED to T12 (the model's % 24 absorption).
+
+DIFF
+features/preparation/screens/workspace/workspace-screen.tsx (new)
+features/preparation/screens/workspace/workspace-screen.test.tsx (new,
+manual)
+features/preparation/screens/workspace/components/board-section.tsx
+(new)
+app/(preparation)/index.tsx (replaced — Lead scaffold, planned --force)
+features/preparation/index.ts (appended — Lead scaffold, generator-owned)
+
+GATE: PASS
