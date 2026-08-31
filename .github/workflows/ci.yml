@@ -57,6 +57,14 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # TEMPORARY diagnostic: print Prettier's exact canonical diff once, then
+      # remove this step in the next commit after applying that output.
+      - name: Diagnose handoff test formatting
+        run: |
+          pnpm exec prettier --write core/auth/__tests__/handoff-race.test.tsx
+          git diff -- core/auth/__tests__/handoff-race.test.tsx
+          exit 1
+
       - name: Check formatting
         run: pnpm format:check
 
