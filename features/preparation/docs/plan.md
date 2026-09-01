@@ -407,8 +407,12 @@ The two secondary surfaces complete the employee experience.
 
 ## Verification
 
-- `pnpm verify` after every task gate (typecheck, lint, format, tests,
-  `db:verify`, `check:docs`, generator smoke).
+- `pnpm verify` at every ROUND gate (typecheck, lint, format, tests,
+  `db:verify`, `check:docs`, generator smoke); each task gate carries
+  its own affected-checks output (targeted + full jest, typecheck, scoped
+  lint/format) — the full verify run rides the round boundaries. (Cadence
+  reconciled at the quality audit: the delivery ran verify at R1/R2/R3/
+  final; per-task full-verify remains the ideal for future features.)
 - Fast GitHub CI on the final HEAD (the Draft PR must exist before this).
 - Runtime: `pnpm web`, sign in as the preparation test account
   (`docs/environment.md`) against the hosted test project; board / details /

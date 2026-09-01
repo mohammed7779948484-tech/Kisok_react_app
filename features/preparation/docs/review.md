@@ -264,17 +264,30 @@ completed, and is the evidence real?" — comparing `brief.md`, `plan.md`,
 Run by `quality-auditor` with fresh context, after review findings are
 dispositioned. It returns findings; the Lead records them here.
 
-| Category                                                   | Finding | Evidence                                        | Resolution |
-| ---------------------------------------------------------- | ------- | ----------------------------------------------- | ---------- |
-| not delivered / not evidenced / not planned / stale record | TODO    | which document said what vs what the diff shows | TODO       |
+| Category                    | Finding                                                                                                                                                                                                         | Evidence                                                            | Resolution                                                                                                                 |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| not delivered / PR evidence | QA-01 MAJOR: the final commit (runtime-evidence + F-02..F-05 fixes) was not in the PR — CI-on-final-HEAD unsatisfiable, the PR's worklog lacked the runtime entry, the docblock fixes would be dropped on merge | git ls-remote: PR head f615884 vs local 47874a2                     | RESOLVED: final HEAD pushed to the PR (QA-01 remediation); PR body updated with the final numbers + the UNVERIFIED records |
+| not evidenced               | QA-02: "pnpm verify after the final change" ticked without a recorded run (substance re-verified by the auditor)                                                                                                | todo.md tick vs worklog's last verify at the R3 gate                | RESOLVED: the "Final verification" worklog entry records the EXIT=0 run on 47874a2                                         |
+| not evidenced precisely     | QA-04: the runtime entry's viewport wording overstates the captures (5 of 9 combos screenshotted)                                                                                                               | /tmp/kisok-\*.png                                                   | RESOLVED: one-line clarification (layout switch pinned by tests)                                                           |
+| not evidenced precisely     | QA-05: db:verify is a graceful local skip (PostgreSQL unavailable here); the round-gate entries list it among verify's green legs                                                                               | tools/db/verify-types.mjs output; ci.yml KISOK_DB_VERIFY_REQUIRED=1 | RECORDED: CI is the only environment where db:verify actually verifies — folded into the open CI gate item                 |
+| plan vs record              | QA-06: plan promised verify "after every task gate"; delivery ran it at round gates + final                                                                                                                     | plan.md Verification vs worklog                                     | RESOLVED: plan line reconciled (round-gate cadence, per-task affected checks)                                              |
+| stale record                | QA-03: todo.md checkpoint lagged reality                                                                                                                                                                        | todo.md                                                             | RESOLVED: checkpoint refreshed                                                                                             |
 
-- Acceptance criteria in `brief.md` all implemented: TODO
-- Every task gate `PASS`, every round gate `PASS`: TODO
-- Worklog carries real command output per task: TODO
-- Shared files touched beyond this feature: TODO (expect none)
-- Definition of Done (`AGENTS.md`) met: TODO
+- Acceptance criteria in `brief.md` all implemented: YES — all 10 ACs (the auditor spot-checked AC-01/AC-09 by LIVE re-execution)
+- Every task gate `PASS`, every round gate `PASS`: YES — 17 GATE: PASS entries with real command output
+- Worklog carries real command output per task: YES — every RED/GREEN/affected-checks claim re-ran or re-derived exactly
+- Shared files touched beyond this feature: ONE — tools/generator/smoke-test.mjs (R2-S1, sanctioned, in plan.md + the PR body)
+- Definition of Done (`AGENTS.md`) met: YES on every product/architecture/data/UI/reliability item; the two evidence items closed by the final-verify record + the push
 
-Audit result: `PENDING`
+Audit verdict: "nothing is blocking… the delivery itself is sound: every
+count re-ran to the exact number, every runtime claim survived an
+independent live re-execution, the scope is exactly what the documents
+promised, and the record's honesty held under adversarial re-derivation —
+the strongest evidence an audit can report." Gate stays PENDING until the
+final HEAD is pushed (done) and CI runs on it.
+
+Audit result: `PASS` (with the CI-on-final-head item remaining open by
+necessity — CI runs only on GitHub; recorded in the PR)
 
 - **R2-S1** (Lead, shared-file change — justified): `pnpm generate:smoke`
   failed after T11's sanctioned placeholder replacement — the check

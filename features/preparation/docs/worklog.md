@@ -1286,8 +1286,13 @@ headless browser. Screenshots: /tmp/kisok-\*.png (not committed).
 - Zero page errors; the console carries only expected dev-mode logs
   (auth state changes, the channel status, React devtools notice).
 - Responsive contract sizes, all rendering: 1280×800 (tablet
-  landscape), 800×1180 (tablet portrait), 480×900 (compact web) —
-  workspace, history, and details captured.
+  landscape), 800×1180 (tablet portrait), 480×900 (compact web).
+  Five size×screen combos captured (1280×800 workspace;
+  800×1180 workspace+history; 480×900 history+details); the
+  medium/compact layout switch itself is pinned by the workspace
+  suite's tabs-vs-columns tests. The 480×900 workspace and 1280×800
+  history/details combos were live-verified interactively but not
+  screenshotted.
 - Live mutation path (new→preparing→ready / cancel) and the live
   realtime event: **UNVERIFIED, environment reason recorded** — the
   hosted test project has zero rows in `orders` AND zero rows in
@@ -1301,3 +1306,14 @@ headless browser. Screenshots: /tmp/kisok-\*.png (not committed).
 - Native/Android tier: **explicitly unverified** (no emulator/device
   in this environment; no native configuration touched by this
   feature; the pre-existing Maestro foundation smoke is unchanged).
+
+### Final verification — the Feature Gate's local legs (PR #6 draft)
+
+`pnpm verify` on the final HEAD (47874a2, after the F-02..F-05 doc
+fixes): EXIT=0 — typecheck, lint, format, the full jest run
+(35 suites / 322 tests), db:verify (graceful local skip: PostgreSQL
+unavailable in this sandbox — the schema leg runs only in CI, where
+KISOK_DB_VERIFY_REQUIRED=1), check-docs, and the generator smoke
+suite. The verify cadence is round-gate-level, not per task gate
+(plan reconciled below); every task gate carries its own
+affected-checks output.
