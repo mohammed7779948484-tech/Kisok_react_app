@@ -95,8 +95,10 @@ For each: the decision, and the alternative rejected and why.
    discarded and durably cleared (never surfaced). Rejected: trusting the
    sign-out cleanup alone — defense-in-depth: cleanup, mismatch-discard, and
    the emergency reset are three independent barriers.
-3. **Line identity = variantId + ordered set of optionValueIds** (derived in
-   pure rules, persisted per line as `lineId`). Same selection re-added →
+3. **Line identity = variantId + canonically SORTED set of optionValueIds**
+   (derived in pure rules, persisted per line as `lineId`; array order is
+   display order, not identity — the same option-value set in any order is the
+   same selection). Same selection re-added →
    merge by SUMMING quantities (Lead decision on the Flutter open question;
    the researcher recommended sum). Different variant OR different option
    selection → distinct line. Rejected: product-only identity (two variants

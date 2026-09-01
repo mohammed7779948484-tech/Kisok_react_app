@@ -16,10 +16,10 @@ is the first thing the next agent reads.
 
 ```
 Current round     : 1
-Current task      : T02
-Current stage     : not started (scaffold N/A — manual domain-rules task)
-Last gate         : T01 GATE: PASS
-Next legal action : compose + delegate T02 (pure cart rules; fold in the 4 deferred T01 review items)
+Current task      : T03
+Current stage     : not started (Lead scaffolds store next)
+Last gate         : T02 GATE: PASS
+Next legal action : Lead runs `pnpm generate store cart cart`, records SCAFFOLD, delegates T03
 Blocked by        : —
 ```
 
@@ -88,7 +88,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Lead scaffold**: N/A — no capability fits (pure domain rules)
 - **Expected generated files**: —
 - **Allowed manual files**: `model/cart-rules.ts` + `model/cart-rules.test.ts`
-- **Scaffold status**: N/A — domain rules have no generator capability
+- **Scaffold status**: N/A — domain rules have no generator capability (completed)
 - **Allowed file scope**: `features/cart/model/**`
 - **Spec**: line identity derivation (variantId + ordered optionValueIds);
   merge-same-selection sums quantities; distinct selection → new line;

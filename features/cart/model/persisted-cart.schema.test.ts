@@ -77,4 +77,19 @@ describe("persisted-cart schema", () => {
     expect(result.success).toBe(false);
     expect(issuePaths(result)).toContainEqual(["lines", 0, "quantity"]);
   });
+
+  it("rejects a payload whose lines share a lineId", () => {
+    const duplicate = persistedCartSchema.safeParse({
+      ...validCart,
+      lines: [validLine, validLine],
+    });
+    expect(duplicate.success).toBe(false);
+    // Control: only the second lineId differs — the parse then succeeds, so
+    // the rejection above is the uniqueness refinement, not another guard.
+    const distinct = persistedCartSchema.safeParse({
+      ...validCart,
+      lines: [validLine, { ...validLine, lineId: "9c2d5e1a-3f4b-4a8c-b7d6-8e9f0a1b2c3d" }],
+    });
+    expect(distinct.success).toBe(true);
+  });
 });

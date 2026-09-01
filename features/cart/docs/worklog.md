@@ -172,3 +172,61 @@ Dispositions: R-T01-01/02/03/05 deferred to T02 (model/ scope, consumed
 there); R-T01-04 resolved by this worklog entry.
 
 GATE: PASS
+
+### T02 — Pure cart rules (+ T01 deferred remediations)
+
+MODE: behavior
+ACCEPTANCE: Supporting AC-03, AC-08
+
+SCAFFOLD (Lead)
+n/a — domain rules have no generator capability (planned manual artifact)
+
+RED (implementer; verified by Reviewer live runs)
+$ pnpm test -- features/cart/model
+20 failed / 20 passed — 19 cart-rules tests failed on typed throwing stubs
+(assertion-level, imports resolved); 1 uniqueness-refinement test failed
+Expected:false/Received:true. 5 T01-coverage tests passed at RED honestly
+(they assert existing guards). Reviewer re-ran and corroborated.
+
+IMPLEMENT
+cart-rules.ts (new): MAX_LINE_QUANTITY, deriveLineId (sorted identity),
+addLine (merge-by-sum capped, append with derived identity), setLineQuantity
+(floor-then-clamp), removeLine, summaries. persisted-cart refine (unique
+lineIds). T01 remediations: input-schema tests, 3 guard-mirror tests,
+comment rewords.
+
+GREEN
+$ pnpm test -- features/cart/model → 3 suites / 40 tests PASS
+
+TASK REVIEW (fresh code-reviewer, agent-bf0c275c…)
+0 blocking / 0 major / 5 minor. Reviewer EMPIRICALLY verified: stray-lineId
+bug (R-T02-01), NaN escape (R-T02-03), cap-literal duplication (R-T02-02).
+
+REMEDIATION (same implementer, resumed agent-77426643…)
+R-T02-01: append spread { ...input, lineId } — derived identity wins; regression
+test RED (Expected derived / Received "not-the-derived-id") → GREEN.
+R-T02-02: MAX_LINE_QUANTITY exported from cart-line.schema (single 99 literal,
+TDZ-ordered); rules import it; round-trip test (addLine→schema parses; cap+1
+rejects). RED on missing export → GREEN.
+R-T02-03: Number.isFinite guard — NaN→1, ±Inf→max/min; tests (NaN RED →
+GREEN; +Infinity behavior existed).
+R-T02-04: empty-cart 0/0 + after-setQuantity recompute tests (honest
+immediate-pass coverage).
+R-T02-05 (Lead): plan.md decision 3 reworded — canonically SORTED set; array
+order is display order, not identity.
+
+GREEN (post-remediation)
+$ pnpm test -- features/cart/model → 3 suites / 46 tests PASS
+$ pnpm test (full) → 20 suites / 184 tests PASS
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean
+$ pnpm lint → clean
+$ pnpm format:check → clean
+99-literal audit: exactly one code literal (cart-line.schema.ts:9)
+
+DIFF
+6 files, all in features/cart/model/\*\* (2 new, 4 edited). Nothing outside
+scope. index.ts untouched.
+
+GATE: PASS

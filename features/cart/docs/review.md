@@ -59,3 +59,15 @@ Audit result: `PENDING`
 | R-T01-03 | minor    | Comment/behavior tension: 99-cap comment says "UX guard" but max(99) is a hard restore boundary within format v1 | cart-line.schema.ts:27-28                         | reword comment in T02; cap changes require version bump                          | T02         |
 | R-T01-04 | minor    | Worklog carried only SCAFFOLD at review time; RED/GREEN evidence unrecorded                                      | worklog diff                                      | resolved — Lead recorded full evidence at gate                                   | done        |
 | R-T01-05 | minor    | Restore boundary does not enforce unique lineIds (foreign/duplicate payload could restore ambiguous lines)       | persisted-cart.schema.ts:17                       | remediate in T02: `.refine` unique lineIds + test (AC-02 restore validation)     | T02         |
+
+| R-T02-01 | minor | addLine append trusted stray input lineId over derived identity | cart-rules.ts:25 (pre-fix); reviewer /tmp empirical run | fixed in-task — derived id spread last + regression test (RED→GREEN) | done |
+| R-T02-02 | minor | 99 cap duplicated as two literals with divergent rationale | cart-rules.ts:10 vs cart-line.schema.ts:29 | fixed in-task — single MAX_LINE_QUANTITY export in schema; rules import; round-trip test | done |
+| R-T02-03 | minor | NaN escaped floor-then-clamp (unpersistable line) | cart-rules.ts:39; empirical | fixed in-task — Number.isFinite guard (NaN→1, ±Inf→max/min) + tests | done |
+| R-T02-04 | minor | empty-cart 0/0 and post-setQuantity recompute untested | cart-rules.test.ts | fixed in-task — two honest coverage tests | done |
+| R-T02-05 | minor | plan.md decision 3 said "ordered set" while implementation sorts (identity vs display order) | plan.md decision 3 | fixed by Lead — wording now "canonically SORTED set; array order is display order, not identity" | done |
+
+T02 re-review note: findings were all minor; remediations verified by Lead
+(focused 46/46, full 20 suites/184, checks clean, single-99-literal audit).
+Carried constraint into T04: the store must parse add input through
+`addToCartInputSchema` before calling the rules (defense-in-depth per
+reviewer).

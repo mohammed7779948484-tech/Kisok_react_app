@@ -1,4 +1,4 @@
-import { cartLineSchema } from "./cart-line.schema";
+import { addToCartInputSchema, cartLineSchema } from "./cart-line.schema";
 
 /**
  * Colocated with the schema it protects: the test is right there when the
@@ -9,7 +9,9 @@ import { cartLineSchema } from "./cart-line.schema";
  */
 
 /** Field paths the schema complained about; empty when parsing succeeded. */
-function issuePaths(result: ReturnType<typeof cartLineSchema.safeParse>) {
+function issuePaths(
+  result: { success: true } | { success: false; error: { issues: { path: PropertyKey[] }[] } },
+) {
   return result.success ? [] : result.error.issues.map((issue) => issue.path);
 }
 
@@ -104,5 +106,38 @@ describe("cart-line schema", () => {
     });
     expect(result.success).toBe(false);
     expect(issuePaths(result)).toContainEqual(["optionSelections", 0, "optionValueLabel"]);
+  });
+
+  it("rejects a productId that is not a uuid", () => {
+    const result = cartLineSchema.safeParse({ ...validLine, productId: "cappuccino" });
+    expect(result.success).toBe(false);
+    expect(issuePaths(result)).toContainEqual(["productId"]);
+  });
+
+  it("rejects an optionValueId that is not a uuid", () => {
+    const result = cartLineSchema.safeParse({
+      ...validLine,
+      optionSelections: [{ ...sizeSelection, optionValueId: "large" }],
+    });
+    expect(result.success).toBe(false);
+    expect(issuePaths(result)).toContainEqual(["optionSelections", 0, "optionValueId"]);
+  });
+
+  it("rejects an empty lineId", () => {
+    const result = cartLineSchema.safeParse({ ...validLine, lineId: "" });
+    expect(result.success).toBe(false);
+    expect(issuePaths(result)).toContainEqual(["lineId"]);
+  });
+
+  it("accepts an add-to-cart input without a lineId", () => {
+    const { lineId: _derivedByRules, ...input } = validLine;
+    expect(addToCartInputSchema.safeParse(input).success).toBe(true);
+  });
+
+  it("rejects quantity 0 on the add-to-cart input too", () => {
+    const { lineId: _derivedByRules, ...input } = validLine;
+    const result = addToCartInputSchema.safeParse({ ...input, quantity: 0 });
+    expect(result.success).toBe(false);
+    expect(issuePaths(result)).toContainEqual(["quantity"]);
   });
 });

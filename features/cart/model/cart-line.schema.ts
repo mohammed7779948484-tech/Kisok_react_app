@@ -1,6 +1,14 @@
 import { z } from "zod";
 
 /**
+ * The single source of the per-line quantity cap for the whole model layer:
+ * min 1 is the domain rule; within persisted format v1 the 1–99 range is part
+ * of the restore contract — changing it requires bumping the envelope version.
+ * As a UX guard the server still validates at order time.
+ */
+export const MAX_LINE_QUANTITY = 99;
+
+/**
  * One cart line — in memory and inside the persisted cart payload.
  *
  * The display snapshot (names, labels, imageUri) lets a line render itself
@@ -24,11 +32,14 @@ export const cartLineSchema = z.object({
   ),
   // null when the variant has no image — AppImage renders its fallback.
   imageUri: z.string().nullable(),
-  // min 1 is the domain rule; 99 is a UX guard, not a domain invariant.
-  quantity: z.number().int().min(1).max(99),
+  quantity: z.number().int().min(1).max(MAX_LINE_QUANTITY),
 });
 
-/** The input a future Catalog "Add to cart" passes: a line minus its derived identity. */
+/**
+ * The input a future Catalog "Add to cart" passes: a line minus its derived identity.
+ * Zod strip-mode means a payload carrying a lineId parses silently — consumers
+ * derive identity via deriveLineId and never trust a supplied one.
+ */
 export const addToCartInputSchema = cartLineSchema.omit({ lineId: true });
 
 export type CartLine = z.infer<typeof cartLineSchema>;
