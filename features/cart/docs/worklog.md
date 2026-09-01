@@ -356,3 +356,95 @@ DIFF
 2 modified files in features/cart/state/\*\*. Nothing outside scope.
 
 GATE: PASS
+
+### T05 — Sign-out cleanup wiring
+
+MODE: behavior
+ACCEPTANCE: Acceptance AC-07
+
+SCAFFOLD (Lead)
+n/a — lifecycle registration has no generator capability (planned manual
+artifact per plan.md allowed-manual list).
+
+RED (implementer; one infra false-start honestly reported)
+$ pnpm test -- sign-out-cleanup
+4 failed / 1 passed — stub registering nothing: lines stayed populated;
+throw message wrong; locked stayed true; direct call rejected. The no-guard
+test passed at RED honestly (negative invariant). Dynamic-import approach
+rejected by jest sandbox (reported, not hidden); static import used.
+
+IMPLEMENT
+sign-out-cleanup.ts (new): clearCartForSignOut (clear → throw on rejected
+with descriptive message → setState locked:false); registers
+registerSignOutCleanup({name: "cart"}) at import; NO guard; module doc
+covers the three whys (Phase 3 handoff, throw→emergency reset, guard belongs
+to future Checkout).
+sign-out-cleanup.test.ts (new): 5 tests — lifecycle registration (memory +
+durable miss), failing-clear → failures:["cart"], no-guard (seeded block
+condition), locked reset, memory+durable via direct task.
+
+GREEN
+$ pnpm test -- sign-out-cleanup → 5/5; full 22 suites / 239.
+
+TASK REVIEW (fresh, agent-56671693…)
+0 blocking / 0 major / 5 minor. No swallow path found (verified through
+context.tsx Phase 2 ordering, runSignOutCleanup capture, clearKisokStorage
+namespace wipe). Registration idempotent; test approach judged real
+behavior (action replacement on real zustand, no mock framework).
+
+REMEDIATION (same implementer)
+R-T05-01: no-guard test seeds locked+populated (a lock-keyed guard would
+now fail it) — honest immediate-pass coverage, marked.
+R-T05-02: registration test now proves memory AND durable miss after
+runSignOutCleanup() in ONE lifecycle test (seed → persistNow → pre-assert
+hit → run → miss).
+R-T05-03: comment now names the real persistence consumer (cart surfaces,
+not auth).
+R-T05-05: test-only export documented; T10 must NOT re-export.
+R-T05-04: resolved by this worklog entry.
+
+GREEN (post-remediation)
+$ pnpm test -- sign-out-cleanup → 5/5
+$ pnpm test → 22 suites / 239
+$ pnpm typecheck / lint / format → clean
+
+DIFF
+2 new files in features/cart/state/\*\*. Nothing outside scope; index.ts
+untouched (T10 wires the go-live import — plan decision 10).
+
+GATE: PASS
+
+---
+
+## ROUND 1 GATE — domain and state foundation
+
+Tasks: T01, T02, T03, T04, T05 — ALL GATE: PASS.
+
+Accumulated round diff: features/cart/model/** (6 files: 2 schema pairs +
+rules pair), features/cart/state/** (4 files: cart-store pair +
+sign-out-cleanup pair), features/cart/docs/** (5 control documents), and the
+workspace index.ts placeholder. NO file outside features/cart/** touched.
+
+Subsystem verification (Lead, on the full round state):
+$ pnpm test → 22 suites / 239 tests PASS, zero console output
+$ pnpm typecheck → clean
+$ pnpm lint → clean (architecture boundaries enforced)
+$ pnpm format:check → clean
+$ pnpm check:docs → PASS (docs describe the current workflow)
+
+Cross-task coherence (Lead review of combined behavior):
+
+- One cart model: the store is the single authority; rules/schema layers are
+  pure and composed; no mirrored totals (selectors derive); no second model
+  anywhere.
+- The ownership chain is closed: single key + ownerId envelope → hydrate
+  mismatch discard → serialized durable ops → sign-out cleanup → auth
+  emergency namespace reset (4 independent barriers).
+- Persistence honesty closed: persisted/memoryOnly/clearFailed with sticky
+  precedence, serialized+coalesced writes, throw-safety, pre-owner guards.
+- The lock contract is closed: user mutations no-op; clearCart exempt; owner
+  switch and sign-out both reset the lock.
+- The state layer is backend-invisible: zero Supabase imports (negative
+  contract respected); no UI yet (Round 2).
+
+Round gate: PASS
