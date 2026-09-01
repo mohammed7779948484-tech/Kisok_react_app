@@ -1118,3 +1118,98 @@ subscription on this screen (plan-conformant — the workspace beneath
 it on the stack stays subscribed and invalidates transitively).
 
 GATE: PASS
+
+### T14 — StoreDayHistoryScreen + route
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-08
+
+SCAFFOLD
+$ pnpm generate screen preparation store-day-history
+$ pnpm generate route preparation history --role=preparation --screen=store-day-history
+created : features/preparation/screens/store-day-history/store-day-history-screen.tsx
+created : features/preparation/screens/store-day-history/store-day-history-screen.test.tsx
+created : app/(preparation)/history.tsx
+appended : features/preparation/index.ts (generator barrel export)
+
+RED
+(The implementer session hit a context deadline after completing the
+work but before reporting — the Lead re-verified everything and
+reconstructed RED honestly, per the T10 recovery precedent.)
+$ npx jest features/preparation/screens/store-day-history/
+Reconstructed: implementation moved aside, a fresh generator stub
+regenerated in its place, the suite run → 11 failed / 11 total, every
+failure "Unable to find an element …" against the stub's "TODO: build
+this screen" render (missing-behaviour class); implementation restored
+→ 11/11. The T13-R01 lift's unit test: "Cannot find module
+'./order-display'" with the model moved aside (the documented
+missing-module exception for a lift) → 3/3 restored.
+
+IMPLEMENT
+store-day-history-screen.tsx — composed hook ladder (isPending →
+SkeletonList; isError && data === undefined → ErrorState wired to the
+hook's COMPOSED settings-first refetch; day-empty EmptyState; success →
+groups); groupTerminalOrders (the model's helper — never re-derived)
+→ Completed then Cancelled sections with label+count, per-section "No
+orders"; read-only OrderCards (lean history row adapted with an empty
+placeholder item array — the screen ALWAYS supplies its own
+terminalSummaryLabel caption: status word + terminal time in store tz —
+so the placeholder can never surface); card press →
+router.push /order-details (AC-03); day header = window.startUtc via
+en-CA weekday+long date in the RESOLVED store timezone (decision-8
+degrade, same resolver as the window); stale-data policy = the
+workspace T11-R04 pattern (isError && data !== undefined → transient
+InlineError banner, data kept, clears on next success); back ghost
+button in every state; R1-05 decided: event-driven rollover, NO
+refetchInterval (docblock rationale: the day key rolls on any
+re-render; a parked-across-midnight screen keeps its day — accepted,
+self-correcting; a timed poll would drain a read-only tablet surface).
+model/order-display.ts — the T13-R01 lift: formatCreatedAt
+(logic-identical to both deleted screen-local copies) + 3 unit tests
+(HH:MM shape, 2-digit padding, midnight % 24 with the h23-ICU
+disclosure). workspace-screen.tsx — History affordance (outline
+compact, matches Refresh) → router.push("/history") + formatCreatedAt
+local copy deleted → import; +1 navigation test. order-details-screen.
+tsx — formatCreatedAt deleted → import + the T13-R03 compound key;
++1 T13-R02 test (forbidden non-retryable read → no "Try again").
+Route file untouched (byte-identical to the generator template).
+
+GREEN
+$ npx jest features/preparation/screens/store-day-history/ → 11/11
+$ npx jest features/preparation/model/order-display.test.ts → 3/3
+$ npx jest features/preparation/screens/workspace/ → 28/28
+$ npx jest features/preparation/screens/order-details/ → 25/25
+$ npx jest features/preparation/ → 18 suites / 184 tests
+$ node node_modules/.bin/jest (repo-wide) → 35 suites / 322 tests
+
+AFFECTED CHECKS (Lead re-ran)
+$ pnpm typecheck → clean; scoped eslint --max-warnings=0 → exit 0;
+prettier → clean; zero console output observed in every run
+
+TASK REVIEW (fresh code-reviewer, Super Z agent-642e8794)
+No blocking, no major; one minor + two notes. All six judgement calls
+upheld (lean-row adaptation honest — the card's only order_items
+consumer is permanently overridden by the screen's own caption,
+"0 items" null-asserted; R1-05 decision + pin 90% sufficient → the
+gap became T14-R01; day-empty-replaces-groups correct for the
+reference's "per terminal section/day"; stale-data policy correctly
+the workspace pattern; clock-relative fixtures sound — the AC-08
+day-boundary shape is pinned ABSOLUTELY with fake timers spanning both
+boundaries through the REAL model; day header format acceptable, zone
+consistent with the window by construction). All seven carried
+constraints verified satisfied.
+
+- T14-R01 minor: the "no refetchInterval" pin could not fail as
+  written (jest.setSystemTime does not fire scheduled timers — verified
+  empirically against @sinonjs/fake-timers) → FIXED Lead-applied and
+  disclosed (implementer context lost to a session deadline, T10-R02
+  precedent): the parked phase now also advances timers 2h and asserts
+  the read was NOT re-called + the old header retained — a reintroduced
+  timed poll fires under the advance and fails the test; 11/11,
+  prettier, eslint re-verified.
+- T14-N01 note: todo.md's T14 scope line lagged the sanctioned packet
+  → reconciled at the gate (Lead).
+- T14-N02 note: stale suite counts in the Lead's GREEN note → the
+  corrected figures (18/184, 35/322) recorded in this entry.
+
+GATE: PASS

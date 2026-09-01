@@ -12,6 +12,7 @@ import { useAuth } from "@/core/auth";
 import type { ActiveOrderRow } from "../../api/fetch-active-orders";
 import { CancelOrderDialog } from "../../components/cancel-order-dialog";
 import { OrderStatusBadge } from "../../components/order-status-badge";
+import { formatCreatedAt } from "../../model/order-display";
 import { allowedOrderActions } from "../../model/status-actions";
 import { effectiveTimezone, resolveStoreTimezone } from "../../model/store-day";
 import { preparationKeys } from "../../queries/keys";
@@ -78,31 +79,6 @@ const PENDING_ACTION_BY_TARGET: Record<"preparing" | "ready" | "cancelled", Orde
   ready: "markReady",
   cancelled: "cancel",
 };
-
-/**
- * The created time as the details screen shows it: wall-clock time in the
- * effective (store, else device) timezone — a fixed 24-hour clock,
- * deterministic and unambiguous on a shared kiosk. The workspace board's own
- * screen-local helper, copied rather than shared (each screen owns its label
- * formatting).
- *
- * Built from `formatToParts` so the hour can be absorbed with `% 24` — the
- * same guard model/store-day.ts documents (:113-114): some ICU builds (Hermes
- * tablets) run an h24 cycle and would otherwise render midnight as "24:00"
- * with a 24-hour clock (T11-R05).
- */
-function formatCreatedAt(isoTimestamp: string, timezone: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date(isoTimestamp));
-  const component = (type: Intl.DateTimeFormatPartTypes): string =>
-    parts.find((part) => part.type === type)?.value ?? "00";
-  const hour = Number(component("hour")) % 24;
-  return `${String(hour).padStart(2, "0")}:${component("minute")}`;
-}
 
 /**
  * The deterministic client-side item order (plan decision 7): codepoint
@@ -470,8 +446,11 @@ function OrderItemRow({ item }: { item: ItemRow }) {
             <Text variant="h3">{`×${item.quantity}`}</Text>
           </View>
           {item.variant_name !== null ? <Text variant="body">{item.variant_name}</Text> : null}
-          {optionTexts(item.variant_options).map((label) => (
-            <Text key={label} variant="caption">
+          {optionTexts(item.variant_options).map((label, index) => (
+            // T13-R03: a malformed snapshot with duplicate option labels
+            // cannot come from migration 07 — but a compound key costs nothing
+            // and never collides regardless.
+            <Text key={`${label}-${index}`} variant="caption">
               {label}
             </Text>
           ))}

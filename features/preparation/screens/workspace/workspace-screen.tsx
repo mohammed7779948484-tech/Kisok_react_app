@@ -12,6 +12,7 @@ import { useLayout } from "@/core/responsive";
 import type { ActiveOrderRow } from "../../api/fetch-active-orders";
 import { CancelOrderDialog } from "../../components/cancel-order-dialog";
 import { orderStatusLabel } from "../../components/order-status-badge";
+import { formatCreatedAt } from "../../model/order-display";
 import { effectiveTimezone, resolveStoreTimezone } from "../../model/store-day";
 import { preparationKeys } from "../../queries/keys";
 import { useActiveOrders } from "../../queries/use-active-orders";
@@ -58,7 +59,9 @@ import {
  * the operational board never fails on it. Cards show the created time, not a
  * ticking timer (decision 10), and new-order arrivals are announced through a
  * polite live region (decision 9) — no toast, no sound. The workspace also
- * carries the sign-out affordance and a manual refresh (decision 10).
+ * carries the sign-out affordance, a manual refresh (decision 10), and the
+ * History affordance (AC-08: the store-day history screen is reached from
+ * here).
  *
  * While this screen is mounted it holds the orders Realtime subscription
  * (AC-09, `useOrdersRealtime`): an `orders` change is an INVALIDATION signal
@@ -83,30 +86,6 @@ const PENDING_ACTION_BY_TARGET: Record<"preparing" | "ready" | "cancelled", Boar
  * read, short enough that an all-shift board never accumulates stale captions.
  */
 export const ANNOUNCEMENT_CLEAR_MILLIS = 6000;
-
-/**
- * The created time as the board shows it: wall-clock time in the effective
- * (store, else device) timezone — a fixed 24-hour clock, deterministic and
- * unambiguous on a shared kiosk. Screen-local on purpose: the card stays dumb
- * about timezones and receives the label as a prop.
- *
- * Built from `formatToParts` so the hour can be absorbed with `% 24` — the
- * same guard model/store-day.ts documents (:113-114): some ICU builds (Hermes
- * tablets) run an h24 cycle and would otherwise render midnight as "24:00"
- * with a 24-hour clock (T11-R05).
- */
-function formatCreatedAt(isoTimestamp: string, timezone: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date(isoTimestamp));
-  const component = (type: Intl.DateTimeFormatPartTypes): string =>
-    parts.find((part) => part.type === type)?.value ?? "00";
-  const hour = Number(component("hour")) % 24;
-  return `${String(hour).padStart(2, "0")}:${component("minute")}`;
-}
 
 export function WorkspaceScreen() {
   const { profile } = useAuth();
@@ -321,6 +300,11 @@ export function WorkspaceScreen() {
           <View className="flex-row gap-2">
             <Button variant="outline" size="compact" onPress={() => void activeOrders.refetch()}>
               <Text>Refresh</Text>
+            </Button>
+            {/* AC-08: history is reached from the workspace — the same compact
+                outline affordance style as Refresh, pushing the history route. */}
+            <Button variant="outline" size="compact" onPress={() => router.push("/history")}>
+              <Text>History</Text>
             </Button>
             <Button variant="ghost" size="compact" onPress={signOut.run} disabled={signOut.pending}>
               <Text>{signOut.pending ? "Signing out…" : "Sign out"}</Text>

@@ -14,3 +14,4 @@
  */
 export { WorkspaceScreen } from "./screens/workspace/workspace-screen";
 export { OrderDetailsScreen } from "./screens/order-details/order-details-screen";
+export { StoreDayHistoryScreen } from "./screens/store-day-history/store-day-history-screen";

@@ -328,3 +328,47 @@ details screen — plan-conformant (the workspace beneath it on the stack
 stays subscribed and invalidates transitively); route file untested
 matches the thin-route convention; a loose "migration-07 shape" comment
 wording (columns are 04's, values 07's) — defensible.
+| T14-R01 | minor | The R1-05 "no refetchInterval" pin could not fail as written: `jest.setSystemTime` does not fire scheduled timers (verified empirically against the repo's @sinonjs/fake-timers), so a reintroduced timed poll would still pass both phases — the negative claim was pinned only by docblocks | store-day-history-screen.test.tsx:531-534 | fix | Lead-applied and disclosed (implementer context lost to a session deadline, per the T10-R02 precedent): parked phase now also advances timers 2h and asserts the read was NOT re-called (toHaveBeenCalledTimes(1)) + old header retained — a reintroduced poll fires under the advance and fails the test; 11/11 re-verified |
+| T14-N01 | note | todo.md's T14 allowed-file-scope line lagged the sanctioned packet (omitted the workspace History affordance + its test, required by AC-08 "reached from the workspace") — the code was correctly within the packet; only the doc lagged | todo.md:283-290 (pre-gate) vs the Lead's t14-implement.md packet | fix | Scope line reconciled at the T14 gate (Lead) to match the real diff |
+| T14-N02 | note | The Lead's GREEN note carried stale suite counts from T13 (16/33); the T14 reality is feature 18 suites / 184 tests, repo 35 suites / 322 | Lead's re-verification output vs the reviewer's re-runs | fix | Corrected figures recorded in the official T14 worklog entry |
+
+### T14 review coverage statement (reviewer agent-642e8794, fresh context)
+
+Verdict: no blocking, no major. Re-ran read-only: history 11/11,
+order-display 3/3, workspace 28/28, order-details 25/25, feature 18
+suites/184 tests, repo 35 suites/322 tests, typecheck clean, scoped
+eslint exit 0, prettier clean, zero console output. Judgement calls:
+lean-row adaptation ACCEPT (type adapter, not fabrication — the card's
+only order_items consumer is permanently overridden by the screen's own
+caption; "0 items" null-asserted); R1-05 decision ACCEPT (well-argued in
+both docblocks; key/bound rolling pinned by terminalSince assertions;
+the falsifiability gap became T14-R01); day-empty-replaces-groups
+ACCEPT (both halves of the reference §25 phrase pinned); stale-data
+policy ACCEPT (workspace pattern, realtime-shaped invalidation trigger
+pinned); clock-relative fixtures ACCEPT (the AC-08 day-boundary shape is
+pinned ABSOLUTELY with fake timers spanning both boundaries through the
+real model; relative fixtures cover only boundary-independent
+behaviours); day header format ACCEPT (store-tz absolute pin; zone
+consistency with the window verified through the shared settings cache
+entry).
+
+Examined and clean: diff hygiene (exactly the 9 declared paths; route
+byte-identical to the generator template; barrel exactly one line);
+read-only semantics triple-defended (readOnly flag, no action callbacks,
+status-actions false for terminal rows; no mutation hooks/timers/
+subscriptions/effects in the screen); state ladder (settings-pending
+skeleton with the read never firing; error-with-retry wired to the
+composed settings-first refetch, re-attempt pinned; day-empty;
+stale-banner with mutual exclusivity); architecture (no migrations, no
+shared core/components changes, Supabase confined to api/\*\*, no new
+dependencies, no suppressions); design system (tokens only; Screen
+primitive; group convention mirrors board-section; HistoryGroup
+screen-internal — not a duplicate shared primitive; 48dp touch targets;
+persistent Back in every state; assignment words never colour alone);
+RN rules (all strings in Text; no falsy-&& renders; ScrollView
+sanctioned by ADR-0011; no memoization ceremony); tests (behaviour-
+named, colocated, api-boundary mocks only, userEvent, log sink
+silenced, all 11 would fail for the intended reason); accessibility
+(descriptive card button names; no live region needed on a
+past-viewing surface); all seven carried constraints verified satisfied.
+RED accepted as Lead-reconstructed per the T10 recovery precedent.

@@ -294,6 +294,25 @@ describe("OrderDetailsScreen param and read states", () => {
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
     expect(fetchOrderMock).toHaveBeenCalledTimes(1);
   });
+
+  it("renders the unavailable state without retry when the read fails non-retryably", async () => {
+    // T13-R02 (carried): a forbidden read (RLS/role gate, 42501) is
+    // non-retryable — retrying the identical request fails identically. This
+    // pins the retryable/non-retryable distinction the failed-fetch test
+    // above rests on: transport failures offer "Try again", permission
+    // failures do not (ErrorState's own canRetry contract).
+    const forbidden = new AppError({
+      kind: "forbidden",
+      userMessage: "You don't have access to do that.",
+      code: "42501",
+    });
+    await renderDetails({ fetchImpl: () => Promise.reject(forbidden) });
+
+    expect(await screen.findByText("Order unavailable")).toBeOnTheScreen();
+    expect(screen.getByText("You don't have access to do that.")).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(screen.queryByText("AB2CD4")).toBeNull();
+  });
 });
 
 describe("OrderDetailsScreen snapshot (AC-07)", () => {

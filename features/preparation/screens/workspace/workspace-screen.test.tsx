@@ -883,6 +883,15 @@ describe("WorkspaceScreen affordances", () => {
       params: { orderId: newOrder.id },
     });
   });
+
+  it("navigates to history when the History affordance is pressed", async () => {
+    await renderWorkspace({ orders: [makeOrder()] });
+
+    await userEvent.setup().press(await screen.findByRole("button", { name: "History" }));
+
+    // AC-08: history is reached from the workspace's header affordance.
+    expect(routerPush).toHaveBeenCalledWith("/history");
+  });
 });
 
 describe("WorkspaceScreen realtime (AC-09)", () => {

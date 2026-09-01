@@ -14,11 +14,12 @@ defeats its only purpose.
 ```
 Current round     : Round 3 — Order details and store-day history
 Current task      : T14
-Current stage     : ready to scaffold T14 (T13 GATE PASS)
-Last gate         : T13 GATE: PASS (24/24, 16/168, 33/306; no blocking/major)
-Next legal action : Lead runs `pnpm generate screen preparation store-day-history` +
-                    `pnpm generate route preparation history --role=preparation --screen=store-day-history`,
-                    then delegates T14
+Current stage     : done (T14 GATE PASS) — Round 3 gate next
+Last gate         : T14 GATE: PASS (11/11 history, 3/3 order-display, 28/28 workspace,
+                    25/25 details; feature 18 suites/184, repo 35 suites/322; no blocking/major)
+Next legal action : Lead runs the Round 3 gate: `pnpm verify` + round-scoped
+                    cross-task review (T13+T14), then the feature-level final
+                    verification and the draft PR against develop
 Blocked by        : —
 ```
 
@@ -60,28 +61,33 @@ OrderActionOrder…>` compile-time pin in fetch-active-orders.test.ts
   refetch ≥ 2).
 - **T11/T13/T14** — error-state rendering must NOT assume `error.kind`
   (T04 O-1: transport-level throws are not AppError at screens). T11/T13
-  halves DONE; the T14 half REMAINS REQUIRED.
+  halves DONE; ~~the T14 half REMAINS REQUIRED~~ DONE at the T14 gate
+  (history.error flows as unknown; grep-verified zero .kind reads).
 - ~~**T13** — the details screen MUST branch on a missing `orderId` route
   param and render the unavailable state without fabricating an id
   (T03-R03; a fabricated id stringifies into a doomed retryable request).~~
   DONE at the T13 gate (branch-first; two no-fetch assertions).
-- **T14** — decide the history rollover policy: accept event-driven
+- ~~**T14** — decide the history rollover policy: accept event-driven
   rollover (realtime + focus refetch self-correct) or add a screen-level
   refetchInterval (R1-05; the dayKey rolls on the next render, not on a
-  timer).
-- **T14** — T13-R01 (carried): lift `formatCreatedAt` into
+  timer).~~ DONE at the T14 gate: event-driven accepted, NO refetchInterval;
+  docblock rationale in the screen + hook; rollover pin made falsifiable
+  (parked day retained across midnight even with timers advanced — the
+  T14-R01 re-review fix).
+- ~~**T14** — T13-R01 (carried): lift `formatCreatedAt` into
   `features/preparation/model/order-display.ts` (+ unit test for the
   pure helper) — T14 is the third consumer; both existing screens delete
-  their local copies and import it. The pending-label map stays
-  per-screen (T14 is read-only — no third consumer fires).
-- **T14** — T13-R02 (carried, additive test): in
+  their local copies and import it.~~ DONE at the T14 gate (logic-identical
+  lift, 3 unit tests; the pending-label map stayed per-screen).
+- ~~**T14** — T13-R02 (carried, additive test): in
   `features/preparation/screens/order-details/order-details-screen.test.tsx`,
   reject the read with a non-retryable AppError → assert no "Try again"
   (pins the retryable/non-retryable distinction judgement call 2 rests
-  on).
-- **T14** — T13-R03 (folded one-liner): compound
+  on).~~ DONE at the T14 gate (forbidden non-retryable read → no "Try again").
+- ~~**T14** — T13-R03 (folded one-liner): compound
   `key={`${label}-${index}`}` for the option-label map in
-  order-details-screen.tsx (duplicate-key hardening; no test change).
+  order-details-screen.tsx (duplicate-key hardening; no test change).~~
+  DONE at the T14 gate.
 
 Shared-file notes (ACCEPTED — Lead-owned foundation chores, NOT feature
 work; do not edit core/\*\* from this feature):
@@ -98,22 +104,22 @@ work; do not edit core/\*\* from this feature):
 
 Scan this first. Detail is below.
 
-| Task | Mode     | Acceptance                        | Objective                                                            | Deps                              | Stage       | Gate    |
-| ---- | -------- | --------------------------------- | -------------------------------------------------------------------- | --------------------------------- | ----------- | ------- |
-| T01  | behavior | Sup: AC-04/05/06                  | Zod schema for `update_order_status` result                          | —                                 | done        | PASS    |
-| T02  | behavior | Sup: AC-01/02/03                  | Active-orders read (api + hook + keys)                               | —                                 | done        | PASS    |
-| T03  | behavior | Sup: AC-07                        | Order-detail read (api + hook)                                       | T02 (scaffold ordering)           | done        | PASS    |
-| T04  | behavior | Sup: AC-03/07/08                  | Store-settings read (api + hook)                                     | T02 (scaffold ordering)           | done        | PASS    |
-| T05  | behavior | Sup: AC-04/05/06/10               | update-order-status mutation (api + hook)                            | T01                               | done        | PASS    |
-| T06  | behavior | Sup: AC-08                        | Store-day-history read + store-day model                             | T04                               | done        | PASS    |
-| T07  | behavior | Sup: AC-04/05/06/10               | status-actions eligibility rules                                     | —                                 | done        | PASS    |
-| T08  | behavior | Sup: AC-03/07/08                  | OrderStatusBadge component                                           | —                                 | done        | PASS    |
-| T09  | behavior | AC-03                             | OrderCard component                                                  | T07, T08                          | done        | PASS    |
-| T10  | behavior | AC-06                             | CancelOrderDialog component                                          | T05                               | done        | PASS    |
-| T11  | behavior | AC-01, AC-02, AC-04, AC-05, AC-10 | WorkspaceScreen + board-section + index route (replaces placeholder) | T02, T04, T05, T07, T08, T09, T10 | done        | PASS    |
-| T12  | behavior | AC-09                             | Orders realtime invalidation wired into workspace                    | T11                               | done        | PASS    |
-| T13  | behavior | AC-07, AC-10                      | OrderDetailsScreen + route                                           | T03, T04, T05, T07, T08, T10      | done        | PASS    |
-| T14  | behavior | AC-08                             | StoreDayHistoryScreen + route                                        | T04, T06, T08, T09                | not started | PENDING |
+| Task | Mode     | Acceptance                        | Objective                                                            | Deps                              | Stage | Gate |
+| ---- | -------- | --------------------------------- | -------------------------------------------------------------------- | --------------------------------- | ----- | ---- |
+| T01  | behavior | Sup: AC-04/05/06                  | Zod schema for `update_order_status` result                          | —                                 | done  | PASS |
+| T02  | behavior | Sup: AC-01/02/03                  | Active-orders read (api + hook + keys)                               | —                                 | done  | PASS |
+| T03  | behavior | Sup: AC-07                        | Order-detail read (api + hook)                                       | T02 (scaffold ordering)           | done  | PASS |
+| T04  | behavior | Sup: AC-03/07/08                  | Store-settings read (api + hook)                                     | T02 (scaffold ordering)           | done  | PASS |
+| T05  | behavior | Sup: AC-04/05/06/10               | update-order-status mutation (api + hook)                            | T01                               | done  | PASS |
+| T06  | behavior | Sup: AC-08                        | Store-day-history read + store-day model                             | T04                               | done  | PASS |
+| T07  | behavior | Sup: AC-04/05/06/10               | status-actions eligibility rules                                     | —                                 | done  | PASS |
+| T08  | behavior | Sup: AC-03/07/08                  | OrderStatusBadge component                                           | —                                 | done  | PASS |
+| T09  | behavior | AC-03                             | OrderCard component                                                  | T07, T08                          | done  | PASS |
+| T10  | behavior | AC-06                             | CancelOrderDialog component                                          | T05                               | done  | PASS |
+| T11  | behavior | AC-01, AC-02, AC-04, AC-05, AC-10 | WorkspaceScreen + board-section + index route (replaces placeholder) | T02, T04, T05, T07, T08, T09, T10 | done  | PASS |
+| T12  | behavior | AC-09                             | Orders realtime invalidation wired into workspace                    | T11                               | done  | PASS |
+| T13  | behavior | AC-07, AC-10                      | OrderDetailsScreen + route                                           | T03, T04, T05, T07, T08, T10      | done  | PASS |
+| T14  | behavior | AC-08                             | StoreDayHistoryScreen + route                                        | T04, T06, T08, T09                | done  | PASS |
 
 Stage is one of: `not started` · `scaffolding` · `red/baseline` ·
 `implementing` · `green` · `checks` · `diff review` · `done`.
@@ -280,14 +286,16 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Expected generated files**: `features/preparation/screens/store-day-history/store-day-history-screen.tsx`, `features/preparation/screens/store-day-history/store-day-history-screen.test.tsx`, `app/(preparation)/history.tsx`, `features/preparation/index.ts` (appended export)
 - **Allowed manual files**: `features/preparation/model/order-display.ts` (+ `.test.ts`) — the T13-R01 lift of
   `formatCreatedAt` into the planned shared helper (T14 is the third consumer)
-- **Allowed file scope** (extended for the T13 carried findings — sanctioned by the Lead at the T13 gate):
+- **Allowed file scope** (extended for the T13 carried findings — sanctioned by the Lead at the T13 gate;
+  reconciled at the T14 gate to match the real diff, per the re-review's T14-N01):
   `features/preparation/screens/store-day-history/**`, `app/(preparation)/history.tsx`,
   `features/preparation/index.ts`, `features/preparation/model/**` (order-display lift),
-  `features/preparation/screens/workspace/workspace-screen.tsx` +
-  `features/preparation/screens/order-details/order-details-screen.tsx` (local formatCreatedAt
-  deleted, import added — nothing else), and
-  `features/preparation/screens/order-details/order-details-screen.test.tsx` (one additive
-  non-retryable-read test + the T13-R03 one-line key change)
+  `features/preparation/screens/workspace/workspace-screen.tsx` (local formatCreatedAt
+  deleted → import, PLUS the AC-08 History affordance + its docblock line — both in the
+  Lead's sanctioned packet) and `workspace-screen.test.tsx` (+1 History-navigation test),
+  `features/preparation/screens/order-details/order-details-screen.tsx` (local
+  formatCreatedAt deleted → import + the T13-R03 one-line key change — nothing else) and
+  `order-details-screen.test.tsx` (one additive non-retryable-read test)
 
 Round gates: R1 `PASS` · R2 `PASS` · R3 `PENDING`
 
