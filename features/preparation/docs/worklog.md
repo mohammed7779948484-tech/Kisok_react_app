@@ -963,3 +963,56 @@ features/preparation/screens/workspace/workspace-screen.test.tsx
 (modified: +6 tests, channel spy, R03 pin)
 
 GATE: PASS
+
+### Round 2 GATE
+
+MODE: round gate (all five task gates PASS: T08–T12)
+
+ROUND VERIFICATION (Lead)
+$ pnpm verify → ALL green (EXIT=0: typecheck, lint, format, 32 suites /
+282 tests, db:verify, check:docs, generator smoke — after the smoke
+fixture fix below)
+$ git diff main --name-only | grep -v '^features/preparation/' → exactly
+two: app/(preparation)/index.tsx (the planned placeholder replacement)
+and tools/generator/smoke-test.mjs (the fixture fix below); 43 files /
++7678 / -16 total
+
+SMOKE FIXTURE FIX (Lead-owned foundation chore, shared file, justified)
+The generator smoke check "replaces the preparation index.tsx
+placeholder deliberately" reads the TRACKED route as its fixture and
+asserts it still contains FoundationPlaceholder — but the documented
+first-feature workflow consumes exactly that placeholder (T11's
+sanctioned --force). Without a fix, CI (which runs pnpm
+generate:smoke as a dedicated step) would be permanently red once any
+experience's first feature ships. Fixed in b4fce20: fall back to a
+faithful placeholder copy once the tracked route is replaced; the
+"repository was never written to" assertion now compares against the
+actual tracked content. pnpm verify green afterwards. Justification
+recorded in review.md (R2-S1).
+
+ROUND REVIEW (fresh code-reviewer, ROUND scope, Super Z agent-41e393b8)
+No blocking. R2-01 MAJOR: AC-10's card-anchored rejection feedback can
+render nowhere (departed-order race; hidden-tab move on the tabs
+layout) → FIXED by the resumed T11 implementer (agent-380c95fe):
+visibleOrderIds derivation (columns = all groups; tabs = the selected
+tab's group only) + orphanedActionError fallback rendered in the screen
+body (same InlineError/unknown surface); two RED-first tests (both
+failure modes) + exactly-once pin.
+R2-02 minor (todo.md strikethrough erased T13's REQUIRED half) → FIXED
+by the Lead. R2-03 minor (review.md Re-review block stale TODO) → FIXED
+by the Lead. R2-04 minor (announcement no-ops unpinned) → FIXED
+(characterization: same-data refresh, departure). R2-05 minor (pending
+derivation vs mid-mutation refetch unpinned) → FIXED
+(characterization: realtime event during unresolved mutation).
+RE-REVIEW (same reviewer, resumed): R2-01 RESOLVED — mutual exclusion
+by construction (one derivation, one render pass; never zero, never
+two); RED-worthiness verified against the pre-remediation render tree;
+no regressions (27/27, 15/144, 32/282; typecheck/lint/prettier clean;
+zero console). R2-06 minor (new): the orphaned fallback persists until
+the next action dispatch — the SAME lifetime the card-adjacent copy
+always had (the sign-in-form convention) → ACCEPTED (consistency +
+guaranteed visibility; auto-clearing would reintroduce the miss-it
+race); T13 packet carries the note that the details screen should
+adopt the same lifetime so the two screens agree.
+
+GATE: PASS

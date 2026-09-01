@@ -12,11 +12,13 @@ defeats its only purpose.
 ## Current checkpoint
 
 ```
-Current round     : Round 2 — The workspace board
-Current task      : R2 gate
-Current stage     : Round 2 complete (T08–T12 PASS) — running the Round 2 gate
-Last gate         : T12 GATE: PASS
-Next legal action : Lead runs pnpm verify + the round-scoped cross-task review, then R3 (T13 scaffold)
+Current round     : Round 3 — Order details and store-day history
+Current task      : T13
+Current stage     : ready to scaffold T13 (Round 2 GATE PASS)
+Last gate         : Round 2 GATE: PASS (T08–T12 + R2 remediation)
+Next legal action : Lead runs `pnpm generate screen preparation order-details` +
+                    `pnpm generate route preparation order-details --role=preparation --screen=order-details`,
+                    then delegates T13
 Blocked by        : —
 ```
 
@@ -46,8 +48,9 @@ OrderActionOrder…>` compile-time pin in fetch-active-orders.test.ts
 - **T11/T13** — the cancel-rejection flow specifically (T10-R01): on a
   rejected cancel → dialog `open=false`, feedback near the card, then
   invalidate/refetch — with its own screen test (not only
-  start-preparing/mark-ready rejections). ~~DONE at the T11 gate (own
-  dedicated test).~~
+  start-preparing/mark-ready rejections). T11 half DONE at the T11 gate
+  (own dedicated test); **T13 half still REQUIRED** (the details screen
+  owns the same dialog-close + near-action feedback flow).
 - **T12** — ~~four T11 carried minors~~ DONE at the T12 gate (R02 timer+
   cleanup, R03 empty-group pin, R04 InlineError banner, R05 hour % 24
   absorption; see the T12 entry).
@@ -262,7 +265,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Allowed manual files**: —
 - **Allowed file scope**: `features/preparation/screens/store-day-history/**`, `app/(preparation)/history.tsx`, `features/preparation/index.ts`
 
-Round gates: R1 `PASS` · R2 `PENDING` · R3 `PENDING`
+Round gates: R1 `PASS` · R2 `PASS` · R3 `PENDING`
 
 ## Feature gate
 

@@ -185,11 +185,18 @@ reviewer against database.types.ts.
 
 ## Re-review
 
-After remediation, re-run the reviewer against the same scope.
+After remediation, re-run the reviewer against the same scope. The Findings
+table's Disposition column is the per-finding record; this block is the
+round-level summary, refreshed at each round gate.
 
-- Result: TODO
-- Findings resolved: TODO
-- Still open: TODO
+- Result after T08–T12 remediation: all findings resolved or carried with
+  Lead dispositions recorded in the Findings table (see per-task entries in
+  the worklog: T08-R01 fixed, T08-R02/R03 accepted/recorded, T09-R01–R05
+  fixed, T10-R01 reconciled+carried→T11 (resolved), T10-R02 fixed,
+  T11-R01 accepted, T11-R02–R05 carried→T12 (resolved), T12-R01 accepted).
+- Still open (Round 2, at gate time): R2-01 (major — in remediation by the
+  resumed T11 implementer), R2-02/R2-03 (Lead-side doc fixes, applying),
+  R2-04/R2-05 (folded into the same remediation session).
 
 ## Accepted risks
 
@@ -250,3 +257,27 @@ Audit result: `PENDING`
 | T11-R04 | minor | Failed background/manual refetch with stale data is fully silent (error branch requires data === undefined); T12's realtime multiplies background refetches, growing this window | workspace-screen.tsx:207,259 | carry | Carried to T12: transient banner (InlineError/OfflineNotice) when isError && data !== undefined |
 | T11-R05 | minor | formatCreatedAt can render "24:00" on h24-cycle ICU builds (Node here resolves h23; Hermes tablets are the risk) — the feature's own model documents and guards this | workspace-screen.tsx:71-78 vs model/store-day.ts:113-114 | carry | Carried to T12: reuse the model's % 24 absorption |
 | T12-R01 | minor | Comment claimed a newer arrival restarts the announcement timer — false for an identical caption string (React same-value setState bailout → effect does not re-run → the older timer clears the new caption early); restart path unpinned by a test; consequence benign | workspace-screen.tsx:151-157; workspace-screen.test.tsx:663-693 | accept | Comment corrected (Lead-applied, disclosed, 22/22 re-verified); epoch-keyed captions + two-arrival restart test recorded as the optional future alternative |
+
+- **R2-S1** (Lead, shared-file change — justified): `pnpm generate:smoke`
+  failed after T11's sanctioned placeholder replacement — the check
+  `replaces the preparation index.tsx placeholder deliberately` reads the
+  TRACKED route as its fixture and asserts it still contains
+  FoundationPlaceholder, but the documented first-feature workflow (docs/
+  generator.md:105-115) consumes exactly that placeholder. Fixed in commit
+  b4fce20: the check now falls back to a faithful placeholder copy once the
+  tracked route has been replaced, and the "repository was never written to"
+  assertion compares against the actual tracked content. Without this, CI
+  (`pnpm generate:smoke` is a dedicated CI step) would be permanently red
+  for every experience whose first feature shipped — this feature is the
+  first, so it hit the gap first. Full `pnpm verify` green afterwards.
+- **R2-S2** (Lead, observation — pre-existing core, NOT touched by this
+  feature, carried from the T12 review): `core/realtime/index.ts:83` fires
+  `void supabase.removeChannel(...)` — a rejection there is unhandled.
+  Recorded for a core-owner chore; T12's tests never hit it (the spy's
+  removeChannel resolves).
+  | R2-01 | major | AC-10's rejection feedback is card-anchored and can render NOWHERE: (a) the rejected order departs the board (cancel race — the K1004 refetch removes the card, failure indistinguishable from success); (b) tabs layout moves the errored order to a hidden group (TabsContent null → error mounted nowhere visible) | workspace-screen.tsx:174-195,234-241; board-section.tsx:90-106; tabs.js:129-132 | fix | Resumed T11 implementer: visibleOrderIds (selected-tab group on tabs; all groups on columns) + orphanedActionError InlineError fallback in the screen body; two RED-first tests + exactly-once pin; re-reviewed RESOLVED (mutual exclusion by construction) |
+  | R2-02 | minor | todo.md strikethrough erased the REQUIRED marker for T13's half of the cancel-rejection constraint | todo.md:46-50 vs plan.md:330-335 | fix | Strikethrough re-scoped: T11 half done, T13 half still REQUIRED |
+  | R2-03 | minor | review.md's Re-review block was a stale TODO record | review.md:186-192 | fix | Block populated with the round-level summary; refreshed at each round gate |
+  | R2-04 | minor | The announcement seam's two no-op behaviours unpinned (same-data refetch must not announce; departure must not announce) | workspace-screen.test.tsx:640-693 | fix | Two characterization tests added (structural-sharing path + empty-diff path) |
+  | R2-05 | minor | The decision-5 pending derivation against a mid-mutation realtime refetch unpinned | workspace-screen.tsx:217-230; test :426-471, :730-769 | fix | Characterization test added (unresolved mutation + realtime event → pending preserved, repeat press ignored once; settle → cleared) |
+  | R2-06 | minor | The orphaned fallback persists until the next action dispatch (unlike the stale-read banner, which clears on the next successful read) — same lifetime the card-adjacent copy always had; a decision, not an accident | workspace-screen.tsx:174 vs :346-348 | accept | Consistency with the sign-in-form convention + guaranteed visibility; auto-clearing would reintroduce the miss-it race R2-01 exists to fix. T13 packet carries: the details screen should adopt the SAME lifetime so the two screens agree |

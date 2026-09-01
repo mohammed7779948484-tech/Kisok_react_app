@@ -35,7 +35,10 @@ import { ANNOUNCEMENT_CLEAR_MILLIS, WorkspaceScreen } from "./workspace-screen";
  * - rejected transitions surfaced as InlineError feedback near the card plus a
  *   screen-owned refresh (T05-R02: the hook invalidates on success ONLY), with
  *   the cancel-rejection flow given its own test (T10-R01: dialog closes,
- *   feedback near the card, then refetch);
+ *   feedback near the card, then refetch). The feedback ALSO has a home when
+ *   the errored order is no longer a VISIBLE card — it departed the board
+ *   under the rejection refetch, or moved into an unmounted tab group (R2-01):
+ *   the screen body beside the board, never nowhere;
  * - the polite live region announcing new-order arrivals (decision 9) and
  *   clearing again after a short delay (T11-R02, with fake timers), the
  *   sign-out and manual refresh affordances (decision 10), and the store
@@ -49,6 +52,12 @@ import { ANNOUNCEMENT_CLEAR_MILLIS, WorkspaceScreen } from "./workspace-screen";
  *   orders channel (removed on unmount), and an incoming event invalidates
  *   the feature's queries so the refetched result — never the payload —
  *   re-renders the board.
+ *
+ * Two characterization pins guard behaviour that is correct by construction
+ * today but unpinned (the R2-04/R2-05 findings): the announcement's no-ops
+ * (a refresh returning the same orders, and a departure — neither is an
+ *   arrival), and the pending action's derivation from the MUTATION's state
+ * alone, which a mid-write realtime refetch must not disturb.
  *
  * Mocked at the feature's own `api/` boundary (plus `useLayout`, per the plan's
  * screen test strategy, and `expo-router` for the details navigation wiring) —
@@ -600,6 +609,78 @@ describe("WorkspaceScreen rejected transitions", () => {
     await waitFor(() => expect(fetchOrdersMock.mock.calls.length).toBeGreaterThanOrEqual(2));
   });
 
+  it("still shows the rejection feedback when the refetch removes the rejected order from the board", async () => {
+    // R2-01(a): employee A confirms Cancel while employee B's cancel lands
+    // first — A's RPC rejects with K1004, and the onError refetch returns a
+    // board the order has already left. Feedback attached to a card that no
+    // longer exists would render nowhere, making A's failure look like
+    // success; it must fall back to the screen body instead.
+    const newOrder = makeOrder();
+    let board = [newOrder];
+    await renderWorkspace({ fetchImpl: () => Promise.resolve([...board]) });
+
+    updateMock.mockImplementation(async () => {
+      // B's cancel already landed: the order is no longer active.
+      board = [];
+      throw new AppError({
+        kind: "state-conflict",
+        userMessage: "This order has already been updated.",
+        code: "K1004",
+      });
+    });
+
+    const user = userEvent.setup();
+    await user.press(await screen.findByRole("button", { name: "Cancel" }));
+    await user.press(screen.getByRole("button", { name: "Cancel order" }));
+
+    // The dialog closed, the refetched board is empty, and the card is gone…
+    await waitFor(() => expect(screen.queryByText("Cancel order AB2CD4?")).toBeNull());
+    expect(await screen.findByText("No active orders")).toBeOnTheScreen();
+    expect(screen.queryByText("AB2CD4")).toBeNull();
+    // …and A's failure is STILL on screen — without its card, the feedback
+    // renders beside the board rather than nowhere.
+    expect(screen.getByText("This order has already been updated.")).toBeOnTheScreen();
+    await waitFor(() => expect(fetchOrdersMock.mock.calls.length).toBeGreaterThanOrEqual(2));
+  });
+
+  it("still shows the rejection feedback on the tab layout when the rejected order moved to a hidden group", async () => {
+    // R2-01(b): the common claim race — a colleague claims the order first,
+    // so the K1004 refetch moves the card into Preparing. On the tab layout
+    // (portrait, the primary in-store orientation) that group's TabsContent
+    // is not mounted, so card-adjacent feedback would render nowhere the
+    // employee is looking. The feedback appears beside the board, without the
+    // employee having to switch tabs.
+    const contestedOrder = makeOrder();
+    const claimedByColleague = makeOrder({
+      status: "preparing",
+      assigned_preparation_id: COLLEAGUE_ID,
+    });
+    let board = [contestedOrder];
+    await renderWorkspace({ size: "medium", fetchImpl: () => Promise.resolve([...board]) });
+
+    updateMock.mockImplementation(async () => {
+      board = [claimedByColleague];
+      throw new AppError({
+        kind: "state-conflict",
+        userMessage: "This order has already been updated.",
+        code: "K1004",
+      });
+    });
+
+    await userEvent.setup().press(await screen.findByRole("button", { name: "Start Preparing" }));
+
+    // The feedback is visible WITHOUT switching tabs…
+    expect(await screen.findByText("This order has already been updated.")).toBeOnTheScreen();
+    // …exactly once (the card-adjacent copy unmounts with its hidden group, so
+    // only the screen-body fallback renders)…
+    expect(screen.getAllByText("This order has already been updated.")).toHaveLength(1);
+    // …while the order itself has moved into the unmounted Preparing group and
+    // the active New tab is legitimately empty.
+    expect(screen.getByRole("tab", { name: "Preparing (1)" })).toBeOnTheScreen();
+    expect(screen.getByText("No orders")).toBeOnTheScreen();
+    await waitFor(() => expect(fetchOrdersMock.mock.calls.length).toBeGreaterThanOrEqual(2));
+  });
+
   it("cancels an order after destructive confirmation and removes it from the board", async () => {
     const newOrder = makeOrder();
     let board = [newOrder];
@@ -690,6 +771,97 @@ describe("WorkspaceScreen affordances", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it("does not announce when a refresh returns the same orders", async () => {
+    // R2-04 (characterization): the announcement is an ARRIVALS diff — a
+    // refresh whose id diff is empty is not an arrival, so no caption.
+    const firstOrder = makeOrder();
+    const secondOrder = makeOrder({
+      id: "b2c3d4e5-6f7a-8b9c-0d1e-2f3a4b5c6d7e",
+      display_number: "J4K5L6",
+    });
+    await renderWorkspace({ orders: [firstOrder, secondOrder] });
+
+    expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
+
+    await userEvent.setup().press(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(fetchOrdersMock).toHaveBeenCalledTimes(2));
+
+    // Same board again: neither the singular nor the plural announcement.
+    expect(screen.queryByText(/New order/)).toBeNull();
+    expect(screen.queryByText(/new orders/)).toBeNull();
+  });
+
+  it("does not announce when an order departs between reads", async () => {
+    // R2-04 (characterization): a departure (a colleague's cancel) is not an
+    // arrival — the diff only counts APPEARING ids, so no caption either way.
+    const firstOrder = makeOrder();
+    const departedOrder = makeOrder({
+      id: "b2c3d4e5-6f7a-8b9c-0d1e-2f3a4b5c6d7e",
+      display_number: "J4K5L6",
+    });
+    let board = [firstOrder, departedOrder];
+    await renderWorkspace({ fetchImpl: () => Promise.resolve([...board]) });
+
+    expect(await screen.findByText("J4K5L6")).toBeOnTheScreen();
+
+    // The colleague's cancel removes the second order between reads.
+    board = [firstOrder];
+    await userEvent.setup().press(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(screen.queryByText("J4K5L6")).toBeNull());
+
+    expect(screen.queryByText(/New order/)).toBeNull();
+    expect(screen.queryByText(/new orders/)).toBeNull();
+  });
+
+  it("keeps the pending action across a mid-mutation realtime refetch, and clears it when the write settles", async () => {
+    // R2-05 (characterization): the per-card pending state derives from the
+    // MUTATION's state alone — a realtime-driven refetch around an in-flight
+    // write (board data unchanged) must not re-enable the action, and the
+    // repeat-press guard must hold until the RPC actually settles.
+    const newOrder = makeOrder();
+    const { spy } = await renderWorkspace({ orders: [newOrder], channelSpy: true });
+    if (spy === null) throw new Error("channel spy was not installed");
+
+    let resolveUpdate!: (value: OrderStatusUpdate) => void;
+    updateMock.mockImplementation(
+      () =>
+        new Promise<OrderStatusUpdate>((resolve) => {
+          resolveUpdate = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+    await user.press(await screen.findByRole("button", { name: "Start Preparing" }));
+    expect(await screen.findByRole("button", { name: "Starting…" })).toBeDisabled();
+
+    // An orders event lands while the write is still in flight: the board
+    // refetches (unchanged data) around the pending mutation.
+    await act(async () => {
+      spy.handlers[0]?.({
+        schema: "public",
+        table: "orders",
+        eventType: "UPDATE",
+        new: { id: newOrder.id, status: "new" },
+        old: { id: newOrder.id, status: "new" },
+        errors: null,
+      });
+    });
+    await waitFor(() => expect(fetchOrdersMock).toHaveBeenCalledTimes(2));
+
+    // The pending label survived the refetch…
+    const stillStarting = screen.getByRole("button", { name: "Starting…" });
+    expect(stillStarting).toBeDisabled();
+    // …and a repeat press is still ignored.
+    await user.press(stillStarting);
+    expect(updateMock).toHaveBeenCalledTimes(1);
+
+    // The write settles — the pending surface clears with it.
+    await act(async () => {
+      resolveUpdate(makePreparingUpdate(newOrder));
+    });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Starting…" })).toBeNull());
   });
 
   it("offers a sign-out affordance", async () => {

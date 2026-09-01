@@ -23,7 +23,12 @@ import { OrderCard } from "../../../components/order-card";
  * that fired it (AC-10's "near the action" convention): the error is passed
  * through as `unknown` straight into `InlineError` — screens receive
  * transport-level throws that are not `AppError`, so nothing here may assume
- * `error.kind` (the T04 O-1 constraint).
+ * `error.kind` (the T04 O-1 constraint). When the errored order is not among
+ * the rendered cards — it departed the board, or sits in a group whose
+ * `TabsContent` is not mounted — the SCREEN renders the same feedback beside
+ * the board instead (R2-01); a card-adjacent copy and the fallback can never
+ * appear together, because the screen only renders the fallback for orders
+ * this component is not showing.
  */
 
 /** One card's worth of screen-prepared, per-order data. */

@@ -43,6 +43,16 @@ import {
  * fabricated locally or silently swallowed (AC-10). A rejected cancel closes
  * the dialog first (T10-R01): feedback behind an open modal is invisible.
  *
+ * The rejection feedback always renders SOMEWHERE the employee can see
+ * (R2-01): normally beside the card that fired it, but two reachable states
+ * hide that card — the rejected order can DEPART the active board under the
+ * rejection refetch (a colleague's cancel landed first), or on the tab layout
+ * it can move into a group whose TabsContent is not mounted (a claim race
+ * pushing it to a hidden Preparing tab). When the errored order is not among
+ * the VISIBLE cards, the feedback falls back to the screen body beside the
+ * board instead of rendering nowhere — a failure that looks like success is
+ * the one outcome AC-10 forbids.
+ *
  * Time display is store-timezone (decision 8): the settings read degrades
  * silently to the device timezone when the row is absent or the read fails —
  * the operational board never fails on it. Cards show the created time, not a
@@ -229,6 +239,20 @@ export function WorkspaceScreen() {
         pendingAction: order.id === pendingOrderId ? pendingAction : undefined,
       }));
 
+  // R2-01: the orders whose cards are currently MOUNTED — every group on the
+  // column layout, the selected tab's group alone on the tab layout (an
+  // inactive TabsContent renders null, so its cards are not "visible" in any
+  // sense that matters to feedback placement). When a rejected action's order
+  // is not among them, BoardSection has no card to attach the InlineError to,
+  // and the screen body carries it instead — see the fallback render below.
+  const visibleOrderIds = new Set(
+    (isExpanded ? BOARD_STATUSES : [selectedTab]).flatMap((status) =>
+      entries(status).map((entry) => entry.order.id),
+    ),
+  );
+  const orphanedActionError =
+    actionError !== null && !visibleOrderIds.has(actionError.orderId) ? actionError : null;
+
   // The card callbacks every group shares; the eligibility matrix (T07) keeps
   // each card honest about which of them actually render a button.
   const cardCallbacks = {
@@ -322,6 +346,13 @@ export function WorkspaceScreen() {
         {activeOrders.isError && activeOrders.data !== undefined ? (
           <InlineError error={activeOrders.error} />
         ) : null}
+        {/* R2-01: the rejection feedback's fallback home. BoardSection renders
+            it beside the card that fired the action, but when that order is no
+            longer a VISIBLE card — it left the board under the rejection
+            refetch, or moved into an unmounted tab group — this is the only
+            place it can still reach the employee. Same InlineError surface, so
+            the T04 O-1 unknown-error contract holds here too. */}
+        {orphanedActionError !== null ? <InlineError error={orphanedActionError.error} /> : null}
         {board}
       </ScrollView>
       <CancelOrderDialog
