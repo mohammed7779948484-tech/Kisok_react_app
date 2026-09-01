@@ -31,8 +31,12 @@ import { OrderStatusBadge, orderStatusLabel } from "./order-status-badge";
  * and a button renders only when the affordance is granted AND the screen wired
  * the callback. The card never calls a mutation: screens own them. History
  * reuses the card in `readOnly` mode, which renders the same content with no
- * action buttons. With an `onPress` the whole card is a button that opens
- * Order Details; without one it is a plain display row.
+ * action buttons. With an `onPress` the card BODY is the button that opens
+ * Order Details, and the action footer renders as its SIBLING, never its
+ * descendant — react-native-web maps role=button to a native `<button>`, and
+ * HTML forbids nested buttons, so the actions must sit outside the interactive
+ * body (the ARIA card pattern). Without an `onPress` the card is a plain
+ * display row.
  *
  * In-flight state (plan decision 5) is per-card and per-ACTION: while
  * `pendingAction` names an action, THAT button alone renders disabled with its
@@ -151,8 +155,8 @@ export function OrderCard({
         ? "You"
         : "Assigned to another employee";
 
-  const card = (
-    <Card className={className}>
+  const cardBody = (
+    <>
       <CardHeader>
         {/* flex-wrap: the mono number and the badge must wrap, not overflow,
             at 200% text scaling or in a narrow board column. */}
@@ -170,16 +174,20 @@ export function OrderCard({
           </Badge>
         ) : null}
       </CardContent>
-      {footerButtons.length > 0 ? <CardFooter>{footerButtons}</CardFooter> : null}
-    </Card>
+    </>
   );
 
+  const cardFooter = footerButtons.length > 0 ? <CardFooter>{footerButtons}</CardFooter> : null;
+
   // No press handler: a plain display row (history unless the screen wires
-  // one). Otherwise the whole card opens details, carrying the essentials —
-  // display number, status, assignment — in its accessible name, composed from
-  // T08's label so the name says exactly what the badge shows.
+  // one).
   if (!onPress) {
-    return card;
+    return (
+      <Card className={className}>
+        {cardBody}
+        {cardFooter}
+      </Card>
+    );
   }
 
   const assignmentSuffix =
@@ -189,16 +197,25 @@ export function OrderCard({
         ? ", assigned to you"
         : ", assigned to another employee";
 
+  // The pressable BODY opens details, carrying the essentials — display
+  // number, status, assignment — in its accessible name, composed from T08's
+  // label so the name says exactly what the badge shows. The action footer is
+  // its SIBLING, never a descendant: react-native-web maps role=button to a
+  // native <button>, and nested buttons are invalid HTML — actions sit outside
+  // the interactive body.
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Order ${order.display_number}, ${orderStatusLabel(order.status)}${assignmentSuffix}`}
-      // The Button primitive's own press-feedback idiom — a calm opacity dip,
-      // nothing more (the restrained-motion policy).
-      className="active:opacity-90"
-      onPress={() => onPress(order)}
-    >
-      {card}
-    </Pressable>
+    <Card className={className}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Order ${order.display_number}, ${orderStatusLabel(order.status)}${assignmentSuffix}`}
+        // The Button primitive's own press-feedback idiom — a calm opacity dip,
+        // nothing more (the restrained-motion policy).
+        className="active:opacity-90"
+        onPress={() => onPress(order)}
+      >
+        {cardBody}
+      </Pressable>
+      {cardFooter}
+    </Card>
   );
 }

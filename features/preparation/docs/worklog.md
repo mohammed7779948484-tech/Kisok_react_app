@@ -1333,3 +1333,61 @@ Verification section.
 
 GATE: PASS — all checklist items closed; the human review of PR #6 is
 the remaining step (by design: the Lead never merges).
+
+### Live E2E verification against the seeded hosted project (PR #6, final)
+
+The hosted test project was seeded (~10 orders per status, ~50 rows).
+The previously UNVERIFIED live legs were executed for real in a browser
+(expo web dev server on the exact PR HEAD; preparation session):
+
+- Sign-in + route gating, board grouping/counts (New/Preparing/Ready),
+  landscape 3-column vs compact/medium tabs at the documented
+  breakpoints — VERIFIED.
+- Live mutations through the app: Start Preparing (claim, assignment
+  becomes the signed-in employee, board/counts refresh from server
+  truth), Mark Ready (own order only; the 10 seeded preparing orders
+  assigned to another employee offer no Mark Ready), Cancel on a New
+  order and on a Preparing order (destructive dialog, order leaves the
+  board, appears in History, server truth re-checked via REST) —
+  VERIFIED.
+- Order Details (immutable snapshot incl. product/variant/options/
+  brand/SKU/quantity, correct actions per status, terminal orders
+  inspection-only, back navigation) and History (current store day,
+  Completed/Cancelled groups, store-timezone date header, read-only
+  cards, navigation into terminal details) — VERIFIED.
+- Realtime: a second browser tab receives the orders event and
+  refreshes to authoritative query data with NO manual reload
+  (observed across start-preparing, mark-ready and cancel
+  transitions); the channel lifecycle logs SUBSCRIBED/CLOSED cleanly.
+- Error/conflict: stale-state races (another session transitioned the
+  order first) surface honest feedback — "This order has already been
+  updated." — near the action, with the dialog closing and the screen
+  refetching server truth; the board-level race exercised the
+  orphaned-feedback fallback (the errored order had left the board).
+- Manual refresh, sign out / sign back in — VERIFIED.
+
+### Live defect F-06 — nested buttons on the web preview (fixed)
+
+**Found during the live run:** react-native-web maps
+`accessibilityRole="button"` to a NATIVE `<button>` element. The
+OrderCard's whole-card `Pressable` therefore rendered `<button>`
+containing the footer action `<button>`s — invalid HTML nesting; React
+logs `In HTML, <button> cannot be a descendant of <button>` (a
+development-mode warning) on every board render on web. Functionally
+benign (verified: card press and inner actions both behave, no
+double-firing), web-only (native is unaffected), and new in this PR
+(develop has no nested-button pattern) — but the web preview is the
+repo's own agent-verification surface, so a clean console is part of
+the contract.
+
+**Fix (ARIA card pattern):** the pressable card BODY (header + content)
+opens details; the action footer renders as its SIBLING inside the
+Card, never a descendant of the interactive body. Accessible role and
+name are unchanged. One workspace test lookup changed scope: the own
+card's Mark Ready is found by name (the test data keeps it unique; the
+colleague negative assertion is unchanged and a wrongly-rendered
+second Mark Ready would make the query ambiguous and fail).
+
+**Verification of the fix:** affected suites first (order-card 15 +
+workspace 31 = 46 PASS), then the full feature (18 suites / 184 tests)
+and `pnpm verify` EXIT=0 (35 suites / 322 tests). Live re-run below.

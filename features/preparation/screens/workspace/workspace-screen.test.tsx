@@ -509,11 +509,15 @@ describe("WorkspaceScreen transitions", () => {
     );
     // AC-05: the colleague's order shows the assignment indicator…
     expect(screen.getByText("Assigned to another employee")).toBeOnTheScreen();
-    // …and offers NO Mark ready action.
+    // …and offers NO Mark ready action in its card body. The own card's Mark
+    // Ready is asserted by name below: the action footer renders as a SIBLING
+    // of the pressable card body (order-card: role=button maps to a native
+    // <button> on web, and buttons never nest), so the query is scoped by the
+    // test data instead — the colleague's preparing order renders no Mark
+    // Ready anywhere, and a second one would make the query ambiguous.
     expect(within(colleagueCard).queryByRole("button", { name: "Mark Ready" })).toBeNull();
 
-    const ownCard = screen.getByLabelText("Order F6G7H8, Preparing, assigned to you");
-    const markReady = within(ownCard).getByRole("button", { name: "Mark Ready" });
+    const markReady = screen.getByRole("button", { name: "Mark Ready" });
     await userEvent.setup().press(markReady);
 
     await waitFor(() =>
