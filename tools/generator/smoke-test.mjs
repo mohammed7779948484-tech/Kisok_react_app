@@ -336,14 +336,39 @@ await check("a route renders a NAMED existing screen and generates nothing else"
 // earlier version overwrote the tracked files and restored them in a `finally`,
 // which a SIGKILL or an OOM would skip — leaving a route in the working tree
 // importing a feature that does not exist.
+//
+// The tracked file is the natural fixture while the experience still ships its
+// placeholder — but the first real feature CONSUMES it (that is the documented
+// one-time --force step). After that, asserting the tracked file still contains
+// a placeholder would make every post-first-feature run (and CI) red, so the
+// check falls back to a faithful copy of the placeholder's shape and keeps
+// guarding the replacement mechanics forever.
+const PLACEHOLDER_FIXTURE = [
+  'import { FoundationPlaceholder } from "@/components/app/foundation-placeholder";',
+  "",
+  "export default function HomeRoute() {",
+  "  return (",
+  "    <FoundationPlaceholder",
+  '      experience="Experience"',
+  '      nextFeature="feature"',
+  '      surfaces={["One surface"]}',
+  "    />",
+  "  );",
+  "}",
+  "",
+].join("\n");
+
 for (const [role, group] of [
   ["customer", "(customer)"],
   ["preparation", "(preparation)"],
 ]) {
   await check(`replaces the ${role} index.tsx placeholder deliberately`, async () => {
     const trackedRoute = path.join(ROOT, "app", group, "index.tsx");
-    const original = fs.readFileSync(trackedRoute, "utf8");
-    assert.match(original, /FoundationPlaceholder/, "expected a placeholder to replace");
+    const tracked = fs.readFileSync(trackedRoute, "utf8");
+    // While the placeholder is live, exercise the real tracked content; once
+    // the one-time replacement has shipped, guard the transition against the
+    // faithful copy above.
+    const original = /FoundationPlaceholder/.test(tracked) ? tracked : PLACEHOLDER_FIXTURE;
 
     const scratch = fs.mkdtempSync(path.join(os.tmpdir(), `kisok-${role}-`));
     try {
@@ -411,7 +436,7 @@ for (const [role, group] of [
     }
 
     // The tracked file was never a participant.
-    assert.equal(fs.readFileSync(trackedRoute, "utf8"), original, "the repository was written to");
+    assert.equal(fs.readFileSync(trackedRoute, "utf8"), tracked, "the repository was written to");
   });
 }
 
