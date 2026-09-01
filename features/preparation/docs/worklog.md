@@ -1317,3 +1317,19 @@ KISOK_DB_VERIFY_REQUIRED=1), check-docs, and the generator smoke
 suite. The verify cadence is round-gate-level, not per task gate
 (plan reconciled below); every task gate carries its own
 affected-checks output.
+
+### Feature Gate — FINAL
+
+Final HEAD 13a24e0 pushed to PR #6 (draft, develop ←
+feature/preparation). GitHub CI on 13a24e0: **Verify (typecheck, lint,
+format, tests, guards, db:verify incl. the CI-only schema leg,
+generator smoke) → success; Web bundle → success; Expo doctor →
+success; Maestro flows + Android prebuild → skipped (no device, by
+design)** — the CI leg of the gate is now closed with a real result.
+PR mergeable: True; 23 commits, 51 files, +10625/−16. The PR body
+carries the delivery evidence and the explicit UNVERIFIED records
+(live mutation leg, live realtime event, native tier) per the plan's
+Verification section.
+
+GATE: PASS — all checklist items closed; the human review of PR #6 is
+the remaining step (by design: the Lead never merges).

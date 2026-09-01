@@ -14,8 +14,8 @@ defeats its only purpose.
 ```
 Current round     : COMPLETE — feature delivered
 Current task      : —
-Current stage     : post-quality-audit remediation recorded; final HEAD pushed
-                    to PR #6 (draft)
+Current stage     : DELIVERED — Feature Gate PASS; CI green on the final
+                    head; PR #6 (draft) awaiting human review
 Last gate         : Quality Audit (agent-16670d0e): delivery sound — every
                     count re-ran to the number, every runtime claim survived
                     live re-execution; QA-01 (final commit not in PR) resolved
@@ -312,7 +312,7 @@ audit findings this checklist points at.
 - [x] Every Round Gate PASS — R1/R2/R3 all PASS (commits e4da2b7, 68632f9, f615884)
 - [x] Every AC verified — all 10 ACs implementation + pinning tests (final review Q1); AC-01/09 populated-board and live-mutation halves covered by tests, live legs recorded UNVERIFIED with environment reasons
 - [x] `pnpm verify` PASS after the final local change — EXIT=0 on the final HEAD (incl. the F-02..F-05 doc fixes)
-- [ ] required fast GitHub CI PASS on the final HEAD — CI runs on PR #6; not yet green at the time of the Feature Gate decision (no CI result in this environment; the PR reports the check status)
+- [x] required fast GitHub CI PASS on the final HEAD — GREEN on 13a24e0: Verify (typecheck, lint, format, tests, guards, db:verify incl. the CI-only schema leg, generator smoke) / success; Web bundle / success; Expo doctor / success; Maestro flows + Android prebuild skipped (no device — by design). Checked via the GitHub API after the final push.
 - [x] required runtime evidence recorded — the "Runtime verification — final" worklog entry (sign-in, board+empty, history, details-unavailable, back nav, realtime channel SUBSCRIBED, three contract sizes, zero page errors); live mutation leg + native tier explicitly UNVERIFIED with environment reasons
 - [x] required native tier(s) PASS, N/A, or explicitly unverified — explicitly unverified (no emulator; no native config touched; pre-existing Maestro foundation smoke unchanged)
 - [x] Reviewer findings dispositioned — every finding T01..F-05 dispositioned in the Findings table
