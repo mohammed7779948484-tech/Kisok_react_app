@@ -1016,3 +1016,105 @@ race); T13 packet carries the note that the details screen should
 adopt the same lifetime so the two screens agree.
 
 GATE: PASS
+
+### T13 — OrderDetailsScreen + route
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-07, AC-10
+
+SCAFFOLD
+$ pnpm generate screen preparation order-details
+$ pnpm generate route preparation order-details --role=preparation --screen=order-details
+created : features/preparation/screens/order-details/order-details-screen.tsx
+created : features/preparation/screens/order-details/order-details-screen.test.tsx
+created : app/(preparation)/order-details.tsx
+appended : features/preparation/index.ts (generator barrel export)
+
+RED
+$ npx jest features/preparation/screens/order-details/
+Tests: 24 failed, 24 total — every failure "Unable to find an element
+with role/text/label …" against the stub's "TODO: build this screen"
+render (missing-behaviour class, not import/typo). Two disclosed
+plumbing fixes preceded the valid RED: a missing fetchStoreSettings
+mock import, and a null sentinel for the absent-param test (an
+explicit undefined falls through the helper's default). A scratch
+AppImage renderability pre-check test was run and deleted (its finding:
+jest-expo cannot transform lucide's ESM — the first AppImage-rendering
+test in the repo needs a file-local lucide-react-native mock).
+
+IMPLEMENT
+order-details-screen.tsx — branches FIRST on a missing/empty orderId
+param (OrderDetailContent mounts only with a real id, T03-R03); read
+states isPending → SkeletonList / isError → ErrorState "Order
+unavailable" (retained stale data deliberately ignored — the brief
+forbids stale content on this screen, unlike the workspace board) /
+null → unavailable EmptyState / success → summary card (h2 + mono
+display number, badge, Created HH:MM store-tz, assignment badge by
+id) + actions footer (allowedOrderActions, per-action pending label
+swap, one-in-flight repeat guard in both runTransition and
+handleCancelRequested) + InlineError below the card (near-action,
+unknown per T04 O-1) + items (variant_sku codepoint sort, AppImage
+alt=product+variant, options "Type: Value" from the guarded wide-Json
+unpack, brand, ×qty prominent, SKU mono caption) + CancelOrderDialog
+(screen owns open/mutation/rejection); mutation onError →
+setActionError + setCancelOpen(false) (T10-R01) + invalidate
+preparationKeys.all (T05-R02); actionError cleared at dispatch only
+(R2-06); fallback InlineError in the screen body for every non-loaded
+state (R2-01); formatCreatedAt screen-local from the workspace (with
+the % 24 midnight guard). Route stays a thin param-reader
+(useLocalSearchParams<{orderId?: string}>() passed through; docblock
+documents decision 1 + the screen-owned param branch).
+
+GREEN
+$ npx jest features/preparation/screens/order-details/ → 24/24
+$ npx jest features/preparation/ → 16 suites / 168 tests
+$ node node_modules/.bin/jest (repo-wide) → 33 suites / 306 tests
+
+AFFECTED CHECKS (Lead re-ran)
+$ pnpm typecheck → clean; eslint --max-warnings=0 → clean; prettier
+→ clean; zero console output (jest invoked directly, bypassing the
+npx wrapper warning)
+
+TASK REVIEW (fresh code-reviewer, Super Z agent-8d6cd18d)
+No blocking, no major; three minors + one note. All four judgement
+calls upheld: the lucide mock ACCEPT (premise mechanically verified
+against jest's transformIgnorePatterns; file-local blast radius; the
+second consumer — catalog — triggers promotion, recorded as T13-N01);
+failed-fetch-retryable vs no-such-order-no-retry ACCEPT (reference
+§24 grounds the shared "Order unavailable" title; the retry
+distinction is ErrorState's own canRetry contract); variant SKU KEEP
+(reference §24 Lean V2 includes it; load-bearing for the decision-7
+ordering pin); mid-rejection terminal-refetch feedback placement
+ACCEPT (card renders for every loaded state; fallback covers
+non-loaded; mutual exclusion by construction; both homes pinned,
+exactly-once).
+
+- T13-R01 minor: formatCreatedAt byte-identical in both screens,
+  PENDING_ACTION_BY_TARGET + pending labels in three places — drift
+  risk between the two screens sharing one mutation → CARRIED to T14
+  (the third consumer): lift formatCreatedAt into
+  features/preparation/model/order-display.ts (a planned allowed
+  manual file), both screens import it.
+- T13-R02 minor: non-retryable read failure (PGRST301/42501) unpinned
+  — converges visually with the no-such-order EmptyState → CARRIED to
+  T14: one additive test (non-retryable AppError read → no "Try
+  again").
+- T13-R03 minor (optional hardening): option label as React key —
+  duplicate keys only from malformed snapshots migration 07 cannot
+  produce → ACCEPTED (defer); the one-line compound key folded into
+  T14's sanctioned touch of the file.
+- T13-N01 note: promote the file-local lucide mock to shared test
+  infrastructure only when a second suite renders AppImage (likely
+  catalog).
+
+All six carried constraints verified implemented AND pinned by the
+reviewer (T03-R03 two no-fetch assertions; T10-R01 dedicated test with
+dialog-closed-first ordering; T05-R02 every rejection test asserts
+refetch ≥ 2; T04 O-1 zero error.kind reads, grep-verified; R2-06
+feedback survives a successful terminal refetch; R2-01 exactly-once
+visibility in both homes). Actions derive from allowedOrderActions —
+no duplicated state machine. Out-of-scope, no action: no realtime
+subscription on this screen (plan-conformant — the workspace beneath
+it on the stack stays subscribed and invalidates transitively).
+
+GATE: PASS

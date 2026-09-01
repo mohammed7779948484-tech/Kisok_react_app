@@ -281,3 +281,50 @@ Audit result: `PENDING`
   | R2-04 | minor | The announcement seam's two no-op behaviours unpinned (same-data refetch must not announce; departure must not announce) | workspace-screen.test.tsx:640-693 | fix | Two characterization tests added (structural-sharing path + empty-diff path) |
   | R2-05 | minor | The decision-5 pending derivation against a mid-mutation realtime refetch unpinned | workspace-screen.tsx:217-230; test :426-471, :730-769 | fix | Characterization test added (unresolved mutation + realtime event → pending preserved, repeat press ignored once; settle → cleared) |
   | R2-06 | minor | The orphaned fallback persists until the next action dispatch (unlike the stale-read banner, which clears on the next successful read) — same lifetime the card-adjacent copy always had; a decision, not an accident | workspace-screen.tsx:174 vs :346-348 | accept | Consistency with the sign-in-form convention + guaranteed visibility; auto-clearing would reintroduce the miss-it race R2-01 exists to fix. T13 packet carries: the details screen should adopt the SAME lifetime so the two screens agree |
+  | T13-R01 | minor | Screen-local `formatCreatedAt` is byte-identical in workspace-screen.tsx:98-109 and order-details-screen.tsx:94-105; `PENDING_ACTION_BY_TARGET` and the pending label strings exist in three places — the two screens sharing `useUpdateOrderStatusMutation` must stay in agreement on the in-flight convention and the % 24 midnight guard; a future fix to one copy silently diverges the other | order-details-screen.tsx:94-105 vs workspace-screen.tsx:98-109 (diff-verified identical); plan.md:266-270; todo.md:208 | carry | Carried to T14 (the likely third consumer — the design system's own promotion trigger): lift `formatCreatedAt` into `features/preparation/model/order-display.ts` (a planned allowed manual file), both screens import it; the pending-label map stays per-screen (T14 is read-only, so no third consumer fires) |
+  | T13-R02 | minor | The failed-fetch read state is pinned only for the retryable case; a non-retryable read failure (expired-session PGRST301 / forbidden 42501 — reachable on an all-day kiosk) renders the same "Order unavailable" ErrorState with canRetry=false, converging visually with the no-such-order EmptyState — the distinction judgement call 2 rests on, half-pinned | order-details-screen.test.tsx:263-287; core/errors/index.ts:157-160; error-state.tsx:30 | carry | Carried to T14: one additive test in the order-details suite — reject the read with a non-retryable AppError, assert no "Try again" (sanctioned small scope extension: the T14 implementer touches this suite for T13-R01 anyway) |
+  | T13-R03 | minor (optional hardening) | Option label used as the React key in the items map — a malformed snapshot with duplicate {type, value} pairs would emit duplicate keys (React warning only; bounded list; migration 07's jsonb_agg cannot produce duplicates) | order-details-screen.tsx:473-477 | accept (defer) | Compound `key={`${label}-${index}`}` folded into T14's sanctioned touch of the file; no test change needed |
+  | T13-N01 | note | First test in the repo to render `AppImage` needs a file-local `lucide-react-native` jest mock (jest-expo cannot transform its ESM; AppImage imports ImageOff at module scope). Promote to shared test infrastructure only when a second suite needs AppImage (likely the catalog feature) — a future note, not this feature's change | jest.config.js transformIgnorePatterns vs lucide-react-native package.json react-native condition; app-image.tsx:5 | note | Recorded here for the catalog feature's implementer |
+
+### T13 review coverage statement (reviewer agent-8d6cd18d, fresh context)
+
+Re-ran read-only: `pnpm typecheck` PASS, `pnpm lint` exit 0, format check
+PASS, targeted 24/24, feature 16/168, repo 33/306, zero console output —
+all matching the implementer's report. Judgement calls: lucide mock ACCEPT
+(premise mechanically verified — lucide's react-native condition resolves
+to untransformed ESM outside jest's allowlist; file-local blast radius;
+promotion note recorded as T13-N01), failed-fetch-with-retry vs
+no-such-order-without-retry ACCEPT (reference §24 grounds the shared
+title; the retry distinction is ErrorState's own canRetry contract),
+variant SKU KEEP (reference §24 Lean V2 list includes it; load-bearing
+for the decision-7 ordering pin), feedback placement ACCEPT (card renders
+for every loaded state incl. terminal; fallback covers non-loaded states;
+mutual exclusion by construction; both homes pinned).
+
+Examined and clean: scope hygiene (exactly the three declared paths +
+one barrel line; route stays a thin param-reader; no suppressions/TODOs/
+raw hex/inline styles/Dimensions); stale-data policy (isError renders
+ErrorState even with retained data — the brief-required difference from
+the workspace; ownActionError keyed by orderId so a param change cannot
+leak another order's error); RN/design rules (all text in Text; ternary
+conditionals only; no effects/subscriptions/timers to leak; ScrollView +
+bounded list, no virtualization per plan ADR; AppImage for imagery;
+default-size Buttons h-touch; roles/labels throughout; no colour-only
+meaning; Screen constrained; flex-wrap at scaling risk points); Json
+safety (optionTexts guards Array.isArray + per-entry checks; stable
+codepoint sort); test quality (24 behaviour-named tests; mocks at the
+api boundary; per-test QueryClient with gcTime: Infinity; installMockAuth
+restored in afterEach); all six carried constraints implemented AND
+pinned (T03-R03 two no-fetch assertions; T10-R01 own dedicated test with
+dialog-closed-first; T05-R02 every rejection test asserts refetch ≥ 2;
+T04 O-1 zero error.kind reads grep-verified; R2-06 feedback survives a
+successful terminal refetch; R2-01 exactly-once visibility in both
+homes); actions derive from allowedOrderActions (T07) — no duplicated
+state machine; one-in-flight guard in both runTransition and
+handleCancelRequested.
+
+Out-of-scope observations (no action): no realtime subscription on the
+details screen — plan-conformant (the workspace beneath it on the stack
+stays subscribed and invalidates transitively); route file untested
+matches the thin-route convention; a loose "migration-07 shape" comment
+wording (columns are 04's, values 07's) — defensible.

@@ -13,12 +13,12 @@ defeats its only purpose.
 
 ```
 Current round     : Round 3 — Order details and store-day history
-Current task      : T13
-Current stage     : ready to scaffold T13 (Round 2 GATE PASS)
-Last gate         : Round 2 GATE: PASS (T08–T12 + R2 remediation)
-Next legal action : Lead runs `pnpm generate screen preparation order-details` +
-                    `pnpm generate route preparation order-details --role=preparation --screen=order-details`,
-                    then delegates T13
+Current task      : T14
+Current stage     : ready to scaffold T14 (T13 GATE PASS)
+Last gate         : T13 GATE: PASS (24/24, 16/168, 33/306; no blocking/major)
+Next legal action : Lead runs `pnpm generate screen preparation store-day-history` +
+                    `pnpm generate route preparation history --role=preparation --screen=store-day-history`,
+                    then delegates T14
 Blocked by        : —
 ```
 
@@ -45,27 +45,43 @@ OrderActionOrder…>` compile-time pin in fetch-active-orders.test.ts
   (T07-R01; the model cannot import generated types — ESLint confines
   @/core/supabase to api/\*\*).~~ DONE at the T09 gate (~7 additive lines,
   the file's own type+const+expect idiom; ACCEPTED as disclosed).
-- **T11/T13** — the cancel-rejection flow specifically (T10-R01): on a
+- ~~**T11/T13** — the cancel-rejection flow specifically (T10-R01): on a
   rejected cancel → dialog `open=false`, feedback near the card, then
   invalidate/refetch — with its own screen test (not only
   start-preparing/mark-ready rejections). T11 half DONE at the T11 gate
-  (own dedicated test); **T13 half still REQUIRED** (the details screen
-  owns the same dialog-close + near-action feedback flow).
+  (own dedicated test); T13 half DONE at the T13 gate (dedicated test:
+  dialog closed FIRST, then near-action feedback + refetch).~~
 - **T12** — ~~four T11 carried minors~~ DONE at the T12 gate (R02 timer+
   cleanup, R03 empty-group pin, R04 InlineError banner, R05 hour % 24
   absorption; see the T12 entry).
-- **T11/T13** — screens own AC-10's rejected-transition refresh:
+- ~~**T11/T13** — screens own AC-10's rejected-transition refresh:
   onError → invalidate/refetch (T05-R02; the hook invalidates on success
-  only).
+  only).~~ Both DONE at their gates (every rejection test asserts
+  refetch ≥ 2).
 - **T11/T13/T14** — error-state rendering must NOT assume `error.kind`
-  (T04 O-1: transport-level throws are not AppError at screens).
-- **T13** — the details screen MUST branch on a missing `orderId` route
+  (T04 O-1: transport-level throws are not AppError at screens). T11/T13
+  halves DONE; the T14 half REMAINS REQUIRED.
+- ~~**T13** — the details screen MUST branch on a missing `orderId` route
   param and render the unavailable state without fabricating an id
-  (T03-R03; a fabricated id stringifies into a doomed retryable request).
+  (T03-R03; a fabricated id stringifies into a doomed retryable request).~~
+  DONE at the T13 gate (branch-first; two no-fetch assertions).
 - **T14** — decide the history rollover policy: accept event-driven
   rollover (realtime + focus refetch self-correct) or add a screen-level
   refetchInterval (R1-05; the dayKey rolls on the next render, not on a
   timer).
+- **T14** — T13-R01 (carried): lift `formatCreatedAt` into
+  `features/preparation/model/order-display.ts` (+ unit test for the
+  pure helper) — T14 is the third consumer; both existing screens delete
+  their local copies and import it. The pending-label map stays
+  per-screen (T14 is read-only — no third consumer fires).
+- **T14** — T13-R02 (carried, additive test): in
+  `features/preparation/screens/order-details/order-details-screen.test.tsx`,
+  reject the read with a non-retryable AppError → assert no "Try again"
+  (pins the retryable/non-retryable distinction judgement call 2 rests
+  on).
+- **T14** — T13-R03 (folded one-liner): compound
+  `key={`${label}-${index}`}` for the option-label map in
+  order-details-screen.tsx (duplicate-key hardening; no test change).
 
 Shared-file notes (ACCEPTED — Lead-owned foundation chores, NOT feature
 work; do not edit core/\*\* from this feature):
@@ -96,7 +112,7 @@ Scan this first. Detail is below.
 | T10  | behavior | AC-06                             | CancelOrderDialog component                                          | T05                               | done        | PASS    |
 | T11  | behavior | AC-01, AC-02, AC-04, AC-05, AC-10 | WorkspaceScreen + board-section + index route (replaces placeholder) | T02, T04, T05, T07, T08, T09, T10 | done        | PASS    |
 | T12  | behavior | AC-09                             | Orders realtime invalidation wired into workspace                    | T11                               | done        | PASS    |
-| T13  | behavior | AC-07, AC-10                      | OrderDetailsScreen + route                                           | T03, T04, T05, T07, T08, T10      | not started | PENDING |
+| T13  | behavior | AC-07, AC-10                      | OrderDetailsScreen + route                                           | T03, T04, T05, T07, T08, T10      | done        | PASS    |
 | T14  | behavior | AC-08                             | StoreDayHistoryScreen + route                                        | T04, T06, T08, T09                | not started | PENDING |
 
 Stage is one of: `not started` · `scaffolding` · `red/baseline` ·
@@ -262,8 +278,16 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Skills**: test-driven-development, kisok-design-system, kisok-react-native-rules, expo-router
 - **Lead scaffold**: `pnpm generate screen preparation store-day-history` + `pnpm generate route preparation history --role=preparation --screen=store-day-history`
 - **Expected generated files**: `features/preparation/screens/store-day-history/store-day-history-screen.tsx`, `features/preparation/screens/store-day-history/store-day-history-screen.test.tsx`, `app/(preparation)/history.tsx`, `features/preparation/index.ts` (appended export)
-- **Allowed manual files**: —
-- **Allowed file scope**: `features/preparation/screens/store-day-history/**`, `app/(preparation)/history.tsx`, `features/preparation/index.ts`
+- **Allowed manual files**: `features/preparation/model/order-display.ts` (+ `.test.ts`) — the T13-R01 lift of
+  `formatCreatedAt` into the planned shared helper (T14 is the third consumer)
+- **Allowed file scope** (extended for the T13 carried findings — sanctioned by the Lead at the T13 gate):
+  `features/preparation/screens/store-day-history/**`, `app/(preparation)/history.tsx`,
+  `features/preparation/index.ts`, `features/preparation/model/**` (order-display lift),
+  `features/preparation/screens/workspace/workspace-screen.tsx` +
+  `features/preparation/screens/order-details/order-details-screen.tsx` (local formatCreatedAt
+  deleted, import added — nothing else), and
+  `features/preparation/screens/order-details/order-details-screen.test.tsx` (one additive
+  non-retryable-read test + the T13-R03 one-line key change)
 
 Round gates: R1 `PASS` · R2 `PASS` · R3 `PENDING`
 

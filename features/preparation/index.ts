@@ -13,3 +13,4 @@
  * `pnpm generate screen` alone does not widen this file.
  */
 export { WorkspaceScreen } from "./screens/workspace/workspace-screen";
+export { OrderDetailsScreen } from "./screens/order-details/order-details-screen";
