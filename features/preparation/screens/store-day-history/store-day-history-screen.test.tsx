@@ -530,11 +530,16 @@ describe("StoreDayHistoryScreen store-day rollover (R1-05)", () => {
 
       // Store midnight passes with zero re-renders: no timer exists to roll
       // the day — the parked screen keeps the day it already loaded.
-      jest.setSystemTime(new Date("2026-08-27T00:10:00Z"));
       // Advancing the clock fires every scheduled timer — a reintroduced
       // refetchInterval would fire here and re-call the read; the R1-05
       // "NO timed poll" claim is falsifiable, not just asserted (T14-R01).
-      jest.advanceTimersByTime(2 * HOUR_MILLIS);
+      // Wrapped in act: the advance also fires the mock auth's pending
+      // INITIAL_SESSION update, which must not update the provider outside
+      // act (R3-01).
+      await act(async () => {
+        jest.setSystemTime(new Date("2026-08-27T00:10:00Z"));
+        jest.advanceTimersByTime(2 * HOUR_MILLIS);
+      });
       expect(historyMock).toHaveBeenCalledTimes(1);
       expect(screen.getByText("Wednesday, August 26, 2026")).toBeOnTheScreen();
 

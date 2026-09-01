@@ -14,12 +14,13 @@ defeats its only purpose.
 ```
 Current round     : Round 3 — Order details and store-day history
 Current task      : T14
-Current stage     : done (T14 GATE PASS) — Round 3 gate next
-Last gate         : T14 GATE: PASS (11/11 history, 3/3 order-display, 28/28 workspace,
-                    25/25 details; feature 18 suites/184, repo 35 suites/322; no blocking/major)
-Next legal action : Lead runs the Round 3 gate: `pnpm verify` + round-scoped
-                    cross-task review (T13+T14), then the feature-level final
-                    verification and the draft PR against develop
+Current stage     : Round 3 GATE PASS — all tasks and rounds done
+Last gate         : Round 3 GATE: PASS (pnpm verify EXIT=0; cross-task review
+                    no blocking/major; R3-01/R3-02 fixed, disclosed)
+Next legal action : Lead pushes feature/preparation and opens the DRAFT PR
+                    against develop, then the develop integration check,
+                    final verification, final code review, quality audit,
+                    Feature Gate
 Blocked by        : —
 ```
 
@@ -297,7 +298,7 @@ it — two summaries disagree the moment one is updated and the other is not.
   formatCreatedAt deleted → import + the T13-R03 one-line key change — nothing else) and
   `order-details-screen.test.tsx` (one additive non-retryable-read test)
 
-Round gates: R1 `PASS` · R2 `PASS` · R3 `PENDING`
+Round gates: R1 `PASS` · R2 `PASS` · R3 `PASS`
 
 ## Feature gate
 

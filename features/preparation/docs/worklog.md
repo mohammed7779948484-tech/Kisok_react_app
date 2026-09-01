@@ -1213,3 +1213,38 @@ constraints verified satisfied.
   corrected figures (18/184, 35/322) recorded in this entry.
 
 GATE: PASS
+
+### Round 3 gate — Order details and store-day history
+
+Tasks in scope: T13, T14 (both GATE: PASS above).
+
+pnpm verify: EXIT=0 — typecheck, lint, format, the full jest run
+(35 suites / 322 tests), and the generator smoke suite all green
+(includes the R2-S1 placeholder-fixture fallback path).
+
+Cross-task round review (fresh code-reviewer, Super Z agent-94d9cf80):
+no blocking, no major; two minors.
+
+- R3-01 minor: the Lead-applied T14-R01 fix (advanceTimersByTime)
+  introduced the repo's only console output — an act() warning from the
+  mock auth's pending INITIAL_SESSION update firing on the faked timer;
+  the T14 "zero console" records were made against the pre-fix test →
+  FIXED Lead-applied and disclosed at this gate: the parked-phase clock
+  work wrapped in await act(); 11/11 + zero console output REPO-WIDE
+  re-verified (rg audit of the full run); worklog correction recorded
+  in this entry.
+- R3-02 minor: findings from T08 onward sat structurally outside the
+  declared Findings table (loose pipe-lines after the Quality-audit
+  TODOs and inside the Accepted-risks list; introduced at the R2 gate)
+  → FIXED Lead-applied at this gate: all 29 loose rows merged into the
+  Findings table proper; prettier + tools/check-docs.mjs re-verified.
+
+All eight cross-task seams PASS (shared formatter; navigation
+contract; error-surface consistency; workspace seam incl. the
+realtime-beneath-history argument; day-model reuse; the T13-R02/R03
+folds; docs consistency; round scope — 51 files vs 80b8ac3: 47 under
+features/preparation/\*\*, the three route files, and the one sanctioned
+shared-tool change from R2-S1; zero changes under core/, components/,
+features/auth/, app/\_layout.tsx, or migrations).
+
+GATE: PASS
