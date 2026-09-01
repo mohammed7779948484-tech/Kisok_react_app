@@ -59,9 +59,10 @@ import {
  * the operational board never fails on it. Cards show the created time, not a
  * ticking timer (decision 10), and new-order arrivals are announced through a
  * polite live region (decision 9) — no toast, no sound. The workspace also
- * carries the sign-out affordance, a manual refresh (decision 10), and the
- * History affordance (AC-08: the store-day history screen is reached from
- * here).
+ * carries the sign-out affordance, a manual refresh (the behaviour
+ * research's refresh affordance; the same created-time policy as decision
+ * 10), and the History affordance (AC-08: the store-day history screen is
+ * reached from here).
  *
  * While this screen is mounted it holds the orders Realtime subscription
  * (AC-09, `useOrdersRealtime`): an `orders` change is an INVALIDATION signal

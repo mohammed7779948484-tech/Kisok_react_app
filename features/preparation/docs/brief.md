@@ -3,7 +3,8 @@
 **WHAT this feature is, and how we will know it is done.** No implementation
 sequencing here; that belongs in `plan.md`.
 
-Status: `DRAFT` — replace every TODO before writing code.
+Status: `COMPLETE` — every TODO was replaced before implementation; the
+plan is READY and the feature is delivered (see the worklog for evidence).
 
 ## Objective
 

@@ -286,10 +286,15 @@ shared files are where parallel agents collide.
 - `app/(preparation)/history.tsx` — new route file.
 - `features/preparation/index.ts` — appended by the route generator only
   (screens become public exactly when a route renders them).
-- Shared files: **none.** No `core/**`, no `components/**`, no
-  `app/_layout.tsx`, no migrations, no generated types. The Customer Catalog
-  feature (in parallel) touches `app/(customer)/**` and `features/catalog/**`
-  only — the two features cannot collide.
+- Shared files: one — `tools/generator/smoke-test.mjs`, the R2-S1 fix
+  (commit b4fce20, recorded in review.md's Quality-audit notes): the
+  placeholder smoke check's fixture was the TRACKED preparation route, which
+  this feature's documented first-feature `--force` legitimately consumed;
+  without the fix CI's smoke step would be permanently red. A Lead-owned
+  foundation chore, justified and disclosed. No `core/**`, no `components/**`,
+  no `app/_layout.tsx`, no migrations, no generated types. The Customer
+  Catalog feature (in parallel) touches `app/(customer)/**` and
+  `features/catalog/**` only — the two features cannot collide.
 
 ## Required skills
 

@@ -306,21 +306,21 @@ Every line is a box, and `pnpm verify` alone is not the authority — several
 of these depend on an environment only CI has. See `review.md` for the review and
 audit findings this checklist points at.
 
-- [ ] Every Task Gate PASS
-- [ ] Every Round Gate PASS
-- [ ] Every AC verified
-- [ ] `pnpm verify` PASS after the final local change
-- [ ] required fast GitHub CI PASS on the final HEAD
-- [ ] required runtime evidence recorded
-- [ ] required native tier(s) PASS, N/A, or explicitly unverified
-- [ ] Reviewer findings dispositioned
-- [ ] blocking/major fixes re-reviewed
-- [ ] Quality Audit clean
-- [ ] anything not verified explicitly recorded
-- [ ] shared/core changes justified
-- [ ] PR evidence matches the worklog
+- [x] Every Task Gate PASS — T01–T14 all PASS (worklog entries)
+- [x] Every Round Gate PASS — R1/R2/R3 all PASS (commits e4da2b7, 68632f9, f615884)
+- [x] Every AC verified — all 10 ACs implementation + pinning tests (final review Q1); AC-01/09 populated-board and live-mutation halves covered by tests, live legs recorded UNVERIFIED with environment reasons
+- [x] `pnpm verify` PASS after the final local change — EXIT=0 on the final HEAD (incl. the F-02..F-05 doc fixes)
+- [ ] required fast GitHub CI PASS on the final HEAD — CI runs on PR #6; not yet green at the time of the Feature Gate decision (no CI result in this environment; the PR reports the check status)
+- [x] required runtime evidence recorded — the "Runtime verification — final" worklog entry (sign-in, board+empty, history, details-unavailable, back nav, realtime channel SUBSCRIBED, three contract sizes, zero page errors); live mutation leg + native tier explicitly UNVERIFIED with environment reasons
+- [x] required native tier(s) PASS, N/A, or explicitly unverified — explicitly unverified (no emulator; no native config touched; pre-existing Maestro foundation smoke unchanged)
+- [x] Reviewer findings dispositioned — every finding T01..F-05 dispositioned in the Findings table
+- [x] blocking/major fixes re-reviewed — R2-01 re-reviewed RESOLVED at the R2 gate; F-01 resolved by evidence (runtime session) not code, no re-review applicable; zero blocking findings ever raised
+- [ ] Quality Audit clean — PENDING (the audit runs after this checklist update)
+- [x] anything not verified explicitly recorded — live mutation/realtime-event leg, native tier, CI result
+- [x] shared/core changes justified — one shared-tool change (R2-S1, commit b4fce20), justified in review.md + plan.md + the PR description
+- [x] PR evidence matches the worklog — PR #6 draft body written from the worklog summary
 
-FEATURE GATE: PENDING
+FEATURE GATE: PENDING — Quality Audit is the last open item
 
 ## Blocked
 

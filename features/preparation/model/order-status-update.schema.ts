@@ -25,6 +25,11 @@ const isoTimestamp = z.iso.datetime({ offset: true });
 /** Mirrors the `orders.display_number` check constraint (no I/O/0/1 glyphs). */
 const displayNumber = z.string().regex(/^[A-HJ-NP-Z2-9]{6}$/);
 
+/**
+ * The trust boundary for the `update_order_status` RPC result: parses the
+ * wide `Json` payload into the feature's typed update, rejecting drift at
+ * this line instead of deep inside a screen (see the module docblock).
+ */
 export const orderStatusUpdateSchema = z.object({
   order_id: z.uuid(),
   display_number: displayNumber,
@@ -36,4 +41,5 @@ export const orderStatusUpdateSchema = z.object({
   updated_at: isoTimestamp,
 });
 
+/** The validated RPC result — the zod-inferred projection of the schema above. */
 export type OrderStatusUpdate = z.infer<typeof orderStatusUpdateSchema>;

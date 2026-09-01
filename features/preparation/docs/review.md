@@ -401,3 +401,42 @@ Re-ran read-only: history 11/11, order-display 3/3, workspace 28/28,
 details 25/25, feature 18/184, repo 35/322, tsc clean, scoped eslint
 exit 0, pnpm lint exit 0, format:check clean, check-docs exit 0, one
 console.error (→ R3-01), git status clean.
+
+### Final whole-feature review (reviewer agent-f3f8c2be, fresh context, PR #6 draft)
+
+Verdict: no blocking findings and no code defects requiring
+remediation; one major evidence/process gap (F-01) and four minors
+(F-02..F-05). "The feature is CODE-READY for the Feature Gate."
+Re-verified read-only: feature 18 suites/184 tests, typecheck, pnpm
+lint; greps for suppressions, raw hex, boundary violations,
+feature-to-feature imports, falsy-&& renders, TODO/FIXME — all clean;
+all six prior major findings verified remediated and pinned.
+
+- F-01 major (evidence, not a code defect): required runtime evidence
+  unrecorded → RESOLVED at this gate: the full runtime session ran
+  (Expo web on the hosted test project, the preparation test account,
+  a headless browser; sign-in gate, board + empty state, history +
+  day header + day-empty, details unavailable state, back navigation,
+  the LIVE realtime channel "preparation-orders" SUBSCRIBED, zero
+  page errors, the three design-system contract sizes) — recorded in
+  the worklog's "Runtime verification — final" entry; the live
+  mutation/realtime-event leg and the native tier recorded UNVERIFIED
+  with environment reasons, per the plan's risk rule.
+- F-02 minor: two exported model symbols in
+  order-status-update.schema.ts lacked docblocks → FIXED (one-line
+  JSDoc each; suite re-verified).
+- F-03 minor: brief.md still carried the template's `Status: DRAFT`
+  line → FIXED (status line reflects completion).
+- F-04 minor: plan.md said "Shared files: none" while the diff
+  carries the one sanctioned shared-tool change → FIXED (the R2-S1
+  smoke-test change is now listed in plan.md's expected-changes
+  section; the PR description lists it explicitly).
+- F-05 minor: workspace docblock credited manual refresh to decision
+  10 (the created-time decision) → FIXED (citation corrected to the
+  behaviour research).
+
+Observations recorded, no action: preparationKeys.detail is generator
+boilerplate (foundation chore, on record); OrderCard's
+itemSummaryLabel consumer split is brief-conformant; AC-10's 42501 is
+behaviorally identical at screen level to the pinned K1004 path and
+its mapping is pinned at the api layer.

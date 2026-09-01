@@ -1248,3 +1248,56 @@ shared-tool change from R2-S1; zero changes under core/, components/,
 features/auth/, app/\_layout.tsx, or migrations).
 
 GATE: PASS
+
+### Runtime verification — final (PR #6 draft, F-01)
+
+Environment: Expo web (`CI=1 pnpm web`, port 8081, Metro CI mode —
+the sandbox's inotify limit forbids watch mode), the hosted throwaway
+test project from `.env` (akxigjsifwyolkadofnj.supabase.co), the
+preparation test account from docs/environment.md, driven through a
+headless browser. Screenshots: /tmp/kisok-\*.png (not committed).
+
+- Sign-in gate: unauthenticated → /sign-in; signing in as
+  preparing@gmail.com → redirected to `/`, the workspace renders
+  (Preparation Workspace, Refresh / History / Sign out affordances).
+- AC-01/AC-02 (board + states): the board renders LIVE against the
+  hosted backend; with zero active orders it renders the empty state
+  ("No active orders" + "New orders will appear here as customers
+  place them."). The backend has zero rows in `orders` (REST-verified
+  with the prep session), so the populated-board runtime half (groups
+  with counts) is covered by the component tests; the empty state is
+  the live-observable one.
+- AC-08 (history): History affordance press → `/history`; the screen
+  renders Back, the date header "Tuesday, September 1, 2026" (the
+  correct weekday for today, derived through the store-timezone
+  resolver), and the day-empty state ("No completed or cancelled
+  orders yet" + description).
+- AC-07 (details, unavailable state): `/order-details?orderId=<uuid>`
+  → "Order unavailable" + "We couldn't find this order. Go back and
+  reopen it from the board or history." (the no-such-order no-retry
+  path against the real backend).
+- Back navigation works from history and details → `/`.
+- AC-09 (realtime subscription): the browser console shows
+  `[realtime] channel status {channel: "preparation-orders", status:
+"SUBSCRIBED"}` — the subscription is LIVE against the hosted
+  project's Realtime. The event → invalidation → refetch half could
+  not be exercised live (see below) and is covered by the channel-spy
+  hook/screen tests.
+- Zero page errors; the console carries only expected dev-mode logs
+  (auth state changes, the channel status, React devtools notice).
+- Responsive contract sizes, all rendering: 1280×800 (tablet
+  landscape), 800×1180 (tablet portrait), 480×900 (compact web) —
+  workspace, history, and details captured.
+- Live mutation path (new→preparing→ready / cancel) and the live
+  realtime event: **UNVERIFIED, environment reason recorded** — the
+  hosted test project has zero rows in `orders` AND zero rows in
+  `inventory` (REST-verified), `create_order` validates stock, and the
+  only sanctioned stock-seeding RPCs (`set_inventory_quantity`,
+  `apply_inventory_adjustment`) require an admin profile, for which
+  no test account exists (docs/environment.md lists preparation +
+  customer only). No safe live data exists to mutate. Per the plan's
+  risk rule this path is verified by the focused automated tests and
+  recorded UNVERIFIED for the live leg.
+- Native/Android tier: **explicitly unverified** (no emulator/device
+  in this environment; no native configuration touched by this
+  feature; the pre-existing Maestro foundation smoke is unchanged).
