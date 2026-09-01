@@ -15,12 +15,12 @@ The single answer to "where are we?". Update it whenever any of it changes; it
 is the first thing the next agent reads.
 
 ```
-Current round     : 1
-Current task      : T05
-Current stage     : not started (scaffold N/A — manual lifecycle wiring)
-Last gate         : T04 GATE: PASS
-Next legal action : compose + delegate T05 (sign-out cleanup via registerSignOutCleanup; cleanup must reset FULL store state incl. locked per R-T04-01 carry note)
-Blocked by        : —
+Current round     : 2
+Current task      : T06
+Current stage     : not started (scaffold PENDING — Lead runs generator first)
+Last gate         : ROUND 1 GATE: PASS (commit bb6d170)
+Next legal action : Lead scaffolds `pnpm generate component cart quantity-stepper`, then composes + delegates T06 (QuantityStepper)
+Blocked by        : — (local work unblocked; Draft-PR push awaits credentials — see Blocked)
 ```
 
 ## Rules
@@ -41,11 +41,11 @@ Scan this first. Detail is below.
 
 | Task | Mode     | Acceptance                                   | Objective                                       | Deps               | Stage       | Gate    |
 | ---- | -------- | -------------------------------------------- | ----------------------------------------------- | ------------------ | ----------- | ------- |
-| T01  | behavior | Supporting AC-01, AC-02, AC-03               | Line + persisted-cart Zod schemas               | —                  | not started | PENDING |
-| T02  | behavior | Supporting AC-03, AC-08                      | Pure cart rules (identity/merge/bounds/summary) | T01                | not started | PENDING |
-| T03  | behavior | Acceptance AC-01, AC-02, AC-06               | Store restore/persistence/ownership             | T01, T02           | not started | PENDING |
-| T04  | behavior | Acceptance AC-03, AC-04, AC-05, AC-08, AC-09 | Store mutations/lock/summaries                  | T03                | not started | PENDING |
-| T05  | behavior | Acceptance AC-07                             | Sign-out cleanup wiring                         | T04                | not started | PENDING |
+| T01  | behavior | Supporting AC-01, AC-02, AC-03               | Line + persisted-cart Zod schemas               | —                  | done        | PASS    |
+| T02  | behavior | Supporting AC-03, AC-08                      | Pure cart rules (identity/merge/bounds/summary) | T01                | done        | PASS    |
+| T03  | behavior | Acceptance AC-01, AC-02, AC-06               | Store restore/persistence/ownership             | T01, T02           | done        | PASS    |
+| T04  | behavior | Acceptance AC-03, AC-04, AC-05, AC-08, AC-09 | Store mutations/lock/summaries                  | T03                | done        | PASS    |
+| T05  | behavior | Acceptance AC-07                             | Sign-out cleanup wiring                         | T04                | done        | PASS    |
 | T06  | behavior | Supporting AC-04, AC-12                      | QuantityStepper component                       | — (seq. after T05) | not started | PENDING |
 | T07  | behavior | Supporting AC-03, AC-04, AC-12               | CartItemRow component                           | T01, T06           | not started | PENDING |
 | T08  | behavior | Acceptance AC-10                             | QuickCartSheet adaptive surface                 | T04, T07           | not started | PENDING |
@@ -145,7 +145,15 @@ it — two summaries disagree the moment one is updated and the other is not.
   (auth emergency path collects it); registers NO guard; exports nothing the
   public API doesn't.
 
-Round gate: `PENDING`
+Round gate: `PASS` — 22 suites / 239 tests, typecheck/lint/format/
+check:docs clean on the full round state; cross-task coherence reviewed
+(worklog.md "ROUND 1 GATE" section). Committed as bb6d170.
+
+Draft PR note: the workflow wants the Draft PR opened NOW (early, after first
+coherent verified work). Push to origin is currently IMPOSSIBLE from this
+sandbox (no gh CLI, no SSH, no stored token — `git push --dry-run` fails at
+auth). Local work continues; the PR (base develop) opens the moment push
+access exists. See `Blocked`.
 
 ## Round 2 — Cart UI surfaces and public API
 
@@ -277,4 +285,11 @@ FEATURE GATE: PENDING
 
 What cannot proceed, and what it is waiting for. Empty is good.
 
-- —
+- **Draft-PR push (external)**: opening the Draft PR on GitHub requires pushing
+  `feature/cart` to origin. This sandbox has NO push credentials (no gh CLI,
+  no SSH binary, no stored token; `git push --dry-run` → "could not read
+  Username"). All local gates are unaffected. Required external action: push
+  access or the push itself (`git push -u origin feature/cart`) + PR creation
+  (base `develop`, draft). The Lead prepared to open it the moment access
+  exists. This does NOT block Tasks/Rounds/Reviews — only the remote PR
+  artifact and its CI evidence.

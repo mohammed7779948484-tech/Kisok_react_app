@@ -86,3 +86,15 @@ reviewer).
 | R-T04-01 | minor | stale `locked` survived an owner switch — next customer's mutations silently no-op with no unlock path | cart-store.ts:262 (reset omitted locked); empirical probe | fixed in-task — locked:false in owner-switch reset + RED→GREEN tests (owner-switch resets; same-owner re-hydrate keeps lock) | done |
 | R-T04-02 | minor | no mutation-level write-failure test (fire-and-forget persist wiring unpinned) | cart-store.test.ts:815-895 | fixed in-task — addItem-on-failing-setItem test (line kept + memoryOnly) | done |
 | R-T04-03 | minor | clearCart doc comment stated wrong rationale for the pre-restore gate | cart-store.ts:113-115 | fixed in-task — reworded (uniform user-action gating; pre-restore discards are hydrate()'s) | done |
+
+| R-T05-01 | minor | no-guard test ran on an empty unlocked store — a future lock-keyed guard could be added and still pass it | sign-out-cleanup.test.ts (pre-fix) | fixed in-task — no-guard test now seeds locked+populated; honest immediate-pass coverage, marked in test | done |
+| R-T05-02 | minor | registration test proved memory clear only — durable miss unproven in the lifecycle path | sign-out-cleanup.test.ts | fixed in-task — ONE lifecycle test: seed → persistNow → pre-assert hit → runSignOutCleanup() → memory AND durable miss | done |
+| R-T05-03 | minor | module doc implied auth consumes the persistence status; the real consumers are cart surfaces | sign-out-cleanup.ts | fixed in-task — comment names cart surfaces as the persistence-status consumers | done |
+| R-T05-04 | minor | worklog entry recorded only after the review snapshot (evidence timing) | worklog diff | resolved — Lead recorded full RED/GREEN/checks evidence at gate | done |
+| R-T05-05 | minor | `clearCartForSignOut` export is test-only — risk of accidental public re-export widening the API | sign-out-cleanup.ts | carry-forward: T10 must NOT re-export it (documented in module + this row) | T10 |
+
+T05 review note: reviewer verified through context.tsx Phase 2 ordering,
+runSignOutCleanup capture, and clearKisokStorage namespace wipe that NO
+swallow path exists; registration idempotent; real-zustand action-replacement
+test approach judged real behavior (no mock framework). 0 blocking / 0 major /
+5 minor — all dispositioned above.
