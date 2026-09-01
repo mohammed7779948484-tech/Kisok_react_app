@@ -308,3 +308,51 @@ DIFF
 2 new files in features/cart/state/\*\*. Nothing outside scope.
 
 GATE: PASS
+
+### T04 — Store mutations/lock/summaries
+
+MODE: behavior
+ACCEPTANCE: Acceptance AC-03, AC-04, AC-05, AC-08, AC-09
+
+SCAFFOLD (Lead)
+n/a — continues T03's generated store scaffold; no new command (planned).
+
+RED (implementer; reviewer verified the class against HEAD)
+$ pnpm test -- features/cart/state
+18 failed / 29 passed — all TypeError not-a-function (actions/selectors
+absent at HEAD; imports resolved). Right class: missing behavior.
+
+IMPLEMENT
+cart-store.ts: locked + addItem (schema-parsed via addToCartInputSchema,
+composes addLine rules) + setLineQuantity + removeLine + clearCart
+(lock-exempt, hydrated-gated, delegates to T03 clear) + lock/unlock +
+selectTotalQuantity/selectDistinctLineCount (module-level, compose T02
+rules, never mirrored). Guard order: hydrated → locked → schema/lineId →
+mutate → void persistNow().
+
+GREEN
+$ pnpm test -- features/cart/state → 47/47; full 21 suites / 231.
+
+TASK REVIEW (fresh, agent-8144f4fe…)
+0 blocking / 0 major / 3 minor; PASS recommended after disposition:
+R-T04-01 stale lock survives owner switch (empirically probed);
+R-T04-02 no mutation-level write-failure test; R-T04-03 clearCart comment
+rationale wrong. Carried constraints verified genuinely implemented
+(mid-restore disk-payload test; schema strip of stray lineId).
+
+REMEDIATION (same implementer, resumed)
+R-T04-01: locked:false added to restore()'s owner-switch reset; RED
+(Expected false / Received true) → GREEN; + same-owner lock-survives test.
+R-T04-02: mutation-level write-failure test (failing setItem → line kept in
+memory + memoryOnly) — honest immediate-pass coverage at the mutation seam.
+R-T04-03: comment reworded to the real rationale.
+
+GREEN (post-remediation)
+$ pnpm test -- features/cart/state → 50/50
+$ pnpm test → 21 suites / 234
+$ pnpm typecheck / lint / format → clean
+
+DIFF
+2 modified files in features/cart/state/\*\*. Nothing outside scope.
+
+GATE: PASS

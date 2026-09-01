@@ -9,7 +9,15 @@ import {
   type StorageWriteResult,
 } from "@/core/storage";
 
-import type { CartLine } from "../model/cart-line.schema";
+import type { AddToCartInput, CartLine } from "../model/cart-line.schema";
+import { addToCartInputSchema } from "../model/cart-line.schema";
+import {
+  addLine,
+  deriveDistinctLineCount,
+  deriveTotalQuantity,
+  removeLine as removeLineRule,
+  setLineQuantity as setQuantityRule,
+} from "../model/cart-rules";
 import { persistedCartSchema, type PersistedCart } from "../model/persisted-cart.schema";
 
 const log = createLogger("cart.store");
@@ -45,22 +53,28 @@ function asError(value: unknown): Error {
  * customer) would read it straight back. That is a safety bug, not a nuisance.
  */
 export type PersistenceStatus = "unknown" | "persisted" | "memoryOnly" | "clearFailed";
-
 /** The payload every durable write persists: version, owner, lines — one key. */
 type CartEnvelope = { version: 1; ownerId: string | null; lines: CartLine[] };
 
-type CartState = {
+export type CartState = {
   lines: CartLine[];
   /** The profile the in-memory cart belongs to — null until the first hydrate. */
   ownerId: string | null;
   persistence: PersistenceStatus;
   hydrated: boolean;
+  /**
+   * While locked, the user-driven mutations (addItem/setLineQuantity/removeLine)
+   * are no-ops — controls render disabled instead of silently ignoring taps.
+   * `clearCart` is deliberately NOT blocked (plan decision 5): the
+   * post-checkout-success programmatic clear must work while locked.
+   */
+  locked: boolean;
   /** Owner-scoped restore: reads the persisted envelope, discards anything that is not this owner's. */
   hydrate: (ownerId: string) => Promise<void>;
   /**
    * Write the current state and report whether it was durably saved. Every
-   * mutation calls this fire-and-forget (T04 wires that); the serialized
-   * durable-operation chain means the writes never interleave.
+   * mutation calls this fire-and-forget; the serialized durable-operation
+   * chain means the writes never interleave.
    *
    * Before the first `hydrate` there is no owner to attribute the cart to, so
    * the durable write is SKIPPED: the call resolves `{ status: "rejected" }`
@@ -70,6 +84,42 @@ type CartState = {
    */
   persistNow: () => Promise<StorageWriteResult>;
   clear: () => Promise<StorageWriteResult>;
+  /**
+   * Add a selection (AC-03): parsed through `addToCartInputSchema` first — a
+   * stray lineId never wins, an invalid quantity never enters — then merged
+   * with an existing line for the same selection by SUMMING quantities or
+   * appended as a distinct line, and persisted fire-and-forget.
+   *
+   * No-op (logged, never thrown — actions run from event handlers) when the
+   * cart is not hydrated yet (R-T03R2-01: a restore-pending mutation would be
+   * clobbered in memory while its write lands pre-restore state on disk) or
+   * when the cart is locked (AC-09).
+   */
+  addItem: (input: AddToCartInput) => void;
+  /**
+   * Set a line's quantity (AC-04): floored then clamped into 1..99 by the pure
+   * rules, then persisted fire-and-forget. No-op when not hydrated, locked, or
+   * the lineId is unknown.
+   */
+  setLineQuantity: (lineId: string, quantity: number) => void;
+  /**
+   * Remove a line (AC-04): an explicit, UI-confirmed action; decrement never
+   * removes. No-op when not hydrated, locked, or the lineId is unknown.
+   */
+  removeLine: (lineId: string) => void;
+  /**
+   * The UI-facing clear (AC-05): empties memory immediately and clears durably
+   * through `clear()`'s remove→fallback with its honest status — fire-and-
+   * forget. NOT blocked by `locked` (plan decision 5) but gated on `hydrated`,
+   * like every user-driven action: uniform gate, and pre-restore discards are
+   * `hydrate()`'s job (the mismatch/corrupt paths own them). Confirmation UI
+   * is T07/T09's job.
+   */
+  clearCart: () => void;
+  /** Lock user-driven mutations for a future critical operation (Checkout). */
+  lock: () => void;
+  /** Re-enable user-driven mutations. */
+  unlock: () => void;
 };
 
 /**
@@ -204,13 +254,18 @@ export function createCartStore(backend: JsonStorage = storage) {
       if (get().hydrated && get().ownerId === ownerId) return;
 
       // A DIFFERENT owner means the session switched: whatever is in memory
-      // belongs to another profile — discard it before restoring for this one.
+      // belongs to another profile — discard it before restoring for this one,
+      // including the previous owner's lock: a lock belongs to ONE owner's
+      // critical operation, and a stale lock would silently block the next
+      // customer's mutations with no unlock path they could reach (R-T04-01).
       // The ownerId is set synchronously, so a mutation racing the restore
       // passes persistNow's pre-owner guard — the read AND the mismatch
       // discard below are ONE serialized op precisely so that write lands
       // AFTER the whole restore, with the post-restore state, instead of
-      // being wiped by the discard in between.
-      set({ lines: [], ownerId, persistence: "unknown", hydrated: false });
+      // being wiped by the discard in between. A same-owner re-hydrate never
+      // reaches this reset (idempotent no-op above), so a checkout's lock is
+      // untouched by it.
+      set({ lines: [], ownerId, persistence: "unknown", hydrated: false, locked: false });
 
       const outcome = await runSerialized(async (): Promise<RestoreOutcome> => {
         let result: StorageReadResult<PersistedCart>;
@@ -331,6 +386,7 @@ export function createCartStore(backend: JsonStorage = storage) {
       ownerId: null,
       persistence: "unknown",
       hydrated: false,
+      locked: false,
 
       hydrate: (ownerId: string): Promise<void> => {
         const run = () => restore(ownerId);
@@ -371,8 +427,114 @@ export function createCartStore(backend: JsonStorage = storage) {
         reportPersistence(result);
         return result;
       },
+
+      // ---- user-driven mutations (AC-03/AC-04) ------------------------------
+      // All three share the same guard order, deliberately:
+      //   1. `hydrated` (R-T03R2-01) — while a restore is pending (or before
+      //      the first hydrate) the mutation is a no-op: the restore outcome
+      //      would clobber it in memory, while the queued write lands the
+      //      pre-restore state on disk and the next cold start restores the
+      //      wrong cart.
+      //   2. `locked` (AC-09/plan decision 5) — user edits must not race a
+      //      future checkout; controls render disabled, and a double-fire
+      //      past them is a logged no-op, never a throw.
+      //   3. (addItem only) schema-parse — defense-in-depth (T02 review): a
+      //      stray lineId or invalid quantity from an event handler never
+      //      enters the store.
+      addItem: (input: AddToCartInput) => {
+        if (!get().hydrated) {
+          log.warn(
+            "addItem ignored: the cart is not hydrated yet (restore pending or not started)",
+          );
+          return;
+        }
+        if (get().locked) {
+          log.debug("addItem ignored: the cart is locked");
+          return;
+        }
+        const parsed = addToCartInputSchema.safeParse(input);
+        if (!parsed.success) {
+          log.warn("addItem ignored: input rejected by the add-to-cart schema", {
+            reason: parsed.error.issues.map((issue) => issue.message).join("; "),
+          });
+          return;
+        }
+        set({ lines: addLine(get().lines, parsed.data) });
+        void get().persistNow();
+      },
+
+      setLineQuantity: (lineId: string, quantity: number) => {
+        if (!get().hydrated) {
+          log.warn(
+            "setLineQuantity ignored: the cart is not hydrated yet (restore pending or not started)",
+          );
+          return;
+        }
+        if (get().locked) {
+          log.debug("setLineQuantity ignored: the cart is locked");
+          return;
+        }
+        if (!get().lines.some((line) => line.lineId === lineId)) {
+          log.debug("setLineQuantity ignored: unknown lineId", { lineId });
+          return;
+        }
+        set({ lines: setQuantityRule(get().lines, lineId, quantity) });
+        void get().persistNow();
+      },
+
+      removeLine: (lineId: string) => {
+        if (!get().hydrated) {
+          log.warn(
+            "removeLine ignored: the cart is not hydrated yet (restore pending or not started)",
+          );
+          return;
+        }
+        if (get().locked) {
+          log.debug("removeLine ignored: the cart is locked");
+          return;
+        }
+        if (!get().lines.some((line) => line.lineId === lineId)) {
+          log.debug("removeLine ignored: unknown lineId", { lineId });
+          return;
+        }
+        set({ lines: removeLineRule(get().lines, lineId) });
+        void get().persistNow();
+      },
+
+      // ---- the UI-facing clear (AC-05) ---------------------------------------
+      // NOT gated on `locked` (plan decision 5): the post-checkout-success
+      // clear is programmatic and must not be blocked by its own lock. Still
+      // gated on `hydrated`, like every user-driven action — a uniform gate,
+      // and pre-restore discards are `hydrate()`'s job (its mismatch/corrupt
+      // paths own them). `clear()` empties memory synchronously, then runs the
+      // durable remove→fallback through the serialized chain and reports the
+      // honest status (persisted / clearFailed) when it settles.
+      clearCart: () => {
+        if (!get().hydrated) {
+          log.warn(
+            "clearCart ignored: the cart is not hydrated yet (restore pending or not started)",
+          );
+          return;
+        }
+        void get().clear();
+      },
+
+      lock: () => set({ locked: true }),
+      unlock: () => set({ locked: false }),
     };
   });
 }
 
 export const useCartStore = createCartStore();
+
+// ---- derived summaries (AC-08) ----------------------------------------------
+// Selectors, NEVER stored state: mirroring totals in the store would create a
+// second truth that drifts from `lines`. Composing the T02 rules keeps one
+// source of truth for every surface and the future shell badge.
+
+/** Sum of all line quantities. */
+export const selectTotalQuantity = (state: CartState): number => deriveTotalQuantity(state.lines);
+
+/** How many distinct lines the cart holds. */
+export const selectDistinctLineCount = (state: CartState): number =>
+  deriveDistinctLineCount(state.lines);

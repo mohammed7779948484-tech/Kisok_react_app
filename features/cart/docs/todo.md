@@ -16,10 +16,10 @@ is the first thing the next agent reads.
 
 ```
 Current round     : 1
-Current task      : T04
-Current stage     : not started (scaffold N/A — continues T03's store)
-Last gate         : T03 GATE: PASS
-Next legal action : compose + delegate T04 (store mutations/lock/summaries; MUST gate user mutations on `hydrated` per R-T03R2-01; MUST parse add input through addToCartInputSchema per T02 review)
+Current task      : T05
+Current stage     : not started (scaffold N/A — manual lifecycle wiring)
+Last gate         : T04 GATE: PASS
+Next legal action : compose + delegate T05 (sign-out cleanup via registerSignOutCleanup; cleanup must reset FULL store state incl. locked per R-T04-01 carry note)
 Blocked by        : —
 ```
 

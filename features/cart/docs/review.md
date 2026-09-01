@@ -82,3 +82,7 @@ reviewer).
 | R-T03R-03 | minor | pre-owner clear() fallback wrote ownerless envelope (schema-invalid) | cart-store.ts:133 | fixed round 2 — fail closed: skip fallback → rejected + clearFailed (auth emergency path owns stale data) | done |
 | R-T03R-04 | nit | runSerialized/runSerializedRead duplicated | cart-store.ts:106-125 | fixed round 2 — one generic runSerialized<T> | done |
 | R-T03R2-01 | minor | mid-restore mutation on a HIT restore is clobbered in memory by outcome application (pre-existing; UI restore-pending gating prevents it) | cart-store.ts:213,255-257 | carry-forward: T04 mutations gated on `hydrated` | T04 |
+
+| R-T04-01 | minor | stale `locked` survived an owner switch — next customer's mutations silently no-op with no unlock path | cart-store.ts:262 (reset omitted locked); empirical probe | fixed in-task — locked:false in owner-switch reset + RED→GREEN tests (owner-switch resets; same-owner re-hydrate keeps lock) | done |
+| R-T04-02 | minor | no mutation-level write-failure test (fire-and-forget persist wiring unpinned) | cart-store.test.ts:815-895 | fixed in-task — addItem-on-failing-setItem test (line kept + memoryOnly) | done |
+| R-T04-03 | minor | clearCart doc comment stated wrong rationale for the pre-restore gate | cart-store.ts:113-115 | fixed in-task — reworded (uniform user-action gating; pre-restore discards are hydrate()'s) | done |
