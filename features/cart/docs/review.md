@@ -49,3 +49,13 @@ dispositioned. It returns findings; the Lead records them here.
 - Definition of Done (`AGENTS.md`) met: TODO
 
 Audit result: `PENDING`
+
+## Findings
+
+| ID       | Severity | Finding                                                                                                          | Evidence                                          | Disposition                                                                      | Remediation |
+| -------- | -------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------- | ----------- |
+| R-T01-01 | minor    | `addToCartInputSchema` exported with no test and no consumer yet                                                 | cart-line.schema.ts:32                            | defer to T02 (its consumer; T02 packet adds tests + documents strip-mode caveat) | T02         |
+| R-T01-02 | minor    | Guards unproven by tests: productId uuid, option ids uuid, lineId min                                            | cart-line.schema.test.ts:82 only variantId tested | defer to T02 (three one-line tests in same model scope)                          | T02         |
+| R-T01-03 | minor    | Comment/behavior tension: 99-cap comment says "UX guard" but max(99) is a hard restore boundary within format v1 | cart-line.schema.ts:27-28                         | reword comment in T02; cap changes require version bump                          | T02         |
+| R-T01-04 | minor    | Worklog carried only SCAFFOLD at review time; RED/GREEN evidence unrecorded                                      | worklog diff                                      | resolved — Lead recorded full evidence at gate                                   | done        |
+| R-T01-05 | minor    | Restore boundary does not enforce unique lineIds (foreign/duplicate payload could restore ambiguous lines)       | persisted-cart.schema.ts:17                       | remediate in T02: `.refine` unique lineIds + test (AC-02 restore validation)     | T02         |

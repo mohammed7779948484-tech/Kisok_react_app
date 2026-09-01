@@ -16,10 +16,10 @@ is the first thing the next agent reads.
 
 ```
 Current round     : 1
-Current task      : T01
-Current stage     : scaffolding (Lead runs schema generator next)
-Last gate         : — (plan READY recorded; no task gate yet)
-Next legal action : Lead scaffolds T01 (two schema commands), then delegates T01
+Current task      : T02
+Current stage     : not started (scaffold N/A — manual domain-rules task)
+Last gate         : T01 GATE: PASS
+Next legal action : compose + delegate T02 (pure cart rules; fold in the 4 deferred T01 review items)
 Blocked by        : —
 ```
 
@@ -71,7 +71,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Expected generated files**: `model/cart-line.schema.ts` (+ test),
   `model/persisted-cart.schema.ts` (+ test)
 - **Allowed manual files**: —
-- **Scaffold status**: PENDING
+- **Scaffold status**: READY (ran; 4 files created)
 - **Allowed file scope**: `features/cart/model/**`
 - **Spec**: `cartLineSchema` — lineId, variantId/productId (uuid),
   productDisplayName, variantLabel, optionSelections

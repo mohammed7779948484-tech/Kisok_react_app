@@ -123,3 +123,52 @@ db:verify SKIPPED (no PostgreSQL in this sandbox — CI provides it).
   tasks; 10 tasks in 2 rounds; zero backend calls; one new route file.
 - Lead Planning Review performed across all checklist axes → clean.
 - plan.md Status: READY. todo.md carries the real 10-task structure.
+
+### T01 — Line + persisted-cart Zod schemas
+
+MODE: behavior
+ACCEPTANCE: Supporting AC-01, AC-02, AC-03
+
+SCAFFOLD (Lead, before delegating)
+$ pnpm generate schema cart cart-line
+$ pnpm generate schema cart persisted-cart
+created : features/cart/model/cart-line.schema.ts, cart-line.schema.test.ts,
+persisted-cart.schema.ts, persisted-cart.schema.test.ts
+skipped : none
+replaced : none
+manual : none planned
+
+RED (behavior — implementer, verified by Lead + Reviewer)
+$ pnpm test -- schema
+15 failed / 15 — placeholders rejected the real cart shape; guard tests failed
+on issue-path ["id"] proving no domain guard existed. Reviewer independently
+reconstructed the placeholder schema in /tmp and confirmed 15/15 fail for the
+intended reasons (empirical RED validation).
+
+IMPLEMENT
+cart-line.schema.ts: real line shape + addToCartInputSchema (omit lineId)
+persisted-cart.schema.ts: {version: literal 1, ownerId: uuid, lines[]}
+both test files replaced with issue-path-asserting behavior tests (15 total)
+
+GREEN
+$ pnpm test -- schema
+PASS x2 suites, 15/15 tests — EXIT 0
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean
+$ pnpm lint → clean
+$ pnpm format:check → clean (after Lead prettier-formatted worklog.md —
+the one file the implementer correctly declined to touch)
+$ pnpm test → 19 suites / 153 tests, all pass (reviewer-confirmed)
+
+DIFF
+4 new files in features/cart/model/\*\* (implementer) + worklog.md (Lead).
+Nothing outside the allowed scope. index.ts still export{} — public API not
+widened (correct for T01).
+
+TASK REVIEW (fresh code-reviewer, agent-ae2fceb8…)
+0 blocking / 0 major / 5 minor (R-T01-01…05 — recorded in review.md)
+Dispositions: R-T01-01/02/03/05 deferred to T02 (model/ scope, consumed
+there); R-T01-04 resolved by this worklog entry.
+
+GATE: PASS
