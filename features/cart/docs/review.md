@@ -71,3 +71,14 @@ T02 re-review note: findings were all minor; remediations verified by Lead
 Carried constraint into T04: the store must parse add input through
 `addToCartInputSchema` before calling the rules (defense-in-depth per
 reviewer).
+
+| R-T03-01 | major | durableClear bypassed the write queue — cleared cart resurrection, write/fallback overlap, clearFailed erasure | cart-store.ts:99-114,177,219-228; race harness empirical | fixed round 1 — ONE serialized durable-op chain | done |
+| R-T03-02 | major | clearFailed downgraded to memoryOnly by later failed write (stale cross-customer data on disk) | cart-store.ts:184-186; empirical | fixed round 1 — sticky clearFailed precedence (failure keeps; success clears) | done |
+| R-T03-03 | minor | persistNow pre-hydrate wrote ownerless schema-invalid envelope | cart-store.ts:40,84-88,209-217 | fixed round 1 — skip + rejected result + unknown | done |
+| R-T03-04 | minor | flush not throw-safe (waiters stranded, unhandled rejection) | cart-store.ts:164-194 | fixed round 1 — try/catch resolves waiters with rejection | done |
+| R-T03-05 | minor | race/waiter test gaps | cart-store.test.ts:292-297 | fixed round 1 — waiter values asserted + 3 deterministic race tests | done |
+| R-T03R-01 | minor | read and mismatch/corrupt discard were two chain ops — mid-restore write landed in the gap and was wiped while status said persisted | cart-store.ts:195,213 | fixed round 2 — read+discard folded into ONE serialized op (RestoreOutcome) | done |
+| R-T03R-02 | minor | throw-safety only on flush — throwing remove/read escaped as rejections | cart-store.ts:144-165,180-182 | fixed round 2 — rawDiscard whole-body catch; read throw → corrupt path | done |
+| R-T03R-03 | minor | pre-owner clear() fallback wrote ownerless envelope (schema-invalid) | cart-store.ts:133 | fixed round 2 — fail closed: skip fallback → rejected + clearFailed (auth emergency path owns stale data) | done |
+| R-T03R-04 | nit | runSerialized/runSerializedRead duplicated | cart-store.ts:106-125 | fixed round 2 — one generic runSerialized<T> | done |
+| R-T03R2-01 | minor | mid-restore mutation on a HIT restore is clobbered in memory by outcome application (pre-existing; UI restore-pending gating prevents it) | cart-store.ts:213,255-257 | carry-forward: T04 mutations gated on `hydrated` | T04 |

@@ -16,10 +16,10 @@ is the first thing the next agent reads.
 
 ```
 Current round     : 1
-Current task      : T03
-Current stage     : not started (Lead scaffolds store next)
-Last gate         : T02 GATE: PASS
-Next legal action : Lead runs `pnpm generate store cart cart`, records SCAFFOLD, delegates T03
+Current task      : T04
+Current stage     : not started (scaffold N/A — continues T03's store)
+Last gate         : T03 GATE: PASS
+Next legal action : compose + delegate T04 (store mutations/lock/summaries; MUST gate user mutations on `hydrated` per R-T03R2-01; MUST parse add input through addToCartInputSchema per T02 review)
 Blocked by        : —
 ```
 
@@ -103,7 +103,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Lead scaffold**: `pnpm generate store cart cart`
 - **Expected generated files**: `state/cart-store.ts` + `state/cart-store.test.ts`
 - **Allowed manual files**: —
-- **Scaffold status**: PENDING
+- **Scaffold status**: READY (ran; 2 files created)
 - **Allowed file scope**: `features/cart/state/**`, `features/cart/model/**`
 - **Spec**: STORAGE_KEY is deliberately `storageKey("cart", "lines")` (edit of
   the generated `kisok:cart:cart` — planned, see plan design decision 1);

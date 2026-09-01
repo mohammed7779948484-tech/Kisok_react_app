@@ -230,3 +230,81 @@ DIFF
 scope. index.ts untouched.
 
 GATE: PASS
+
+### T03 — Store restore/persistence/ownership
+
+MODE: behavior
+ACCEPTANCE: Acceptance AC-01, AC-02, AC-06
+
+SCAFFOLD (Lead, before delegating)
+$ pnpm generate store cart cart
+created : features/cart/state/cart-store.ts, features/cart/state/cart-store.test.ts
+skipped : none
+replaced : none
+manual : none planned
+
+RED (behavior — implementer; first review verified RED empirically)
+$ pnpm test -- features/cart/state
+Round 1: 18 failed / 1 passed — owner-scoped restore, mismatch discard, corrupt
+clear, serialization all missing on the template scaffold (persistNow not a
+function; owner-blind hydrate). The 1 pass = template idempotency behavior kept.
+
+IMPLEMENT
+cart-store.ts: STORAGE_KEY=storageKey("cart","lines"); CartState {lines,
+ownerId, persistence, hydrated, hydrate, persistNow, clear}; owner-scoped
+restore (hit/match, hit/mismatch→durable discard, miss, rejected→clear);
+trailing-coalesced write queue with waiter semantics; remove→overwrite
+fallback shared by clear/mismatch/corrupt; singleton useCartStore.
+
+GREEN (round 1)
+$ pnpm test -- features/cart/state → 19/19; full 21 suites / 203.
+
+TASK REVIEW (fresh code-reviewer, agent-092fae5a…; race harness in /tmp)
+2 MAJOR + 4 minor. Majors verified empirically:
+
+- R-T03-01: durableClear bypassed the write queue — cleared cart could
+  RESURRECT on disk (cold start restores it); clear's fallback could overlap
+  a queue write; trailing success erased clearFailed.
+- R-T03-02: clearFailed silently downgraded to memoryOnly by a later failed
+  write (previous customer's cart still on disk).
+
+REMEDIATION ROUND 1 (same implementer, resumed)
+ONE serialized durable-op chain (runSerialized): flush writes, clear's
+remove→fallback, and the restore read all ride it. Sticky clearFailed (write
+failure keeps it; success honestly clears it). persistNow pre-owner guard
+(skip + rejected + unknown). flush throw-safety. Race/sticky/waiter tests.
+RED: 6 failed/19 passed — resurrection (map.has true after clear), overlap
+(maxInFlight 2), downgrade (memoryNot clearFailed) all reproduced.
+GREEN: 25/25; full 21 suites / 209.
+
+RE-REVIEW (fresh, agent-4a2a8e8c…): both majors RESOLVED; 4 new minor
+(R-T03R-01 read+discard gap; R-T03R-02 throw-safety asymmetry;
+R-T03R-03 ownerless fallback envelope; R-T03R-04 helper duplication).
+
+REMEDIATION ROUND 2 (same implementer)
+Restore read + mismatch/corrupt discard folded into ONE serialized op
+(RestoreOutcome: hit|miss|discarded; state applied outside the op).
+rawDiscard (unchained, must run inside runSerialized — doc'd + verified by
+grep) with whole-body try/catch; restore read try/catch → corrupt path;
+pre-owner fallback skipped (fail closed → clearFailed, auth emergency path
+owns the stale data); single generic runSerialized<T>.
+RED (round-1 code, corrected tests): 4 failed/25 passed for the intended
+reasons (disk empty after mid-restore write wiped; clear() rejected on
+throwing remove; hydrate() rejected on throwing read; pre-owner "persisted").
+Implementer honestly reported 2 initial wrong-reason RED failures, corrected.
+
+GREEN (round 2)
+$ pnpm test -- features/cart/state → 29/29
+$ pnpm test → 21 suites / 213 tests
+$ pnpm typecheck / lint / prettier → clean
+
+DELTA RE-REVIEW (fresh, agent-ca6bf182…): round-2 delta correct, complete,
+no regressions. 0 blocking / 0 major / 1 minor carry-forward:
+R-T03R2-01 — T04 mutations must be gated on `hydrated` (restore-pending is
+the sole guard against the mid-restore memory clobber on the hit path).
+Carried into the T04 task packet.
+
+DIFF
+2 new files in features/cart/state/\*\*. Nothing outside scope.
+
+GATE: PASS
