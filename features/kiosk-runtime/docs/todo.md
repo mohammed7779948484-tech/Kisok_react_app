@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : 1
-Current task      : T03
+Current task      : T04
 Current stage     : not started
-Last gate         : T02 GATE: PASS
-Next legal action : Lead scaffold for T03 (pnpm generate store kiosk-runtime device-policy), then delegate T03
+Last gate         : T03 GATE: PASS
+Next legal action : delegate T04 (manual-only task — no generator scaffold; compose and launch the T04 implementer)
 Blocked by        : — (external: GitHub push credentials absent — affects PR/CI evidence only, not implementation)
 ```
 
@@ -94,7 +94,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Depends on**: T02
 - **Skills**: test-driven-development
 - **Lead scaffold**: `pnpm generate store kiosk-runtime device-policy`
-- **Expected generated files**: `features/kiosk-runtime/state/device-policy.store.ts` + `device-policy.store.test.ts`
+- **Expected generated files**: `features/kiosk-runtime/state/device-policy-store.ts` + `device-policy-store.test.ts` (generator naming: NAME-store.ts — dashed, not dotted; reconciled at T03 review)
 - **Allowed manual files**: none beyond the generated pair (adapted in place)
 - **Scaffold status**: PENDING
 - **Allowed file scope**: `features/kiosk-runtime/state/**`

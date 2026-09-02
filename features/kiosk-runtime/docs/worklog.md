@@ -333,3 +333,81 @@ top-level / open restriction keys), purity/auth-independence, test quality
 pending marker), pnpm verify exposure, scope discipline.
 
 GATE: PASS
+
+### T03 — SCAFFOLD (Lead)
+
+$ pnpm generate store kiosk-runtime device-policy
+created : features/kiosk-runtime/state/device-policy-store.ts
+features/kiosk-runtime/state/device-policy-store.ts test
+(features/kiosk-runtime/state/device-policy-store.test.ts)
+skipped : none
+replaced : none
+note : the generated template is persistence-oriented (hydrate/clear/
+persist through @/core/storage). This feature's device-policy
+state is EPHEMERAL by plan (the maintenance credential and
+unlock state must NEVER be persisted), so the task replaces the
+template's persistence machinery with an in-memory store —
+documented adaptation, same files.
+Scaffold status: READY
+
+### T03 — state: ephemeral device-policy store
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-02 (AC-05 store-side semantics)
+
+SCAFFOLD (Lead — recorded in the T03 SCAFFOLD entry above)
+
+RED (fresh feature-implementer, agent-c10f46ad)
+$ pnpm jest features/kiosk-runtime
+Test Suites: 1 failed, 2 passed, 3 total; Tests: 15 failed, 43 passed
+Failures: initial-state test "Expected: {role:"standard",…} Received:
+undefined" (template placeholder state) and 14× "TypeError:
+getState(...).applySnapshot|tryUnlock|isMaintenanceUnlocked|clearMaintenance
+is not a function" — the ephemeral actions are MISSING from the template;
+not a typo/import error (T02 model suites stayed green).
+
+IMPLEMENT
+state/device-policy-store.ts — ephemeral store: fail-closed default policy
+(derived once via deriveDevicePolicy on the empty snapshot — remediation
+R5, no hand-copied literal), LOCKED_MAINTENANCE frozen (R6);
+applySnapshot (validate → derive → apply, session cleared unconditionally;
+invalid → standard default + payload-free warn); tryUnlock (kiosk role +
+non-null code + equality; failure = zero state change, zero logging);
+isMaintenanceUnlocked (now < expiresAt, injectable now); clearMaintenance;
+factory + singleton; NO storage import anywhere.
+state/device-policy-store.test.ts — 15→16 tests (see GREEN).
+
+GREEN
+$ pnpm jest features/kiosk-runtime
+Test Suites: 3 passed, 3 total; Tests: 59 passed, 59 total
+(after remediation: +1 re-apply-re-locks test)
+
+AFFECTED CHECKS
+$ pnpm typecheck → PASS; pnpm lint → PASS; pnpm format:check → PASS (after
+Lead formatted the worklog scaffold entry); pnpm test:ci → 20 suites / 197
+tests PASS; pnpm verify → PASS (generator smoke test passed)
+
+DIFF
+Untracked: features/kiosk-runtime/state/\*\* (2 files). Tracked: worklog/todo
+only. index.ts untouched; no native/UI/auth/storage imports in the store.
+
+REVIEW (fresh code-reviewer, agent-3678d2c9)
+No blocking or major findings. Six minors:
+T03-R1 control-record lag → fixed by this entry + todo update.
+T03-R2 todo "Expected generated files" used dotted filename vs the
+generator's NAME-store.ts dashed convention → todo reconciled by Lead.
+T03-R3 missing same-snapshot re-lock test → FIXED (implementer resumed;
+new test "re-applying the same snapshot re-locks an unlocked maintenance
+session").
+T03-R4 no-persistence assertion covered only read/write/remove → FIXED
+(createJsonStorage + clearKisokStorage now asserted zero-call).
+T03-R5 duplicated default literal → FIXED (default derived via
+deriveDevicePolicy(empty snapshot)).
+T03-R6 shared LOCKED_MAINTENANCE object mutable → FIXED (Object.freeze on
+the shared locked session and the fail-closed default).
+Axes found clean: store contract vs plan, ephemeral invariants (zero
+storage surface, no value leakage), state ownership (Zustand right home,
+no server-state mirroring), test quality, template adaptation honesty,
+pnpm verify exposure, scope discipline.
+
+GATE: PASS
