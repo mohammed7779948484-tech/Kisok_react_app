@@ -6,11 +6,11 @@ in `worklog.md`. Keep this checkpoint and gate board current.
 ## Current checkpoint
 
 ```
-Current round     : Round 3 — Home, all products and search
-Current task      : T06 — Local Search and route
-Current stage     : done (fresh task review clean of blocking/major; gate recorded)
-Last gate         : T06 PASS (2026-09-02); T05 PASS; T04 PASS; Round 2 PASS
-Next legal action : Round 3 gate — Lead integrated verification (incl. browser) + fresh Round review
+Current round     : Round 4 — Brand and category discovery
+Current task      : T07 — Brand discovery/detail and routes
+Current stage     : not started (Lead scaffold next)
+Last gate         : Round 3 PASS (2026-09-02); T04/T05/T06 PASS; Round 2 PASS
+Next legal action : Lead runs T07 scaffolds (Brands + Brand Detail screens, then both routes), records SCAFFOLD evidence, delegates implementer
 Blocked by        : —
 ```
 
@@ -230,7 +230,11 @@ GATE: PASS
 GATE: PASS
 ```
 
-Round 3 gate: `PENDING`
+Round 3 gate: `PASS` — 13 suites/101 tests (repo 30/239), typecheck/lint/format/
+check:docs/export:web, Lead browser-verified integrated journey (Home → Products
+grid → Search all four states → exact /product-detail route target; zero console
+output), fresh Round review PASS (0 blocking/0 major; 1 minor R3-R01 accepted
+with a revisit note at T07/T08); all round assertions verified
 
 ## Round 4 — Brand and category discovery
 

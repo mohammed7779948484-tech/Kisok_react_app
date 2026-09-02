@@ -949,3 +949,30 @@ FRESH TASK REVIEW + GATE (T06, Lead)
   Lead while recording this review, T05-R02 precedent; convention adopted for
   T07–T09 prompts). Recorded in review.md.
 - GATE: PASS — T06 complete. Working tree committed by the Lead.
+
+ROUND 3 GATE (Lead)
+
+- Lead integrated verification on HEAD b039dc7: whole feature 13 suites/101
+  tests, repo 30/239, typecheck/lint/format/check:docs PASS; export:web with 13
+  static routes; `pnpm verify`-class checks green.
+- Browser journey on the exported build (deterministic mock chain; zero console
+  output): sign-in → Home (identity heading, navigation, three bounded
+  sections); Home → Products via Browse-all (REPLACE; URL /products; heading,
+  "3 products" count, three equal-width 300px cards in one row, 12px gutter
+  matching Home, the accepted 2px card inset of T05-R01 visually confirmed);
+  Products → Search via root nav; the four search states live (idle prompt,
+  too-short "Keep typing…", results "1 matching product" singular, no-match with
+  the named query); diacritic query "CAFÉ" matched Café Crème through the real
+  normalization path; result card press landed on the exact target
+  `/product-detail?productId=55555555-5555-4555-8555-8555-555555555555`
+  (not-found fallback expected — the route lands in T09; the route TARGET is
+  what Round 3 verifies).
+- Fresh Round reviewer (read-only): all five round-level integration assertions
+  verified clean (same T03 components and single query pipeline; identical
+  state-rule/copy across surfaces; AC-08 replace-only roots with byte-identical
+  exhaustive switches and object-form detail pushes; virtualized unbounded grids
+  vs bounded Home; stable-prop contract). Verdict PASS — 0 blocking/0 major;
+  1 minor R3-R01 (root-nav switch duplicated 3×, byte-identical; accepted with
+  a revisit note folded into T07/T08 planning). Recorded in review.md.
+- Round 3 gate: PASS. Push to origin remains deferred (no credentials in this
+  environment); Draft PR #7 stays open on GitHub.
