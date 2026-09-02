@@ -482,3 +482,41 @@ never reach logs), verify exposure, scope discipline (feature's only
 runtime import of the module confirmed by repo-wide grep).
 
 GATE: PASS
+
+### ROUND 1 GATE — device-policy foundation
+
+Round content: T01 (module + CNG wiring), T02 (model), T03 (store), T04
+(source + sync). All four task gates PASS (commits 046de87, b09b210,
+60ad912, a20e610 + this gate's R1-1 remediation).
+
+ROUND REVIEW (fresh round-scope code-reviewer, agent-50885851)
+Seams examined — ALL CLEAN except one minor:
+
+- type/contract chain Kotlin → JS types → Zod → derive → store (key
+  spellings, value unions incl. null-drop, enum; bridge serialization
+  verified against installed expo-modules-core converters; build-graph
+  check: androidx.core reaches the module transitively — no compile hazard)
+- event chain (bursts collapse to one follow-up; applies serialized;
+  duplicates idempotent; unmount/re-mount clean)
+- lifecycle interplay (OnStartObserving guard, OnDestroy unregister,
+  effect deps stable, conservative non-active clear)
+- failure-mode coherence end-to-end (missing services/module → standard;
+  read rejection keeps last-known-good; schema rejection → standard; the
+  documented rejection-vs-invalid asymmetry is absence-of-data vs
+  invalid-data, both individually safe)
+- read-only invariant AC-04 across the whole round diff (comments only)
+- round-level verify green; generated android/ tree corroborates the
+  prebuild evidence; package identity com.kisok.kiosk unchanged (AC-01)
+- combined behavior story: kiosk tablet / standard tablet / web all end
+  where the plan says
+  R1-1 minor — subscribe-after-read-dispatch ordering window → FIXED by the
+  T04 implementer (subscription registered before the initial read; two-line
+  swap + comment; all 73 tests stay green). Recorded in docs/review.md.
+
+ROUND CHECKS
+$ pnpm verify → PASS (all 22 suites / 211 tests + guards; generator smoke)
+$ git diff 2414763..HEAD → 23 files: modules/kiosk-policy/\*\*, the feature's
+model/state/native layers, app.config.ts (+6 lines, plugin entry), and
+the feature control documents. No other shared files.
+
+ROUND GATE: PASS

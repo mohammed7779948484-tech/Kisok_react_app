@@ -64,15 +64,17 @@ export function useDevicePolicySync(): void {
       }
     };
 
-    // Cold start: read once immediately.
-    void refresh();
-
     // Runtime: the native module signals an MDM restrictions change; JS
     // re-reads the snapshot (the event carries no payload — plan Design
-    // decision 3).
+    // decision 3). Registered BEFORE the initial read is dispatched: the
+    // read is async, and a change broadcast landing between its snapshot and
+    // this registration would be missed until the next AppState-active.
     const unsubscribeRestrictions = subscribeToRestrictionsChanges(() => {
       void refresh();
     });
+
+    // Cold start: read once, only after the listeners above exist.
+    void refresh();
 
     // Leaving the foreground locks the maintenance session (AC-05);
     // returning to it re-reads the policy.

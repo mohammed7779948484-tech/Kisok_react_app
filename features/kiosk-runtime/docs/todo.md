@@ -12,11 +12,11 @@ defeats its only purpose.
 ## Current checkpoint
 
 ```
-Current round     : 1
-Current task      : T04
-Current stage     : done — Round 1 gate next
-Last gate         : T04 GATE: PASS
-Next legal action : Round 1 gate (subsystem checks + accumulated diff review + fresh round code-reviewer), then Round 2
+Current round     : 2
+Current task      : T05
+Current stage     : not started
+Last gate         : Round 1 GATE: PASS
+Next legal action : Lead scaffold for T05 (pnpm generate screen kiosk-runtime kiosk-mismatch, then route), then delegate T05
 Blocked by        : — (external: GitHub push credentials absent — affects PR/CI evidence only, not implementation)
 ```
 
@@ -234,7 +234,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Allowed file scope**: `features/kiosk-runtime/docs/mdm-operations.md`
 - **Focused verification**: `pnpm verify` green (check:docs); content review against the research packets (enrollment, kiosk profile, app config, silent install, updates/rollback, recovery, beta path, activation prerequisites, unverified list)
 
-Round gates: Round 1 `PENDING` · Round 2 `PENDING` · Round 3 `PENDING`
+Round gates: Round 1 `PASS` · Round 2 `PENDING` · Round 3 `PENDING`
 
 ## Feature gate
 
