@@ -520,3 +520,15 @@ model/state/native layers, app.config.ts (+6 lines, plugin entry), and
 the feature control documents. No other shared files.
 
 ROUND GATE: PASS
+
+### T05 — SCAFFOLD (Lead)
+
+$ pnpm generate screen kiosk-runtime kiosk-mismatch
+created : features/kiosk-runtime/screens/kiosk-mismatch/kiosk-mismatch-screen.tsx
+features/kiosk-runtime/screens/kiosk-mismatch/kiosk-mismatch-screen.test.ts
+(screen-private components/ dir available beside them)
+$ pnpm generate route kiosk-runtime kiosk-mismatch --role=shared --screen=kiosk-mismatch
+created : app/kiosk-mismatch.tsx (top-level route; nothing occupied the
+path — no --force needed)
+appended : features/kiosk-runtime/index.ts — export { KioskMismatchScreen }
+Scaffold status: READY
