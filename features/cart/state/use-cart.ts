@@ -127,8 +127,12 @@ export function useCart(): CartView {
 // Thin delegates onto the same single store the hook reads. They exist so a
 // future Checkout feature can drive the cart without a React tree — locking
 // around a submission, hydrating, and clearing after confirmed success —
-// through the public API only, never the store. Name mapping onto the store's
-// actions: public lockCart/unlockCart/hydrateCart → store lock/unlock/hydrate.
+// through the public API only, never the store. Callers outside a mounted
+// useCart() consumer must hydrate first (`hydrateCart`, or a mounted
+// `useCart()` elsewhere) — until the store hydrates, their mutations are
+// logged no-ops: the store gates on `hydrated` by design. Name mapping onto
+// the store's actions: public lockCart/unlockCart/hydrateCart →
+// store lock/unlock/hydrate.
 
 /** Add a selection (merge-same-selection / distinct-line) to the current cart. */
 export function addItem(input: AddToCartInput): void {

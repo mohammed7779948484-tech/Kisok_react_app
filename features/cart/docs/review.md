@@ -5,50 +5,8 @@ only — the reviewer reports, it does not quietly fix.
 
 Implementation notes do not belong here; they belong in `worklog.md`.
 
-## Findings
-
-| ID  | Severity                 | Finding | Evidence                | Disposition           | Remediation |
-| --- | ------------------------ | ------- | ----------------------- | --------------------- | ----------- |
-| R01 | blocking / major / minor | TODO    | file:line, or a command | fix / accept / reject | TODO        |
-
 Severity means: **blocking** — must not merge; **major** — fix in this feature;
 **minor** — worth doing, safe to defer with a note.
-
-## Re-review
-
-After remediation, re-run the reviewer against the same scope.
-
-- Result: TODO
-- Findings resolved: TODO
-- Still open: TODO
-
-## Accepted risks
-
-Anything deliberately not fixed, with the reason and who decided.
-
-- —
-
-## Quality audit
-
-A **different question** from the review above. Code review asks "is the
-implementation correct?". The audit asks "was the promised delivery actually
-completed, and is the evidence real?" — comparing `brief.md`, `plan.md`,
-`todo.md`, `worklog.md`, this file, and the actual diff.
-
-Run by `quality-auditor` with fresh context, after review findings are
-dispositioned. It returns findings; the Lead records them here.
-
-| Category                                                   | Finding | Evidence                                        | Resolution |
-| ---------------------------------------------------------- | ------- | ----------------------------------------------- | ---------- |
-| not delivered / not evidenced / not planned / stale record | TODO    | which document said what vs what the diff shows | TODO       |
-
-- Acceptance criteria in `brief.md` all implemented: TODO
-- Every task gate `PASS`, every round gate `PASS`: TODO
-- Worklog carries real command output per task: TODO
-- Shared files touched beyond this feature: TODO (expect none)
-- Definition of Done (`AGENTS.md`) met: TODO
-
-Audit result: `PENDING`
 
 ## Findings
 
@@ -221,3 +179,104 @@ into the storage/auth mocks — an unsanctioned seam testing the harness, not
 the app; the durable-envelope restore test covers R-T10-01's substance
 (runtime owner-scoped restore, AC-02 reachability) more strongly than a
 skeleton-frame pin ever would.
+
+## FINAL CODE REVIEW (80b8ac3..37dca64)
+
+Final review of the complete feature diff after T11 and the Draft PR — same
+fresh-context discipline as the per-task reviews, run against the whole
+80b8ac3..37dca64 range (27 files, 7284 insertions, confined to
+features/cart/\*\* + app/(customer)/cart.tsx). The reviewer re-ran the battery
+independently on the frozen HEAD: the full suite twice — 27 suites / 289
+tests both times — with ZERO console output (full-suite capture plus the
+focused cart suites); typecheck, lint, format:check, check:docs,
+check:commits clean; merge-tree into origin/develop clean. Re-verified in
+this pass: R-T10-01 remediation complete (FullCartScreen consumes useCart(),
+effect keyed [profile.id], the proof test seeds a durable envelope with NO
+manual hydrate call); boundaries clean (zero features/catalog or
+@/core/supabase imports, zero deep @/features/cart/\* imports, route file
+template-identical); the public surface is exactly 13 runtime exports + 3
+type re-exports + the sign-out-cleanup side-effect import, pinned by the
+full-key-equality test.
+
+Verdict: **PASS — 0 blocking / 0 major / 4 minor**, each dispositioned below.
+
+| ID      | Severity | Finding                                                                                                                                                                                                        | Evidence                                                           | Disposition                                                                                                                                                                                                                                                                                 | Remediation         |
+| ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| R-FR-01 | minor    | commit-count off by one in the final record — "15 commits" recorded for the final range, but `git rev-list --count 80b8ac3..37dca64` = 16 and PR #8 reports 16 (15 was true at push time for 80b8ac3..5a343e7) | Lead workspace log, R2GATE-PUSH entry; worklog.md DRAFT PR section | corrected at closeout — the DRAFT PR record now states 15 at push time and 16 for the final range, phrased honestly                                                                                                                                                                         | done                |
+| R-FR-02 | minor    | pre-hydration carry-forward for the future Catalog shell: plain actions are logged no-ops and QuickCartSheet would render its empty-state guess while the store is not yet hydrated                            | use-cart.ts plain-action delegates; quick-cart-sheet.tsx           | carry-forward, documented at the seam — the plain-action comment now states that callers outside a mounted useCart() consumer must hydrate first (hydrateCart, or a mounted useCart) or their mutations are logged no-ops until the store hydrates; the store gates on `hydrated` by design | done (comment-only) |
+| R-FR-03 | minor    | stale clearFailed on same-owner re-sign-in after a recovered emergency reset — the sticky status (R-T03-02's fix) can outlive the incident that caused it                                                      | cart-store.ts status precedence                                    | accept-with-note — deep edge; the copy is deliberately conservative (the warning stays until a successful write clears it), and un-sticking it earlier would weaken the cross-customer safety R-T03-02 added                                                                                | accepted            |
+| R-FR-04 | minor    | this file retained generator-template placeholder rows above the real findings (R01/TODO row, "Re-review: TODO", empty Accepted risks, PENDING audit)                                                          | this file, pre-closeout                                            | fixed at closeout — placeholders removed so the file opens with the real findings; the final review / audit / runtime records are the sections below                                                                                                                                        | done                |
+
+## QUALITY AUDIT
+
+A different question from the review above: "is the promised delivery
+actually completed, and is the evidence real?" — comparing the feature's
+brief/plan/todo/worklog, this file and the actual diff. Run by the
+quality-auditor with fresh context on frozen HEAD 37dca64 (full record: Lead
+workspace log, QUALITY-AUDIT entry). Verdict: **CLEAN-WITH-OBSERVATIONS** —
+delivery sound and truthful; every observation is a recording task, and all
+of them were closed by the closeout records in this file and worklog.md.
+
+| ID    | Finding                                                                                                                                                                                                                                                                                                                                                                              | Evidence                                   | Disposition                                                                                                                                                                   |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| QA-01 | commit-count off by one in the final record (same as R-FR-01)                                                                                                                                                                                                                                                                                                                        | git rev-list vs the recorded count         | corrected at closeout — worklog DRAFT PR record: 15 at push time, 16 in the final range                                                                                       |
+| QA-02 | runtime browser evidence pending, honestly tracked as unchecked gate boxes                                                                                                                                                                                                                                                                                                           | plan.md Verification; todo.md feature gate | RECORDED — see the RUNTIME EVIDENCE section below                                                                                                                             |
+| QA-03 | CI green on the final HEAD but uncited in any doc                                                                                                                                                                                                                                                                                                                                    | check-runs API on 37dca64                  | cited now — worklog.md FINAL VERIFICATION: Expo doctor + Web bundle + Verify all SUCCESS (Maestro/Android label-gated, skipped by design)                                     |
+| QA-04 | review.md retained generator-template placeholder rows, cosmetic                                                                                                                                                                                                                                                                                                                     | this file, pre-closeout                    | fixed at closeout (same as R-FR-04)                                                                                                                                           |
+| QA-05 | T10 delivered use-cart.test.tsx where the plan's allowed-manual line said `.ts` — JSX is required to render the hook                                                                                                                                                                                                                                                                 | plan/todo T10 lines vs the delivered file  | accepted — documented deviation (the extension is the only difference; the worklog records it)                                                                                |
+| QA-06 | integrator risk register: single-owner hydration (future Catalog Add-to-cart needs a mounted useCart()/hydrateCart first); QuickCartSheet has no runtime consumer yet; CartView/CartSnapshot not exported from the public index; clearCartForSignOut must stay un-re-exported; clearCart lock exemption is programmatic-only; route file + index export line are generator artifacts | quality-audit QA-06 finding                | summarized and handed to the integrator — Draft PR #8 body "Integrator notes / risk register"; R-FR-02 documents the hydration seam in code; R-FR-05 adds the lazy-route note |
+
+## RUNTIME EVIDENCE (browser, static web export on 127.0.0.1:8081)
+
+Executed by the Lead's runtime-evidence delegate (full record: Lead workspace
+log, RUNTIME-EVIDENCE entry) against a production static export of HEAD
+37dca64 — `pnpm export:web`, the same web bundle CI builds green — served
+read-only on 127.0.0.1:8081 and driven with agent-browser against the REAL
+hosted TEST project:
+
+- REAL Customer sign-in on the hosted TEST project (real Supabase auth,
+  end-to-end); app boots with no white screen; unauthenticated entry
+  client-redirects to /sign-in.
+- `/cart` cold restore of a seeded 2-line envelope: a well-formed
+  `kisok:cart:lines` payload with the ownerId captured from the app's own
+  `current_active_profile()` call (version 1, quantities 2 + 3) — both lines
+  restored on a cold full-page load (names, variant labels, quantities,
+  summary "5 items · 2 lines").
+- Edits exercised: quantity + (2→3) and quantity − (3→2), confirmed remove
+  (in-app dialog) and confirmed clear (in-app dialog); RELOAD → the edits are
+  durably persisted (the envelope matches memory; after clear the durable key
+  is REMOVED and the empty state renders through the hook's own restore).
+- Empty state + Browse Products escape → `/` (customer home).
+- Three prescribed sizes — 1280×800, 800×1180, 480×900 — the populated cart
+  renders at every size with ZERO horizontal overflow (scrollWidth ==
+  clientWidth at all three); touch targets MEASURED at 480×900: steppers
+  48×48, Remove icon buttons 48×48, Clear Cart 432×56 — all ≥48px.
+- Zero console messages, zero page errors across the whole session; no
+  redirect loops — signed-out direct `/cart` → `/sign-in` once and settles
+  (the auth gate holds; /cart content never renders unauthenticated).
+- Sign-out durably clears `kisok:cart:lines` when the feature module has
+  rendered in-session (client-side navigation to /cart first).
+- Artifacts (Lead workspace, runtime-evidence/): 5 screenshots (sign-in, cart
+  at all three sizes, empty state) + the static-server access log; the
+  dev-server failure log is named below.
+
+New finding from this run:
+
+| ID      | Severity | Finding                                                                                                                                                                                                                                                              | Evidence                                                                                                                                                           | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                | Remediation   |
+| ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| R-FR-05 | minor    | static-export lazy route loading: a fresh session that signs in and signs out WITHOUT visiting /cart leaves the durable envelope on disk — the sign-out-cleanup registration is a module-load side-effect and the generated route map evaluates route modules lazily | exported route map (`"./(customer)/cart.tsx": { get: () => … }` lazy getters, verified in the bundle); clean-verified twice (fresh full load at / and at /sign-in) | carry-forward to the future Catalog customer shell — it imports `@/features/cart` for QuickCartSheet/addItem, loading the feature module at shell level so the cleanup is always registered; mitigations standing until then: owner-scoped mismatch discard at the next owner's hydrate (jest-proven) + the fail-closed handoff marker and emergency `kisok:*` reset (they cover cleanup FAILURE, not absent registration) | Catalog shell |
+
+Explicitly unverified, with reasons:
+
+- the `pnpm web` dev-server transport — environmental blocker (global inotify
+  watch limit 8192, non-root, no watchman → FallbackWatcher ENOSPC crash);
+  verbatim log preserved in the Lead workspace at
+  runtime-evidence/expo-web-ENOSPC-failure.log; the production static export
+  (the same Web-bundle job CI runs) was substituted for all browser evidence.
+- QuickCartSheet runtime frames — no runtime consumer in this build by design
+  (Catalog wiring is deferred scope); the compact-portrait bottom-sheet and
+  1024×768 side-panel presentations remain component-test evidence.
+- second-customer owner-mismatch durable discard at runtime — only one
+  customer TEST account exists; the behavior is jest-covered.
+- native/device tier — AsyncStorage is jest-mocked in the harness; no cart
+  maestro flow exists (N/A by plan).

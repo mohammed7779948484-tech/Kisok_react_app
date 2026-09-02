@@ -902,10 +902,12 @@ Round gate: PASS
 
 Push (one-off credential URL — nothing stored in .git/config or any
 file): feature/cart → origin (mohammed7779948484-tech/Kisok_react_app)
-as a NEW remote branch, no rejection; 15 commits pushed (80b8ac3..5a343e7
-— the whole feature: T01..T11 code + gates + docs). Upstream tracking
-set afterwards via a credential-less fetch (origin is public-readable;
-cosmetic only).
+as a NEW remote branch, no rejection; 15 commits at first push
+(80b8ac3..5a343e7 — true at that moment: T01..T11 code + gates + docs);
+the final range 80b8ac3..37dca64 carries 16 commits — this Draft PR
+record commit is the 16th (R-FR-01/QA-01, corrected at closeout). Upstream
+tracking set afterwards via a credential-less fetch (origin is
+public-readable; cosmetic only).
 
 PR: #8 — https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/8
 head feature/cart → base develop; state open, DRAFT (not for merge).
@@ -921,3 +923,101 @@ The Draft PR opened AFTER Round 2 gate PASS per the workflow; Round 1's
 push constraint is resolved (its note above is the historical record).
 Next: develop integration check, Lead final verification, code review,
 quality audit, feature gate.
+
+## FINAL VERIFICATION
+
+Run by the Lead's final-verification delegate on the frozen feature HEAD
+37dca64 (full record: Lead workspace log, FINAL-VERIFY entry), then re-run
+by the closing delegate on the closeout tree — all closeout edits in,
+including the use-cart.ts comment sentence and these records:
+
+$ pnpm verify → EXIT 0
+typecheck PASS · lint PASS · format:check PASS · test:ci
+27 suites / 289 tests PASS · check:docs PASS (63 files) ·
+check:commits PASS · check:e2e-appid PASS · check:ci-scripts PASS
+("pnpm verify matches the CI verify job") · db:verify SKIPPED locally
+(no PostgreSQL in this sandbox — expected; CI runs it REQUIRED) ·
+generate:smoke PASS ("KISOK generator smoke test passed")
+
+GitHub CI on 37dca64 (check-runs API): Expo doctor SUCCESS, Web bundle
+SUCCESS, "Verify (typecheck, lint, format, tests, guards, db, generator)"
+SUCCESS — db:verify green in CI. Maestro flows + Android prebuild check
+SKIPPED — label-gated ('e2e' / 'android-build' labels absent from the
+draft PR), by design, not failures.
+
+All 13 acceptance criteria carry direct jest evidence (brief ↔ tests, both
+directions):
+
+| AC    | jest evidence (suite: test)                                                                                                                                                                                                                                                                                 |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-01 | cart-store: "hydrate — owner-scoped restore (AC-01, AC-02)" — mismatched owner discarded + durably cleared, clearFailed when discard fails, owner switch discards in-memory; use-cart: re-hydrate on profile-id change                                                                                      |
+| AC-02 | cart-store: owner-match restore, fresh-tablet empty, corrupt / wrong-version / duplicate lineIds → clean start + durable clear, cold-start round-trip; full-cart-screen: "restores a pre-seeded durable envelope … no manual hydrate anywhere"; use-cart: "renders the REAL restored cart through the hook" |
+| AC-03 | cart-store: "addItem — add, merge, distinct lines (AC-03)"; cart-rules: addLine/deriveLineId; cart-item-row: line snapshot rendering                                                                                                                                                                        |
+| AC-04 | cart-store: "setLineQuantity / removeLine … (AC-04)"; quantity-stepper: bounds; cart-item-row: confirmed-removal pair; full-cart-screen: end-to-end remove; cart-line.schema: min/cap rejections                                                                                                            |
+| AC-05 | cart-store: "clearCart — the UI-facing clear (AC-05)" + "clear — owner-aware template semantics"; full-cart-screen: end-to-end Clear Cart confirm                                                                                                                                                           |
+| AC-06 | cart-store: "persistNow — serialized, honest writes (AC-06)"; memoryOnly warning rendered in BOTH surfaces                                                                                                                                                                                                  |
+| AC-07 | sign-out-cleanup: "cart sign-out cleanup (AC-07)"; use-cart: index side-effect registration                                                                                                                                                                                                                 |
+| AC-08 | cart-store: "derived summaries — totalQuantity and distinctLineCount (AC-08)"; cart-rules: deriveTotalQuantity/deriveDistinctLineCount                                                                                                                                                                      |
+| AC-09 | cart-store: "lock — interaction lock … (AC-09)"; disabled-controls tests in cart-item-row / quick-cart-sheet / full-cart-screen; use-cart: lockCart/unlockCart                                                                                                                                              |
+| AC-10 | quick-cart-sheet component suite (populated incl. total quantity in title, empty state, memoryOnly warning, clearFailed alert, locked rows, Continue Shopping/View Full Cart intents, 1024×768 side-panel + 480×900 compact frames)                                                                         |
+| AC-11 | full-cart-screen suite (restore-pending, empty + Browse Products escape, populated + summary, warnings, locked); "/cart route" tests render through the public index export; boundary greps: zero features/catalog / @/core/supabase imports; diff confined to features/cart/\*\* + app/(customer)/cart.tsx |
+| AC-12 | a11y names/roles/disabled asserted across suites (26 toBeDisabled assertions; accessible names on steppers/rows; polite value label; fallback image labelled); both frames in screen and sheet tests; touch targets MEASURED ≥48px at runtime — see RUNTIME EVIDENCE                                        |
+| AC-13 | use-cart: "cart public API (AC-13)" exact-surface test (imports @/features/cart only; full key equality + forbidden-name pins); 27-file diff confinement                                                                                                                                                    |
+
+## FINAL CODE REVIEW
+
+Verdict: PASS — 0 blocking / 0 major / 4 minor (R-FR-01..R-FR-04), all
+dispositioned; no remediation required beyond the records made at closeout.
+Findings table + dispositions: review.md, section "FINAL CODE REVIEW
+(80b8ac3..37dca64)". The reviewer independently re-ran the battery on the
+frozen HEAD (the full suite twice — 27 suites / 289 tests — with zero
+console output) and re-verified R-T10-01's remediation, the architecture
+boundaries, and the exact 13-runtime-export public surface.
+
+## QUALITY AUDIT
+
+Verdict: CLEAN-WITH-OBSERVATIONS (QA-01..QA-06, all dispositioned; no
+remediation required beyond the records made at closeout). Findings +
+dispositions: review.md, section "QUALITY AUDIT". Strongest independent
+evidence: the auditor's fresh re-run of the full check battery on 37dca64,
+the GitHub CI verification on the same sha, the merge-tree pre-check into
+develop, and the docs-vs-diff truth sweep.
+
+## RUNTIME EVIDENCE
+
+Browser record against the REAL hosted TEST project (production static
+export of 37dca64 — `pnpm export:web`, the same web bundle CI builds green —
+served on 127.0.0.1:8081; full record: review.md, section "RUNTIME
+EVIDENCE", and the Lead workspace log RUNTIME-EVIDENCE entry):
+
+- REAL Customer sign-in (Supabase auth, end to end); app boots clean.
+- `/cart` cold restore of a seeded 2-line envelope — ownerId captured from
+  the app's own `current_active_profile()` call.
+- Quantity +/−, confirmed remove, confirmed clear; RELOAD → edits durably
+  persisted (envelope matches memory; after clear the key is REMOVED and
+  the empty state renders through the hook's own restore).
+- Empty state + Browse Products escape → `/`.
+- Three prescribed sizes — 1280×800, 800×1180, 480×900 — zero horizontal
+  overflow; MEASURED touch targets at 480×900: steppers 48×48, Remove
+  48×48, Clear Cart 432×56.
+- Zero console messages, zero page errors, no redirect loops; signed-out
+  direct `/cart` → `/sign-in` (auth gate holds).
+- Sign-out durably clears `kisok:cart:lines` once the feature module has
+  rendered in-session.
+- New finding R-FR-05 (minor, carry-forward): static-export lazy route
+  loading — a fresh session that signs in/out without visiting /cart leaves
+  the envelope on disk (cleanup registration is a module-load side-effect);
+  mitigations: owner-scoped mismatch discard at the next hydrate
+  (jest-proven) + fail-closed handoff marker; disposition: carry-forward to
+  the future Catalog customer shell (which imports @/features/cart for
+  QuickCartSheet/addItem — module loaded at shell level, cleanup always
+  registered).
+
+Explicitly unverified (recorded, with reasons): the `pnpm web` dev-server
+transport (environmental inotify ENOSPC — verbatim log at
+runtime-evidence/expo-web-ENOSPC-failure.log in the Lead workspace; static
+export substituted); QuickCartSheet runtime frames (no runtime consumer by
+design — component tests stand); second-customer owner-mismatch at runtime
+(one TEST account; jest-covered); native/device tier (no cart maestro flow —
+N/A by plan). Screenshots (5) + logs: the Lead workspace runtime-evidence/
+directory.
