@@ -15,3 +15,5 @@
 export { CatalogHomeScreen } from "./screens/catalog-home/catalog-home-screen";
 export { ProductsScreen } from "./screens/products/products-screen";
 export { SearchScreen } from "./screens/search/search-screen";
+export { BrandsScreen } from "./screens/brands/brands-screen";
+export { BrandDetailScreen } from "./screens/brand-detail/brand-detail-screen";

@@ -976,3 +976,240 @@ ROUND 3 GATE (Lead)
   a revisit note folded into T07/T08 planning). Recorded in review.md.
 - Round 3 gate: PASS. Push to origin remains deferred (no credentials in this
   environment); Draft PR #7 stays open on GitHub.
+
+SCAFFOLD (T07, Lead — JIT, immediately before delegation)
+
+- `pnpm generate screen catalog brands` → `features/catalog/screens/brands/`
+  (placeholder screen + baseline mount test).
+- `pnpm generate screen catalog brand-detail` →
+  `features/catalog/screens/brand-detail/` (placeholder screen + baseline test).
+- `pnpm generate route catalog brands --role=customer --screen=brands` → thin
+  `app/(customer)/brands.tsx` rendering `BrandsScreen`.
+- `pnpm generate route catalog brand-detail --role=customer --screen=brand-detail`
+  → thin `app/(customer)/brand-detail.tsx` rendering `BrandDetailScreen`; the
+  generated docblock documents the intended params pattern (read
+  `useLocalSearchParams` here and pass to the screen as props) — this route file
+  is the one the T07 packet sanctions editing to pass `brandId`.
+- `features/catalog/index.ts` gained exactly two exports (`BrandsScreen`,
+  `BrandDetailScreen`).
+- Lead inspection: both placeholders are the generated TODO; baseline tests
+  assert only titles; both routes are the standard thin shape; barrel gains
+  exactly two exports. Tree before delegation: 6dd13ed + the T07 scaffold.
+
+RED (T07, Implementer)
+
+MODE: behavior — ACCEPTANCE: AC-04
+
+- Rewrote BOTH generated baseline tests in place (as instructed) into the
+  behavioral suites: 10 tests for Brands (mount + every identity + "4 brands"
+  count; per-card derived counts incl. "0 products"; whole-card presses →
+  exact `/brand-detail` `brandId` params incl. a zero-product brand; root
+  REPLACE semantics ×5; empty brand collection → "No brands yet" +
+  "Browse all products" → `replace("/products")`; cold loading;
+  error-without-data with retry + non-retryable; T04-R03 background-refetch
+  rule; whole-catalog empty ≠ local no-brands) and 12 tests for Brand Detail
+  (mount + identity; scope: only the requested brand's products in backend
+  order, other-brand and unbranded absent; product presses → exact
+  `/product-detail` params; no-image brand via shared fallback; zero-products
+  brand → local empty with `back()` way back + `replace("/products")` onward;
+  stale ID → local "Brand not found" NOT the snapshot ErrorState; route param
+  passing via the real `app/(customer)/brand-detail` route against the mocked
+  `useLocalSearchParams`; cold loading; error-without-data + retry +
+  non-retryable; whole-catalog-empty wins over not-found; T04-R03 rule).
+- Fixture: 4 brands with DISTINCT product sets (Élite 2, Basics 1,
+  Atelier Céramique 3, Alpine Works 0 — a zero-product brand) + the unbranded
+  Everyday Tote that must never leak into a brand, and the stale id
+  `65656565-…`. `useRouter` mocked with push/replace/back spies and
+  `useLocalSearchParams` with a settable params object (the route seam);
+  API seam mocked at `../../api/fetch-catalog`; fake timers (FlashList);
+  lucide stubbed; zero console output.
+- `$ pnpm exec jest features/catalog/screens/brands
+features/catalog/screens/brand-detail --runInBand`
+  → **22/22 failed** (2 suites) against the placeholder screens. Failure
+  cause verified as missing behaviour, not broken tests: every failure
+  renders the placeholder tree (`Brands`/`BrandDetail` title + `TODO: build
+this screen. See features/catalog/docs/todo.md.`) — no header, no grid, no
+  counts, no state copy, and the route test fails on the unresolved brand
+  (the route does not pass `brandId` yet). No import or setup errors; the
+  relative route import from the test resolved.
+
+IMPLEMENT (T07, Implementer)
+
+- `brands-screen.tsx`: snapshot layer exactly per the T04/T05/T06 pattern and
+  the T04-R03 stated rule (`isPending` → cold `LoadingState` only;
+  `isError && !data` → full-screen `ErrorState` with retry; `products: []` →
+  whole-catalog `EmptyState` with refetch action, same copy as the other
+  surfaces, checked BEFORE the brand-collection check so a productless
+  catalog never "directs to Products" it does not have). All `view.brands`
+  render through the T03 `CatalogGrid` (FlashList, 2/3/4 columns) as
+  `BrandCard`s — the brands collection is unbounded in principle, so the
+  feature's scalable composition is the honest choice (no stated size
+  ceiling exists for a bounded one); heading "All brands" + "N brands" count
+  - `CatalogNavigation current="brands"` with the byte-identical exhaustive
+    REPLACE switch + `never` default (R3-R01 accepted disposition); card
+    presses PUSH `/brand-detail` with `{ brandId }` (object form). Empty brand
+    collection (products exist): local `EmptyState` "No brands yet" whose
+    action REPLACEs to `/products` — a root change with replace semantics, and
+    the empty surface has nothing to come back to.
+- `brand-detail-screen.tsx`: takes `brandId` as a prop (view state). Snapshot
+  layer identical (incl. whole-catalog empty winning over brand resolution).
+  `view.resolveBrand(brandId)` returning undefined renders the LOCAL
+  not-found state — `EmptyState` "Brand not found" + "Go back" →
+  `router.back()` — NOT `ErrorState`, no retry, no crash. Valid brand: header
+  `Go back` (ghost Button, `router.back()` — the brief's "obvious way back to
+  the discovery surface that opened them"; back can never duplicate root
+  history) + `BrandIdentity` (AppImage via the card's media contract with its
+  fallback, name as h1, derived "N products") then
+  `view.productsForBrand(brandId)` as `ProductCard`s in `CatalogGrid`
+  (backend order), each press → PUSH `/product-detail` with `{ productId }`.
+  Zero products under a valid brand: identity stays, distinct local
+  `EmptyState` "No products yet" with "Browse all products" →
+  `replace("/products")` (onward) alongside the header back control (way
+  back). Root `CatalogNavigation` deliberately NOT rendered on the detail
+  screen: replace-to-root from a pushed detail would duplicate the root entry
+  directly below it ([/brands, /brand-detail] → [/brands, /brands]), the
+  duplicate-root stacking AC-08 forbids — documented in the screen docblock.
+- Route edit (sanctioned): `app/(customer)/brand-detail.tsx` now reads
+  `useLocalSearchParams<{ brandId: string }>()` and passes `brandId` to
+  `BrandDetailScreen` as a prop; still thin (no data loading/state/logic).
+  `app/(customer)/brands.tsx`, `features/catalog/index.ts` untouched —
+  correct as scaffolded.
+
+GREEN (T07, Implementer)
+
+- `$ pnpm exec jest features/catalog/screens/brands
+features/catalog/screens/brand-detail --runInBand`
+- 2 suites, 22 tests PASS, zero console output (checked for
+  warn/console/act noise), first run after implementation.
+
+AFFECTED CHECKS (T07, Implementer)
+
+- Whole feature: `$ pnpm exec jest features/catalog --runInBand` → 15 suites,
+  123 tests PASS (T06 baseline 13/101: +2 suites, +22 tests), zero console
+  output.
+- Full repository suite: `$ pnpm exec jest --silent --runInBand` → 32 suites,
+  261 tests PASS (Lead's T06 baseline 30/239: +2 suites, +22 tests).
+- `pnpm typecheck` → PASS.
+- `pnpm lint` (expo lint) → PASS (no warnings).
+- Prettier: `--write` then re-run of the focused suites (22/22 PASS again),
+  repo-wide `pnpm exec prettier --check .` → PASS.
+- `pnpm check:docs` → PASS (63 files).
+- `pnpm export:web` → PASS; `› Static routes (17):` now includes `/brands`,
+  `/brand-detail`, `/(customer)/brands` and `/(customer)/brand-detail`
+  (13 → 17 since T06); `Exported: dist`. (Remaining detail routes
+  `/categories`, `/category-detail`, `/product-detail` are T08–T09 as
+  planned; tests assert router calls, not actual navigation.)
+
+DIFF REVIEW (T07, Implementer)
+
+- Changed/created by the implementer: the two screen files and their two
+  in-place-rewritten tests (all inside `features/catalog/screens/brands/`
+  and `features/catalog/screens/brand-detail/`), the sanctioned
+  `app/(customer)/brand-detail.tsx` param edit, plus the T07 checklist ticks
+  in the feature's `docs/todo.md` and this worklog entry.
+  `app/(customer)/brands.tsx` and
+  `features/catalog/index.ts` verified untouched (Lead scaffold shape
+  intact); no shared file, no T03 component, no route table, no generator
+  run, no commit. Nothing unrelated to T07 found in the diff.
+- No structural artifact was needed beyond the planned scaffold; nothing
+  missing was created. (The test-only relative import of the route module is
+  not a structural artifact — the route file is the Lead's scaffold, imported
+  read-only.)
+
+REMEDIATION (T07, Implementer — same task, T07-R01 major)
+
+- **Finding (T07-R01, major):** the zero-product Brand Detail state was
+  unreachable under the real data contract and the plan prohibits covering
+  unreachable states. Contract evidence:
+  `supabase/migrations/20260826050006_lean_customer_catalog.sql:57-64` —
+  `used_brands` returns only brands with `exists (select 1 from valid_products
+p where p.brand_id = b.id)`, so every snapshot brand carries ≥1 valid
+  product; `resolveBrand(id)` succeeding implies
+  `productsForBrand(id).length >= 1`. A brand that loses all its products
+  disappears from `brands`, so `resolveBrand` returns undefined — the
+  not-found state, which was built correctly and stays. Root cause was the
+  Lead's composed task packet (it required the state); the original T07
+  checklist criterion "no impossible zero-product detail" was the correct
+  rule and is enforced again.
+- **Lead decision, option (a) — REMOVE.** Changes, all inside the same T07
+  allowed scope:
+  - `features/catalog/screens/brand-detail/brand-detail-screen.tsx`: removed
+    the `products.length === 0` branch (the "No products yet" `EmptyState`
+    with its "Browse all products" onward action) — a resolved brand now
+    renders its `CatalogGrid` directly. Docblock updated: the
+    stale/invalid-id paragraph now states the `used_brands` contract and that
+    no reachable zero-products state exists; the back-affordance paragraph no
+    longer mentions "not-found/empty states". No dead copy or helpers remain
+    (`productCountLabel` and `BrandIdentity` are still used by the resolved
+    path).
+  - `features/catalog/screens/brands/brands-screen.test.tsx`: the fixture
+    brand "Alpine Works" gained two products ("Alpine Flask" available,
+    "Alpine Torch" unavailable, display order 70/80) so every fixture brand
+    has ≥1 product. Its derived-count assertion became
+    "Alpine Works, 2 products" (the singular "1 product" form is still pinned
+    via KISOK Basics) and its whole-card press case still asserts the exact
+    `brandId` param. File-header and fixture docblocks updated; press/comment
+    copy updated. Test count unchanged (10).
+  - `features/catalog/screens/brand-detail/brand-detail-screen.test.tsx`:
+    removed the zero-products state test (the former "shows a local empty
+    state with a way back for a brand with zero products") and the
+    `noBrandProductsDescription` copy helper. "Alpine Works" also gained the
+    two products in this suite's fixture (shared shape) so the fixture stays
+    contract-possible; header/fixture docblocks updated. 12 → 11 tests.
+  - **Kept unchanged (reachable, per the remediation instruction):** the
+    stale/invalid-ID not-found state + its tests; the empty brand collection
+    state + its tests; the guard-ordering test (`products: []` →
+    whole-catalog empty wins over resolution); all scope, snapshot-state,
+    route-param and background-refetch tests. The guard-ordering fixture's
+    brands-without-products remains an acknowledged mechanism to pin ordering,
+    tolerable per the review.
+- **GREEN (remediation):** `$ pnpm exec jest features/catalog/screens/brands
+features/catalog/screens/brand-detail --runInBand` → 2 suites, **21 tests
+  PASS** (was 22; one zero-product test removed), zero console output
+  (warn/console/act noise grep clean).
+- **AFFECTED CHECKS (remediation):** whole feature
+  `pnpm exec jest features/catalog --runInBand` → 15 suites, **122 tests PASS**
+  (was 123); full repository `pnpm exec jest --silent` → 32 suites, **260
+  tests PASS** (was 261); `pnpm typecheck` PASS; `pnpm lint` PASS; scoped
+  `prettier --write` (all four touched files already unchanged) and repo-wide
+  `prettier --check .` PASS; `pnpm check:docs` PASS (63 files).
+- **Diff:** remediation touched only the three files above (all inside the
+  T07 screen directories). No route, barrel, component, shared or core file
+  changed in remediation; no generator run; no commit.
+
+FRESH TASK REVIEW + REMEDIATION + RE-REVIEW + GATE (T07, Lead)
+
+- Fresh code-reviewer (read-only; skills: kisok-code-review, kisok-design-system,
+  kisok-react-native-rules, expo-router) reviewed the T07 packet and found
+  **T07-R01 major**: the composed task packet required Brand Detail to cover a
+  resolved brand with zero products, but `used_brands`
+  (`supabase/migrations/20260826050006_lean_customer_catalog.sql:57-64`)
+  only returns brands with ≥1 valid product, so the state is unreachable and
+  the plan's cover-only-reachable-states policy forbids covering it. Root
+  cause: the Lead's composed task packet (the implementer followed the
+  instruction); the original checklist criterion was correct and is enforced
+  again. Recorded in review.md.
+- Lead disposition: fix, option (a) REMOVE — executed by a fresh implementer
+  (REMEDIATION section above; all inside the T07 allowed scope).
+- Lead re-verification in a fresh session before gating: feature 15 suites/122
+  tests PASS (zero console output), `pnpm typecheck` PASS.
+- Fresh re-reviewer (read-only): T07-R01 **RESOLVED** — zero-products branch
+  fully gone with no dead code/copy; docblock honestly documents the
+  `used_brands` contract (verified in the migration first-hand: brands payload
+  built from `used_brands`, products from `valid_products`, so resolution
+  implies ≥1 product); fixtures now contract-possible with every brand ≥1
+  product, derived counts and exact-param presses still pinned, singular form
+  still pinned; kept states intact (not-found, empty brand collection,
+  guard-ordering, real route-module param test); scoped 2 suites/21 tests and
+  feature 15/122 re-run PASS zero console output; T04-R03 rule enforced in
+  both screens; R3-R01 root-nav switch is a 4th byte-identical copy; eslint
+  clean, no suppressions; remediation scope exactly three files. 0 new
+  blocking/major. Recorded in review.md.
+- GATE: PASS — T07 complete.
+- Super Z session note (2026-09-02): the Super Z operator has directed that
+  remaining session work be delivered on a NEW branch `catalog-v2-super`
+  (created from this branch's HEAD, carrying ALL catalog feature work) with a
+  NEW PR opened from it; `feature/catalog` and Draft PR #7 receive no further
+  pushes from this session. The T07 commit (next entry) lands on
+  `catalog-v2-super`; the feature branch history T01–T06 is included by
+  branch ancestry.
