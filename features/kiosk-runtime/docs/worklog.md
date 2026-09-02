@@ -411,3 +411,74 @@ no server-state mirroring), test quality, template adaptation honesty,
 pnpm verify exposure, scope discipline.
 
 GATE: PASS
+
+### T04 — SCAFFOLD (Lead)
+
+manual-only task (no generator capability covers platform IO wiring);
+planned manual artifacts: features/kiosk-runtime/native/policy-source.ts
+(+test), features/kiosk-runtime/native/use-device-policy-sync.ts (+test).
+Scaffold status: N/A — no generator capability applies
+
+### T04 — native policy source + sync hook
+
+MODE: behavior
+ACCEPTANCE: Supporting AC-02 (AC-05 wiring)
+
+SCAFFOLD (Lead — manual-only task, recorded in the T04 SCAFFOLD entry)
+
+RED (fresh feature-implementer, agent-6d82a36e)
+$ pnpm jest features/kiosk-runtime
+Test Suites: 2 failed, 3 passed; Tests: 59 passed — both new suites fail
+with "Cannot find module './policy-source'" / "'./use-device-policy-sync'"
+(the planned manual subjects do not exist; T01–T03 suites stayed green).
+Implementer additionally ran private mutation probes (guard removal,
+background-clear removal → dedicated tests fail; files restored
+byte-identical) — corroborating that the tests catch behaviors, not just
+file existence.
+
+IMPLEMENT
+native/policy-source.ts — the feature's ONLY import of
+@/modules/kiosk-policy: readDevicePolicySnapshot (null when the module is
+unavailable; rejections propagate), subscribeToRestrictionsChanges
+(real unsubscribe / no-op when absent). Transport only: no validation,
+derivation, or logging.
+native/use-device-policy-sync.ts — root-mounted sync hook: read on mount;
+restrictions-change re-read; AppState active → re-read, non-active →
+clearMaintenance; in-flight guard collapses a burst of re-entrant events
+into exactly one follow-up read (remediation T04-R3); read rejection →
+one payload-free error, last-known-good retained; both subscriptions
+removed on unmount.
+
+- the two colocated test files.
+
+GREEN
+$ pnpm jest features/kiosk-runtime
+Test Suites: 5 passed, 5 total; Tests: 73 passed, 73 total
+(after R3 remediation: burst test replaced by two focused tests)
+
+AFFECTED CHECKS
+$ pnpm typecheck → PASS; pnpm lint → PASS; pnpm format:check → PASS (after
+Lead formatted the worklog scaffold entry — reviewer T04-R1);
+$ pnpm test:ci → 22 suites / 211 tests PASS; pnpm verify → PASS
+
+DIFF
+Untracked: features/kiosk-runtime/native/\*\* (4 files). Tracked: worklog/
+review/todo only (Lead). index.ts untouched; no store/model/module edits.
+
+REVIEW (fresh code-reviewer, agent-4a4f5e23)
+No blocking or major findings. Three minors:
+T04-R1 worklog scaffold entry unformatted → fixed by Lead (pnpm format).
+T04-R2 control-record lag → fixed by this entry + todo update.
+T04-R3 in-flight guard drops the LAST re-entrant event (stale snapshot on
+an all-day-foregrounded kiosk) → FIXED (implementer resumed): rerun flag +
+one follow-up read per burst, two focused tests (burst collapse; no
+spurious re-run).
+Axes found clean: source boundary passthrough semantics, hook behaviors
+(incl. StrictMode double-mount and post-unmount apply examined —
+harmless), listener/resolver separation vs core/auth pattern, test quality
+(AppState spied not module-mocked — documented strengthening; mutation
+probes credible), value-leak safety (assertions that code/role values
+never reach logs), verify exposure, scope discipline (feature's only
+runtime import of the module confirmed by repo-wide grep).
+
+GATE: PASS

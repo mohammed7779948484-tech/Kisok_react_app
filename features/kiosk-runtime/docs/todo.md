@@ -14,9 +14,9 @@ defeats its only purpose.
 ```
 Current round     : 1
 Current task      : T04
-Current stage     : not started
-Last gate         : T03 GATE: PASS
-Next legal action : delegate T04 (manual-only task — no generator scaffold; compose and launch the T04 implementer)
+Current stage     : done — Round 1 gate next
+Last gate         : T04 GATE: PASS
+Next legal action : Round 1 gate (subsystem checks + accumulated diff review + fresh round code-reviewer), then Round 2
 Blocked by        : — (external: GitHub push credentials absent — affects PR/CI evidence only, not implementation)
 ```
 

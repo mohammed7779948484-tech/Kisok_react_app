@@ -44,6 +44,17 @@ Anything deliberately not fixed, with the reason and who decided.
   installed expo-modules-core SDK-54 sources) found nothing expected to fail
   compile; the label-gated `android-build` CI job is the compile evidence once
   the PR exists (external dependency — no push credentials here).
+- Cold-start policy-vs-auth ordering (Lead decision, T04 design): the device
+  policy is read from LOCAL managed-configuration storage (disk, ~ms) while
+  auth readiness requires a network profile resolution, so the kiosk policy
+  lands before routing decisions in every realistic ordering. A pathological
+  inversion (native read slower than the network) could show the preparation
+  experience for a sub-second window on a kiosk tablet with a persisted
+  preparation session. Accepted because: the root routing guard is UX
+  protection (routes.md — RLS is the real authorization boundary), the MDM
+  keeps the device locked regardless, and no meaningful interaction is
+  possible in that window. Revisit only if a final reviewer rates it
+  blocking/major.
 
 ## Quality audit
 
