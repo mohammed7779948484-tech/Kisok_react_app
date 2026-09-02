@@ -19,3 +19,4 @@ export { BrandsScreen } from "./screens/brands/brands-screen";
 export { BrandDetailScreen } from "./screens/brand-detail/brand-detail-screen";
 export { CategoriesScreen } from "./screens/categories/categories-screen";
 export { CategoryDetailScreen } from "./screens/category-detail/category-detail-screen";
+export { ProductDetailScreen } from "./screens/product-detail/product-detail-screen";

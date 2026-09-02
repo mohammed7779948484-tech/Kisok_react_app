@@ -7,12 +7,13 @@ in `worklog.md`. Keep this checkpoint and gate board current.
 
 ```
 Current round     : Round 5 — Product Detail discovery
-Current task      : T09 — Product Detail, generic variants/media and route
-Current stage     : Round 4 gated PASS; next Lead action is the T09 JIT scaffold
-Last gate         : Round 4 PASS (2026-09-02, T07+T08, after R4-R01/R4-R02
-                    remediation + resumed re-review); Rounds 1–3 PASS
-Next legal action : Lead runs the T09 scaffolds (Product Detail screen, the
-                    two screen-local components, the route) then delegates
+Current task      : Round 5 gate (T09 gated PASS — final task)
+Current stage     : Round 5 integrated verification + fresh Round review next
+Last gate         : T09 PASS (2026-09-02, after T09-R01–R04 remediation +
+                    resumed re-review); Round 4 PASS; Rounds 1–3 PASS
+Next legal action : Lead runs the Round 5 integrated verification (incl.
+                    browser journey completing the discovery loop), then
+                    dispatches the fresh Round 5 reviewer
 Blocked by        : —
 ```
 
@@ -29,17 +30,17 @@ Blocked by        : —
 
 ## Status board
 
-| Task | Mode     | Acceptance                                          | Objective                                                            | Deps          | Stage       | Gate    |
-| ---- | -------- | --------------------------------------------------- | -------------------------------------------------------------------- | ------------- | ----------- | ------- |
-| T01  | behavior | Supporting AC-01–AC-07                              | Snapshot schema and pure Catalog view                                | —             | done        | PASS    |
-| T02  | behavior | AC-01                                               | Customer-safe Catalog query pipeline                                 | T01           | done        | PASS    |
-| T03  | behavior | Supporting AC-02–AC-08                              | Shared discovery navigation/grid/cards                               | T01           | done        | PASS    |
-| T04  | behavior | Supporting AC-02, AC-08                             | Catalog Home and Customer root route                                 | T02, T03      | done        | PASS    |
-| T05  | behavior | Supporting AC-03                                    | All Products and route                                               | T02, T03      | done        | PASS    |
-| T06  | behavior | Supporting AC-06                                    | Local Search and route                                               | T02, T03      | done        | PASS    |
-| T07  | behavior | AC-04                                               | Brand discovery/detail and routes                                    | T02, T03      | done        | PASS    |
-| T08  | behavior | AC-02, AC-05                                        | Category discovery/detail/filter, routes, complete root destinations | T02, T03, T07 | done        | PASS    |
-| T09  | behavior | AC-03, AC-06, AC-07, AC-08; Supporting AC-04, AC-05 | Product Detail and route                                             | T02–T08       | not started | PENDING |
+| Task | Mode     | Acceptance                                          | Objective                                                            | Deps          | Stage | Gate |
+| ---- | -------- | --------------------------------------------------- | -------------------------------------------------------------------- | ------------- | ----- | ---- |
+| T01  | behavior | Supporting AC-01–AC-07                              | Snapshot schema and pure Catalog view                                | —             | done  | PASS |
+| T02  | behavior | AC-01                                               | Customer-safe Catalog query pipeline                                 | T01           | done  | PASS |
+| T03  | behavior | Supporting AC-02–AC-08                              | Shared discovery navigation/grid/cards                               | T01           | done  | PASS |
+| T04  | behavior | Supporting AC-02, AC-08                             | Catalog Home and Customer root route                                 | T02, T03      | done  | PASS |
+| T05  | behavior | Supporting AC-03                                    | All Products and route                                               | T02, T03      | done  | PASS |
+| T06  | behavior | Supporting AC-06                                    | Local Search and route                                               | T02, T03      | done  | PASS |
+| T07  | behavior | AC-04                                               | Brand discovery/detail and routes                                    | T02, T03      | done  | PASS |
+| T08  | behavior | AC-02, AC-05                                        | Category discovery/detail/filter, routes, complete root destinations | T02, T03, T07 | done  | PASS |
+| T09  | behavior | AC-03, AC-06, AC-07, AC-08; Supporting AC-04, AC-05 | Product Detail and route                                             | T02–T08       | done  | PASS |
 
 Stage: `not started` · `scaffolding` · `red/baseline` · `implementing` ·
 `green` · `checks` · `diff review` · `done`.
@@ -340,21 +341,35 @@ fix in the real DOM); all nine round-level assertions verified clean
   components, Product Detail route, Catalog public export
 - **Allowed manual files**: colocated tests for the two screen-local components;
   generated route is edited to pass `productId`
-- **Scaffold status**: `PENDING`
+- **Scaffold status**: `READY` (Lead ran all four scaffold commands on
+  2026-09-02 on `catalog-v2-super`; placeholder + baseline test, two
+  screen-local component placeholders, thin route, one barrel export,
+  typecheck + baseline test PASS; evidence in worklog)
 - **Allowed file scope**: Product Detail screen directory/route, Catalog index/docs
 
 ```
-[ ] SCAFFOLD
-[ ] RED — stale ID/generic labels/media/availability/forbidden actions fail
-[ ] IMPLEMENT
-[ ] GREEN — Product Detail and component tests
-[ ] AFFECTED CHECKS — route params, export:web, complete feature checks
-[ ] TASK DIFF REVIEW — no Cart/quantity/price/Checkout; generic model honest
-[ ] FRESH TASK REVIEW — no unresolved blocking/major finding
-GATE: PENDING
+[x] SCAFFOLD — all four commands; expected file set verified; evidence in worklog
+[x] RED — 3 new suites/26 tests written first; 26/26 intended failures against
+    the placeholders (missing elements, not import/typo errors); route-param
+    test failed because the route did not yet pass `productId` (worklog)
+[x] IMPLEMENT — screen + VariantChoiceList + ProductMediaGallery + sanctioned
+    route param edit; honest label/media/availability consumption, no Cart UI
+[x] GREEN — Product Detail 3 suites/26 tests PASS, zero console output
+[x] AFFECTED CHECKS — feature 21 suites/180 tests, repo 38/318, typecheck,
+    lint, format, check:docs, export:web (23 static routes incl.
+    /product-detail) PASS (worklog)
+[x] TASK DIFF REVIEW — product-detail dir + sanctioned route edit + docs only;
+    no Cart/quantity/price/stock/identifier affordance anywhere (pinned by
+    tests + read); generic model honest; root-nav absence pinned
+[x] FRESH TASK REVIEW — 0 blocking/0 major; 4 minors (T09-R01 checkpoint lag
+    fixed by the Lead, T09-R02 variant accessible name, T09-R03
+    remount-by-URI pin, T09-R04 single-cover pin) all fixed in-task and
+    confirmed RESOLVED by the resumed re-review with 0 new findings (review.md)
+GATE: PASS
 ```
 
-Round 5 gate: `PENDING`
+Round 5 gate: `PENDING` (T09 gated; integrated verification + fresh Round
+review next)
 
 ## Feature gate
 

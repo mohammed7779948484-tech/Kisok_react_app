@@ -1526,3 +1526,276 @@ ROUND 4 GATE (Lead)
   - the Lead's doc edit; final recommendation PASS.
 - Round 4 gate: PASS. Working tree committed by the Lead on `catalog-v2-super`
   and pushed (PR #10). Delivery continues with Round 5 / T09.
+
+SCAFFOLD (T09, Lead — JIT, immediately before delegation)
+
+- Commands run in order (2026-09-02, on `catalog-v2-super` at 64c9bb0):
+  1. `pnpm generate screen catalog product-detail`
+  2. `pnpm generate component catalog product-media-gallery --screen=product-detail`
+  3. `pnpm generate component catalog variant-choice-list --screen=product-detail`
+  4. `pnpm generate route catalog product-detail --role=customer --screen=product-detail`
+- Generated exactly the planned file set: `screens/product-detail/`
+  (screen placeholder + baseline mount test), screen-local
+  `screens/product-detail/components/product-media-gallery.tsx` and
+  `screens/product-detail/components/variant-choice-list.tsx`
+  (presentational placeholders, no tests yet — the two colocated tests are
+  T09's allowed manual files), thin route `app/(customer)/product-detail.tsx`,
+  and one new barrel export in `features/catalog/index.ts`
+  (`ProductDetailScreen`). No skips, no replacements, no extra files.
+- Route inspection: thin (no data/state/logic), imports only
+  `@/features/catalog`. `app/(customer)/product-detail.tsx` is the one the
+  T09 packet sanctions editing to pass `productId` — left scaffold-thin at
+  this stage; the implementer applies the sanctioned edit (T07/T08
+  precedent: the RED route-param test fails because the route does not pass
+  the param yet).
+- Scaffold coherence verified: `pnpm typecheck` PASS; the baseline test
+  passes (1 suite/1 test — mount-only assertion against the placeholder).
+- Tree before delegation: 64c9bb0 + the T09 scaffold (uncommitted).
+
+T09 IMPLEMENTATION (feature-implementer, 2026-09-02)
+
+MODE: behavior — ACCEPTANCE: AC-07 primary; AC-03/AC-06 result targets and
+AC-08 journey closure (the Lead gates)
+
+RED (T09, Implementer) — all three suites written first, run against the Lead's
+placeholders:
+
+- Command: `pnpm exec jest features/catalog/screens/product-detail --runInBand`
+- Output: `Test Suites: 3 failed, 3 total` / `Tests: 26 failed, 26 total,`
+  `Snapshots: 0` — exactly the three new suites failing (Product Detail 14,
+  Variant Choice List 6, Product Media Gallery 6).
+- Failure reasons verified as the intended MISSING BEHAVIOR, not typos or
+  unresolved imports: every failure is an "Unable to find an element…"
+  assertion (header "Café Crème"/"Studio Kettle", variant chips, gallery image
+  labels, not-found/empty/error copy, forbidden-copy absence pins) while the
+  screen placeholder renders only its TODO copy and the component placeholders
+  render theirs; the route-param test fails because
+  `app/(customer)/product-detail` does not yet pass `productId` (T07/T08
+  precedent). Test-infrastructure fixes made during RED/GREEN (not behaviour
+  changes): the gallery test needed the same `lucide-react-native` stub every
+  other image-rendering suite uses (parse failure of the un-stubbed ESM icon
+  module); fixtures typed `as const satisfies readonly CatalogMedia[]` so
+  `noUncheckedIndexedAccess` indexing type-checks; the secure-URL assertion
+  helper types the rendered element structurally (`ReactTestInstance` is not
+  re-exported by `@/core/testing`). One test assertion was corrected for
+  exactness, NOT weakened: the "no duplicated option detail line" check used an
+  over-broad `/Color: Rouge/` regex that also matched the options-variant's
+  legitimate LABEL; it now targets the exact "·"-joined detail line, which is
+  the actual intent.
+
+IMPLEMENT (smallest change, inside the T09 allowed scope only):
+
+- `features/catalog/screens/product-detail/components/variant-choice-list.tsx`
+  — presentational generic variant selector: full-width primary/ghost Button
+  entries, one per returned variant, labelled by the model's DERIVED `label`
+  (consumed as-is, never re-derived), with the ordered "Type: value" pairs as
+  a detail line ONLY on a `title_override` variant (the one case where the
+  label hides them), words-only availability, `aria-selected` + primary/ghost
+  (R4-R01 platform-safe spelling), accessible name "`label`, availability"
+  (ProductCard pattern), unavailable entries never disabled — inspection only.
+- `features/catalog/screens/product-detail/components/product-media-gallery.tsx`
+  — presentational media surface: one large AppImage REMOUNTED BY RESOLVED URI
+  (Design decision 12, `key={secureUrl}`) plus, only when there is more than
+  one, a bounded horizontal strip of 64dp thumbnail Pressables (`aria-selected`
+  - primary/border mirror); empty media degrades to AppImage's shared fallback
+    through the same single path; default active media is the first of the set
+    when the given id matches none.
+- `features/catalog/screens/product-detail/product-detail-screen.tsx` —
+  Product Detail: snapshot layer identical to the other detail screens (cold
+  loading / error-without-data only — T04-R03 rule pinned by the background-
+  refetch test / whole-catalog empty), stale `productId` → LOCAL "Product not
+  found" not-found state with `Go back` (never `ErrorState`), identity
+  composition = name header + T03 `AvailabilityBadge` (derived any-variant
+  availability, Design decision 10, consumed as-is) + optional description,
+  with the product COVER image composed through the gallery (the model's
+  variant media already falls back to `coverMedia`; a second header thumbnail
+  would duplicate the same secure URL on screen), brand + category context as
+  navigable ghost chips that PUSH `/brand-detail` / `/category-detail`
+  (object form, exact ids), screen-local variant/image selection (Design
+  decision 3) with the first backend variant as default and the image pick
+  reset to the new variant's primary on variant switch, and the header
+  `Go back` ghost Button → `router.back()` with the AC-08 duplicate-root
+  rationale docblock-documented. Zero-variant resolved product: unreachable
+  under `valid_products` — not built, not tested; the `variants[0]` fallback
+  fails LOUDLY (throw) if the contract ever breaks instead of rendering a fake
+  empty state (T07-R01 lesson).
+- `app/(customer)/product-detail.tsx` — the sanctioned edit only: reads
+  `useLocalSearchParams<{ productId: string }>()` and passes `productId` to the
+  screen as a prop; the route stays otherwise thin (T07/T08 pattern).
+- `features/catalog/screens/product-detail/product-detail-screen.test.tsx` —
+  the generated baseline test REWRITTEN in place as the behavioral suite (14
+  tests; the mount-without-throwing intent survives as the first test).
+- `features/catalog/screens/product-detail/components/variant-choice-list.test.tsx`
+  and `…/product-media-gallery.test.tsx` — the two allowed manual colocated
+  test files (6 + 6 tests), built on the REAL projection
+  (`createCatalogView` over fixture snapshots) rather than hand-built literals.
+- `features/catalog/index.ts`: untouched — the Lead's scaffold export was
+  already correct.
+
+Fixtures: an appended "Studio Kettle" product whose THREE variants cover all
+three model label forms in ONE product (trimmed `title_override` with TWO
+variant images / ordered option pairs with one variant image / neutral
+"Option 3" with NO variant media → product-cover fallback), unbranded and
+uncategorized so the optional-context absence is observable; the base Café
+Crème carries the brand/category context; the base Everyday Tote covers the
+single-variant "Standard option" neutral label, the unavailable-only product
+badge, and the empty-media AppImage fallback. A well-formed stale UUID covers
+the not-found path. Every fixture product carries ≥1 variant (contract).
+
+GREEN:
+
+- Command: `pnpm exec jest features/catalog/screens/product-detail --runInBand`
+- Output: `PASS …/product-detail-screen.test.tsx`, `PASS …/variant-choice-list.test.tsx`,
+  `PASS …/product-media-gallery.test.tsx` — `Test Suites: 3 passed, 3 total` /
+  `Tests: 26 passed, 26 total`, zero console output.
+
+AFFECTED CHECKS:
+
+- Focused screens: `pnpm exec jest features/catalog/screens --runInBand` →
+  `Test Suites: 11 passed, 11 total` / `Tests: 116 passed, 116 total`.
+- Whole feature: `pnpm exec jest features/catalog --runInBand` →
+  `Test Suites: 21 passed, 21 total` / `Tests: 180 passed, 180 total`, zero
+  console output (was 18/154 before T09; +3 suites/+26 tests, all T09).
+- Full repo: `pnpm test` → `Test Suites: 38 passed, 38 total` / `Tests: 318
+passed, 318 total` (was 35/292 after T08).
+- `pnpm typecheck` → PASS (clean, `tsc --noEmit`).
+- `pnpm lint` → PASS (exit 0, no findings).
+- Formatting: `prettier --write` re-wrapped the five new/rewritten T09 files
+  (line wrapping only), then `pnpm format:check` → PASS for the whole repo.
+- `pnpm check:docs` → PASS (`Documentation matches the current workflow
+(63 files checked).`).
+- `pnpm export:web` → PASS; 23 static routes including `/product-detail` and
+  `/(customer)/product-detail`.
+
+TASK DIFF REVIEW (implementer's own read):
+
+- Scope exactly the T09 packet: `features/catalog/screens/product-detail/**`
+  (screen + rewritten test + the two components + their two colocated tests),
+  the sanctioned `app/(customer)/product-detail.tsx` param edit, and Catalog
+  docs (todo ticks + this entry). `features/catalog/index.ts` untouched (Lead's
+  scaffold export). No shared files, no `components/`, no model/query/api
+  changes, no route table edits, no Supabase/Zustand/TanStack imports anywhere
+  in the new files (the screen consumes only `useCatalog`; verified by grep).
+- Forbidden affordances absent, by pinned tests AND direct read: no quantity
+  control, no Add-to-Cart, no Checkout, no price/total, no stock count or
+  low-stock copy, no SKU/barcode display (the fixture carries SECRET SKUs and
+  a barcode — asserted absent), no mutation of any kind (screen renders
+  `variant.id`/`label`/`options`/`is_available`/`media` only).
+- No unreachable state built or tested: no zero-variant resolved-product
+  branch (contract-impossible; fails loudly if the contract breaks), and
+  product-level availability is the model's derived signal, never re-derived.
+- Fake timers intentionally NOT used (no FlashList on this screen — bounded
+  ScrollView sections; the Home-screen real-timer macrotask flush pattern
+  covers the background-refetch test instead).
+
+REMEDIATION (T09, Implementer — 4 minor findings, Lead dispositioned ALL FIX)
+
+- T09-R01 (minor, checkpoint currency): Lead-owned fix in `todo.md`'s
+  checkpoint block — NOT touched by the implementer per the remediation
+  instruction.
+- T09-R02 (minor, variant accessible name omitted the ordered-option detail on
+  title_override variants): fixed RED-first in
+  `features/catalog/screens/product-detail/components/variant-choice-list.tsx`
+  — the entry's `accessibilityLabel` now mirrors the VISIBLE composition:
+  `` `${variant.label}, ${optionPairs}, ${availability}` `` when the ordered
+  pairs render (title_override variants only, the same " · " separator as the
+  detail line) and `` `${variant.label}, ${availability}` `` otherwise (the
+  options-only entries already announce their pairs as the label — not
+  doubled). Docblock updated to state the name-matches-visible-text rule.
+  RED evidence: the suite's queries were updated to the new honest names
+  FIRST — `pnpm exec jest …/variant-choice-list --runInBand` → `Tests: 4
+failed, 2 passed, 6 total` (every failure "Unable to find an element with
+  role: button, name: Gift Set Edition, Color: Rouge · Size: Lárge,
+  Available…" — exactly the missing new name, not an import/typo error), then
+  the component change → GREEN 6/6. Screen-test fallout checked: NONE — no
+  screen fixture variant carries BOTH a `title_override` and option links
+  (matte = override-only, rouge = options-only, coffee signature = override
+  -only, configurable = options-only), so all screen-test names were already
+  correct and untouched.
+- T09-R03 (minor, Design-12 remount-by-URI key unpinned): added ONE focused
+  test to
+  `features/catalog/screens/product-detail/components/product-media-gallery.test.tsx`
+  — "resets a latched image failure when the active media changes — the
+  remount-by-URI guarantee": renders the 3-media set, invokes the rendered
+  expo-image host's real `onError` inside `act` with the native-event shape
+  expo-image unwraps (`{ nativeEvent: { error } }` — the host's handler is
+  expo-image's own `onError`, which then calls AppImage's latching handler),
+  asserts the latch took effect (the slot renders the shared fallback — no
+  `source`), rerenders with the second media active, and asserts the second
+  image's secure URI now displays. Passes against the current implementation
+  (gallery suite 6 → 7 tests). Why it MUST FAIL without
+  `key={active?.secureUrl ?? …}`: AppImage latches `failed` in `useState` and
+  nothing ever resets it on a `uri` prop change — without the key, React
+  reconciles the SAME AppImage instance across the active-media change, the
+  latched `failed` state persists, `showFallback = !uri || failed` stays true,
+  and the fallback View (which has the new alt label but NO `source` prop)
+  keeps rendering, so `displayedImageUri(…image 2 of 3)` returns `undefined`
+  and the `toBe(mediaSet[1].secureUrl)` assertion fails. With the key, the URI
+  change unmounts the failed instance and mounts a fresh one (`failed=false`)
+  — which is exactly what the test observes. The key was NOT removed to prove
+  this (per the remediation instruction); the mechanism is reasoned through
+  above.
+- T09-R04 (minor, "no duplicate header cover thumbnail" absence unpinned):
+  added ONE assertion INSIDE the existing cover-fallback test of
+  `product-detail-screen.test.tsx` (the kettle inspection test, right after
+  the cover-URL assertion): `countImagesDisplayingUri(root,
+kettleImageUrls.cover)` over the WHOLE rendered tree — implemented with the
+  test renderer root's `queryAll` over expo-image `source` props — must be
+  exactly 1. Any second image surface carrying the cover URL (e.g. a future
+  header identity thumbnail like BrandDetail's `BrandIdentity`) would double
+  the count and fail the pin. Passes against the current implementation. No
+  new test case (assertion only), so the count math below stays consistent.
+
+Evidence after remediation:
+
+- Focused T09: `pnpm exec jest features/catalog/screens/product-detail
+--runInBand` → `Test Suites: 3 passed, 3 total` / `Tests: 27 passed, 27
+total` (was 26; +1 = the R03 pin test; R02 changed names only, R04 added an
+  assertion inside an existing test), zero console output.
+- Whole feature: `pnpm exec jest features/catalog --runInBand` →
+  `Test Suites: 21 passed, 21 total` / `Tests: 181 passed, 181 total` (was
+  180; the R03 new case), zero console output.
+- `pnpm typecheck` → PASS (clean, `tsc --noEmit`).
+- `pnpm lint` → PASS (exit 0, no findings).
+- Scoped `prettier --write features/catalog/screens/product-detail` re-wrapped
+  `product-detail-screen.test.tsx` only (line wrapping); the other five T09
+  files unchanged; `pnpm format:check` → PASS for the whole repo.
+
+FRESH TASK REVIEW + REMEDIATION + RE-REVIEW + GATE (T09, Lead)
+
+- Fresh code-reviewer (read-only; skills: kisok-code-review, kisok-design-system,
+  kisok-react-native-rules, expo-router) reviewed the T09 packet: **0 blocking /
+  0 major / 4 minors** — T09-R01 (checkpoint lag, third recurrence of the
+  T05-R02/T06-R01 class), T09-R02 (variant accessible name omitted the
+  " · "-joined option pairs on title_override variants — screen readers never
+  heard the pairs the detail line exists to surface), T09-R03 (the Design-12
+  remount-by-URI key unpinned against the plan's named image-failure-leak
+  risk), T09-R04 (the no-duplicate-header-cover absence unpinned). The
+  reviewer verified all evidence first-hand (focused 3/26, feature 21/180,
+  repo 38/318, typecheck/lint/format/check:docs, export:web 23 static routes;
+  contract accuracy — no zero-variant state, ≥1-variant fixtures; forbidden
+  affordances pinned non-tautologically incl. SECRET-SKU/barcode absence;
+  T04-R03 real-refetch survival without fake timers; model consumed as-is;
+  R4-R01 aria-selected spelling followed; route-param test on the REAL route
+  module). Recorded in review.md.
+- Lead disposition: all four FIX.
+- Remediation executed by the resumed T09 implementer: accessible name now
+  carries the pairs (RED-first: 4 failed/2 passed; no screen-test fallout —
+  no fixture variant carries both an override and option links); the
+  remount-by-URI pin (latch asserted BEFORE recovery — non-vacuous; new 27th
+  test); the exact-one cover-count pin (inside the existing kettle
+  cover-fallback test). T09-R01 (checkpoint) fixed by the Lead while
+  recording this review.
+- Re-review (resumed same reviewer): all four RESOLVED; 0 new
+  blocking/major/minor; focused 3/27, feature 21/181, repo 38/319 re-run
+  PASS, zero console output; remediation footprint verified as exactly the
+  three claimed code files (+ worklog); gate recommended PASS conditional
+  only on the Lead's recording actions — completed by this entry and the
+  todo.md checkpoint/board updates.
+- Lead re-verification: feature 21 suites/181 tests PASS, typecheck PASS,
+  export:web 23 static routes incl. `/product-detail`, check:docs PASS, diff
+  scope exactly the T09 packet.
+- GATE: PASS — T09 complete. Round 5 integrated verification + fresh Round
+  review next (the Round 5 gate validates the complete discovery journey and
+  confirms Catalog owns no cart/quantity/checkout/price/mutation/store or
+  Realtime behavior).
