@@ -7,10 +7,10 @@ in `worklog.md`. Keep this checkpoint and gate board current.
 
 ```
 Current round     : Round 3 — Home, all products and search
-Current task      : T04 — Catalog Home and Customer root route
+Current task      : T05 — All Products and route
 Current stage     : scaffolding
-Last gate         : Round 2 PASS — fresh Round review found no findings
-Next legal action : commit and push T03/Round 2 to Draft PR #7, then Lead runs the exact T04 screen and forced root-route scaffolds
+Last gate         : T04 PASS — R12 test hardening resolved; fresh re-review found no findings
+Next legal action : commit and push T04 to Draft PR #7, then Lead runs the exact T05 Products screen and route scaffolds
 Blocked by        : —
 ```
 
@@ -32,7 +32,7 @@ Blocked by        : —
 | T01  | behavior | Supporting AC-01–AC-07                              | Snapshot schema and pure Catalog view                                | —             | done        | PASS    |
 | T02  | behavior | AC-01                                               | Customer-safe Catalog query pipeline                                 | T01           | done        | PASS    |
 | T03  | behavior | Supporting AC-02–AC-08                              | Shared discovery navigation/grid/cards                               | T01           | done        | PASS    |
-| T04  | behavior | Supporting AC-02, AC-08                             | Catalog Home and Customer root route                                 | T02, T03      | not started | PENDING |
+| T04  | behavior | Supporting AC-02, AC-08                             | Catalog Home and Customer root route                                 | T02, T03      | done        | PASS    |
 | T05  | behavior | Supporting AC-03                                    | All Products and route                                               | T02, T03      | not started | PENDING |
 | T06  | behavior | Supporting AC-06                                    | Local Search and route                                               | T02, T03      | not started | PENDING |
 | T07  | behavior | AC-04                                               | Brand discovery/detail and routes                                    | T02, T03      | not started | PENDING |
@@ -140,19 +140,19 @@ Round 2 gate: `PASS` — 6 suites/15 tests, integrated regressions/static checks
 - **Expected generated/replaced files**: Catalog Home screen/test,
   `app/(customer)/index.tsx`, and Catalog public export
 - **Allowed manual files**: —
-- **Scaffold status**: `PENDING`
+- **Scaffold status**: `READY`
 - **Allowed file scope**: Home screen directory, Customer root route,
   `features/catalog/index.ts`, Catalog docs
 
 ```
-[ ] SCAFFOLD
-[ ] RED — Home empty/success/navigation behavior fails as intended
-[ ] IMPLEMENT
-[ ] GREEN — Home tests
-[ ] AFFECTED CHECKS — route/export, export:web, dependency tests/checks
-[ ] TASK DIFF REVIEW — placeholder gone; optional sections/settings honest
-[ ] FRESH TASK REVIEW — no unresolved blocking/major finding
-GATE: PENDING
+[x] SCAFFOLD — Home screen/test created; Customer root placeholder replaced; public export added
+[x] RED — generated placeholder failed all 8 intended Home behaviors; invalid test fixtures later failed production schema correctly
+[x] IMPLEMENT — Home loading/error/empty/success, identity, bounded discovery and navigation delivered
+[x] GREEN — Lead/current focused 9 tests PASS; all Catalog 59 tests PASS
+[x] AFFECTED CHECKS — route/export, export:web, typecheck, scoped lint/format, full lint PASS
+[x] TASK DIFF REVIEW — four allowed paths; placeholder gone; optional sections/settings honest
+[x] FRESH TASK REVIEW — R12 resolved; fresh re-review found no findings
+GATE: PASS
 ```
 
 ### T05 — All Products and route

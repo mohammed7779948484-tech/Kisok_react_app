@@ -291,3 +291,35 @@ GATE: PASS
 - Fresh Round reviewer found no blocking, major or minor issue.
 
 ROUND 2 GATE: PASS
+
+### T04 — Catalog Home and Customer root route
+
+MODE: behavior
+ACCEPTANCE: Supporting AC-02 and AC-08
+
+SCAFFOLD (Lead)
+
+- `$ pnpm generate screen catalog catalog-home` created the planned Home screen and generated test.
+- `$ pnpm generate route catalog index --role=customer --screen=catalog-home --force` deliberately replaced the tracked Foundation Customer placeholder, created the thin route, and added only `CatalogHomeScreen` to the Catalog public API.
+- Skipped: none. Replaced: only `app/(customer)/index.tsx`, as explicitly planned.
+- Lead inspected the generated screen, route and public export; paths match the Plan. Scaffold status: `READY`.
+
+RED / IMPLEMENT / GREEN
+
+- Generated placeholder RED: T04 suite 8/8 failed for intended missing loading, error, empty, identity, discovery and navigation behavior.
+- Implemented one-query Home with known-shape skeletons, safe error/retry, valid empty refresh, full/neutral store identity, Home-selected root navigation, bounded responsive sections and planned detail pushes. No Cart/Tracking/price/customer-layout scope entered.
+- Lead found two successful test mocks bypassed T01 semantic validity. Applying `catalogSnapshotSchema.parse` produced the correct 2-test RED; fixtures were corrected rather than weakening production validation.
+- Lead/current GREEN: T04 9 tests PASS; all Catalog 11 suites/59 tests PASS; typecheck, scoped lint/format, full lint and `pnpm export:web` PASS.
+
+FRESH TASK REVIEW / REMEDIATION
+
+- R12 minor: initial tests did not pin ordered 6/6/8 Home bounds or all Browse All destinations.
+- Added a schema-valid 7-brand/7-root-category/9-featured fixture proving first 6/6/8 and absence of later entries; asserted `/brands`, `/categories`, `/products` actions.
+- Fresh re-review found no findings; unresolved blocking/major 0.
+
+DIFF / GATE
+
+- Scope: generated Home screen/test, forced Customer root route and generated public export only.
+- Foundation placeholder is gone; route remains thin; the screen imports data only through `useCatalog`.
+
+GATE: PASS

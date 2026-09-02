@@ -12,4 +12,4 @@
  * outside the feature renders it — which, from the generator, means a route.
  * `pnpm generate screen` alone does not widen this file.
  */
-export {};
+export { CatalogHomeScreen } from "./screens/catalog-home/catalog-home-screen";
