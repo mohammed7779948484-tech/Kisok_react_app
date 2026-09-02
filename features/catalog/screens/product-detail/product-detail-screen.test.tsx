@@ -247,6 +247,23 @@ function emptyCatalogSnapshot(): CatalogSnapshot {
   });
 }
 
+/**
+ * The REPLACEMENT snapshot for the stale-selection scenario: the same catalog
+ * with the kettle's "Option 3" variant REMOVED (the product keeps its matte
+ * and rouge variants — ≥1 remains, contract-honest under `valid_products`).
+ * "Option 3" carries no option links and no variant media, so filtering the
+ * variants array alone is sufficient. Every key is spread explicitly so the
+ * builder's defaults cannot bleed in.
+ */
+function snapshotWithOption3Removed(): CatalogSnapshot {
+  const kettle = snapshotWithKettle();
+
+  return createCatalogSnapshotFixture({
+    ...kettle,
+    variants: kettle.variants.filter((variant) => variant.id !== extraVariantIds.plain),
+  });
+}
+
 /** The rendered element shape the secure-URL assertion reads. */
 type RenderedImageElement = { props: { source?: readonly { uri?: string }[] } };
 
@@ -762,5 +779,72 @@ describe("ProductDetailScreen", () => {
     // …and the full-screen error state does not replace it.
     expect(screen.queryByText("Something went wrong")).toBeNull();
     expect(screen.queryByText("We couldn't load the catalog. Please try again.")).toBeNull();
+  });
+
+  it("degrades a stale variant selection to the first variant when a refresh removes the picked variant", async () => {
+    // R5-R01: the screen's documented stale-selection degradation, unpinned
+    // until now. `selectedVariantId` is screen-local state that survives a
+    // snapshot refresh; when the REPLACEMENT snapshot no longer contains the
+    // picked variant, the screen degrades to the first variant in backend
+    // order (`?? product.variants[0]`) instead of crashing — without that
+    // fallback, the `variant === undefined` guard below it would turn this
+    // reachable refresh path into a loud throw. The shared QueryClient's
+    // focus/reconnect refetch is exactly how a customer hits it mid-session.
+    mockFetchCatalog
+      .mockResolvedValueOnce(snapshotWithKettle())
+      .mockResolvedValueOnce(snapshotWithOption3Removed());
+    const user = userEvent.setup();
+
+    const { queryClient } = await renderWithProviders(
+      <ProductDetailScreen productId={extraProductIds.kettle} />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Matte Black Edition, Available", selected: true }),
+      ).toBeOnTheScreen(),
+    );
+
+    // A NON-FIRST pick: the customer inspects the last variant.
+    await user.press(screen.getByRole("button", { name: "Option 3, Out of stock" }));
+    expect(
+      screen.getByRole("button", { name: "Option 3, Out of stock", selected: true }),
+    ).toBeOnTheScreen();
+
+    // The same background refetch the shared QueryClient triggers on
+    // focus/reconnect — this time it delivers a REPLACEMENT snapshot in which
+    // the picked variant was removed. The macrotask flush lets TanStack's
+    // batched observer notification land inside act, so the screen has
+    // re-rendered before the assertions.
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: catalogKeys.all });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // The stale pick degrades to the FIRST variant — selected, on screen, no
+    // throw, no blank screen (this assertion is what fails if the
+    // `?? product.variants[0]` fallback is removed).
+    expect(
+      screen.getByRole("button", { name: "Matte Black Edition, Available", selected: true }),
+    ).toBeOnTheScreen();
+
+    // The removed variant is gone from the list, and the remaining variants
+    // stay inspectable.
+    expect(screen.queryByRole("button", { name: "Option 3, Out of stock" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Out of stock" }),
+    ).toBeOnTheScreen();
+
+    // The gallery follows the degraded selection's own media — the matte
+    // variant's primary image (the stale media pick degrades the same way, to
+    // the resolved variant's primary).
+    expect(
+      screen.getByLabelText("Studio Kettle — Matte Black Edition, image 1 of 2"),
+    ).toBeOnTheScreen();
+    expect(
+      displayedImageUri(screen.getByLabelText("Studio Kettle — Matte Black Edition, image 1 of 2")),
+    ).toBe(kettleImageUrls.matte1);
+
+    expect(mockFetchCatalog).toHaveBeenCalledTimes(2);
   });
 });

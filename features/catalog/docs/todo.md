@@ -6,14 +6,14 @@ in `worklog.md`. Keep this checkpoint and gate board current.
 ## Current checkpoint
 
 ```
-Current round     : Round 5 — Product Detail discovery
-Current task      : Round 5 gate (T09 gated PASS — final task)
-Current stage     : Round 5 integrated verification + fresh Round review next
-Last gate         : T09 PASS (2026-09-02, after T09-R01–R04 remediation +
-                    resumed re-review); Round 4 PASS; Rounds 1–3 PASS
-Next legal action : Lead runs the Round 5 integrated verification (incl.
-                    browser journey completing the discovery loop), then
-                    dispatches the fresh Round 5 reviewer
+Current round     : Feature gate (all rounds complete)
+Current task      : Feature-level final verification
+Current stage     : All five round gates PASS; develop-integration check +
+                    full verify + CI + final review + Quality Audit next
+Last gate         : Round 5 PASS (2026-09-02, T09 + R5-R01 remediation +
+                    re-review); Round 4 PASS; Rounds 1–3 PASS; all tasks PASS
+Next legal action : Lead runs the develop-integration check and full
+                    `pnpm verify`, then the final independent review
 Blocked by        : —
 ```
 
@@ -368,8 +368,19 @@ fix in the real DOM); all nine round-level assertions verified clean
 GATE: PASS
 ```
 
-Round 5 gate: `PENDING` (T09 gated; integrated verification + fresh Round
-review next)
+Round 5 gate: `PASS` — T09 gated; Lead browser-verified the complete
+discovery journey on the exported web build (Products → Product Detail exact
+param; identity, textual availability, context chips navigable with exact
+ids; variant list honest labels + textual availability; aria-selected
+selection flip + gallery follow; unavailable variant selectable for
+inspection; forbidden affordances absent — cart/quantity/checkout/price scan
+clean; stale product ID → local not-found; Search → diacritic query →
+result → Product Detail — the Round 3 route TARGET now lands the real
+screen; zero console output; only the two sanctioned RPCs); fresh Round
+review PASS (0 blocking/0 major/1 minor R5-R01 — the stale-selection
+degradation pin — fixed additively and confirmed RESOLVED by the resumed
+re-review; final recommendation PASS); all five round-level assertions
+verified clean; the discovery loop is CLOSED
 
 ## Feature gate
 

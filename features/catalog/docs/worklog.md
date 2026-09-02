@@ -1799,3 +1799,98 @@ FRESH TASK REVIEW + REMEDIATION + RE-REVIEW + GATE (T09, Lead)
   review next (the Round 5 gate validates the complete discovery journey and
   confirms Catalog owns no cart/quantity/checkout/price/mutation/store or
   Realtime behavior).
+
+REMEDIATION (Round 5 / R5-R01, Implementer — 1 minor finding, Lead dispositioned FIX)
+
+- R5-R01 (minor, screen-level stale-selection degradation across a snapshot
+  refresh was unpinned): added ONE focused test to
+  `features/catalog/screens/product-detail/product-detail-screen.test.tsx` —
+  "degrades a stale variant selection to the first variant when a refresh
+  removes the picked variant" — plus its REPLACEMENT-snapshot builder
+  `snapshotWithOption3Removed()` (the kettle fixture with the "Option 3"
+  variant filtered out; the product keeps its matte and rouge variants, so
+  ≥1 remains — contract-honest under `valid_products`; "Option 3" has no
+  option links or media, so the variants array alone is filtered, and every
+  key is spread explicitly so the builder's defaults cannot bleed in).
+  The test follows the established `queryClient.refetchQueries` +
+  macrotask-flush-in-act pattern (the background-refetch test / the T08
+  category-detail no-match test): resolve the kettle snapshot, select the
+  NON-FIRST "Option 3" variant, deliver the replacement snapshot via the
+  shared QueryClient's focus/reconnect refetch, then assert the FIRST
+  variant ("Matte Black Edition") now renders selected, the removed variant
+  is gone from the list while the remaining ones stay inspectable, the
+  gallery follows the degraded selection's own media (the matte primary
+  image — the stale media pick degrades to the resolved variant's primary
+  the same way), and exactly 2 fetches happened. Nothing throws — the test
+  passing IS the pin. Without the `?? product.variants[0]` fallback the
+  screen's `variant === undefined` guard would throw on this reachable
+  path and the new "Matte Black Edition … selected: true" assertion would
+  fail (the render crashes before it). The degradation mechanism is
+  genuinely working, not just unpinned: the test passes as written.
+- Regression pin only — no production code changed, no new test case beyond
+  the one, no todo.md box ticked (the Round 5 gate box stays Lead-owned).
+
+Evidence after remediation:
+
+- Focused T09: `pnpm exec jest features/catalog/screens/product-detail
+--runInBand` → `Test Suites: 3 passed, 3 total` / `Tests: 28 passed, 28
+total` (was 27; +1 = the R5-R01 pin), zero console output.
+- Whole feature: `pnpm exec jest features/catalog --runInBand` →
+  `Test Suites: 21 passed, 21 total` / `Tests: 182 passed, 182 total`
+  (was 181), zero console output.
+- `pnpm typecheck` → PASS (clean, `tsc --noEmit`).
+- `pnpm lint` → PASS (exit 0, no findings).
+- Scoped `prettier --write` on the touched test file → unchanged (already
+  formatted); `pnpm format:check` → PASS for the whole repo.
+
+ROUND 5 GATE (Lead)
+
+- Lead integrated verification on `catalog-v2-super` (T09 5f6154d + the
+  R5-R01 pin): whole feature 21 suites/182 tests PASS (zero console output),
+  typecheck, lint, prettier, check:docs PASS; export:web with 23 static
+  routes incl. `/product-detail`.
+- Browser journey on the exported web build (deterministic mock chain; the
+  network route mocks had to be re-established after the session restart —
+  noted for future sessions): sign-in → Home → root nav Products → Café
+  Crème press → `/product-detail?productId=55555555-…` exact; identity h1 +
+  textual "Available" + description; navigable brand chip (Maison Élite) and
+  category chips (Drínks/Tóp Picks — chip press landed on
+  `/category-detail?categoryId=3333…3333` exact); gallery image alt
+  "Café Crème — Signature Roast" (default first variant); variant list
+  "Signature Roast, Out of stock" + "Size: Medium, Available" (honest model
+  labels + textual availability); `aria-selected=true` on the selected
+  variant chip (R4-R01 spelling in T09 code); selecting "Size: Medium"
+  flipped the gallery alt to "Café Crème — Size: Medium" and the
+  aria-selected states (the unavailable variant stays selectable —
+  inspection); FORBIDDEN affordances absent (body-text scan: cart/quantity/
+  checkout/price/add-to-cart/buy/qty/stock — zero matches); stale product
+  ID → "Product not found" local state with honest copy + Go back; Home →
+  Search → "CAFÉ" diacritic query → result press → Product Detail exact
+  (the discovery loop CLOSED — Round 3 verified the route TARGET; the real
+  screen now lands); zero console output; zero page errors; only
+  `current_active_profile` + `get_customer_catalog` RPCs in the network log.
+- Fresh Round reviewer (read-only; skills: kisok-code-review,
+  kisok-design-system, kisok-react-native-rules, expo-router): PASS verdict
+  — all five round-level assertions verified clean (journey coherence: the
+  byte-identical object-form `/product-detail` push from ALL FIVE discovery
+  surfaces + exact-id context chips; ZERO cart/quantity/checkout/price/
+  mutation/store/Realtime behavior in the whole feature tree — Supabase only
+  at the sanctioned RPC boundary; the three detail screens share the pinned
+  family pattern; integrated evidence 21/181 + repo 38/319 + typecheck +
+  23-route export re-run; documentation coherent; the Lead's browser claims
+  corroborated against the server log + deterministic snapshot). 0 blocking
+  / 0 major / 1 minor R5-R01 (the stale-selection degradation across a
+  snapshot refresh unpinned at screen level). Recorded in review.md.
+- Lead disposition: FIX — one additive regression pin (select the non-first
+  variant, deliver a replacement snapshot with that variant removed via the
+  established refetchQueries pattern, assert the first variant renders
+  selected; genuinely fails if the `?? product.variants[0]` fallback is
+  removed). Executed by the resumed T09 implementer (REMEDIATION (Round 5 /
+  R5-R01) section above; feature 21/182).
+- Re-review (resumed same Round reviewer): R5-R01 RESOLVED with 0 new
+  findings; non-vacuity, fixture honesty, and the zero-production-code
+  delta verified; final recommendation PASS.
+- Round 5 gate: PASS. Working tree committed by the Lead on
+  `catalog-v2-super` and pushed (PR #10). ALL ROUNDS COMPLETE — the feature
+  proceeds to Feature-level verification (develop-integration check, full
+  verify, CI, final review, Quality Audit, Feature Gate, HUMAN_HANDOFF).
