@@ -146,3 +146,27 @@ resetCartSingleton/seedCart/settleDurableWrites helpers verbatim; Full
 Cart's empty state should use EmptyState's action prop (Browse Products →
 router.push("/")); the Alert role is NOT queryable under this RNTL build —
 alert assertions use text queries (positive and inverse).
+
+| R-T09-01 | minor | bottom safe-area edge unowned in the restore-pending and empty presentations (footer SafeAreaView is the only bottom owner but renders only when populated; Screen ran default 3-edge form; every other footer-less screen passes all four edges) | full-cart-screen.tsx:71,84,130,133; components/layout/screen.tsx:8,27 | fixed in remediation — Screen edges track the footer's mount state (`FOOTER_EDGES` / `FOOTERLESS_EDGES` constants; one bottom owner per presentation; new remove test exercises the footer→footer-less handover) | done |
+| R-T09-02 | minor | per-row remove wiring untested through the screen (stepper + clear were end-to-end; a rewired no-op onRemove would pass) | full-cart-screen.test.tsx; quick-cart-sheet.test.tsx:194-211 precedent | fixed in remediation — one screen-level remove end-to-end test (press → real dialog → confirm → store line gone → empty state revealed) | done |
+
+T09 review note: reviewer re-ran everything fresh (focused 12/12 ×4 runs —
+stable; full 26 suites/278; typecheck/lint/hook-eslint/format/check:docs
+clean; rg zero catalog/Supabase imports; working tree exactly the declared
+files; index.ts route-gen export byte-identical to the generator's render;
+route file template-identical). All implementer claims verified true; no
+eslint-disables, no casts. Verified clean: AC-11 fidelity (route contract
+pinned by render-through-route + static import analysis incl. side-effect
+imports), summary via module selectors (never mirrored), restore-pending
+honesty (no hooks-after-return hazard), locked semantics (rows AND Clear
+Cart disabled; escape stays enabled), clear flow (only onConfirm; cancel
+safe; honest post-clear status), persistence warnings (same copy as sheet;
+persisted inverse), router mock (hoisting-safe, documented, no repo
+precedent — verified by grep), T08 carry-forwards honored verbatim, RN
+hazards (no falsy && renders, stable keys, ScrollView justified by the
+create_order 100-item bound), a11y. Both findings remediated in-task and
+re-verified (13/13 focused; 26 suites/279; all checks clean). Carry-forwards
+for T10: the screen reads `hydrated` but nothing hydrates yet — T10's
+useCart() owns hydration via useActiveProfile() (plan decision 11);
+sign-out-cleanup registration goes live via the index.ts side-effect
+import in T10.

@@ -638,3 +638,94 @@ R-T08-02 + R-T08-03 as above; re-verified: focused 11/11, full 25/266,
 typecheck/lint/format/hook-eslint clean.
 
 GATE: PASS
+
+## T09 — Full Cart screen + /cart route
+
+Lead scaffold (ran before delegation): `pnpm generate screen cart full-cart`
+
+- `pnpm generate route cart cart --role=customer --screen=full-cart` —
+  screen placeholder + test placeholder, thin `app/(customer)/cart.tsx`
+  (template-identical), `features/cart/index.ts` route-gen export
+  `export { FullCartScreen } from "./screens/full-cart/full-cart-screen"`.
+  Scaffold recorded in todo.md.
+
+RED (implementer, agent-a24e20fc…)
+$ pnpm test -- full-cart
+First run 12 failed / 12 — one wrong-class failure honestly reported and
+fixed before implementing (ROUTE_PATH one directory short → ENENT; harness
+bug, not missing behavior). Second run 11 failed / 1 passed: every behavior
+test `Unable to find …` (loading label, empty copy, row text, alert copies,
+locked buttons, Browse Products, Clear Cart, frame content) against the
+generated placeholder — right class. The 1 pass is the static
+route-thinness contract pin (discriminating against store/Supabase/deep
+imports; its companion render test failed).
+
+IMPLEMENT
+full-cart-screen.tsx: stateful Screen composition — restore-pending →
+SkeletonList early-return (no rows/empty/summary guess); empty → shared
+EmptyState with action prop "Browse Products" → router.push("/") (the
+SCREEN owns this navigation per plan decision 13, unlike the sheet);
+populated → ScrollView of CartItemRow (mutations via
+useCartStore.getState() real signatures; locked passed through; locked also
+disables Clear Cart with the store-level exemption rationale comment);
+summary via module selectors selectTotalQuantity/selectDistinctLineCount
+(never mirrored; singular/plural); persistence honesty — memoryOnly →
+Alert warning, clearFailed → Alert destructive, persisted → nothing;
+fixed footer = SafeAreaView edges ["bottom"] sibling of scroll content
+(the Screen primitive has no footer prop — its real mechanism is the
+edges contract, per components/layout/screen.tsx); Clear Cart opens the
+shared ConfirmDialog destructive; ONLY onConfirm calls clearCart().
+Footer/edges invariant: one bottom-inset owner per presentation
+(FOOTER_EDGES / FOOTERLESS_EDGES constants track the footer's mount state
+— R-T09-01 remediation).
+Tests (13): copy the T08-proven helpers VERBATIM (setFrame
+Dimensions.set-before-render 1024×768 AND 480×900, resetCartSingleton/
+seedCart, settleDurableWrites act-wrapped, standardized lucide mock);
+router = minimal documented module mock of expo-router useRouter
+(no repo precedent — features/auth navigate only via the root Stack;
+grep-verified; hoisting-safe, documented like the lucide mock; asserts
+push called once with "/"); route contract pinned TWO ways — render the
+route module itself through `@/features/cart` asserting real screen
+content, + static import analysis (from-imports AND side-effect imports;
+sanctioned set @/features/cart / react / react-native / expo-router).
+Tests: skeleton, empty escape, populated rows+summary+stepper-mutates-
+store, memoryOnly warning + persisted inverse, clearFailed destructive,
+locked rows+trigger, clear flow (real dialog → confirm → store cleared →
+honest post-clear status), compact + landscape frames, remove end-to-end
+(R-T09-02 remediation).
+
+GREEN
+$ pnpm test -- full-cart → 13/13, zero console output (no act warnings)
+$ pnpm test → 26 suites / 279 tests PASS
+$ pnpm typecheck → clean (after 2 honest noUncheckedIndexedAccess fixes
+in the test: type-predicate filter + explicit undefined guard, no casts)
+$ pnpm lint / hook-eslint (--max-warnings=0, both files) → clean
+$ pnpm format:check / check:docs → clean
+rg catalog/supabase over screen/test/route/index → zero matches
+
+DIFF
+2 files replaced under features/cart/screens/full-cart/\*\*; index.ts and
+app/(customer)/cart.tsx verified-only (generator output untouched);
+no store edits; no screen-local components needed (inline composition).
+
+TASK REVIEW (fresh, agent-2599520a…)
+Re-ran everything fresh: focused 12/12 ×4 (stable), full 26/278,
+typecheck/lint/hook-eslint/format/check:docs clean; working tree exactly
+the declared files; index.ts export byte-identical to generator render;
+route template-identical; no eslint-disables; no casts; all implementer
+claims verified TRUE.
+0 blocking / 0 major / 2 minor (R-T09-01, R-T09-02 — recorded in
+review.md). Clean: AC-11 fidelity, summary derivation, restore-pending
+honesty, locked semantics, clear flow, persistence warnings, router mock,
+route pinning, T08 carry-forwards, RN hazards, a11y, boundaries.
+
+REMEDIATION (same implementer, resumed)
+R-T09-01: Screen edges track the footer's mount state
+(FOOTER_EDGES/FOOTERLESS_EDGES); every presentation owns the bottom edge
+exactly once. R-T09-02: one screen-level remove end-to-end test (press →
+real dialog → confirm → store line gone → empty state revealed, which also
+exercises the footer→footer-less edge handover).
+Re-verified: focused 13/13, full 26 suites/279, typecheck/lint/
+hook-eslint/format clean.
+
+GATE: PASS

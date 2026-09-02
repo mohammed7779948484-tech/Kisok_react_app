@@ -16,11 +16,11 @@ is the first thing the next agent reads.
 
 ```
 Current round     : 2
-Current task      : T09
-Current stage     : not started (scaffold PENDING — Lead runs generator first)
-Last gate         : T08 GATE: PASS
-Next legal action : Lead scaffolds `pnpm generate screen cart full-cart` then `pnpm generate route cart cart --role=customer --screen=full-cart`, then composes + delegates T09 (Full Cart screen + /cart route; honor T08 carry-forwards)
-Blocked by        : — (local work unblocked; Draft-PR push awaits credentials — see Blocked)
+Current task      : T10
+Current stage     : not started (no scaffold — public-API wrapper has no generator capability)
+Last gate         : T09 GATE: PASS
+Next legal action : Lead composes + delegates T10 (useCart hook + public API in index.ts; honor T09/T05 carry-forwards: hydration via useActiveProfile, sign-out-cleanup side-effect import, NO re-export of clearCartForSignOut)
+Blocked by        : — (push credentials now available; Draft PR opens after Round 2 gate)
 ```
 
 ## Rules
@@ -49,7 +49,7 @@ Scan this first. Detail is below.
 | T06  | behavior | Supporting AC-04, AC-12                      | QuantityStepper component                       | — (seq. after T05) | done        | PASS    |
 | T07  | behavior | Supporting AC-03, AC-04, AC-12               | CartItemRow component                           | T01, T06           | done        | PASS    |
 | T08  | behavior | Acceptance AC-10                             | QuickCartSheet adaptive surface                 | T04, T07           | done        | PASS    |
-| T09  | behavior | Acceptance AC-11                             | Full Cart screen + /cart route                  | T04, T07           | not started | PENDING |
+| T09  | behavior | Acceptance AC-11                             | Full Cart screen + /cart route                  | T04, T07           | done        | PASS    |
 | T10  | behavior | Acceptance AC-13                             | useCart hook + public API in index.ts           | T05, T08, T09      | not started | PENDING |
 
 Stage is one of: `not started` · `scaffolding` · `red/baseline` ·
@@ -226,7 +226,9 @@ access exists. See `Blocked`.
   placeholder), `app/(customer)/cart.tsx`, index.ts export appended by route gen
 - **Allowed manual files**: screen-local components under
   `screens/full-cart/components/**` if needed (summary/footer block)
-- **Scaffold status**: PENDING
+- **Scaffold status**: READY (ran; screen + route + index export)
+- **Gate**: PASS (review 0 blocking / 0 major / 2 minor — both remediated
+  in-task; see worklog + review.md R-T09-01/02)
 - **Allowed file scope**: `features/cart/screens/full-cart/**`,
   `features/cart/index.ts` (route-gen export), `app/(customer)/cart.tsx`
   (generated — verify only)
