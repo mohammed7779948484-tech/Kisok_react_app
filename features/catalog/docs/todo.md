@@ -6,8 +6,9 @@ in `worklog.md`. Keep this checkpoint and gate board current.
 ## Current checkpoint
 
 ```
-Current round     : FINAL VERIFICATION (post-handoff session) — audit phase
-Current task      : Quality audit (fresh) after SHIP-READY final review
+Current round     : COMPLETE — FINAL CLOSURE (post-handoff session)
+Current task      : Push final HEAD + verify CI on it + update PR #10 body
+                    (the delivery agent never merges)
 Current stage     : Hosted TEST live session COMPLETE (worklog post-handoff
                     section: real RPC, Zod, UI, a11y, responsive, console
                     clean); findings A fixed + re-reviewed (F-R02), B/C
@@ -20,10 +21,10 @@ Current stage     : Hosted TEST live session COMPLETE (worklog post-handoff
 Last gate         : FEATURE GATE PASS (2026-09-02), T01 reopened→remediated
                     →re-reviewed (A-REVIEW-1 clean), final review
                     F-REVIEW-2 SHIP-READY
-Next legal action : run the fresh quality-auditor, record its result, push
-                    the final HEAD to catalog-v2-super / PR #10 only,
-                    verify CI on the exact final HEAD, update the PR body
-                    — never merge
+Next legal action : HUMAN: review PR #10 (catalog-v2-super → develop) —
+                    now with the hosted TEST read VERIFIED live, Finding A
+                    remediated, findings B/C dispositioned, final review
+                    SHIP-READY and Quality Audit CLEAN; decide the merge
 Blocked by        : —
 ```
 

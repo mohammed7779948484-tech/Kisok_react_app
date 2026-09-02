@@ -95,3 +95,19 @@ dispositioned. It returns findings; the Lead records them here.
 - Definition of Done (`AGENTS.md`) met: YES — with the native tier and hosted-TEST read explicitly recorded as UNVERIFIED (the honest path the plan demands), not silently passed.
 
 Audit result: `CLEAN AFTER RESOLUTIONS` — 4 findings, all resolved by the Lead's recording (nothing re-implemented; the delivery and evidence were already sound).
+
+### Post-handoff final audit (F-AUDIT-2, fresh)
+
+Re-run at the final closure on the exact final tree (`10f7edc`): verdict
+**CLEAN** — 0 findings. Deterministic commands re-executed by the auditor
+matched the quoted numbers digit-for-digit (21/185, 38/323, typecheck 0);
+the 61-file diff verified as 51 feature + 8 routes + exactly the 2
+historically-justified shared files; the session's code change verified as
+the two model files (+80/−0); PR #10 verified open/draft/unmerged via the
+live GitHub API; historical CI run 33615482805 (04a3889) verified success;
+the hosted live session judged a genuine AC-01 hosted-read closure; all
+three adversarial dispositions verified consistent. One declared open item —
+CI on the exact final HEAD pending the push — closed by the Lead
+immediately after pushing (recorded in the worklog). Two trivial record
+notes (19→21 ahead at final HEAD; 52→51 feature files precision) applied by
+the Lead while recording.
