@@ -618,3 +618,120 @@ $ pnpm test:ci → 23 suites / 216 tests PASS; typecheck/lint/format:check
 re-run by the Lead → PASS; eslint on the screen file → clean.
 
 GATE: PASS
+
+### T06 — SCAFFOLD (Lead)
+
+$ pnpm generate component kiosk-runtime maintenance-entry
+created : features/kiosk-runtime/components/maintenance-entry.tsx
+$ pnpm generate component kiosk-runtime maintenance-sheet
+created : features/kiosk-runtime/components/maintenance-sheet.tsx
+$ pnpm generate component kiosk-runtime kiosk-maintenance-overlay
+created : features/kiosk-runtime/components/kiosk-maintenance-overlay.tsx
+Note: the component capability emits the component only (no test template —
+unlike screen). RED tests are the implementer's entry evidence by design.
+Scaffold status: READY
+
+### T06 — maintenance UI
+
+MODE: behavior
+ACCEPTANCE: AC-05 (AC-06 wiring for switch-account)
+
+SCAFFOLD (Lead — three generator components; see the T06 SCAFFOLD entry
+above; the component capability emits no test files — RED tests are the
+implementer's entry evidence)
+
+RED (fresh feature-implementer, agent-0094cbe8)
+$ pnpm jest features/kiosk-runtime
+Test Suites: 3 failed, 6 passed, 9 total; Tests: 21 failed, 81 passed —
+the new suites cannot find the Maintenance entry button / sheet contents
+(generator placeholders render instead; T01–T05 suites stayed green).
+Three tests passed trivially at RED ("renders nothing on a standard
+device", "renders no sheet content while closed", "renders nothing when
+not visible" — post-contract absence pins, each would fail if the real
+component wrongly rendered; count corrected per reviewer T06-R1, the
+implementer's report said two). The reviewer re-ran the RED state
+empirically on a scratch copy with placeholder components restored:
+21 failed / 3 passed — confirmed.
+
+IMPLEMENT
+components/maintenance-entry.tsx — presentational corner affordance:
+ghost/icon Button (h-touch w-touch ≥ 48dp), muted Wrench icon,
+accessibilityLabel "Maintenance" + long-press hint, NO onPress (tap does
+nothing — deliberate difficulty), visible/onLongPress props, absolute
+top-right with safe-area inset.
+components/maintenance-sheet.tsx — AdaptiveSheet: LOCKED = labelled
+masked Input + Unlock/Close; wrong code → one fixed retry sentence
+("That code didn't work.") through Input's announced errorMessage slot
+(no code-existence signal); UNLOCKED panel = "Switch customer account"
+wired to useSignOutAction() from @/core/auth (AC-06; pending disables
+primary AND Close — T06-R2; message verbatim in announced Alert per the
+T05 pattern); typed code cleared on unlock/close; onAccountSwitched
+reports full success upward (justified contract addition — reviewer
+judged placement sound: the sheet owns the hook, only it can observe
+completion; the store-free sheet needs a callback bridge).
+components/kiosk-maintenance-overlay.tsx — the ONLY store reader:
+renders nothing when policy.role ≠ customer-kiosk; owns sheetOpen; passes
+tryUnlock to the sheet; owns the expiry timer (setTimeout(clearMaintenance,
+expiresAt − now) with Math.max(0,·), re-armed on new expiresAt, cleared on
+unmount); clears the session + closes the sheet on account switch; NO
+AppState logic (T04 owns background clearing).
+
+GREEN
+$ pnpm jest features/kiosk-runtime
+Test Suites: 9 passed, 9 total; Tests: 102 passed, 102 total
+(includes the T06-R2 regression test: Close disabled mid-flight,
+re-enabled after settle)
+
+AFFECTED CHECKS
+$ pnpm typecheck → PASS; pnpm lint → PASS; pnpm format:check → PASS;
+$ pnpm exec eslint features/kiosk-runtime/components/ → clean (the
+T05 pre-commit lesson applied: every user-facing string is a JS constant);
+$ pnpm test:ci → 26 suites / 240 tests PASS.
+
+DIFF
+Untracked: features/kiosk-runtime/components/\*\* (6 files: 3 components +
+3 test files). Tracked: todo.md/worklog.md (Lead scaffold records only).
+
+REVIEW (fresh code-reviewer, agent-43378a8a)
+No blocking or major findings. Two minors:
+T06-R1 RED record said "2 trivially-passing tests"; the reviewer's
+empirical RED re-run (scratch copy, placeholders restored) shows 3 →
+record corrected in this entry (nothing to change in the tests — all
+three are honest post-contract absence pins).
+T06-R2 Close button not disabled while signOut.pending → FIXED
+(implementer resumed, regression RED reproduced exactly then green):
+Close now mirrors the primary action's disabled state; in-flight test
+extended to cover both controls.
+Axes found clean: AC-05 credential safety (managed code never
+rendered/logged/persisted — proven via captured sink + multiSet seam
+probe; entered code masked, never logged/persisted, cleared on
+unlock/close; retry reveals nothing — tryUnlock returns false
+identically for no-code and wrong-code), entry presentational purity +
+long-press-only + 48dp + tokens, sheet AdaptiveSheet usage + transitions
+
+- shared-pipeline-only sign-out + T05 alert pattern, overlay store
+  sole-reader + timer semantics (expiry instant + dead-after-unmount
+  proven with fake timers; Math.max(0,·) frozen-app guard) + no T04
+  duplication, test quality (real store via applySnapshot fixtures
+  byte-identical to T03's; real pipeline seam; lucide stub scoped to the
+  two icon-rendering files; zero console output; teardown hygiene), verify
+- pre-commit exposure, scope discipline.
+  Reviewer judgments: onAccountSwitched placement sound; lucide ESM
+  jest stub sound and deferring the repo-level transformIgnorePatterns fix
+  to the Lead correct; RNTL v14 notes (async unmount, userEvent-only on
+  Pressable Button) sound and documented.
+  Forward note for T07 (recorded, not a defect): the overlay's absolutely
+  positioned entry must sit in a full-screen positioned container as a
+  sibling of the root Stack in app/\_layout.tsx; the existing PortalHost
+  covers the sheet's portal.
+
+LEAD FOLLOW-UPS RECORDED
+
+- jest.config.js lucide-react-native transformIgnorePatterns gap: shared
+  file outside this task's scope (not in plan's Files-expected-to-change)
+  → left as a tracked follow-up for the next lucide consumer; do NOT
+  hot-fix mid-feature without a plan amendment.
+- onAccountSwitched is a justified small contract addition (reviewer
+  sound) — recorded here per the review request.
+
+GATE: PASS

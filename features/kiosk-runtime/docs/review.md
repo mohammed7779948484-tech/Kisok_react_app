@@ -19,6 +19,9 @@ Implementation notes do not belong here; they belong in `worklog.md`.
 | T05-R1 | minor | Plan's test strategy promised "(blocked/failed message surfaced)"; only the blocked outcome was tested at the screen seam (the failed→message mapping is owned and tested by core/auth) | plan.md test strategy vs screen test (blocked only) | fixed | Implementer resumed: one failed-outcome test (mock signOut error + session retained → pipeline's failed reason in the announced Alert, exactly one signOut call, scope "local"); seam-sensitivity probe proves it pins the failed mapping |
 | T05-R2 | minor | Committed todo.md status board contradicted the worklog (T01–T04 "not started/PENDING" vs GATE: PASS) — previous session's record lag, carried by the PR HEAD | git show ae8f9ca:...todo.md vs ...worklog.md | fixed | Board catch-up (T01–T04 → done/PASS) committed with the T05 gate commit; board+checkpoint updated in the same commit as each gate from now on |
 
+| T06-R1 | minor | RED relay said "2 trivially-passing tests"; empirical RED re-run shows 3 (the overlay's standard-device absence pin also passed trivially) | reviewer scratch-copy RED re-run: 21 failed / 3 passed / 24 | fixed | Lead recorded the corrected count (3 honest post-contract absence pins) in the T06 worklog entry; no test change needed |
+| T06-R2 | minor | Sheet Close button not disabled while signOut.pending — mid-flight close hides a blocked/failed outcome (success unaffected) | maintenance-sheet.tsx:154 vs primary action :125 | fixed | Implementer resumed: Close mirrors the primary action's disabled state; regression RED reproduced the gap exactly, then green; in-flight test extended to both controls |
+
 Severity means: **blocking** — must not merge; **major** — fix in this feature;
 **minor** — worth doing, safe to defer with a note.
 
