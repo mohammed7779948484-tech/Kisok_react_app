@@ -7,10 +7,10 @@ in `worklog.md`. Keep this checkpoint and gate board current.
 
 ```
 Current round     : Round 3 — Home, all products and search
-Current task      : T04 — Catalog Home and Customer root route
-Current stage     : not started (awaiting Lead JIT scaffold)
-Last gate         : Round 2 PASS; T03 PASS; commit/push to Draft PR #7 pending
-Next legal action : Lead commits Round 2, pushes feature/catalog, then runs T04 scaffolds (screen + forced root route)
+Current task      : T05 — All Products and route
+Current stage     : not started (Lead scaffold next)
+Last gate         : T04 PASS (2026-09-02, after remediation + re-review + browser verification); Round 2 PASS
+Next legal action : Lead runs T05 scaffolds (Products screen, then Products route), records SCAFFOLD evidence, delegates implementer
 Blocked by        : —
 ```
 
@@ -32,7 +32,7 @@ Blocked by        : —
 | T01  | behavior | Supporting AC-01–AC-07                              | Snapshot schema and pure Catalog view                                | —             | done        | PASS    |
 | T02  | behavior | AC-01                                               | Customer-safe Catalog query pipeline                                 | T01           | done        | PASS    |
 | T03  | behavior | Supporting AC-02–AC-08                              | Shared discovery navigation/grid/cards                               | T01           | done        | PASS    |
-| T04  | behavior | Supporting AC-02, AC-08                             | Catalog Home and Customer root route                                 | T02, T03      | not started | PENDING |
+| T04  | behavior | Supporting AC-02, AC-08                             | Catalog Home and Customer root route                                 | T02, T03      | done        | PASS    |
 | T05  | behavior | Supporting AC-03                                    | All Products and route                                               | T02, T03      | not started | PENDING |
 | T06  | behavior | Supporting AC-06                                    | Local Search and route                                               | T02, T03      | not started | PENDING |
 | T07  | behavior | AC-04                                               | Brand discovery/detail and routes                                    | T02, T03      | not started | PENDING |
@@ -140,20 +140,31 @@ Round 2 gate: `PASS` — 10 suites/64 tests, typecheck/lint/format/check:docs, f
 - **Expected generated/replaced files**: Catalog Home screen/test,
   `app/(customer)/index.tsx`, and Catalog public export
 - **Allowed manual files**: —
-- **Scaffold status**: `PENDING`
+- **Scaffold status**: `READY` (Lead ran both commands; evidence in worklog)
 - **Allowed file scope**: Home screen directory, Customer root route,
   `features/catalog/index.ts`, Catalog docs
 
 ```
-[ ] SCAFFOLD
-[ ] RED — Home empty/success/navigation behavior fails as intended
-[ ] IMPLEMENT
-[ ] GREEN — Home tests
-[ ] AFFECTED CHECKS — route/export, export:web, dependency tests/checks
-[ ] TASK DIFF REVIEW — placeholder gone; optional sections/settings honest
-[ ] FRESH TASK REVIEW — no unresolved blocking/major finding
-GATE: PENDING
+[x] SCAFFOLD — screen + forced root route + public export, inspected by the Lead (worklog)
+[x] RED — 11/11 intended failures against the placeholder (worklog)
+[x] IMPLEMENT — states + identity + navigation + bounded sections in place
+[x] GREEN — 11 tests PASS, zero console output
+[x] AFFECTED CHECKS — whole feature 11 suites/75 tests, full repo 213 tests,
+    typecheck, lint, format, check:docs, export:web PASS (worklog)
+[x] TASK DIFF REVIEW — screen directory + docs only; route/barrel verified as scaffolded
+[x] FRESH TASK REVIEW — 1 major + 2 minors found (T04-R01/R02/R03, review.md);
+    same-task remediation applied (12th RED-first test for R03); re-review
+    confirmed all three RESOLVED, no new blocking/major; Lead browser-verified
+    R01 equal widths at 480/800/1280 and R03 live against 3 aborted refetches
+GATE: PASS
 ```
+
+**T04 remediation record (same task):** the fresh review's three findings were
+fixed in `catalog-home-screen.tsx` + its test only — (1) row children became
+`flex-1` wrappers (T04-R01), (2) `never`-typed exhaustiveness assertion
+(T04-R02), (3) full-screen `ErrorState` only when no snapshot exists (T04-R03,
+Lead disposition and stated rule for T05–T09). Evidence in review.md and
+worklog.md.
 
 ### T05 — All Products and route
 

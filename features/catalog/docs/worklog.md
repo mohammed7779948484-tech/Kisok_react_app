@@ -399,3 +399,285 @@ components`); `pnpm check:commits` PASS.
   had them). The commit is intact locally; the Lead will push Round 2+ as soon
   as credentials are available. Draft PR #7 remains open with HEAD efda0f6
   until then; PR evidence stays synchronized through the Catalog worklog.
+
+### T04 — Catalog Home and Customer root route
+
+MODE: behavior
+ACCEPTANCE: Supporting AC-02, AC-08
+
+SCAFFOLD (Lead)
+
+- `$ pnpm generate screen catalog catalog-home`
+- `$ pnpm generate route catalog index --role=customer --screen=catalog-home --force`
+- Created: `features/catalog/screens/catalog-home/catalog-home-screen.tsx`,
+  `features/catalog/screens/catalog-home/catalog-home-screen.test.tsx`
+  (baseline mount test), and the Catalog public export
+  `export { CatalogHomeScreen }` appended to `features/catalog/index.ts`.
+- Replaced (planned, `--force`, one time only):
+  `app/(customer)/index.tsx` — the Foundation placeholder route now renders
+  `CatalogHomeScreen` through the thin generated route file.
+- Skipped: none.
+- Lead inspected all four outputs: route is thin (imports only
+  `@/features/catalog`), screen placeholder uses the standard `Screen` shell,
+  baseline test asserts mount only. Scaffold status: `READY`.
+
+RED (Implementer)
+
+- `$ pnpm exec jest features/catalog/screens --runInBand`
+- 1 suite / 11 tests failed, 0 passed. Every failure was "Unable to find an
+  element with role/text …" (header `KISOK Test Store`, nav buttons, section
+  headers, cards, `Loading the catalog…`, error title, `The catalog is
+empty`) against the placeholder's `CatalogHome`/`TODO: build this screen`
+  render — the intended missing behavior; no import/mock/typing failures.
+- The generated baseline mount test was rewritten in place into the
+  behavioral suite (11 tests): populated mount, bounded sections from
+  `view.home`, root REPLACE semantics (incl. re-selecting Home →
+  `router.replace("/")`), detail PUSH with exact `pathname` + query params,
+  Browse-all REPLACE actions, neutral `Catalog` heading for `settings: {}`,
+  omitted optional sections, announced loading, retryable error + retry
+  refetch, non-retryable error without retry affordance, whole-catalog empty
+  state (with brands/categories still present in the snapshot) + retry.
+- Mock mechanisms: feature API seam `jest.mock("../../api/fetch-catalog")`
+  (same pattern as `queries/use-catalog.test.tsx`) — the screen test never
+  knows Supabase exists; minimal `jest.mock("expo-router")` returning
+  `{ useRouter: () => ({ push, replace }) }` spies (first screen test in the
+  repository to pin router destinations and push-vs-replace semantics);
+  `lucide-react-native` stubbed to `ImageOff: () => null` for AppImage
+  fallbacks, matching the T03 card-test pattern.
+
+IMPLEMENT (Implementer)
+
+- `catalog-home-screen.tsx` implemented in place: `useCatalog()` consumed
+  (never Supabase directly); capability-aware states rendered through
+  `LoadingState` (cold pending only — background refetch does not flash it),
+  `ErrorState` (error object passed through, `onRetry = refetch`, so
+  ErrorState hides retry for non-retryable AppErrors), whole-catalog
+  `EmptyState` on `products: []` (action = refetch), otherwise store identity
+  heading (`store_name`, neutral `Catalog` via an `isFullSettings` type guard
+  — text identity only, no logo rendering) + `CatalogNavigation current="home"`
+  - three bounded sections from `view.home`.
+- Root destinations REPLACE (`/products`, `/brands`, `/categories`, `/search`,
+  `/` for home) via a `useRouter()` exhaustive-switch handler; cards PUSH
+  `{ pathname: "/brand-detail" | "/category-detail" | "/product-detail",
+params: { brandId | categoryId | productId } }` via `useCallback` handlers
+  (stable props for the memoized T03 cards).
+- Sections are ScrollView/View compositions, NOT virtualized (bounded 6/6/8
+  from the model, not re-bounded): local `HomeSection` (heading with
+  `accessibilityRole="header"`, ghost 48dp `h-touch` Browse-all button) and
+  local `HomeCards` (equal-width card rows at `useResponsiveValue`
+  2/3/4 columns with trailing empty slot padding). No new files.
+- Two corrections during GREEN: (1) a real implementation bug caught by the
+  tests — the Browse-all label was derived from the section title, yielding
+  "Browse all featured products"; fixed with explicit destination-named
+  labels ("Browse all brands/categories/products"); (2) the error-state
+  assertion was changed from `getByRole("alert")` to the visible ErrorState
+  title + `error.userMessage` + retry-button role, because RNTL role queries
+  match only `accessible` elements and the shared `ErrorState` View is not
+  `accessible` (shared component, out of T04 scope to change). Neither
+  weakened an assertion.
+
+GREEN (Implementer)
+
+- `$ pnpm exec jest features/catalog/screens --runInBand`
+- 1 suite, 11 tests PASS, zero console output.
+
+AFFECTED CHECKS (Implementer)
+
+- Whole feature: `$ pnpm exec jest features/catalog --runInBand` → 11 suites,
+  75 tests PASS (T01 model, T02 api/queries, T03 components, T04 screen).
+- Full repository suite: `$ pnpm exec jest --silent` → 28 suites, 213 tests
+  PASS.
+- `pnpm typecheck` → PASS (re-run after export:web as well).
+- `pnpm lint` (expo lint) → PASS.
+- Prettier: `--write` then `--check` on the two screen files → PASS;
+  repo-wide `pnpm exec prettier --check .` → PASS.
+- `pnpm check:docs` → PASS (63 files).
+- `pnpm export:web` → PASS; tail verbatim:
+  `› web bundles (2): … entry-…js (4.99 MB)` / `› Static routes (9):` incl.
+  `/ (index)` and `/(customer)` / `Exported: dist`. Route/export verification:
+  `app/(customer)/index.tsx` is thin (imports only `@/features/catalog`),
+  renders `CatalogHomeScreen`, Foundation placeholder import gone;
+  `features/catalog/index.ts` exports exactly `CatalogHomeScreen`. Neither
+  file needed changes from the implementer.
+- Note: `app.config.ts` has `experiments.typedRoutes: true`, but no
+  `.expo/types` route union is generated in this environment (verified after
+  export:web), so `Href` falls back to `string | {pathname, params}` and the
+  not-yet-existing detail paths typecheck. When typed routes ARE generated
+  (T07–T09 add those routes), the calls already match the planned paths.
+
+DIFF (Implementer)
+
+- Change set: `features/catalog/screens/catalog-home/catalog-home-screen.tsx`
+  (implemented in place), `…/catalog-home-screen.test.tsx` (baseline rewritten
+  in place), this worklog entry, and the T04 todo.md stage/checklist update.
+  No shared/core file touched; `app/(customer)/index.tsx`,
+  `features/catalog/index.ts` verified correct as scaffolded (their diffs are
+  the Lead's uncommitted scaffold, untouched by the implementer).
+- Design decisions not pinned by the plan, all stated in the task report:
+  heading copy (`store_name` / neutral `Catalog`), section titles
+  (Brands/Categories/Featured products), Browse-all copy
+  ("Browse all brands|categories|products"), empty-state copy + retry action,
+  loading label "Loading the catalog…", home re-selection →
+  `router.replace("/")`, empty-catalog state renders EmptyState only (no
+  navigation chrome — the retry action is the way forward), no logo image in
+  the heading (text identity only).
+
+RE-VERIFICATION (T04, second implementer invocation — recorded because the
+first invocation's final report never reached the Lead)
+
+- Found on entry: HEAD at fb0a637 with the T04 work above already present and
+  uncommitted (screen + test untracked; todo/worklog updated), i.e. the tree
+  was NOT the "clean tree + placeholder scaffold" state the task packet
+  described. The work was verified rather than discarded or redone; the
+  discovery is reported prominently to the Lead.
+- RED re-verified first-hand: the implemented screen was temporarily swapped
+  for a minimal placeholder render (Screen + "TODO: build this screen") and
+  the suite re-run — `$ pnpm exec jest features/catalog/screens --runInBand`
+  → 11/11 tests failed, every failure an "Unable to find an element with
+  role/text/label …" query failure (identity heading, nav buttons, cards,
+  loading label, error surface, empty state) — missing behavior, not import/
+  mock/typing errors. The implementation was then restored byte-identically
+  (sha256 match before/after: 926ef17d…) and the placeholder stand-in was
+  deleted. No other file was touched for this check.
+- GREEN re-verified: same command → 1 suite, 11 tests PASS, zero console
+  output.
+- Affected checks re-run: `pnpm exec jest features/catalog --runInBand` →
+  11 suites, 75 tests PASS; `pnpm exec jest --silent` → 28 suites, 213 tests
+  PASS; `pnpm typecheck` PASS; `pnpm lint` PASS; scoped + repo-wide
+  `prettier --check` PASS; `pnpm check:docs` PASS (63 files);
+  `pnpm export:web` PASS (`/ (index)` + `/(customer)` in the 9 static routes,
+  `Exported: dist`).
+- Route/barrel re-verified as thin scaffolded: no changes needed.
+- No commit, no generator run, no gate set.
+
+### T04 remediation — fresh-review findings T04-R01/R02/R03 (Round 3, same task)
+
+MODE: behavior-change (T04-R03 changes the error-surface rule and owns the
+RED; T04-R01 is a flex-structure fix RNTL cannot assert and T04-R02 is a
+compile-time-only guard — the remediation packet assigns both no failing
+test)
+ACCEPTANCE: Supporting AC-02, AC-08 — same task, no new AC
+
+FINDINGS (recorded by the Lead in `review.md`; this entry is the fix)
+
+- T04-R01 (major) — `flex-1` was passed to the T03 cards' inner `Card` while
+  the row's direct child was each card's root `Pressable` (no flex), so cards
+  rendered at ragged content width and the trailing empty-slot `flex-1` Views
+  absorbed the row.
+- T04-R02 (minor) — `handleRootNavigate`'s switch over `CatalogDestination`
+  had no `default`; with a void return a future union member would silently
+  no-op.
+- T04-R03 (minor, dispositioned FIX) — `if (catalog.isError)` unconditionally
+  rendered the full-screen `ErrorState`, but TanStack keeps `data` on a failed
+  background refetch (shared QueryClient refetches on focus/reconnect), so a
+  network blip during a long-lived kiosk session blanked still-valid content.
+
+RED (T04-R03, new test written FIRST)
+
+- `$ pnpm exec jest features/catalog/screens --runInBand`
+- 1 failed, 11 passed. Failing test: "keeps the populated Home visible when a
+  background refetch fails while a snapshot is present" →
+  `Unable to find an element with role: header, name: KISOK Test Store`, with
+  the dumped tree showing the full-screen ErrorState (`Something went wrong`
+  / `We couldn't load the catalog. Please try again.` / `Try again`) — the
+  exact behavior the finding describes: a failed background refetch (snapshot
+  still cached) discarded the populated Home. Missing behavior, not an
+  import/mock/typing failure; the other 11 tests stayed green.
+- Test mechanics note: the first run of the new test passed trivially —
+  TanStack's batched observer notification lands on a macrotask, so the
+  re-render to the error state had not happened when the assertions ran (an
+  `act(...)` warning exposed it). The test now flushes one macrotask inside
+  `act(...)` after `refetchQueries`, so the post-refetch render is asserted
+  rather than raced.
+
+IMPLEMENT (remediation implementer)
+
+- R01 — `HomeCards` now constrains `ItemT extends { id: string }` and wraps
+  each rendered card in a `View className="flex-1"` (keyed by `item.id`) that
+  IS the row's direct child; `renderItem` no longer carries the key or the
+  flex, and `className="flex-1"` was removed from all three card call sites.
+  The trailing empty-slot `flex-1` Views are unchanged (already direct
+  children). T03 card components untouched (their `className` contract stays
+  as-is; the fix belongs to the screen).
+- R02 — `default` branch assigns `destination` to a `never`-typed local and
+  returns it, so a new `CatalogDestination` member fails typecheck instead of
+  silently no-oping. Out-of-tree proof (no repo file touched): the 5-member
+  union compiles; adding a 6th member without extending the switch gives
+  `error TS2322: Type '"orders"' is not assignable to type 'never'`.
+- R03 — the full-screen error guard is now `catalog.isError &&
+!catalog.data`: the populated Home stays on screen through a failed
+  background refetch; `isPending` stays cold-loading-only. TanStack's
+  `UseQueryResult` discriminated union narrows honestly after the guard —
+  no unsafe `!` assertions, no unreachable defensive branches (`tsc --noEmit`
+  PASS).
+
+GREEN
+
+- `$ pnpm exec jest features/catalog/screens --runInBand`
+- 1 suite, 12 tests PASS (11 existing unchanged + 1 new), zero console
+  output.
+
+AFFECTED CHECKS (remediation implementer)
+
+- `$ pnpm exec jest features/catalog --runInBand` → 11 suites, 76 tests PASS.
+- `$ pnpm exec jest --silent` → 28 suites, 214 tests PASS.
+- `pnpm typecheck` → PASS.
+- `pnpm lint` → PASS.
+- Prettier: `pnpm exec prettier --check` on the screen, its test and this
+  worklog → PASS. Repo-wide `pnpm exec prettier --check .` flags
+  `features/catalog/docs/review.md` — that is the Lead's own uncommitted
+  fresh-review edit (the HEAD version of the file checks clean); the file is
+  out of this remediation's scope and was left untouched for the Lead.
+- `pnpm check:docs` → PASS (63 files).
+- Browser check for R01 not run here — the remediation packet assigns the
+  real-browser equal-width verification to the Lead before the gate (RNTL
+  does no layout). Structural evidence from the diff: every direct child of
+  a `flex-row gap-3` row is now a `flex-1` View (card wrapper or empty slot),
+  which is the flex contract React Native equalizes.
+
+DIFF (remediation implementer)
+
+- `features/catalog/screens/catalog-home/catalog-home-screen.tsx` — R01
+  wrapper + `ItemT` constraint + three call sites; R02 `default` branch; R03
+  guard; doc comments updated to state the background-refetch rule.
+- `features/catalog/screens/catalog-home/catalog-home-screen.test.tsx` — one
+  new test (failed background refetch keeps the populated Home); imports
+  `act` from `@/core/testing` and `catalogKeys` from `../../queries/keys`.
+- `features/catalog/docs/worklog.md` — this entry. No other file touched; no
+  commit, no generator run, no todo.md/review.md edit (Lead owns those).
+
+FRESH TASK REVIEW + REMEDIATION + GATE (T04, Lead)
+
+- Fresh code-reviewer (read-only, skills: kisok-code-review, kisok-design-system,
+  kisok-react-native-rules, expo-router) reviewed the T04 packet and re-ran every
+  check first-hand. 3 findings, recorded in review.md: T04-R01 major — Home card
+  rows not equal-width (`flex-1` reached the inner `Card`, not the row's direct
+  child; browser-proven ragged widths [104,140,260,260]/[29,257,29,30] at 800px);
+  T04-R02 minor — destination switch exhaustive by convention only; T04-R03
+  minor — failed background refetch blanks a populated Home (TanStack keeps
+  `data` on refetch error; shared QueryClient enables focus/reconnect refetch).
+- Lead disposition: all three `fix`. R03 rationale: the design-system state table
+  is capability-aware ("use the example only when those branches are possible")
+  and the error-with-data state IS reachable; the full-screen branch is kept only
+  for the no-snapshot case, and the rule is stated once for T05–T09.
+- Bounded same-task remediation (implementer): `HomeCards` wraps each card in a
+  `flex-1` View as the row's direct child (`ItemT extends { id: string }`);
+  inline `never`-typed exhaustiveness `default`; guard `isError && !data` with a
+  new 12th test written RED-first (honest failing output recorded above; the
+  implementer also disclosed and fixed a real test-timing race — TanStack batches
+  observer notifications onto a macrotask, so the test flushes one inside `act`).
+- Lead re-verification: 11 suites/76 tests, typecheck, lint, prettier (repo-wide),
+  check:docs PASS. Live browser verification on the exported web build
+  (deterministic mock chain: sign-in token + `current_active_profile` +
+  `get_customer_catalog` with the model fixture): populated Home renders
+  (heading, navigation, all three sections from `view.home`); Brands row direct
+  children measure [299,299,299,299] at 1280px (4 cols), [243,243,243] at 800px
+  (3 cols), [210,210] at 480px (2 cols) — equal widths, trailing empty slots
+  included; a real offline/online cycle then fired 3 refetch POSTs that were
+  aborted at the network layer and the populated Home stayed on screen (R03
+  behavior live). Zero console output.
+- Fresh re-review (same reviewer, read-only): all three findings RESOLVED, no new
+  blocking/major, no scope drift (route/barrel diffs byte-identical to the Lead
+  scaffold; T03 components untouched). Findings/dispositions recorded in
+  review.md.
+- GATE: PASS — T04 complete. Working tree committed by the Lead.
