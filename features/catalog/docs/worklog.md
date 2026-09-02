@@ -1236,3 +1236,190 @@ CATALOG-V2-SUPER DELIVERY BRANCH AND PR #10 (Lead)
   `develop` (no conflicts): 9 commits, 43 files, +8602/-16. GitHub CI
   triggered on 8c6c50d. The PR stays Draft until the Feature Gate and human
   handoff; the delivery never merges.
+
+SCAFFOLD (T08, Lead — JIT, immediately before delegation)
+
+- Commands run in order (2026-09-02, on `catalog-v2-super` at 1ae9988):
+  1. `pnpm generate screen catalog categories`
+  2. `pnpm generate screen catalog category-detail`
+  3. `pnpm generate component catalog category-brand-filter --screen=category-detail`
+  4. `pnpm generate route catalog categories --role=customer --screen=categories`
+  5. `pnpm generate route catalog category-detail --role=customer --screen=category-detail`
+- Generated exactly the planned file set: `screens/categories/`
+  (screen placeholder + baseline mount test), `screens/category-detail/`
+  (screen placeholder + baseline mount test), screen-local
+  `screens/category-detail/components/category-brand-filter.tsx`
+  (presentational placeholder, no test yet — the test is T08's allowed manual
+  file), thin routes `app/(customer)/categories.tsx` and
+  `app/(customer)/category-detail.tsx`, and exactly two new barrel exports in
+  `features/catalog/index.ts` (`CategoriesScreen`, `CategoryDetailScreen`).
+  No skips, no replacements, no extra files.
+- Route inspection: both routes thin (no data/state/logic) and import only
+  `@/features/catalog`. `app/(customer)/category-detail.tsx` is the one the
+  T08 packet sanctions editing to pass `categoryId` — left scaffold-thin at
+  this stage; the implementer applies the sanctioned edit (T07 precedent: the
+  RED route-param test fails because the route does not pass the param yet).
+- Scaffold coherence verified: `pnpm typecheck` PASS; the two baseline tests
+  pass (2 suites/2 tests — mount-only assertions against the placeholders).
+- Tree before delegation: 1ae9988 + the T08 scaffold (uncommitted).
+
+T08 IMPLEMENTATION (feature-implementer, 2026-09-02)
+
+MODE: behavior — ACCEPTANCE: AC-02 (completion), AC-05 (the Lead gates)
+
+RED (T08, Implementer) — all three suites written first, run against the Lead's placeholders:
+
+- Command: `pnpm exec jest features/catalog/screens --runInBand`
+- Output: `Test Suites: 3 failed, 5 passed, 8 total` / `Tests: 32 failed,
+58 passed, 90 total` — exactly the three new suites failing (Categories 10,
+  Category Detail 15, Category Brand Filter 7), the five pre-existing screen
+  suites still green.
+- Failure reasons verified as the intended MISSING BEHAVIOR, not typos or
+  unresolved imports: every failure is an "Unable to find an element…"
+  assertion (e.g. role header "Drínks", text "Filter by brand", the
+  hierarchy/count/chip elements) while the placeholders render only their
+  TODO copy; the route-param test fails because `app/(customer)/category-detail`
+  does not yet pass `categoryId` (T07 precedent).
+
+IMPLEMENT (smallest change, inside the T08 allowed scope only):
+
+- `features/catalog/screens/category-detail/components/category-brand-filter.tsx`
+  — the presentational brand filter: "All Brands" default chip plus one chip
+  per option, mutually exclusive, `accessibilityState.selected` + primary/ghost
+  variants (the CatalogNavigation chip pattern), callback reports the brand id
+  or `null` (reset-to-all).
+- `features/catalog/screens/category-detail/category-detail-screen.tsx` —
+  Category Detail: snapshot layer (cold loading / error-without-data / whole-
+  catalog empty — T04-R03 rule), stale-id LOCAL not-found with `Go back`,
+  `CategoryIdentity` (AppImage + derived aggregated count, the same number the
+  cards show), horizontal child-card strip for roots, `view.productsForCategory
+(categoryId, selectedBrand?.brandId ?? null)` in `CatalogGrid`, and the
+  inline no-match state with the "Show all brands" reset.
+- `features/catalog/screens/categories/categories-screen.tsx` — All Categories:
+  flat ordered hierarchy projection (each root followed by its direct
+  children) in `CatalogGrid`, root-nav REPLACE switch byte-identical to the
+  other screens (4th copy, R3-R01), local empty-collection way-onward to
+  Products, whole-catalog empty same copy family.
+- `app/(customer)/category-detail.tsx` — the sanctioned edit: reads
+  `useLocalSearchParams<{ categoryId: string }>()` and passes `categoryId` to
+  the screen as a prop; the route stays otherwise thin (T07 pattern).
+- `features/catalog/screens/category-detail/components/category-brand-filter.test.tsx`
+  — the allowed manual test file (7 tests: options, selected representation,
+  id/null callback contract, empty options, controlled re-render purity).
+- Both generated baseline screen tests REWRITTEN in place as behavioral suites
+  (the mount-without-throwing intent survives as the first test of each).
+- `app/(customer)/categories.tsx`, `features/catalog/index.ts`: untouched —
+  the Lead scaffold versions were already correct/thin.
+
+One implementation bug was caught by the RED tests during GREEN and fixed
+in-scope: the screen read `selectedBrand.id` instead of `selectedBrand.brandId`
+(the option type's field), which produced a duplicate Élite chip and an
+unfiltered grid; fixed in `category-detail-screen.tsx` (3 occurrences) and the
+suites went green with zero console output (the duplicate-key warning that led
+to the fix no longer appears).
+
+GREEN:
+
+- Command: `pnpm exec jest features/catalog/screens --runInBand`
+- Output: `Test Suites: 8 passed, 8 total` / `Tests: 90 passed, 90 total`,
+  zero console output.
+
+AFFECTED CHECKS:
+
+- Whole feature: `pnpm exec jest features/catalog --runInBand` →
+  `Test Suites: 18 passed, 18 total` / `Tests: 154 passed, 154 total`, zero
+  console output (was 15/122 before T08; +3 suites/+32 tests, all T08).
+- Full repo: `pnpm test:ci` → `Test Suites: 35 passed, 35 total` /
+  `Tests: 292 passed, 292 total` (was 32/260 after T07).
+- `pnpm typecheck` → PASS (clean).
+- `pnpm lint` → PASS (exit 0, no findings).
+- Formatting: `prettier --write` fixed 2 new test files (line wrapping only),
+  then `pnpm format:check` → PASS for the whole repo.
+- `pnpm check:docs` → PASS (`Documentation matches the current workflow
+(63 files checked).`).
+- `pnpm export:web` → PASS; 21 static routes including `/categories`,
+  `/category-detail`, `/(customer)/categories`, `/(customer)/category-detail`.
+
+TASK DIFF REVIEW (implementer's own read):
+
+- Scope exactly the T08 packet: the two screen directories (screens + rewritten
+  tests + the one allowed brand-filter test), the sanctioned
+  `app/(customer)/category-detail.tsx` param edit, and Catalog docs. No shared
+  files, no `components/`, no model/query/api changes, no route table edits,
+  no Supabase/Zustand/TanStack imports anywhere in the new files (verified by
+  grep). Root-nav switch verified byte-identical to `brands-screen.tsx` by
+  diff. Every fixture category satisfies `used_categories` (each carries ≥1
+  valid product direct or via children); no unreachable unfiltered
+  zero-products state was built or tested (T07-R01 lesson).
+
+REMEDIATION (T08, Implementer — 4 minor findings, Lead dispositioned FIX)
+
+- T08-R01 (minor, docblock overstatement): `categories-screen.tsx` docblock
+  claimed Category Detail makes "the two-level context (parent, own children,
+  scoped products) explicit" — but nothing on Category Detail renders a
+  child's parent. Corrected: the detail makes the card's own context explicit
+  (its direct children strip and its scoped products); the parent of a child
+  is NOT rendered there, and the way back to it is the detail's `Go back`
+  control. Docblock only, no behaviour change.
+- T08-R02 (minor, unpinned order): the flat adjacency projection (each root
+  immediately followed by its direct children) was asserted by presence only.
+  Added one order-pinning assertion to the hierarchy-projection test in
+  `categories-screen.test.tsx` (the `getAllByRole("button")` +
+  `accessibilityLabel` map pattern): exact order
+  `["Drínks, 4 products", "Tóp Picks, 2 products", "Gear, 1 product"]`.
+  These are pinning assertions for existing correct behaviour — run and PASS
+  against the current implementation (no behaviour change, no RED required).
+- T08-R03 (minor, unpinned identity count under filter):
+  `category-detail-screen.test.tsx` — in the selected-brand test, the header
+  now asserts the DERIVED AGGREGATED count "4 products" while the grid shows
+  only the filtered subset; in the no-match test, the header asserts "4
+  products" while the grid is empty. Both pin that the identity count
+  describes the category (same number the Categories cards show), never the
+  filter. Pass against the current implementation — pinning, not RED.
+- T08-R04 (minor, unpinned root-nav absence): the mount/valid-category test
+  in `category-detail-screen.test.tsx` now asserts the documented AC-08
+  decision — none of the five root destinations (Home/Products/Brands/
+  Categories/Search) renders on this detail screen (replace-from-pushed-detail
+  would duplicate root history). Pass against the current implementation.
+
+Evidence after remediation (same commands, all zero console output):
+
+- `pnpm exec jest features/catalog/screens --runInBand` → 8 suites / 90 tests
+  PASS (the assertion additions live inside existing tests, so the count is
+  unchanged; all four fixes are pins/corrections, not new behaviour).
+- `pnpm exec jest features/catalog --runInBand` → 18 suites / 154 tests PASS.
+- `pnpm typecheck` → PASS (exit 0). `pnpm lint` → PASS (exit 0).
+- Scoped `prettier --write` on the touched screen files → all "(unchanged)";
+  `prettier --check` PASS.
+- Scope: exactly the two T08 screen directories + Catalog docs; nothing else
+  changed (FRESH TASK REVIEW box intentionally left unticked for the re-review).
+
+FRESH TASK REVIEW + REMEDIATION + RE-REVIEW + GATE (T08, Lead)
+
+- Fresh code-reviewer (read-only; skills: kisok-code-review, kisok-design-system,
+  kisok-react-native-rules, expo-router) reviewed the T08 packet: **0 blocking /
+  0 major / 4 minors** — T08-R01 (docblock overstatement: "parent" claimed as
+  explicit on detail), T08-R02 (flat-adjacency hierarchy order unpinned),
+  T08-R03 (identity-count-under-filter unpinned), T08-R04 (root-nav absence on
+  detail unpinned). The reviewer verified all evidence first-hand (feature
+  18/154, repo 35/292, typecheck/lint/format/check:docs, export:web 21 static
+  routes; R3-R01 5th switch copy hash-identical; contract accuracy of the
+  no-match reachability reasoning; todo ticks honest). Recorded in review.md.
+- Lead disposition: all four FIX (all cheap, all inside the T08 allowed scope;
+  pins strengthen the hierarchy-projection and AC-08 criteria).
+- Remediation executed by the resumed T08 implementer: docblock corrected
+  (T08-R01); exact flat-adjacency order pinned via regex-exclusive
+  `getAllByRole` + accessibilityLabel map (T08-R02); header aggregated-count
+  asserted beside the filtered grid and beside the empty no-match grid
+  (T08-R03); five root-destination absence assertions (T08-R04). Pins added
+  INSIDE existing tests — feature count stays 18 suites/154 tests. All pins
+  verified passing against the current (correct) implementation — they are
+  regression pins, not behavior changes.
+- Re-review (resumed same reviewer): all four RESOLVED; 0 new
+  blocking/major/minor; remediation footprint verified as exactly the four
+  claimed files (mtime + line-shift analysis); R3-R01 hash re-verified across
+  all five screens post-remediation. Recorded in review.md.
+- Lead re-verification: feature 18/154 PASS (zero console output), typecheck
+  PASS, export:web 21 static routes incl. `/categories` and `/category-detail`,
+  check:docs PASS, diff scope exactly the T08 packet.
+- GATE: PASS — T08 complete.

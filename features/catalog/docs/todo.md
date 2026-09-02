@@ -7,12 +7,13 @@ in `worklog.md`. Keep this checkpoint and gate board current.
 
 ```
 Current round     : Round 4 — Brand and category discovery
-Current task      : T08 — Category discovery/detail/filter and routes
-Current stage     : T07 gated PASS; next Lead action is the T08 JIT scaffold
-Last gate         : T07 PASS (2026-09-02, after T07-R01 remediation + fresh
-                    re-review); Round 3 PASS; T04/T05/T06 PASS; Round 2 PASS
-Next legal action : Lead runs the T08 scaffolds (Categories + Category Detail
-                    screens, Category Brand Filter, both routes) then delegates
+Current task      : Round 4 gate (T07 and T08 gated PASS)
+Current stage     : Round 4 integrated verification + fresh Round review next
+Last gate         : T08 PASS (2026-09-02, after T08-R01–R04 remediation +
+                    resumed re-review); T07 PASS; Round 3 PASS
+Next legal action : Lead runs the Round 4 integrated verification (incl.
+                    browser journey on the exported build), then dispatches
+                    the fresh Round 4 reviewer
 Blocked by        : —
 ```
 
@@ -38,7 +39,7 @@ Blocked by        : —
 | T05  | behavior | Supporting AC-03                                    | All Products and route                                               | T02, T03      | done        | PASS    |
 | T06  | behavior | Supporting AC-06                                    | Local Search and route                                               | T02, T03      | done        | PASS    |
 | T07  | behavior | AC-04                                               | Brand discovery/detail and routes                                    | T02, T03      | done        | PASS    |
-| T08  | behavior | AC-02, AC-05                                        | Category discovery/detail/filter, routes, complete root destinations | T02, T03, T07 | not started | PENDING |
+| T08  | behavior | AC-02, AC-05                                        | Category discovery/detail/filter, routes, complete root destinations | T02, T03, T07 | done        | PASS    |
 | T09  | behavior | AC-03, AC-06, AC-07, AC-08; Supporting AC-04, AC-05 | Product Detail and route                                             | T02–T08       | not started | PENDING |
 
 Stage: `not started` · `scaffolding` · `red/baseline` · `implementing` ·
@@ -293,21 +294,28 @@ GATE: PASS
   two Catalog public exports
 - **Allowed manual files**: Category Brand Filter test; generated detail route is
   edited to pass `categoryId`
-- **Scaffold status**: `PENDING`
+- **Scaffold status**: `READY` (Lead ran all five scaffold commands on
+  2026-09-02 on `catalog-v2-super`; placeholders + baseline tests, thin
+  routes, two barrel exports, typecheck + baseline tests PASS; evidence in
+  worklog)
 - **Allowed file scope**: Category screen directories/routes, Catalog index/docs
 
 ```
-[ ] SCAFFOLD
-[ ] RED — hierarchy/default filter/selected/no-match-reset behavior fails
-[ ] IMPLEMENT
-[ ] GREEN — Category tests
-[ ] AFFECTED CHECKS — route params, export:web, dependency tests/checks
-[ ] TASK DIFF REVIEW — direct-child aggregation and many-to-many rules hold
-[ ] FRESH TASK REVIEW — no unresolved blocking/major finding
-GATE: PENDING
+[x] SCAFFOLD — all five commands; expected file set verified; evidence in worklog
+[x] RED — hierarchy/default filter/selected/no-match-reset behavior fails
+[x] IMPLEMENT
+[x] GREEN — Category tests
+[x] AFFECTED CHECKS — route params, export:web, dependency tests/checks
+[x] TASK DIFF REVIEW — direct-child aggregation and many-to-many rules hold
+[x] FRESH TASK REVIEW — 0 blocking/0 major; 4 minors (T08-R01 docblock,
+    T08-R02 order pin, T08-R03 count pin under filter, T08-R04 root-nav
+    absence pin) all fixed in-task and confirmed RESOLVED by the resumed
+    re-review with 0 new findings (review.md)
+GATE: PASS
 ```
 
-Round 4 gate: `PENDING`
+Round 4 gate: `PENDING` (T07/T08 gated; integrated verification + fresh
+Round review next)
 
 ## Round 5 — Product Detail discovery
 
