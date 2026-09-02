@@ -2334,3 +2334,19 @@ measurement.
   HEAD it is 21 ahead (0 behind, develop unchanged — both true); the prior
   audit summary's "52 feature files" is more precisely 51 feature files +
   8 routes + 2 shared = 61 total.
+
+### CI on the exact final HEAD — the declared open loop, closed
+
+Pushed `e35e7e3..5287c5b` to `catalog-v2-super` (PR #10). GitHub checks on
+the exact final HEAD `5287c5b8c197a2bd17fb51e7f6ad3ad44ed5cb95`:
+
+- Verify (typecheck, lint, format, tests, guards, db, generator): **success**
+- Web bundle: **success**
+- Expo doctor: **success**
+- Android prebuild check: skipped (workflow conditions — the documented
+  native-tier gap, unchanged)
+- Maestro flows: skipped (workflow conditions — no device tier in CI)
+
+PR #10 remains open/draft/unmerged. The one caveat on this record: a final
+docs-only commit recording THIS evidence re-triggers CI; the run for that
+true final HEAD is verified below before closure.
