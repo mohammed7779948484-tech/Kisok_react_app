@@ -343,6 +343,54 @@ describe("catalog-snapshot schema", () => {
     expectRejectedAt(mutate(createCatalogSnapshotFixture()), path);
   });
 
+  it("rejects a brand with no returned product", () => {
+    const payload = createCatalogSnapshotFixture();
+
+    expectRejectedAt(
+      {
+        ...payload,
+        brands: [
+          ...payload.brands,
+          {
+            id: "19191919-1919-4919-8919-191919191919",
+            name: "Maison Orpheline",
+            image_media_asset_id: null,
+            image_public_id: null,
+            image_secure_url: null,
+            display_order: 30,
+          },
+        ],
+      },
+      "brands.2.id",
+    );
+  });
+
+  it("rejects a category with no direct or child-direct product membership", () => {
+    const payload = createCatalogSnapshotFixture();
+
+    expectRejectedAt(
+      {
+        ...payload,
+        product_categories: payload.product_categories.filter(
+          (membership) => membership.category_id !== catalogFixtureIds.categories.specials,
+        ),
+      },
+      "categories.1.id",
+    );
+  });
+
+  it("accepts a category whose only products come through a direct child", () => {
+    const payload = createCatalogSnapshotFixture();
+    const result = catalogSnapshotSchema.safeParse({
+      ...payload,
+      product_categories: payload.product_categories.filter(
+        (membership) => membership.category_id !== catalogFixtureIds.categories.drinks,
+      ),
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("rejects unknown root and entity fields", () => {
     const payload = createCatalogSnapshotFixture();
 

@@ -6,18 +6,21 @@ in `worklog.md`. Keep this checkpoint and gate board current.
 ## Current checkpoint
 
 ```
-Current round     : COMPLETE — HUMAN HANDOFF
-Current task      : Feature Gate recorded PASS; awaiting the human
-Current stage     : All rounds/tasks gated; final review SHIP-READY (F-R01
-                    resolved); Quality Audit CLEAN after resolutions;
-                    develop integration clean; `pnpm verify` + CI green;
-                    PR #10 (Draft) updated to the final state
-Last gate         : FEATURE GATE PASS (2026-09-02) — after Round 5 PASS,
-                    final review, and Quality Audit
-Next legal action : HUMAN: review PR #10 (catalog-v2-super → develop),
-                    verify the unverified tiers (hosted TEST Supabase read;
-                    Android native), and decide the merge. The delivery
-                    agent never merges.
+Current round     : FINAL VERIFICATION (post-handoff session)
+Current task      : Live hosted TEST verification + adversarial findings
+                    (A remediated: T01 reopened→fixed→re-reviewed; B
+                    rejected as intentional; C pending live evidence)
+Current stage     : Baseline re-established on the restored repo (feature
+                    21/185, repo 38/323, pnpm verify exit 0); hosted live
+                    verification in progress on catalog-v2-super
+Last gate         : FEATURE GATE PASS (2026-09-02), reopened honestly at
+                    T01 for the used_* contract gap and restored after
+                    remediation + fresh re-review (A-REVIEW-1: 0
+                    blocking/0 major/0 minor)
+Next legal action : finish the hosted live journey evidence, disposition
+                    Finding C from live evidence, final deterministic
+                    verification + develop integration, fresh final review
+                    + quality audit, push to catalog-v2-super / PR #10 only
 Blocked by        : —
 ```
 
@@ -74,6 +77,22 @@ Stage: `not started` · `scaffolding` · `red/baseline` · `implementing` ·
 [x] TASK DIFF REVIEW — five allowed model files only; behavior correct
 [x] FRESH TASK REVIEW — R01/R03–R08 fixed and closure review found 0 blocking/major; R02 minor accepted
 GATE: PASS
+
+**T01 gate reopened post-handoff (2026-09-02, final verification session):**
+an independent external review (Finding A) was confirmed VALID by the Lead: the
+runtime schema validated only forward references (product→brand, membership→
+entity) but not the backend's backward `used_brands` / `used_categories`
+invariants that Brand Detail and Category Detail explicitly rely on after
+T07-R01. Remediated bug-mode (RED first): 2 regression tests (orphan brand;
+membership-less category) + 1 positive control (root used only via a direct
+child) added to the schema test, and the two backward checks added inside the
+existing `superRefine` — +80 lines across the two allowed model files, zero
+deletions. Feature 21 suites/185 tests PASS, typecheck/eslint/prettier PASS.
+Fresh reviewer (A-REVIEW-1) verified contract fidelity against the migration:
+0 blocking/0 major/0 minor (mechanical RED + over-strict proofs; consumers
+runtime-protected through `callRpc` → `RPC_SCHEMA_MISMATCH`). Gate restored:
+GATE: PASS (reopened→remediated→re-reviewed).
+
 ```
 
 ### T02 — Customer-safe Catalog query pipeline

@@ -243,7 +243,26 @@ export const catalogSnapshotSchema = catalogSnapshotShapeSchema.superRefine((sna
     }
   });
 
+  const categoryIdsWithDirectProducts = new Set<string>(
+    snapshot.product_categories.map((membership) => membership.category_id),
+  );
+  const categoryIdsUsedThroughChildren = new Set<string>();
+  snapshot.categories.forEach((category) => {
+    if (category.parent_id !== null && categoryIdsWithDirectProducts.has(category.id)) {
+      categoryIdsUsedThroughChildren.add(category.parent_id);
+    }
+  });
+
   snapshot.categories.forEach((category, index) => {
+    if (
+      !categoryIdsWithDirectProducts.has(category.id) &&
+      !categoryIdsUsedThroughChildren.has(category.id)
+    ) {
+      addIssue(
+        ["categories", index, "id"],
+        "Every returned category must have a direct product membership or a direct child with one under the used_categories contract.",
+      );
+    }
     if (category.parent_id !== null) {
       if (category.parent_id === category.id) {
         addIssue(["categories", index, "parent_id"], "Category cannot reference itself as parent.");
@@ -273,7 +292,20 @@ export const catalogSnapshotSchema = catalogSnapshotShapeSchema.superRefine((sna
     }
   });
 
+  const brandIdsWithProducts = new Set<string>();
+  snapshot.products.forEach((product) => {
+    if (product.brand_id !== null) {
+      brandIdsWithProducts.add(product.brand_id);
+    }
+  });
+
   snapshot.brands.forEach((brand, index) => {
+    if (!brandIdsWithProducts.has(brand.id)) {
+      addIssue(
+        ["brands", index, "id"],
+        "Every returned brand must have a returned product under the used_brands contract.",
+      );
+    }
     if (
       !hasCompleteNullableTuple([
         brand.image_media_asset_id,

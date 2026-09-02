@@ -2081,3 +2081,69 @@ FEATURE GATE (Lead — final recording)
 
 FEATURE GATE: **PASS** — the feature is delivered to HUMAN HANDOFF. The
 delivery agent never merges; the human decides.
+
+---
+
+## Post-handoff final verification session (2026-09-02, Lead)
+
+Environment restored from scratch after a sandbox reset: repository re-cloned,
+`catalog-v2-super` checked out at `e35e7e3f0a5ee926d1025c28c825e90eaf0868a2`
+(GitHub API confirms it is the current PR #10 head; PR open/draft → develop),
+pnpm@9.12.0 with frozen lockfile. Control documents + migration re-read before
+any action.
+
+Deterministic baseline BEFORE remediation (re-executed, not cited):
+
+- `pnpm exec jest features/catalog` → 21 suites / 182 tests PASS
+- `pnpm exec jest --ci --silent` → 38 suites / 320 tests PASS
+- `pnpm verify` → exit 0
+- `git status` clean
+
+### Adversarial Finding A — used_brands/used_categories runtime validation
+
+Lead triage against the migration and the shipped code: **VALID (major)**.
+Evidence: `20260826050006_lean_customer_catalog.sql:57-64` (used_brands =
+active brand with ≥1 valid product) and `:65-81` (used_categories = direct
+product membership OR a direct child with one) are backward invariants the
+runtime schema did not enforce — `catalog-snapshot.schema.ts` validated only
+the forward direction, while `brand-detail-screen.tsx` (post-T07-R01) and
+`category-detail-screen.tsx` explicitly document relying on the invariants.
+A contract-violating payload would silently render a resolved-but-empty
+Brand/Category Detail instead of the retryable `ErrorState`.
+
+Remediation (bug mode, RED first, fresh implementer A-REMEDIATE-1):
+
+- RED: 2 regression tests (`rejects a brand with no returned product`,
+  `rejects a category with no direct or child-direct product membership`)
+  failed exactly as intended (payload accepted pre-fix), plus 1 positive
+  control (`accepts a category whose only products come through a direct
+child`) pinning the child branch against over-strictness.
+- IMPLEMENT: two additive backward checks inside the existing `superRefine`
+  (brand ids referenced by products; category ids with direct memberships ∪
+  parent ids of returned categories with direct memberships). +80/-0 across
+  `model/catalog-snapshot.schema.ts` and its test; nothing else touched.
+- GREEN: schema file 26/26; whole feature **21 suites / 185 tests PASS**;
+  `pnpm typecheck` exit 0; scoped eslint + prettier clean.
+- Fresh re-review (A-REVIEW-1, read-only): contract fidelity verified
+  clause-by-clause against the migration (used_brands exact; used_categories
+  exact incl. the child-not-returned impossibility proof; no false rejections
+  on backend-reachable payloads; no weakening — 0 deletions; mechanical RED +
+  over-strict experiments reproduced in /tmp; consumers now fail closed
+  through `callRpc` → `RPC_SCHEMA_MISMATCH`). Verdict: 0 blocking / 0 major /
+  0 minor. T01 gate reopened honestly and restored.
+
+### Adversarial Finding B — Home whole-catalog empty state (Lead disposition)
+
+**INVALID as a defect — intentional, contract-compliant.** Evidence:
+`plan.md` Design decision 6 ("only `products: []` produces a whole-catalog
+empty state"), the deliberately-worded pinned T04 test ("shows a
+whole-catalog empty state instead of sections when no products are
+returned" — sections hidden, retry offered), and the state-family symmetry in
+the brief's State requirements (loading/error/empty are the full-screen
+terminal states of the single snapshot read). Under the real backend contract
+`products: []` forces `brands: []` and `categories: []` (both used\_\* CTEs are
+product-derived), so a preserved shell would only link to equally-empty
+discovery screens; the honest single empty state with "Try again" is the
+minimal correct behavior. AC-08's journey guarantees concern the populated
+discovery journey; in the empty state the one meaningful action (refetch) is
+provided. No code change; rationale recorded here and in review.md (F-R03).
