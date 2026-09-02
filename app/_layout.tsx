@@ -15,6 +15,11 @@ import { AuthProvider, useAuth } from "@/core/auth";
 import { QueryProvider } from "@/core/query";
 import { NAV_THEME } from "@/core/theme";
 import { StartupScreen } from "@/features/auth";
+import {
+  KioskMaintenanceOverlay,
+  useDevicePolicySync,
+  useRootTarget,
+} from "@/features/kiosk-runtime";
 
 export const unstable_settings = { anchor: "index" };
 
@@ -26,7 +31,14 @@ export const unstable_settings = { anchor: "index" };
  * protection only — Supabase RLS is the actual authorization boundary.
  */
 function RootNavigator() {
-  const { status, profile } = useAuth();
+  // Device policy must land in the store before any routing decision below,
+  // and it is auth-independent by design (AC-02): it syncs on mount, on MDM
+  // restrictions changes, and on AppState transitions. Mounted exactly once,
+  // here — before every early return so the hooks order can never vary.
+  useDevicePolicySync();
+
+  const { status } = useAuth();
+  const target = useRootTarget();
 
   // Hold the whole app on one screen until identity is known, so no route
   // renders against a half-resolved session.
@@ -34,33 +46,45 @@ function RootNavigator() {
     return <StartupScreen />;
   }
 
-  const ready = status === "ready";
-
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
 
-      <Stack.Protected guard={status === "signedOut"}>
-        <Stack.Screen name="sign-in" />
-      </Stack.Protected>
+        <Stack.Protected guard={target === "sign-in"}>
+          <Stack.Screen name="sign-in" />
+        </Stack.Protected>
 
-      <Stack.Protected guard={status === "unauthorized"}>
-        <Stack.Screen name="unauthorized" />
-      </Stack.Protected>
+        <Stack.Protected guard={target === "unauthorized"}>
+          <Stack.Screen name="unauthorized" />
+        </Stack.Protected>
 
-      <Stack.Protected guard={ready && profile?.role === "customer"}>
-        <Stack.Screen name="(customer)" />
-      </Stack.Protected>
+        <Stack.Protected guard={target === "customer"}>
+          <Stack.Screen name="(customer)" />
+        </Stack.Protected>
 
-      <Stack.Protected guard={ready && profile?.role === "preparation"}>
-        <Stack.Screen name="(preparation)" />
-      </Stack.Protected>
+        <Stack.Protected guard={target === "preparation"}>
+          <Stack.Screen name="(preparation)" />
+        </Stack.Protected>
 
-      {/* Development-only surfaces. Unreachable in a production build. */}
-      <Stack.Protected guard={__DEV__}>
-        <Stack.Screen name="(dev)" />
-      </Stack.Protected>
-    </Stack>
+        {/* The one target the device policy can CREATE: a preparation
+            account on a customer-kiosk tablet never mounts the (preparation)
+            experience (AC-03) — it gets the mismatch screen instead. */}
+        <Stack.Protected guard={target === "kiosk-mismatch"}>
+          <Stack.Screen name="kiosk-mismatch" />
+        </Stack.Protected>
+
+        {/* Development-only surfaces. Unreachable in a production build. */}
+        <Stack.Protected guard={__DEV__}>
+          <Stack.Screen name="(dev)" />
+        </Stack.Protected>
+      </Stack>
+      {/* Root maintenance overlay (customer-kiosk only; renders nothing on a
+          standard device). A sibling of the Stack so its absolutely-positioned
+          corner entry floats over whichever screen is visible; the sheet's
+          portal is hosted by the root PortalHost below. */}
+      <KioskMaintenanceOverlay />
+    </>
   );
 }
 

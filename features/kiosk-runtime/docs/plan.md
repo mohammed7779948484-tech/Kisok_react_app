@@ -197,10 +197,22 @@ lockTaskPermitted === true`; everything else (missing key, invalid value,
    guards/handoff/cleanup/recovery pipeline is the safety property. No
    parallel sign-out implementation (AC-06).
 6. **Root safety via a pure resolver.** `resolveRootTarget(auth, role, policy)`
-   (pure, in `model/`) decides which navigator target is visible; `app/_layout.tsx`
-   consumes it through `Stack.Protected` guards. This keeps the shared-file
-   diff minimal, the logic table-testable, and standard-device behavior
-   provably unchanged (AC-03/AC-04).
+   (pure, in `model/`) decides which navigator target is visible; the app
+   consumes it through the feature-exposed hook `useRootTarget()`
+   (`state/use-root-target.ts` — subscribes to the store's policy role,
+   combines `useAuth()`, calls the pure resolver). Reason (Lead amendment
+   2026-09-02, pre-T07): `.claude/rules/routes.md` + eslint block Zustand
+   imports in `app/**` — "Own the store inside the feature and expose a
+   hook" — so the barrel exports `useRootTarget`, `useDevicePolicySync`, and
+   `KioskMaintenanceOverlay` only; the raw store stays feature-private.
+   `app/_layout.tsx` maps the target to `Stack.Protected` guards. This keeps
+   the shared-file diff minimal, the logic table-testable, and
+   standard-device behavior provably unchanged (AC-03/AC-04).
+   `app/index.tsx`'s role redirect becomes target-driven through the same
+   hook — without it, a preparation session on a kiosk would redirect to the
+   then-unregistered `(preparation)` group and land on `+not-found`, which
+   violates AC-03. Routing-only diff; same source of truth as the layout
+   guards.
 7. **Native integration through a local Expo module + config plugin.**
    `modules/kiosk-policy` (Android-only) exposes
    `getDevicePolicySnapshot()` (AsyncFunction — restrictions read is disk I/O)
@@ -327,6 +339,9 @@ Allowed manual files (with the reason no capability fits):
   derivation rules; the `schema` capability generates the Zod boundary only.
 - `features/kiosk-runtime/model/root-guard.ts` (+ test) — pure routing
   resolver; domain rules are the documented manual case.
+- `features/kiosk-runtime/state/use-root-target.ts` (+ test) — the hook the
+  app consumes instead of the store (routes rule: expose a hook, not the
+  store); state/ is the store-subscription layer, so it is the planned home.
 - `features/kiosk-runtime/native/policy-source.ts`,
   `features/kiosk-runtime/native/use-device-policy-sync.ts` (+ tests) — the
   feature's platform IO boundary and its wiring hook; `api/` is for Supabase
@@ -339,8 +354,10 @@ Allowed manual files (with the reason no capability fits):
   `.github/workflows/mdm-beta-upload.yml` — GitHub workflows; no capability.
 - `features/kiosk-runtime/docs/mdm-operations.md` — the ManageEngine
   operational contract (AC-10).
-- `app/_layout.tsx` (edit), `app.config.ts` (edit), `.gitignore` (edit) — the
-  only shared-file changes, listed and justified below.
+- `app/_layout.tsx` (edit), `app/index.tsx` (edit — target-driven redirect;
+  Lead amendment pre-T07, see Design decision 6), `app.config.ts` (edit),
+  `.gitignore` (edit) — the only shared-file changes, listed and justified
+  below.
 
 ## Files expected to change
 
@@ -369,7 +386,7 @@ shared files are where parallel agents collide.
 - NOT changed: `core/**`, `components/**`, `features/auth/**`,
   `features/catalog/**`, `features/preparation/**`, `app/(customer)/**`,
   `app/(preparation)/**`, `app/sign-in.tsx`, `app/unauthorized.tsx`,
-  `app/index.tsx`, `supabase/**`, `tools/generator/**`, existing workflows,
+  `supabase/**`, `tools/generator/**`, existing workflows,
   `package.json` (no new scripts or dependencies — the workflows invoke the
   tools with plain `node`).
 
@@ -455,11 +472,11 @@ CLASSIFY → RED / BASELINE → IMPLEMENT → GREEN → AFFECTED CHECKS → DIFF
 
 ### Round 2 — Kiosk safety UI and maintenance (routing + screens)
 
-| Task | Mode            | Acceptance               | Objective                                                                                                                                                                                                                   | Depends on    | Entry evidence                                                                                                    |
-| ---- | --------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------- |
-| T05  | behavior        | Acceptance: AC-03        | Kiosk mismatch screen + `app/kiosk-mismatch.tsx` route; safe sign-out via the shared pipeline                                                                                                                               | T03           | failing screen test (screen/route absent)                                                                         |
-| T06  | behavior        | Acceptance: AC-05        | Maintenance UI: entry affordance (long-press), unlock sheet, panel with switch-account; ephemeral session rules                                                                                                             | T03           | failing component tests (components absent)                                                                       |
-| T07  | behavior-change | Acceptance: AC-03, AC-04 | Root integration: `resolveRootTarget` resolver + `app/_layout.tsx` guard rewrite + overlay mount; verification includes the repository-wide static search proving no app-owned `startLockTask`/`stopLockTask` calls (AC-04) | T04, T05, T06 | failing resolver tests stating the NEW behavior (preparation-on-kiosk → mismatch) while standard rows match today |
+| Task | Mode            | Acceptance               | Objective                                                                                                                                                                                                                                                                                   | Depends on    | Entry evidence                                                                                                    |
+| ---- | --------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------- |
+| T05  | behavior        | Acceptance: AC-03        | Kiosk mismatch screen + `app/kiosk-mismatch.tsx` route; safe sign-out via the shared pipeline                                                                                                                                                                                               | T03           | failing screen test (screen/route absent)                                                                         |
+| T06  | behavior        | Acceptance: AC-05        | Maintenance UI: entry affordance (long-press), unlock sheet, panel with switch-account; ephemeral session rules                                                                                                                                                                             | T03           | failing component tests (components absent)                                                                       |
+| T07  | behavior-change | Acceptance: AC-03, AC-04 | Root integration: `resolveRootTarget` resolver + `useRootTarget` hook + `app/_layout.tsx` guard rewrite + overlay mount + `app/index.tsx` target-driven redirect; verification includes the repository-wide static search proving no app-owned `startLockTask`/`stopLockTask` calls (AC-04) | T04, T05, T06 | failing resolver tests stating the NEW behavior (preparation-on-kiosk → mismatch) while standard rows match today |
 
 ### Round 3 — Signed release delivery (signing, verification, MDM automation, docs)
 

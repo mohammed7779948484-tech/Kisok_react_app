@@ -735,3 +735,146 @@ LEAD FOLLOW-UPS RECORDED
   sound) — recorded here per the review request.
 
 GATE: PASS
+
+### T07 — PLAN AMENDMENT (Lead, pre-delegation)
+
+Design decision 6 refined and the planned-change list extended BEFORE
+delegating T07 (the workflow's stop-and-report duty discharged by the Lead
+instead of the implementer):
+
+1. `app/**` may not import Zustand (eslint no-restricted-imports;
+   `.claude/rules/routes.md`: "Own the store inside the feature and expose
+   a hook") → the plan's "app/\_layout.tsx consumes resolveRootTarget"
+   needs a feature-exposed HOOK: new planned manual file
+   `state/use-root-target.ts` (`useRootTarget()` = store policy-role
+   subscription + useAuth() + the pure resolver). The barrel exports
+   `useRootTarget`, `useDevicePolicySync`, `KioskMaintenanceOverlay` ONLY —
+   the raw store stays feature-private.
+2. `app/index.tsx` (previously in the plan's NOT-changed list) must become
+   target-driven: with the `(preparation)` group unregistered on a kiosk
+   (the resolver's whole point), today's unconditional role redirect would
+   land a preparation session on `+not-found` instead of the mismatch
+   screen — violating AC-03. Routing-only diff; the same hook is the source
+   of truth for both the layout guards and the index redirect.
+
+Amendments recorded in plan.md (Design decision 6, Allowed manual files,
+Files-expected-to-change, task table T07 row) and the todo T07 block.
+
+### T07 — root integration
+
+MODE: behavior-change
+ACCEPTANCE: AC-03, AC-04
+
+PLAN AMENDMENT (Lead, pre-delegation — see the "T07 — PLAN AMENDMENT"
+entry above: feature-exposed useRootTarget hook instead of app-side store
+imports; app/index.tsx target-driven redirect)
+
+RED (fresh feature-implementer, agent-74abb2e8)
+Baseline pinned first: 9 suites / 102 tests green at a8ae85c.
+$ pnpm jest features/kiosk-runtime
+Test Suites: 2 failed, 10 passed — root-guard.test.ts and
+use-root-target.test.tsx both fail "Cannot find module './root-guard'" /
+"'./use-root-target'" (the planned manual subjects are absent; the new
+behavior is missing; all pre-existing suites stayed green; the lock-task
+pin passes trivially BY DESIGN — permanent regression pin, not a RED case).
+Implementer disclosed two RED-scaffolding fixes made BEFORE treating RED as
+valid: hook test renamed .ts → .tsx (JSX parse error was a wrong-kind
+failure); lock-task regex constructed from split string pieces so the
+sentinel file's own comment cannot self-match while still being scanned.
+
+IMPLEMENT
+model/root-guard.ts — pure resolveRootTarget(status, role, policyRole) →
+RootTarget ("startup" | "sign-in" | "unauthorized" | "customer" |
+"preparation" | "kiosk-mismatch"); type-only imports; full mapping table
+(18 rows); defensive ready+undefined/admin → "unauthorized" rows
+documented unreachable via useAuth (core/auth resolves non-tablet roles to
+unauthorized before ready).
+state/use-root-target.ts — useRootTarget(): live store subscription
+(policy.role) + useAuth() + the pure resolver; subscription/derivation
+only.
+index.ts — export widening: useDevicePolicySync, useRootTarget,
+KioskMaintenanceOverlay (+ the pre-existing KioskMismatchScreen); raw
+store stays feature-private; comment updated with the Zustand-ban
+rationale.
+app/\_layout.tsx — useDevicePolicySync() mounted first (before every early
+return); target-driven guards incl. the NEW kiosk-mismatch guard;
+KioskMaintenanceOverlay as a Stack sibling in a fragment; everything else
+byte-identical to a8ae85c (RootLayout/providers/PortalHost/(dev)/index/
+startup early-return untouched; profile destructure dropped — no longer
+needed).
+app/index.tsx — routing-only: exhaustive switch over the target;
+unreachable "startup" case documented; standard redirects
+meaning-equal to the baseline ternary.
+model/root-guard-lock-task.test.ts — AC-04 permanent pin: fs scan of
+app/core/components/features source files for call-shaped
+start/stopLockTask — asserts none (115 files scanned, 0 offenders).
+
+GREEN
+$ pnpm jest features/kiosk-runtime → 12 suites / 128 tests PASS
+(one disclosed mock fix: installMockAuth defaults to signed-in customer;
+the signed-out tests now pass { profile: null } — intent unchanged, no
+assertion weakened)
+
+AFFECTED CHECKS
+$ pnpm typecheck → PASS; pnpm lint → PASS; pnpm format:check → PASS;
+$ pnpm exec eslint app/ + the five files → clean (app/\*\* Zustand-ban
+proof); $ pnpm test:ci → 29 suites / 266 tests PASS; pnpm verify → PASS.
+
+RUNTIME EVIDENCE (Lead, at the gate)
+
+1. Standard-path web regression (policy source = real web behavior —
+   module unavailable → fail-closed standard): expo web (SDK 54 Metro) at
+   800×1280 AND 1280×800 — / → target "sign-in" → /sign-in renders the
+   full sign-in screen exactly as before; NO maintenance entry; zero page
+   errors; screenshots download/t07-web-regression-signin-{tablet,landscape}.png.
+2. Kiosk-stubbed web preview (T07-R1 remediation, recorded per the
+   reviewer's request): temporary UNCOMMITTED stub of
+   getKioskPolicyModule (kiosk_device_role=customer_kiosk, demo code
+   7410, timeout 90s; demo values only) → reverted byte-identical after
+   capture (git diff clean on modules/). Observed at 800×1280, zero page
+   errors: sign-in STILL renders (policy never blocks sign-in) WITH the
+   Maintenance corner entry; long-press (mouse down 1s) opens the unlock
+   sheet; wrong code 0000 → "That code didn't work." retry state, sheet
+   open, code masked (••••); right code 7410 → UNLOCKED panel with
+   "Switch customer account" + Close; after 90s the OPEN sheet
+   auto-returned to the LOCKED code-entry state (the overlay's expiry
+   timer firing end-to-end in a browser). Screenshots
+   download/t07-kiosk-stub-{sheet-locked,sheet-retry,panel-unlocked,expired-relocked}.png.
+   NOT observable in this environment (honest supersession note, T07-R1):
+   the preparation-session mismatch ROUTING itself — no preparation
+   credentials exist for the shared TEST backend and none may be invented;
+   that row is pinned by the resolver table, the hook live-flip test, and
+   the 12-suite feature coverage, and remains verifiable on hardware at
+   MDM enrollment (already on the unverified list).
+
+DIFF
+New: model/root-guard.ts (+2 test files), state/use-root-target.ts (+
+test). Modified: index.ts (export widening), app/\_layout.tsx,
+app/index.tsx (the two planned shared changes). Control docs (Lead):
+plan amendment + this entry.
+
+REVIEW (fresh code-reviewer, agent-65564a96)
+No blocking or major findings. One minor:
+T07-R1 brief AC-03 lists a runtime web preview with the policy source
+stubbed to kiosk as an observable mode, but the Lead's recorded runtime
+evidence covered only the standard path → RESOLVED AT THIS GATE: the
+kiosk-stubbed web preview above (entry → long-press → sheet → wrong/right
+code → panel → 90s expiry re-lock, zero errors, stub reverted
+byte-identical) plus the honest supersession note for the
+session-dependent routing (no credentials; test-pinned; hardware at
+enrollment).
+Axes found clean: resolver correctness + totality (guard-by-guard
+baseline comparison via git show; the ONLY semantic addition on reachable
+inputs is preparation+kiosk → kiosk-mismatch; defensive rows verified
+unreachable in core/auth/context.tsx), hook subscription discipline +
+live-flip test, barrel exactly-four exports + truthful comment, layout
+diff discipline (RootLayout byte-identical; every guard maps a real route
+name — LS-verified), index routing-only exhaustive switch, lock-task pin
+scope + self-clean sentinel + call-shaped matching (reviewer replicated
+the scan: 115 files, 0 offenders), test quality (arithmetic 266 = 240+26
+consistent; explicit mock args — no default reliance; zero console
+output), verify + pre-commit gates, scope discipline. Amendment soundness:
+confirmed correct (the Zustand ban is mechanically real; the +not-found
+argument holds).
+
+GATE: PASS

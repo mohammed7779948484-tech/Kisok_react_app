@@ -46,7 +46,7 @@ Scan this first. Detail is below.
 | T04  | behavior        | Supporting AC-02                    | native policy source + sync hook                                             | T03           | done        | PASS    |
 | T05  | behavior        | Acceptance: AC-03                   | kiosk mismatch screen + route                                                | T03           | done        | PASS    |
 | T06  | behavior        | Acceptance: AC-05                   | maintenance UI (entry, unlock sheet, panel)                                  | T03           | done        | PASS    |
-| T07  | behavior-change | Acceptance: AC-03, AC-04            | root guard resolver + app/\_layout.tsx integration + static lock-task search | T04, T05, T06 | not started | PENDING |
+| T07  | behavior-change | Acceptance: AC-03, AC-04            | root guard resolver + app/\_layout.tsx integration + static lock-task search | T04, T05, T06 | done        | PASS    |
 | T08  | config          | Supporting AC-07                    | release-signing config plugin + .gitignore                                   | —             | not started | PENDING |
 | T09  | behavior        | Acceptance: AC-08, Supporting AC-01 | tools/release/verify-release-apk.ts + tests                                  | —             | not started | PENDING |
 | T10  | config          | Supporting AC-07                    | android-release.yml workflow                                                 | T08, T09      | not started | PENDING |
@@ -150,9 +150,9 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Skills**: test-driven-development, expo-router, kisok-react-native-rules
 - **Lead scaffold**: none (manual edits)
 - **Expected generated files**: none
-- **Allowed manual files**: `features/kiosk-runtime/model/root-guard.ts` + `.test.ts`; edits to `app/_layout.tsx` (the planned shared change)
-- **Scaffold status**: `N/A — integration wiring; resolver is a planned manual model file`
-- **Allowed file scope**: `features/kiosk-runtime/model/root-guard*`, `app/_layout.tsx`
+- **Allowed manual files**: `features/kiosk-runtime/model/root-guard.ts` + `.test.ts` (+ optional `root-guard-lock-task.test.ts`); `features/kiosk-runtime/state/use-root-target.ts` + `.test.ts`; edits to `app/_layout.tsx` and `app/index.tsx` (the two planned shared changes — see plan Design decision 6 as amended pre-T07); `features/kiosk-runtime/index.ts` export widening (useRootTarget, useDevicePolicySync, KioskMaintenanceOverlay ONLY)
+- **Scaffold status**: `N/A — integration wiring; resolver + hook are planned manual files`
+- **Allowed file scope**: `features/kiosk-runtime/model/root-guard*`, `features/kiosk-runtime/state/use-root-target*`, `features/kiosk-runtime/index.ts`, `app/_layout.tsx`, `app/index.tsx`
 - **Focused verification**: resolver tests (RED for the NEW behavior; standard rows equal today's routing); all existing auth/routing tests stay green; repository-wide static search for app-owned `startLockTask`/`stopLockTask` returns nothing; web runtime regression at tablet sizes
 
 ## Round 3 — Signed release delivery

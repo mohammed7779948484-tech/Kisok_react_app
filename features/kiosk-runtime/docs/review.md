@@ -22,6 +22,8 @@ Implementation notes do not belong here; they belong in `worklog.md`.
 | T06-R1 | minor | RED relay said "2 trivially-passing tests"; empirical RED re-run shows 3 (the overlay's standard-device absence pin also passed trivially) | reviewer scratch-copy RED re-run: 21 failed / 3 passed / 24 | fixed | Lead recorded the corrected count (3 honest post-contract absence pins) in the T06 worklog entry; no test change needed |
 | T06-R2 | minor | Sheet Close button not disabled while signOut.pending — mid-flight close hides a blocked/failed outcome (success unaffected) | maintenance-sheet.tsx:154 vs primary action :125 | fixed | Implementer resumed: Close mirrors the primary action's disabled state; regression RED reproduced the gap exactly, then green; in-flight test extended to both controls |
 
+| T07-R1 | minor | Brief AC-03 lists a runtime web preview with the policy source stubbed to kiosk; Lead runtime evidence initially covered only the standard path (the plan had narrowed browser runtime deliberately) | brief.md AC-03 vs plan.md Verification scopes | fixed | RESOLVED at the T07 gate: kiosk-stubbed web preview recorded (entry + long-press + sheet + wrong/right code + 90s expiry re-lock; zero errors; uncommitted stub reverted byte-identical) + honest supersession note for the session-dependent routing (no preparation credentials in this environment; resolver/hook/12-suite test coverage; hardware at MDM enrollment) |
+
 Severity means: **blocking** — must not merge; **major** — fix in this feature;
 **minor** — worth doing, safe to defer with a note.
 
