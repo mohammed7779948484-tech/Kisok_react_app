@@ -830,3 +830,122 @@ FRESH TASK REVIEW + GATE (T05, Lead)
 - T04-R03 stated rule verified in T05: full-screen error only without data, and
   a dedicated test pins the background-refetch-failure-keeps-grid behavior.
 - GATE: PASS — T05 complete. Working tree committed by the Lead.
+
+SCAFFOLD (T06, Lead — JIT, immediately before delegation)
+
+- `pnpm generate screen catalog search` → created
+  `features/catalog/screens/search/search-screen.tsx` (placeholder TODO on the
+  standard `Screen` shell) and `…/search-screen.test.tsx` (baseline
+  mount-without-throwing test, to be rewritten RED-first in place).
+- `pnpm generate route catalog search --role=customer --screen=search` →
+  created thin `app/(customer)/search.tsx` rendering `SearchScreen` from
+  `@/features/catalog` and appended
+  `export { SearchScreen } from "./screens/search/search-screen"` to
+  `features/catalog/index.ts`.
+- Lead inspection: placeholder content is the generated TODO; baseline test
+  asserts only the title; route file is the standard thin route; barrel gains
+  exactly one export. Tree before delegation: b7f7db7 + the T06 scaffold.
+
+RED (T06, Implementer)
+
+- Rewrote `features/catalog/screens/search/search-screen.test.tsx` in place
+  (as instructed) into the behavioral suite: 15 tests covering the four
+  DISTINCT search states (idle prompt, too-short hint, no-match message,
+  results count + grid), product-name and associated-field (category)
+  matching, case/diacritic-insensitive matching through the screen
+  ("ALPINÉ" → plain "Alpine …" names), SKU/barcode exclusion, result-card
+  push params, root replace semantics, snapshot-layer states (cold loading,
+  error-without-data + retry, non-retryable, whole-catalog empty), and the
+  T04-R03 background-refetch rule.
+- `$ pnpm exec jest features/catalog/screens/search --runInBand`
+  → **15/15 failed** against the placeholder screen. Failure cause verified
+  as missing behaviour, not a broken test: every failure renders the
+  placeholder tree (`Search` title + `TODO: build this screen. See
+features/catalog/docs/todo.md.`) — no accessible header, no labelled
+  search input ("Unable to find an element with accessibility label: Search
+  products"), no state copy, no loading/error/empty surface. No import or
+  setup errors.
+
+IMPLEMENT (T06, Implementer)
+
+- `search-screen.tsx`: snapshot layer exactly per the T04/T05 pattern and the
+  T04-R03 stated rule (`isPending` → cold `LoadingState` only; `isError &&
+!data` → full-screen `ErrorState` with retry; `products: []` →
+  whole-catalog `EmptyState` with refetch action, same copy as Home/Products
+  — the search surface does not render in those states). Search layer: shared
+  `Input` primitive (visible `label="Search products"` doubles as the
+  accessible name; `autoFocus`, `autoCapitalize="none"`, `autoCorrect={false}`,
+  `returnKeyType="search"`), query held ONLY in component state, `view.search(
+query)` computed per keystroke (no debounce, no re-implemented matching), and
+  one persistent status `Text` with `accessibilityLiveRegion="polite"` whose
+  exhaustive-switch copy renders the idle prompt / too-short hint / no-match
+  message / result count — one live element so screen readers hear state
+  changes, and the input is never unmounted or blurred between states.
+  Results render through the T03 `CatalogGrid` (FlashList, 2/3/4 columns) —
+  a two-character query can match the whole catalog, so the result set is
+  unbounded and virtualizes per the RN list rules; same stable-prop contract
+  as Products (module-scope keyExtractor, `useCallback` renderItem/press).
+  `CatalogNavigation current="search"` with the exhaustive REPLACE switch +
+  `never` default; result cards PUSH `/product-detail` with
+  `{ productId }` (object form).
+- Route/export verification: `app/(customer)/search.tsx` is the generated
+  thin route rendering `SearchScreen` from `@/features/catalog` — correct as
+  scaffolded, NOT modified; `features/catalog/index.ts` already exports
+  exactly `SearchScreen` — NOT modified.
+
+GREEN (T06, Implementer)
+
+- `$ pnpm exec jest features/catalog/screens/search --runInBand`
+- 1 suite, 15 tests PASS, zero console output. (Initial run 12/15: three
+  tests typed before awaiting the snapshot resolve — fixed by adding the same
+  `waitFor(IDLE_PROMPT)` sequencing the other typing tests already had; no
+  assertion weakened.)
+
+AFFECTED CHECKS (T06, Implementer)
+
+- Whole feature: `$ pnpm exec jest features/catalog --runInBand` → 13 suites,
+  101 tests PASS (T01 model, T02 api/queries, T03 components, T04 Home, T05
+  Products, T06 Search), zero console output.
+- Full repository suite: `$ pnpm exec jest --silent --runInBand` → 30 suites,
+  239 tests PASS (Lead's T05 baseline was 29/224: +1 suite, +15 tests).
+- `pnpm typecheck` → PASS.
+- `pnpm lint` (expo lint) → PASS (no warnings).
+- Prettier: `--write` then `--check` on the two screen files → PASS; focused
+  tests re-run after the format pass → 15/15 PASS; repo-wide
+  `pnpm exec prettier --check .` → PASS.
+- `pnpm check:docs` → PASS (63 files).
+- `pnpm export:web` → PASS; `› Static routes (13):` now includes `/search`
+  and `/(customer)/search` (11 → 13 since T05); `Exported: dist`. (Detail
+  routes `/brands`, `/categories`, `/brand-detail`, `/category-detail`,
+  `/product-detail` are T07–T09 as planned; tests assert router calls, not
+  actual navigation.)
+
+DIFF REVIEW (T06, Implementer)
+
+- Changed exactly two files, both in `features/catalog/screens/search/`
+  (screen + its test, the latter rewritten in place as instructed). The
+  Lead's scaffold edits to `app/(customer)/search.tsx`,
+  `features/catalog/index.ts`, `features/catalog/docs/todo.md` and the
+  SCAFFOLD worklog entry above are untouched (verified via git diff). No
+  shared file, no T03 component, no route table, no generator run, no commit.
+- No structural artifact was needed beyond the planned scaffold; nothing
+  missing was created.
+
+FRESH TASK REVIEW + GATE (T06, Lead)
+
+- Fresh code-reviewer (read-only; skills: kisok-code-review, kisok-design-system,
+  kisok-react-native-rules, expo-router) re-ran every check first-hand
+  (search suite 15/15, feature 13/101, repo 30/239, typecheck, lint, prettier,
+  check:docs, export:web with /search + /(customer)/search among 13 static
+  routes) and verified the implementation claim-by-claim: the four distinct
+  search states with distinct assertions; the T04-R03 rule; the pure local
+  projection (no network/RPC/SKU/barcode/ranking/debounce); the associated-field
+  search claim (the "top" query genuinely matches through the `Tóp Picks`
+  category path); backend order; object-form push; input a11y (live-region
+  choice judged correct); stable grid props; exhaustive switches; RED
+  credibility against the real generator template; the disclosed GREEN
+  sequencing fix (no weakening); scope and boundaries clean.
+- Verdict: 0 blocking / 0 major; 1 minor (T06-R01, checkpoint lag — fixed by the
+  Lead while recording this review, T05-R02 precedent; convention adopted for
+  T07–T09 prompts). Recorded in review.md.
+- GATE: PASS — T06 complete. Working tree committed by the Lead.

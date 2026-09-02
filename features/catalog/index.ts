@@ -14,3 +14,4 @@
  */
 export { CatalogHomeScreen } from "./screens/catalog-home/catalog-home-screen";
 export { ProductsScreen } from "./screens/products/products-screen";
+export { SearchScreen } from "./screens/search/search-screen";
