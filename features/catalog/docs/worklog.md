@@ -236,3 +236,58 @@ ROUND 1 GATE: PASS
 - Pushed `feature/catalog` to origin.
 - Opened Draft PR [#7](https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/7) with head `feature/catalog` and base `develop`, using the project PR template with pending Feature Gate evidence.
 - The PR remains Draft; subsequent passed Tasks/Rounds will be committed and pushed to the same PR.
+
+### T03 — Shared navigation, virtualized grid and entity cards
+
+MODE: behavior
+ACCEPTANCE: Supporting AC-02 through AC-08
+
+SCAFFOLD (Lead)
+
+- `$ pnpm generate component catalog catalog-navigation`
+- `$ pnpm generate component catalog catalog-grid`
+- `$ pnpm generate component catalog availability-badge`
+- `$ pnpm generate component catalog product-card`
+- `$ pnpm generate component catalog brand-card`
+- `$ pnpm generate component catalog category-card`
+- Created exactly the six planned files under `features/catalog/components/`; skipped/replaced none.
+- Planned manual artifacts: colocated behavior/accessibility tests for the six components.
+- Lead inspected every generated file and verified the paths and feature-level ownership match the Plan. Scaffold status: `READY`.
+
+RED / IMPLEMENT / GREEN
+
+- After correcting an invalid grid-test mock factory, valid RED was `$ pnpm exec jest features/catalog/components --runInBand` → 6 suites failed, 14 tests failed and 1 passed against generated TODO placeholders.
+- Implemented five-destination selected navigation, generic responsive FlashList grid, textual availability, and whole-card Product/Brand/Category components in the six generated files; added six planned colocated tests.
+- Lead GREEN: component 6 suites/15 tests PASS. T01/T02 regressions: 4 suites/35 tests PASS.
+
+AFFECTED CHECKS / DIFF
+
+- Lead typecheck PASS; scoped component lint/format PASS; full lint PASS.
+- Scope: exactly six generated components plus six planned tests; no query/router/store/Supabase/shared primitive/index/doc edit by Implementer.
+
+FRESH TASK REVIEW
+
+- R09 major: card tests do not assert correct media URI/decorative alt/fallback inputs or explicit absence of optional Product copy.
+- R10 minor: public grid props allow invalid `horizontal` with multi-column layout.
+- R11 minor: shared grid lacks token-based cell gutter, so rounded cards touch.
+
+GATE: FAIL — remain in T03 for bounded remediation and fresh re-review.
+
+REMEDIATION / FRESH RE-REVIEW
+
+- Original T03 worker added typed AppImage contract/optional-content assertions, then was interrupted by an HTTP 429 after establishing valid grid RED (`horizontal` remained undefined). A fresh T03 Implementer inspected and completed the partial work.
+- R09 fixed: all card tests assert exact URI or missing URI, decorative alt, content fit, preserved image slot and absent optional Product copy.
+- R10 fixed: `horizontal` is omitted from public grid props and controlled as `false`.
+- R11 fixed: the complete caller `ListRenderItem` output is wrapped in token-based `p-2` cell padding, with responsive/remount behavior preserved.
+- Lead rerun: component 6 suites/15 tests PASS; T01/T02 4 suites/35 tests PASS; typecheck, scoped lint/format and full lint PASS.
+- Fresh T03 re-review: no findings; unresolved blocking/major 0.
+
+GATE: PASS
+
+### Round 2 Gate
+
+- Lead reviewed the combined CatalogView → cards/grid/navigation contracts and the 12-file T03 scope.
+- Integrated evidence remained green: 6 component suites/15 tests, 35 data-pipeline tests, typecheck, scoped formatting and full lint.
+- Fresh Round reviewer found no blocking, major or minor issue.
+
+ROUND 2 GATE: PASS
