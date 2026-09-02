@@ -681,3 +681,152 @@ FRESH TASK REVIEW + REMEDIATION + GATE (T04, Lead)
   scaffold; T03 components untouched). Findings/dispositions recorded in
   review.md.
 - GATE: PASS — T04 complete. Working tree committed by the Lead.
+
+SCAFFOLD (T05, Lead — JIT, immediately before delegation)
+
+- `pnpm generate screen catalog products` → created
+  `features/catalog/screens/products/products-screen.tsx` (placeholder TODO on the
+  standard `Screen` shell) and `…/products-screen.test.tsx` (baseline
+  mount-without-throwing test, to be rewritten RED-first in place).
+- `pnpm generate route catalog products --role=customer --screen=products` →
+  created thin `app/(customer)/products.tsx` rendering `ProductsScreen` from
+  `@/features/catalog` (route-only, no data/state/logic; params pattern documented
+  in the generated docblock) and appended
+  `export { ProductsScreen } from "./screens/products/products-screen"` to
+  `features/catalog/index.ts`.
+- Lead inspection: placeholder screen content is exactly the generated TODO;
+  baseline test mounts inside real providers and asserts only the title; route
+  file is the standard thin route; barrel gains exactly one export. No skips, no
+  replacements beyond the planned ones. Tree before delegation: acf44ad + the
+  T05 scaffold (screen/route untracked, index.ts modified).
+
+### T05 — All Products and route (implementer)
+
+MODE: behavior
+ACCEPTANCE: Supporting AC-03
+
+RED (Implementer)
+
+- `$ pnpm exec jest features/catalog/screens/products --runInBand`
+- 1 suite / 10 tests failed, 0 passed. Every failure was "Unable to find an
+  element with role/text …" (header `All products`, `7 products`, card
+  buttons `Café Crème, Available` / `Everyday Tote, Out of stock`, nav
+  buttons, `Loading the catalog…`, `Something went wrong`, `The catalog is
+empty`) against the placeholder's `Products` / `TODO: build this screen`
+  render — the intended missing behavior; no import/mock/typing failures.
+- The generated baseline mount test was rewritten in place into the
+  behavioral suite (10 tests): populated mount (header + count + every
+  identity in the grid + nav with Products selected), identity/image
+  fallback/textual availability from the card, all-unavailable
+  discoverability, card PUSH to `/product-detail` with exact params
+  (available, unavailable, and an appended-fixture product), root REPLACE
+  semantics for all five destinations incl. re-selecting Products,
+  announced cold loading, retryable error + retry refetch, non-retryable
+  error without retry affordance, background-refetch failure keeps the
+  populated grid, whole-catalog empty state (brands/categories still in the
+  snapshot) + retry. The baseline's mount-without-throwing intent survives
+  as the first test.
+- Mock mechanisms: feature API seam `jest.mock("../../api/fetch-catalog")`
+  (screen test never knows Supabase exists), minimal
+  `jest.mock("expo-router")` `{ useRouter: () => ({ push, replace }) }`
+  spies (T04 pattern), `lucide-react-native` stub for AppImage fallbacks
+  (T03 card-test pattern), and `jest.useFakeTimers()` following the
+  CatalogGrid test — this screen renders FlashList, whose deferred layout
+  work fires real timers that escape `act` and print warnings under real
+  timers (probed: warnings appear without fake timers, none with them).
+  Consequently the Home test's macrotask flush for TanStack's batched
+  observer notification becomes `jest.advanceTimersByTimeAsync(0)` inside
+  `act`, and presses use
+  `userEvent.setup({ advanceTimers: jest.advanceTimersByTime })`.
+- Fixtures built past the base 3-product snapshot (task requirement): a
+  7-product snapshot (4 appended products with mixed availability, no cover
+  media, so the shared image fallback renders alongside the base cover
+  image), an all-7-unavailable variant (every variant `is_available: false`
+  — every product must stay discoverable with `Out of stock`), and a
+  whole-catalog empty variant.
+
+IMPLEMENT (Implementer)
+
+- `features/catalog/screens/products/products-screen.tsx` implemented in
+  place: `useCatalog()` consumed (never Supabase directly); capability-aware
+  states per the T04 Lead disposition — cold `isPending` → `LoadingState`,
+  full-screen `ErrorState` only when `isError && !data` (error object passed
+  through; retry = refetch), `products: []` → whole-catalog `EmptyState`
+  (same semantic and copy as Home, action = refetch), otherwise the complete
+  `view.products` collection in `CatalogGrid` (the T03 virtualized
+  responsive grid — no ScrollView for the products) with one `ProductCard`
+  per product, `keyExtractor` on product id, and
+  `onItemPress` → `router.push({ pathname: "/product-detail", params: {
+productId } })` (object form, PUSH — plan Design decision 5). Root
+  navigation: `CatalogNavigation current="products"` wired to REPLACE
+  semantics for all five destinations via the same exhaustive-switch handler
+  as T04, including the `never`-typed exhaustiveness `default`.
+- Stable references into the grid: `renderProductCard` in `useCallback`,
+  `handleProductPress` in `useCallback`, `keyExtractor` at module scope.
+- Unavailable products are never filtered (plan Design decision 10); the
+  grid renders whatever `view.products` holds.
+- Copy choices (not pinned by the Plan): heading `All products` (h1 header),
+  muted summary line `N products` / `1 product`, loading label
+  `Loading the catalog…` (same as Home), whole-catalog empty copy mirroring
+  Home. Heading/count/root-nav stay mounted above the grid so root
+  destinations remain reachable while the grid scrolls; grid gets
+  `className="px-4"` so the inter-card gutter (2 × the T03 row `p-1.5`) matches
+  Home's `gap-3`; the card inset (16 + 6 = 22px) sits 2px inside the `px-6`
+  (24px) header margin — an accepted imperceptible visual deviation
+  (T05-R01, review.md), confirm visually at the Round 3 gate browser check.
+- Route/export verification: `app/(customer)/products.tsx` is the generated
+  thin route rendering `ProductsScreen` from `@/features/catalog` — correct
+  as scaffolded, NOT modified; `features/catalog/index.ts` already exports
+  exactly `ProductsScreen` — NOT modified.
+
+GREEN (Implementer)
+
+- `$ pnpm exec jest features/catalog/screens/products --runInBand`
+- 1 suite, 10 tests PASS, zero console output.
+
+AFFECTED CHECKS (Implementer)
+
+- Whole feature: `$ pnpm exec jest features/catalog --runInBand` → 12 suites,
+  86 tests PASS (T01 model, T02 api/queries, T03 components, T04 Home,
+  T05 screen), zero console output.
+- Full repository suite: `$ pnpm exec jest --silent --runInBand` → 29 suites,
+  224 tests PASS.
+- `pnpm typecheck` → PASS.
+- `pnpm lint` (expo lint) → PASS (no warnings).
+- Prettier: `--write` then `--check` on the screen files → PASS; repo-wide
+  `pnpm exec prettier --check .` → PASS.
+- `pnpm check:docs` → PASS (63 files).
+- `pnpm export:web` → PASS; `› Static routes (11):` includes both `/products`
+  and `/(customer)/products`; `Exported: dist`. (Detail routes
+  `/product-detail`, `/brands`, `/categories`, `/search` are not exported
+  yet — they are T06–T09, as planned; the screen navigates to the planned
+  paths and tests assert router calls, not actual navigation.)
+
+DIFF REVIEW (Implementer)
+
+- Changed exactly two files, both in `features/catalog/screens/products/`
+  (screen + its test, the latter rewritten in place as instructed).
+  `app/(customer)/products.tsx`, `features/catalog/index.ts`,
+  `features/catalog/docs/todo.md` and the SCAFFOLD worklog entry above are
+  byte-identical to the Lead's scaffold (verified via git diff). No shared
+  file, no T03 component, no route table, no generator run, no commit.
+- No structural artifact was needed beyond the planned scaffold; nothing
+  missing was created.
+
+FRESH TASK REVIEW + GATE (T05, Lead)
+
+- Fresh code-reviewer (read-only; skills: kisok-code-review, kisok-design-system,
+  kisok-react-native-rules, expo-router) re-ran every check first-hand (products
+  suite 10/10, feature 12/86, repo 29/224, typecheck, lint, prettier,
+  check:docs, export:web with /products + /(customer)/products in the static
+  routes). Verdict: 0 blocking / 0 major; 2 minors recorded in review.md.
+- T05-R01 (accept): the card inset (grid `px-4` + T03 row `p-1.5` = 22px) sits
+  2px inside the 24px header margin — imperceptible; gutter matches Home. The
+  worklog's original alignment claim was wrong and has been corrected above;
+  visual confirmation assigned to the Round 3 gate browser check. The shared
+  T03 grid is deliberately NOT edited for this (scope; changes other grids).
+- T05-R02 (fix): todo.md checkpoint lagged the finished work — fixed by the Lead
+  while recording this review (T03-R01 precedent).
+- T04-R03 stated rule verified in T05: full-screen error only without data, and
+  a dedicated test pins the background-refetch-failure-keeps-grid behavior.
+- GATE: PASS — T05 complete. Working tree committed by the Lead.

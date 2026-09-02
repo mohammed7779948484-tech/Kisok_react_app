@@ -13,3 +13,4 @@
  * `pnpm generate screen` alone does not widen this file.
  */
 export { CatalogHomeScreen } from "./screens/catalog-home/catalog-home-screen";
+export { ProductsScreen } from "./screens/products/products-screen";
