@@ -9,7 +9,7 @@ import { Screen } from "@/components/layout/screen";
 import { Alert, Button, Text } from "@/components/ui";
 
 import { CartItemRow } from "../../components/cart-item-row";
-import { selectDistinctLineCount, selectTotalQuantity, useCartStore } from "../../state/cart-store";
+import { useCart } from "../../state/use-cart";
 
 // The Screen primitive's edges contract (R-T09-01): the bottom inset has
 // exactly ONE owner per presentation — the fixed footer's own bottom-edge
@@ -26,10 +26,16 @@ const FOOTERLESS_EDGES = ["top", "bottom", "left", "right"] as const;
  * navigation — "Browse Products" pushes the customer root through
  * expo-router's `useRouter()` (the sheet deliberately never imports a router;
  * its caller owns navigation, but a routed screen has nowhere else to hand the
- * escape). It reads the single cart store (`useCartStore`) and mutates it
- * through the store's own actions, so the screen can never drift from the one
- * cart model. ESLint boundaries permit store reads in feature screens; only
- * `app/**` routes are barred from Zustand.
+ * escape). It consumes `useCart()` — the feature's narrow public view plus
+ * bound actions (plan decisions 11+15): the per-slice subscriptions and the
+ * selector-derived totals live in the hook, and mounting this screen under an
+ * authenticated profile IS the owner-scoped restore trigger — the hook's
+ * effect (keyed on the profile id) hydrates the single store, so the mounted
+ * `/cart` route performs the durable restore at runtime (R-T10-01: AC-02
+ * reachability is real, not aspirational). The screen itself never hydrates.
+ * The QuickCartSheet deliberately keeps its direct store reads: it is a
+ * transient overlay whose hydration belongs to this persistent routed surface
+ * — hydrating in both would be double-hydration ownership (plan decision 15).
  *
  * States (capability-aware — the cart is local-only client state, so there is
  * no server loading/error/retry here): restore-pending (async local read) →
@@ -56,8 +62,8 @@ const FOOTERLESS_EDGES = ["top", "bottom", "left", "right"] as const;
  * like every other footer-less screen in the repo. When the footer unmounts
  * (the last line removed or the cart cleared), Screen re-claims the bottom
  * edge — one owner at a time, never two, never none. The summary block above
- * the destructive Clear Cart button derives its totals from the T04 module
- * selectors, never a mirrored total.
+ * the destructive Clear Cart button derives its totals from the view — the
+ * T04 module selectors inside the hook — never a mirrored total.
  *
  * It must not import the Supabase client or the catalog — the cart is
  * client-owned local state with no backend. Use design-system components and
@@ -66,14 +72,15 @@ const FOOTERLESS_EDGES = ["top", "bottom", "left", "right"] as const;
  */
 export function FullCartScreen() {
   const router = useRouter();
-  // The single cart model: subscriptions are per-slice, and totals come from
-  // the T04 module-level selectors — never a mirrored or recomputed duplicate.
-  const lines = useCartStore((state) => state.lines);
-  const persistence = useCartStore((state) => state.persistence);
-  const locked = useCartStore((state) => state.locked);
-  const hydrated = useCartStore((state) => state.hydrated);
-  const totalQuantity = useCartStore(selectTotalQuantity);
-  const distinctLineCount = useCartStore(selectDistinctLineCount);
+  // The single cart model through the hook's narrow view (plan decisions
+  // 11+15): per-slice subscriptions and the selector-derived totals live
+  // inside useCart() — never a mirrored or recomputed duplicate — and the
+  // hook's effect, keyed on the active profile id, owns hydration: rendering
+  // this screen under an authenticated profile IS the restore trigger. The
+  // bound actions resolve the CURRENT store through getState() at call time,
+  // so capturing them in the closures below is safe.
+  const view = useCart();
+  const { lines, persistence, locked, hydrated, totalQuantity, distinctLineCount } = view;
 
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
 
@@ -137,8 +144,8 @@ export function FullCartScreen() {
                 key={line.lineId}
                 line={line}
                 locked={locked}
-                onSetQuantity={(next) => useCartStore.getState().setLineQuantity(line.lineId, next)}
-                onRemove={() => useCartStore.getState().removeLine(line.lineId)}
+                onSetQuantity={(next) => view.setLineQuantity(line.lineId, next)}
+                onRemove={() => view.removeLine(line.lineId)}
               />
             ))}
           </ScrollView>
@@ -182,9 +189,10 @@ export function FullCartScreen() {
         destructive
         onConfirm={() => {
           setConfirmClearOpen(false);
-          // The store's real signature: memory clears immediately, the
-          // durable remove→fallback reports its honest status.
-          useCartStore.getState().clearCart();
+          // The view's bound action delegates to the store's real signature:
+          // memory clears immediately, the durable remove→fallback reports
+          // its honest status.
+          view.clearCart();
         }}
       />
     </Screen>
