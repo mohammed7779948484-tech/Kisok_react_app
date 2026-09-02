@@ -15,11 +15,11 @@ The single answer to "where are we?". Update it whenever any of it changes; it
 is the first thing the next agent reads.
 
 ```
-Current round     : 2
-Current task      : — (all tasks done)
-Last gate         : ROUND 2 GATE: PASS (commit 33dd590)
-Next legal action : DEVELOP_INTEGRATION_CHECK → FINAL_VERIFICATION → code review → quality audit → feature gate
-Blocked by        : — (Draft PR #8 open — see Blocked)
+Current round     : done
+Current task      : —
+Last gate         : FEATURE GATE: PASS (final gates recorded — verification, code review, quality audit, runtime evidence)
+Next legal action : HUMAN_HANDOFF — Draft PR #8 stays DRAFT; a human reviews and decides the merge
+Blocked by        : — (human review of Draft PR #8 — see Blocked)
 ```
 
 ## Rules
@@ -292,24 +292,24 @@ Every line is a box, and `pnpm verify` alone is not the authority — several
 of these depend on an environment only CI has. See `review.md` for the review and
 audit findings this checklist points at.
 
-- [ ] Every Task Gate PASS
-- [ ] Every Round Gate PASS
-- [ ] Every AC verified
-- [ ] `pnpm verify` PASS after the final local change
-- [ ] required fast GitHub CI PASS on the final HEAD
-- [ ] required runtime evidence recorded
-- [ ] required native tier(s) PASS, N/A, or explicitly unverified
-- [ ] Reviewer findings dispositioned
-- [ ] blocking/major fixes re-reviewed
-- [ ] Quality Audit clean
-- [ ] anything not verified explicitly recorded
-- [ ] shared/core changes justified
-- [ ] PR evidence matches the worklog
+- [x] Every Task Gate PASS — T01–T11 all done/PASS (status board; per-task evidence in worklog.md, dispositions in review.md)
+- [x] Every Round Gate PASS — Round 1 gate PASS (bb6d170), Round 2 gate PASS (33dd590); full batteries recorded in worklog.md
+- [x] Every AC verified — 13/13 with direct jest evidence (FINAL VERIFICATION table in worklog.md); the brief's runtime-browser portions recorded in RUNTIME EVIDENCE (three sizes, measured ≥48px targets on /cart); QuickCartSheet frames stay component-test-only — no runtime consumer by design
+- [x] `pnpm verify` PASS after the final local change — re-run fresh on the closeout tree (the comment sentence + all records in): EXIT 0
+- [x] required fast GitHub CI PASS on the final HEAD — green on 37dca64 AND on the closeout records commit 9831cb2 (Expo doctor + Web bundle + Verify all SUCCESS, confirmed via the check-runs API after pushing; Maestro/Android label-gated, skipped by design); this gate-record commit itself is docs-only and was re-polled after its own push — result in the Lead's workspace log
+- [x] required runtime evidence recorded — RUNTIME EVIDENCE sections (worklog.md + review.md); dev-server transport, sheet frames, second-customer and native explicitly unverified with reasons
+- [x] required native tier(s) PASS, N/A, or explicitly unverified — explicitly unverified (AsyncStorage jest-mocked locally; device tier untested); no cart maestro flow — N/A by plan
+- [x] Reviewer findings dispositioned — final review PASS, 0 blocking / 0 major / 4 minor (R-FR-01..R-FR-04) + runtime finding R-FR-05, all dispositioned in review.md; QA-01..QA-06 dispositioned there too
+- [x] blocking/major fixes re-reviewed — none in the final review (0 blocking / 0 major); the historical blockers/majors (R-T03-01/02, R-T10-01/02) were remediated and re-reviewed at their gates
+- [x] Quality Audit clean — CLEAN-WITH-OBSERVATIONS; every observation was recording-only and all were closed by the closeout records
+- [x] anything not verified explicitly recorded — the explicitly-unverified list in RUNTIME EVIDENCE (dev-server transport + ENOSPC log, QuickCartSheet runtime frames, second-customer owner-mismatch, native/device tier)
+- [x] shared/core changes justified — N/A: zero shared/core changes in the diff (features/cart/\*\* + app/(customer)/cart.tsx only)
+- [x] PR evidence matches the worklog — commit count corrected to 16 for 80b8ac3..37dca64 (15 was true at first push); PR body updated at closeout to the final evidence state
 
-FEATURE GATE: PENDING
+FEATURE GATE: PASS (2026-09-02) — every task and round gate PASS, 13/13 ACs jest-evidenced, `pnpm verify` EXIT 0 on the closeout tree, GitHub CI green on the feature HEAD, runtime browser evidence recorded, final review 0 blocking / 0 major with every minor dispositioned, quality audit clean-with-observations, every unverified tier named; Draft PR #8 stays DRAFT — a human decides the merge.
 
 ## Blocked
 
 What cannot proceed, and what it is waiting for. Empty is good.
 
-- — (Draft PR #8 opened: https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/8)
+- — (nothing blocked: Draft PR #8 is complete and stays DRAFT, awaiting human review — https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/8)
