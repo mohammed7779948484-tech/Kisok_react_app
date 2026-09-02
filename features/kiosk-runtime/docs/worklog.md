@@ -269,3 +269,67 @@ label-gated android-build CI job once the PR exists (external dependency;
 documented plan risk; nothing in static contract review suggests failure).
 
 GATE: PASS
+
+### T02 — SCAFFOLD (Lead)
+
+$ pnpm generate schema kiosk-runtime device-policy
+created : features/kiosk-runtime/model/device-policy.schema.ts
+features/kiosk-runtime/model/device-policy.schema.test.ts
+skipped : none
+replaced : none
+manual : features/kiosk-runtime/model/derive-device-policy.ts (+ test) —
+planned manual model artifact (pure derivation rules; the schema
+capability covers the Zod boundary only)
+Scaffold status: READY
+
+### T02 — model: device-policy schema + fail-closed derivation
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-02
+
+SCAFFOLD (Lead — recorded in the T02 SCAFFOLD entry above)
+
+RED (fresh feature-implementer, agent-825aa36f)
+$ pnpm jest features/kiosk-runtime
+derive suite: "Test suite failed to run — Cannot find module
+'./derive-device-policy'" — the planned manual module does not exist yet
+(the right failure: the subject is missing, not a typo/import error).
+schema suite: 4 accept-side failures (placeholder {id: uuid} schema rejects
+every real native snapshot) — the missing behavior.
+
+IMPLEMENT
+model/device-policy.schema.ts — real native-snapshot contract
+(restrictions record of primitives, lockTaskPermitted boolean,
+lockTaskModeState enum; z.strictObject; no defaults, no silent coercion).
+model/derive-device-policy.ts — pure deriveDevicePolicy: role kiosk iff
+!provisional && (explicit customer_kiosk || lockTaskPermitted); maintenance
+code only on kiosk role (non-string/empty → null); timeout clamped
+[15,600] default 90 (non-integer → default).
+
+- the two colocated test files (43 tests).
+
+GREEN
+$ pnpm jest features/kiosk-runtime
+Test Suites: 2 passed, 2 total; Tests: 43 passed, 43 total
+
+AFFECTED CHECKS
+$ pnpm typecheck → PASS; pnpm lint → PASS; pnpm format:check → PASS
+$ pnpm test:ci → 19 suites / 181 tests PASS
+$ pnpm verify → PASS (generator smoke test passed)
+
+DIFF
+Untracked: features/kiosk-runtime/model/\*\* (4 files). Tracked: worklog/todo
+updates only. features/kiosk-runtime/index.ts untouched.
+
+REVIEW (fresh code-reviewer, agent-25298854)
+No blocking or major findings. Two minors:
+T02-R1 control-record lag → fixed by this entry + todo update.
+T02-R2 brief/plan wording tension on "contradictory" → accepted with an
+interpretation note in docs/review.md (Accepted risks).
+Axes found clean: derivation vs binding rules (incl. pending suppression of
+BOTH kiosk signals), maintenance semantics, schema trade-off (strict
+top-level / open restriction keys), purity/auth-independence, test quality
+(clamp boundaries, pending+allowlist, code-on-standard, drifted truthy
+pending marker), pnpm verify exposure, scope discipline.
+
+GATE: PASS

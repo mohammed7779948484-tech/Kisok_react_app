@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : 1
-Current task      : T02
+Current task      : T03
 Current stage     : not started
-Last gate         : T01 GATE: PASS
-Next legal action : Lead scaffold for T02 (pnpm generate schema kiosk-runtime device-policy), then delegate T02
+Last gate         : T02 GATE: PASS
+Next legal action : Lead scaffold for T03 (pnpm generate store kiosk-runtime device-policy), then delegate T03
 Blocked by        : — (external: GitHub push credentials absent — affects PR/CI evidence only, not implementation)
 ```
 
