@@ -16,10 +16,10 @@ is the first thing the next agent reads.
 
 ```
 Current round     : 2
-Current task      : T10
-Current stage     : not started (no scaffold — public-API wrapper has no generator capability)
-Last gate         : T09 GATE: PASS
-Next legal action : Lead composes + delegates T10 (useCart hook + public API in index.ts; honor T09/T05 carry-forwards: hydration via useActiveProfile, sign-out-cleanup side-effect import, NO re-export of clearCartForSignOut)
+Current task      : T11
+Current stage     : not started (no scaffold — behavior wiring task, plan decision 15)
+Last gate         : T10 GATE: PASS
+Next legal action : Lead composes + delegates T11 (FullCartScreen consumes useCart(); runtime hydration wiring — R-T10-01 remediation), then Round 2 gate, then Draft PR
 Blocked by        : — (push credentials now available; Draft PR opens after Round 2 gate)
 ```
 
@@ -50,7 +50,8 @@ Scan this first. Detail is below.
 | T07  | behavior | Supporting AC-03, AC-04, AC-12               | CartItemRow component                           | T01, T06           | done        | PASS    |
 | T08  | behavior | Acceptance AC-10                             | QuickCartSheet adaptive surface                 | T04, T07           | done        | PASS    |
 | T09  | behavior | Acceptance AC-11                             | Full Cart screen + /cart route                  | T04, T07           | done        | PASS    |
-| T10  | behavior | Acceptance AC-13                             | useCart hook + public API in index.ts           | T05, T08, T09      | not started | PENDING |
+| T10  | behavior | Acceptance AC-13                             | useCart hook + public API in index.ts           | T05, T08, T09      | done        | PASS    |
+| T11  | behavior | Acceptance AC-02, AC-11 (runtime)            | FullCartScreen consumes useCart() (wiring)      | T09, T10           | not started | PENDING |
 
 Stage is one of: `not started` · `scaffolding` · `red/baseline` ·
 `implementing` · `green` · `checks` · `diff review` · `done`.
@@ -259,6 +260,26 @@ access exists. See `Blocked`.
   API test imports `@/features/cart` only.
 
 Round gate: `PENDING`
+
+### T11 — FullCartScreen consumes useCart() (runtime wiring)
+
+- **Mode**: behavior
+- **Acceptance**: `Acceptance: AC-02, AC-11 (runtime reachability)`
+- **Depends on**: T09, T10
+- **Skills**: test-driven-development, kisok-design-system
+- **Lead scaffold**: N/A — behavior wiring task added by the Lead at T10
+  review (R-T10-01; plan design decision 15 — revision recorded in plan.md)
+- **Expected generated files**: —
+- **Allowed manual files**: edits to
+  `features/cart/screens/full-cart/full-cart-screen.tsx` + its test
+- **Allowed file scope**: `features/cart/screens/full-cart/**`
+- **Spec**: screen's direct per-slice store subscriptions replaced by the
+  hook's narrow view (identical fields + hydration + bound actions);
+  rendered screen restores a pre-seeded durable envelope for the active
+  profile WITHOUT any manual hydrate call (the failing-then-passing proof);
+  QuickCartSheet keeps direct store reads (transient overlay); route stays
+  thin; existing screen tests keep passing (mutations may move to bound
+  actions — signatures identical).
 
 ## Feature gate
 

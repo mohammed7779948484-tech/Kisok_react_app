@@ -170,3 +170,30 @@ for T10: the screen reads `hydrated` but nothing hydrates yet — T10's
 useCart() owns hydration via useActiveProfile() (plan decision 11);
 sign-out-cleanup registration goes live via the index.ts side-effect
 import in T10.
+
+| R-T10-01 | blocking (feature-level; T10's own spec met) | nothing in the app ever calls `useCart()`/`hydrateCart` — FullCartScreen subscribes to the store directly and never hydrates; `/cart` renders restore-pending skeleton forever; AC-02/AC-11 runtime reachability and the plan's reload-restore verification unreachable | full-cart-screen.tsx:2,71-83; grep: only runtime index load is app/(customer)/cart.tsx:1; plan.md decision 11 + Verification section | spawned T11 (Lead revised plan: design decision 15 + task-table row) — FullCartScreen consumes useCart() | T11 |
+| R-T10-02 | major | evidence-record accuracy: the final T10 implementation is the prior unreported attempt reused verbatim (index.ts + use-cart.ts byte-identical to /tmp/t10-prior-attempt-backup; test differs only in comment wording) — the "from scratch" worklog claim was wrong; the prior attempt originated from an earlier subagent launch whose report was lost to a transport timeout | diff /tmp/t10-prior-attempt-backup vs final; worklog T10 entry | resolved — Lead corrected the T10 worklog evidence record at gate; this review + the re-run checks stand as the independent review of that code | done |
+| R-T10-03 | minor | exact-surface pin filtered `Object.entries` by typeof function — a non-function value export would pass | use-cart.test.tsx:285-289 | fixed in remediation — full key equality `Object.keys(cartApi).sort()` vs the 13-name list (catches any export kind; type re-exports erased at runtime); discrimination probe: stray `CART_T10_PROBE` export failed the test, then reverted (index.ts byte-identical) | done |
+| R-T10-04 | minor | CartView identity is per-render (fresh object each render) — a future consumer putting `view` in a dependency array would loop; undocumented | use-cart.ts | fixed in remediation — CartView doc comment: destructure the view; identity is per-render | done |
+
+T10 review note: reviewer re-ran everything fresh (focused 9/9; sign-out-
+cleanup 5/5 — registry hygiene unbroken; ALL 5 auth suites 41/41 — no
+cross-suite surprise from the side-effect import, auth tests never load
+@/features/cart, jest per-file registries confirmed empirically; FULL 27
+suites/288; typecheck/lint/check:docs/hook-eslint/format clean; working
+tree exactly the 3 declared files). Verified clean: side-effect trace
+(index → sign-out-cleanup → registerSignOutCleanup; name-keyed Map,
+idempotent; T09 route-test load registers once per its own file registry,
+no sign-out runs there), hook mechanics (per-slice subscriptions, derived
+totals via module selectors, stable module-level action identities,
+effect keyed [profile.id] with ref-guard set BEFORE the call — real
+StrictMode double-invoke guard + store serialized same-owner no-op),
+hydration-ownership tests real (restore test seeds envelope + renders probe
+only; owner-switch test proves old lines discarded + envelope miss),
+plain-action name mapping (lockCart→lock etc.), getCartSnapshot time-
+independence, boundaries (FullCartScreen export line byte-identical;
+forbidden names only in doc comments, pinned absent), test quality (9/9
+discriminating), no circular imports. R-T10-01 dispositioned as T11 (the
+plan revision is recorded in plan.md decision 15 + task table); R-T10-02
+corrected in the worklog; R-T10-03/04 remediated in-task and re-verified
+(9/9, 27/288, all checks clean).

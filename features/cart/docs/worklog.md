@@ -729,3 +729,97 @@ Re-verified: focused 13/13, full 26 suites/279, typecheck/lint/
 hook-eslint/format clean.
 
 GATE: PASS
+
+## T10 — useCart hook + public API
+
+Lead scaffold: N/A (no generator capability covers a public-API wrapper —
+plan feature-shape table). Composed task packet: download/composed-t10.md.
+
+START DISCREPANCY (honest record, R-T10-02)
+The task opened against an unexpected tree state: an UNREPORTED prior T10
+attempt sat uncommitted (index.ts edited + use-cart.ts + use-cart.test.tsx
+untracked) — the work of an earlier subagent launch whose report was lost
+to a transport timeout. The implementer backed it up verbatim to
+/tmp/t10-prior-attempt-backup/, reset to clean HEAD 9ff8a20, and ran the
+RED→GREEN cycle. EVIDENCE RECORD CORRECTION (Lead, at gate, per R-T10-02):
+the final implementation and tests are the prior attempt's content reused
+verbatim (index.ts + use-cart.ts byte-identical; the test file differs
+only in comment wording) — the "from scratch" phrasing in the implementer's
+report was wrong about provenance. The code itself is sound: the fresh
+reviewer reviewed it independently and re-ran every check (all PASS —
+see TASK REVIEW below), so this review stands as the authority on the
+code's correctness.
+
+RED (against clean HEAD)
+$ pnpm test -- use-cart
+9 failed / 9 — right class: missing exports (`QuantityStepper` undefined,
+`useCart is not a function`, plain actions missing) and unregistered
+cleanup (runSignOutCleanup left seeded lines + durable key intact).
+
+IMPLEMENT
+state/use-cart.ts: useCart() — per-slice subscriptions on the real
+singleton (lines/persistence/hydrated/locked) + derived totals via the
+T04 module selectors (never mirrored); bound actions delegating through
+getState() (stable identities); hydration ownership: useActiveProfile() +
+effect keyed [profile.id] calling the store's serialized idempotent
+hydrate; lastHydratedOwner ref is effect hygiene only (StrictMode
+double-invoke guard, set before the call); NO store changes. Plain action
+functions for non-React callers (addItem, setLineQuantity, removeLine,
+clearCart, lockCart, unlockCart, hydrateCart, getCartSnapshot —
+lockCart/unlockCart/hydrateCart map to store lock/unlock/hydrate;
+getCartSnapshot returns a frozen-in-time plain snapshot incl. ownerId).
+Type re-exports: CartLine, AddToCartInput, PersistenceStatus (one public
+types source).
+index.ts: EXACTLY 13 runtime exports (QuantityStepper, CartItemRow,
+QuickCartSheet, FullCartScreen, useCart, 8 plain actions) + 3 type
+exports + `import "./state/sign-out-cleanup"` registration side-effect
+(decision 10). FORBIDDEN and absent: useCartStore, createCartStore,
+clearCartForSignOut (R-T05-05). FullCartScreen export line kept
+byte-identical to the route-gen output. Doc comment: what is public and
+why; Zustand stays an implementation detail (decision 11).
+state/use-cart.test.tsx (9 tests): public-API surface (exact runtime
+export set + forbidden absent + type presence pinned compile-time),
+registration live through the index (seed → runSignOutCleanup → memory
+AND durable cleared), hook view restores a pre-seeded envelope through a
+probe render only (hydration ownership), owner switch (old lines
+discarded + envelope miss), bound actions update view+store,
+getCartSnapshot time-independence, plain actions from non-React context.
+Registry hygiene: registration stays live per file (module-load once;
+jest per-file registries); store+durable resets per test; documented.
+
+GREEN
+$ pnpm test -- use-cart → 9/9, zero console output
+$ pnpm test -- sign-out-cleanup → 5/5 (T05 hygiene unbroken)
+$ pnpm test → 27 suites / 288 tests PASS
+$ pnpm typecheck / lint / hook-eslint (3 files, --max-warnings=0) / format:check → clean
+
+DIFF
+3 files (2 new, 1 edit) — all within features/cart/state/\*\* + index.ts.
+
+TASK REVIEW (fresh, agent-3f42e39d…)
+Re-ran everything fresh incl. ALL 5 auth suites (41/41 — no cross-suite
+surprise from the side-effect import). Findings:
+
+- R-T10-01 BLOCKING (feature-level): no runtime consumer of useCart() —
+  /cart would render restore-pending forever. Disposition: Lead revised
+  the plan (design decision 15 + T11 row) — T11 wires FullCartScreen to
+  useCart(). Not a T10 defect: T10's own spec is met and verified.
+- R-T10-02 MAJOR: evidence-record accuracy (see START DISCREPANCY above —
+  corrected here at gate).
+- R-T10-03 MINOR: exact-surface pin only caught function-valued exports.
+- R-T10-04 MINOR: CartView per-render identity undocumented.
+  Clean: side-effect trace + idempotence, hook mechanics, hydration
+  ownership tests, plain-action mapping, snapshot semantics, boundaries,
+  test quality, no circular imports.
+
+REMEDIATION (same implementer, resumed)
+R-T10-03: full key equality (Object.keys sorted vs the 13-name list) —
+catches any export kind; discrimination probe: temporary stray
+CART_T10_PROBE export failed the test, then reverted (index.ts verified
+byte-identical). R-T10-04: CartView doc comment (destructure the view;
+identity is per-render).
+Re-verified: 9/9 focused, 27/288 full, typecheck/lint/hook-eslint/format
+clean.
+
+GATE: PASS (R-T10-01 tracked as T11 — the feature-level hole is closed by
+T11 before the Round 2 gate; the plan revision is recorded in plan.md)

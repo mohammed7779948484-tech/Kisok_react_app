@@ -169,6 +169,17 @@ For each: the decision, and the alternative rejected and why.
 variant="warning"` (the ui-lab-documented cart scenario);
     `clearFailed` → `Alert variant="destructive"` (a safety issue must not
     be undersold as a memory-only warning — `docs/state-management.md:76-86`).
+15. **The routed Full Cart screen CONSUMES `useCart()`** (added at T10
+    review — R-T10-01: the hook owned hydration on paper but nothing called
+    it, leaving `/cart` restore-pending forever). `FullCartScreen` replaces
+    its direct per-slice store subscriptions with the hook's narrow view
+    (identical fields plus hydration), so the mounted route performs the
+    owner-scoped restore at runtime and AC-02/AC-11 reachability is real,
+    not aspirational. The QuickCartSheet keeps its direct store reads (it
+    is a transient overlay mounted by a future Catalog shell; hydration
+    belongs to the persistent routed surface). Rejected: hydrating inside
+    the sheet (double-hydration ownership) and hydrating in the route file
+    (`app/**` is barred from Zustand/state by ESLint boundaries).
 
 ## Data contract
 
@@ -312,20 +323,23 @@ CLASSIFY → RED / BASELINE → IMPLEMENT → GREEN / AFFECTED CHECKS → DIFF R
 
 ### Round 2 — Cart UI surfaces and public API
 
-| Task | Mode     | Acceptance                     | Objective                                                                                                                                                                                                                        | Depends on                                             | Entry evidence                                                                                                   |
-| ---- | -------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| T06  | behavior | Supporting AC-04, AC-12        | `QuantityStepper` component + test: value, min/max disabled bounds, accessible increment/decrement labels, announced value, ≥48dp targets                                                                                        | — (conceptually after T02; run sequentially after T05) | failing test: stepper renders labelled buttons, disables minus at min                                            |
-| T07  | behavior | Supporting AC-03, AC-04, AC-12 | `CartItemRow` component + test: image w/ fallback, name, variant/options label, stepper, confirmed destructive remove, disabled while locked                                                                                     | T01, T06                                               | failing test: row renders line snapshot; remove opens `ConfirmDialog` with destructive confirm                   |
-| T08  | behavior | Acceptance AC-10               | `QuickCartSheet` + tests (both layout presentations): AdaptiveSheet composition, total quantity, lines, empty state, memoryOnly warning, clearFailed alert, locked-disabled controls, Continue Shopping / View Full Cart intents | T04, T07                                               | failing test: sheet renders populated state with totals and intents; compact metrics → bottom-sheet presentation |
-| T09  | behavior | Acceptance AC-11               | Full Cart screen + `/cart` route + tests: restore-pending skeleton, empty state w/ browse escape, populated list, persistence warning, locked states; thin route via public API; no catalog imports                              | T04, T07                                               | failing test: screen renders empty state with escape action; route imports `@/features/cart` only                |
-| T10  | behavior | Acceptance AC-13               | `useCart()` hook + plain actions + `index.ts` public API + tests: narrow view, bound actions, non-React action calls, cleanup registration live via index import                                                                 | T05, T08, T09                                          | failing test: importing `@/features/cart` exposes hook/actions/components/types and registers cleanup            |
+| Task | Mode     | Acceptance                                     | Objective                                                                                                                                                                                                                                                                                          | Depends on                                             | Entry evidence                                                                                                                                     |
+| ---- | -------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T06  | behavior | Supporting AC-04, AC-12                        | `QuantityStepper` component + test: value, min/max disabled bounds, accessible increment/decrement labels, announced value, ≥48dp targets                                                                                                                                                          | — (conceptually after T02; run sequentially after T05) | failing test: stepper renders labelled buttons, disables minus at min                                                                              |
+| T07  | behavior | Supporting AC-03, AC-04, AC-12                 | `CartItemRow` component + test: image w/ fallback, name, variant/options label, stepper, confirmed destructive remove, disabled while locked                                                                                                                                                       | T01, T06                                               | failing test: row renders line snapshot; remove opens `ConfirmDialog` with destructive confirm                                                     |
+| T08  | behavior | Acceptance AC-10                               | `QuickCartSheet` + tests (both layout presentations): AdaptiveSheet composition, total quantity, lines, empty state, memoryOnly warning, clearFailed alert, locked-disabled controls, Continue Shopping / View Full Cart intents                                                                   | T04, T07                                               | failing test: sheet renders populated state with totals and intents; compact metrics → bottom-sheet presentation                                   |
+| T09  | behavior | Acceptance AC-11                               | Full Cart screen + `/cart` route + tests: restore-pending skeleton, empty state w/ browse escape, populated list, persistence warning, locked states; thin route via public API; no catalog imports                                                                                                | T04, T07                                               | failing test: screen renders empty state with escape action; route imports `@/features/cart` only                                                  |
+| T10  | behavior | Acceptance AC-13                               | `useCart()` hook + plain actions + `index.ts` public API + tests: narrow view, bound actions, non-React action calls, cleanup registration live via index import                                                                                                                                   | T05, T08, T09                                          | failing test: importing `@/features/cart` exposes hook/actions/components/types and registers cleanup                                              |
+| T11  | behavior | Acceptance AC-02, AC-11 (runtime reachability) | `FullCartScreen` consumes `useCart()` (narrow view replaces direct store subscriptions; hydration + bound actions live at runtime; design decision 15) + tests: rendered screen restores a pre-seeded durable envelope through the hook; existing screen tests keep passing through the public API | T09, T10                                               | failing test: rendering the screen against a pre-seeded durable envelope for the active profile restores the lines without any manual hydrate call |
 
 Mode, Acceptance, Objective are three different columns (see
 `kisok-feature-plan`). All tasks are `behavior` — each opens with a failing
 test for the missing behaviour.
 
 T06 is written with no hard dependency; execution is sequential
-(T01→T10) to keep verification simple — only research is parallelised.
+(T01→T11) to keep verification simple — only research is parallelised.
+T11 was added by the Lead at T10 review (R-T10-01, design decision 15) —
+the plan revision is recorded here, not silently.
 
 ## Risks
 
