@@ -32,6 +32,10 @@ Implementation notes do not belong here; they belong in `worklog.md`.
 | T08-F03 | minor | Config-mode evidence (prebuild matrix, md5 idempotency, control byte-identity) existed only in the handoff text — AC-07's app-side trail would be lost if the gate commit omitted it | worklog.md had no T08 entry at review time | fixed | Full T08 worklog entry written with the entire prebuild evidence matrix and committed with the gate |
 | T08-F04 | minor | T10 heads-up (restore package.json after prebuild) lived only in the implementer handoff; T10's implementer reads todo.md, not the handoff | todo.md T10 focused verification (no package.json mention) | fixed | One line added to todo.md's T10 focused verification by the Lead |
 
+| T09-F01 | minor | Green-path main test used the real outputSink — the success line leaked to stdout during test:ci and was asserted by no test | pnpm test:ci 2 \| grep -c "APK verification passed" → 1 | fixed | Implementer resumed: sink injected + success line pinned (package/versionName/versionCode/non-debug certificate/JS bundle); leak grep → 0; mutation probe failed exactly the green test |
+| T09-F02 | minor | --help exits 0 and the direct-run guard is rename-coupled (hardcoded SCRIPT_FILENAME) — a mis-invoked or renamed script could pass the workflow gate silently | verify-release-apk.ts:543–568 | fixed | Recorded as a T10 requirement in todo.md: the workflow's verify step must assert the success line in its output (covers both paths) |
+| T09-F03 | minor | The parseFlags "flag requires a value" failure path had no test (every other fail-closed input path was pinned) | verify-release-apk.ts:316–319 vs test file | fixed | Implementer resumed: new test — --apk without a value → non-zero, "--apk requires a value", zero executor calls |
+
 Severity means: **blocking** — must not merge; **major** — fix in this feature;
 **minor** — worth doing, safe to defer with a note.
 

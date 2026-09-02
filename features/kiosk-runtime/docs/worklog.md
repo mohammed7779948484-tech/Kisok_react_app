@@ -1018,3 +1018,82 @@ AGREED (matches plan — a string-assertion unit test would assert on
 regenerated template content); T10 heads-up adequate once recorded (F-04).
 
 GATE: PASS
+
+### T09 — release APK verification script
+
+MODE: behavior
+ACCEPTANCE: AC-08 (Supporting AC-01, AC-07)
+
+SCAFFOLD (Lead — none: tools/release/ is the planned manual tool path)
+
+RED (fresh feature-implementer, agent-c909d9d8)
+$ pnpm jest tools/release
+Cannot find module './verify-release-apk' — the planned manual subject is
+absent (jest found the test file; the only unmet dependency is the script).
+
+IMPLEMENT
+tools/release/verify-release-apk.ts — the release verify-before-delivery
+CLI: fail-closed input validation (apk/package/versionCode/versionName +
+tool paths, each missing/empty → non-zero + the NAMED variable, BEFORE any
+command; unknown flags rejected); aapt2 badging parse + three-way compare
+(expected-vs-actual messages; malformed output fails precisely); apksigner
+cert check (multi-signer safe — ANY debug cert rejected with the
+release-cert message; release DN passes; missing cert fails);
+assets/index.android.bundle exact-token presence check; injectable
+CommandExecutor seam (pure exported functions; CLI wires execFile;
+ENOENT → named tool-path failure); node-builtin imports only; exit-code
+contract 0/1; direct-run guard via argv[1] basename (import.meta is
+unavailable under babel's jest transform — probed; guard proven inert
+under jest).
+tools/release/verify-release-apk.test.ts — 34 tests (33 original + F03),
+all through a fake recorded executor (zero real commands).
+
+GREEN
+$ pnpm jest tools/release → 1 suite / 34 tests PASS
+Local Node-24 fail-closed smoke: $ node
+tools/release/verify-release-apk.ts → exit 1 + the four named-variable
+messages (Lead re-verified the exit code directly); --help → exit 0.
+Reviewer's real-executor absence probe: all inputs + nonexistent APK →
+named AAPT2_PATH/APKSIGNER_PATH failures; real unzip exit 9 handled.
+
+AFFECTED CHECKS
+$ pnpm typecheck → PASS; pnpm lint → PASS; pnpm format:check → PASS;
+$ pnpm exec eslint --max-warnings=0 tools/release/ → clean (T08-F01
+lesson proactively applied: no computed process.env access);
+$ pnpm test:ci → 30 suites / 301 tests PASS.
+
+DIFF
+Untracked: tools/release/\*\* (2 files). Tracked: todo.md (Lead checkpoint
+only).
+
+REVIEW (fresh code-reviewer, agent-e947f3a7)
+No blocking or major findings. Three minors:
+T09-F01 green-path main test did not inject outputSink → the success line
+leaked to stdout during test:ci AND was unpinned → FIXED (implementer
+resumed): sink injected + the line asserted to name package/versionName/
+versionCode/non-debug certificate/JS bundle; leak grep now 0; mutation
+probe (dropped "non-debug" on a scratch copy) failed exactly the green
+test, then restored byte-identical.
+T09-F02 --help exits 0 and the direct-run guard is rename-coupled
+(SCRIPT_FILENAME hardcoded) — a mis-invoked or renamed script could pass
+the workflow gate silently → recorded as a T10 requirement (todo.md T10:
+the workflow's verify step must assert the success line in its output).
+T09-F03 parseFlags "flag requires a value" path untested → FIXED
+(implementer resumed): new test — --apk without a value → non-zero,
+"--apk requires a value", zero executor calls.
+Axes found clean: fail-closed discipline (validated before any command;
+exit contract on every reachable path), badging parser (real aapt2
+format + precise malformed failures), cert verification (multi-signer
+safe direction; robust DN matching), bundle exact-token presence,
+testability structure (pure exports; injectable executor; faithful
+fixtures), self-containment + Node 24 execution (node-builtin only; smoke
+
+- help + absence probe all live-run by the reviewer), verify/pre-commit
+  gates, scope discipline.
+  Judgments: MODULE_TYPELESS_PACKAGE_JSON warning ACCEPTED as cosmetic
+  (recommend accepting the one log line in T10 over --no-warnings);
+  argv[1]-basename guard SOUND (proven inert under jest; harden at the
+  workflow, not the guard); no fs.existsSync pre-check AGREED (tools'
+  own diagnostics are precise; a pre-check adds TOCTOU + a second path).
+
+GATE: PASS
