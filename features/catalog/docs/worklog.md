@@ -1213,3 +1213,26 @@ FRESH TASK REVIEW + REMEDIATION + RE-REVIEW + GATE (T07, Lead)
   pushes from this session. The T07 commit (next entry) lands on
   `catalog-v2-super`; the feature branch history T01–T06 is included by
   branch ancestry.
+
+CATALOG-V2-SUPER DELIVERY BRANCH AND PR #10 (Lead)
+
+- Operator directive (Super Z session, 2026-09-02): remaining session work is
+  delivered on a NEW branch `catalog-v2-super` (created from this feature's
+  local HEAD 6dd13ed, so it carries the complete catalog lineage T01–T07 by
+  ancestry) with a NEW PR opened from it; `feature/catalog` and Draft PR #7
+  receive no further pushes from this session.
+- Remote state at the time: `origin/feature/catalog` had advanced to 305399d
+  with a PARALLEL lineage (4fa581e "shared discovery components" + 305399d
+  "deliver Catalog Home" — a T03/T04-only reimplementation that diverged from
+  efda0f6). That lineage is NOT part of this delivery: `catalog-v2-super` is
+  a clean descendant of `develop` (80b8ac3) through this feature's own
+  history, avoiding duplicate/conflicting implementations of the same tasks.
+- T07 committed on `catalog-v2-super` as 8c6c50d
+  "feat(catalog): add brand discovery and detail screens and routes" and
+  pushed with the operator-provided token (one-off URL auth; no credentials
+  persisted in the repository).
+- New Draft PR #10 opened: `catalog-v2-super` -> `develop`, title
+  "feat(catalog): customer catalog discovery (v2 delivery)". Mergeable with
+  `develop` (no conflicts): 9 commits, 43 files, +8602/-16. GitHub CI
+  triggered on 8c6c50d. The PR stays Draft until the Feature Gate and human
+  handoff; the delivery never merges.
