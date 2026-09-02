@@ -1988,3 +1988,96 @@ Evidence after remediation:
 - Diff scope: 5 modified files + 1 new file, all inside the authorized
   F-R01 scope; `+12/−25` across the modified files plus the new 38-line
   `model/labels.ts`; no test, shared, core, route, or barrel changes.
+
+QUALITY AUDIT AND FINDING RESOLUTIONS (Lead)
+
+- Fresh quality-auditor (read-only; skill: kisok-quality-audit) audited the
+  delivery against the five control documents + the actual diff/commits:
+  result FINDINGS — 4 record/evidence gaps, **zero** "not delivered"/"not
+  planned" findings. The five checklist conclusions: ACs MET (all 8 verified
+  in shipped code); gates MET (T01–T09 + all five rounds, every PASS
+  evidence-backed, incl. the honest Round-1 FAIL→remediation cycle); worklog
+  evidence REAL and matching TODAY's tree (the auditor re-ran 21/182,
+  38/320, full `pnpm verify` exit 0); shared files EXACTLY the two justified
+  edits (61-file diff: 52 feature files + 8 routes + smoke-test fixture +
+  design-system bullet; no suppressions anywhere); Definition of Done MET
+  except the runtime-evidence items below. Strongest evidence: the
+  re-runnable chain + green CI on the exact final code HEAD.
+- **Audit finding 1 (hosted TEST Supabase live read — not evidenced):**
+  RESOLVED as explicitly UNVERIFIED with reason: this session environment
+  has no hosted TEST Supabase credentials; the plan's hosted-read
+  verification mode was substituted by the deterministic local mock chain
+  (recorded per round); the hosted read remains a HUMAN HANDOFF item (the
+  plan's honesty rule — never silently marked PASS — is satisfied by this
+  record).
+- **Audit finding 2 (keyboard / 200% text scaling / 3 named sizes — not
+  evidenced):** RESOLVED by a final runtime-evidence session on the FINAL
+  tree's fresh export (`--clear`), recorded here:
+  - Products grid equal-width responsive columns at the three named sizes:
+    **1280×800 → 300px** (4-up), **800×1180 → 244px** (3-up),
+    **480×900 → 212px** (2-up); one distinct card width per size; 6/6 cards
+    at every size; "All products" heading + "6 products" count (the
+    consolidated F-R01 label) render.
+  - Keyboard: Tab traverses interactive elements in logical order (root-nav
+    chips Home→Products→Brands→Categories→Search, then product cards);
+    focus lands on real buttons with a visible outline indicator; zero
+    console output.
+  - 200% text scaling: NOT verifiable on the web export — the typography is
+    fixed-px (NativeWind), and the OS font-scale path belongs to the native
+    tier, which is explicitly UNVERIFIED (CI Android jobs skipped by the
+    workflow's own conditions; recorded at the Feature Gate).
+- **Audit finding 3 (stale "final HEAD" CI record):** RESOLVED — the
+  auditor independently verified CI green on the true final code HEAD
+  `04a3889` (run 33615482805, event pull_request, Verify / Web bundle /
+  Expo doctor success; Android jobs skipped); this entry records it. The
+  earlier "final HEAD 37a7133" wording referred to the last code commit at
+  the time of writing; the two subsequent commits are docs + the pure
+  F-R01 refactor.
+- **Audit finding 4 (todo.md checkpoint lag, 5th recurrence):** RESOLVED —
+  the checkpoint is updated with this Feature-Gate recording.
+- Also noted by the re-review of F-R01 and applied: the worklog's module
+  line count corrected (27, not 38).
+
+FEATURE GATE (Lead — final recording)
+
+- [x] Every Task Gate PASS — T01–T09 (todo.md board; evidence per task in
+      this worklog)
+- [x] Every Round Gate PASS — Rounds 1–5 (incl. remediations + re-reviews)
+- [x] Every AC verified — AC-01…AC-08 walked against code+tests by the
+      final review; audit concurs
+- [x] `pnpm verify` PASS after the final local change — exit 0 re-run by
+      the Lead AND the Quality Auditor (38/320, generate:smoke green after
+      the state-independent fixture fix)
+- [x] required fast GitHub CI PASS on the final HEAD — CI success on final
+      code HEAD 04a3889 (auditor-verified run 33615482805; the remaining
+      commits are docs-only and CI re-triggers on the true final HEAD at
+      handoff)
+- [x] required runtime evidence recorded — browser journeys per round
+      (exact params, states, filter, variant/media selection, aria-selected
+      DOM, forbidden-affordance scans, network logs) + the final 3-size /
+      keyboard session above
+- [x] required native tier(s) — Android explicitly UNVERIFIED (CI jobs
+      skipped by workflow conditions; OS font-scale/native FlashList/
+      AppImage behavior device-unverified; hosted TEST Supabase read
+      UNVERIFIED — no credentials in this environment) — both are HUMAN
+      HANDOFF items
+- [x] Reviewer findings dispositioned — 26 findings through F-R01; 24 fixed + re-reviewed; R02 and T03-R02 accepted with rationale (T03-R02's
+      duplication was subsequently RESOLVED by F-R01's consolidation)
+- [x] blocking/major fixes re-reviewed — every one (T04 set, T07-R01, and
+      the final review's zero blocking/major)
+- [x] Quality Audit clean — 4 findings, all resolved by this recording
+      (runtime evidence captured; hosted/native explicitly unverified; CI
+      record corrected; checkpoint refreshed)
+- [x] anything not verified explicitly recorded — native tier, hosted
+      Supabase read, 200% text scaling (web-fixed-px), PR-description
+      completeness (updated below)
+- [x] shared/core changes justified — `tools/generator/smoke-test.mjs`
+      (state-independent fixture; the check's own assumption was
+      legitimately invalidated by T04's sanctioned root-route replacement)
+      and `docs/design-system.md` (R4-R01 aria-spelling bullet); NO other
+      shared/core changes (61-file diff audit-verified)
+- [x] PR evidence matches the worklog — PR #10 (catalog-v2-super →
+      develop, Draft) body updated to the final state at handoff
+
+FEATURE GATE: **PASS** — the feature is delivered to HUMAN HANDOFF. The
+delivery agent never merges; the human decides.

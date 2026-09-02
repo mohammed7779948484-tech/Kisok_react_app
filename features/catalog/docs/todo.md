@@ -6,14 +6,18 @@ in `worklog.md`. Keep this checkpoint and gate board current.
 ## Current checkpoint
 
 ```
-Current round     : Feature gate (all rounds complete)
-Current task      : Feature-level final verification
-Current stage     : All five round gates PASS; develop-integration check +
-                    full verify + CI + final review + Quality Audit next
-Last gate         : Round 5 PASS (2026-09-02, T09 + R5-R01 remediation +
-                    re-review); Round 4 PASS; Rounds 1–3 PASS; all tasks PASS
-Next legal action : Lead runs the develop-integration check and full
-                    `pnpm verify`, then the final independent review
+Current round     : COMPLETE — HUMAN HANDOFF
+Current task      : Feature Gate recorded PASS; awaiting the human
+Current stage     : All rounds/tasks gated; final review SHIP-READY (F-R01
+                    resolved); Quality Audit CLEAN after resolutions;
+                    develop integration clean; `pnpm verify` + CI green;
+                    PR #10 (Draft) updated to the final state
+Last gate         : FEATURE GATE PASS (2026-09-02) — after Round 5 PASS,
+                    final review, and Quality Audit
+Next legal action : HUMAN: review PR #10 (catalog-v2-super → develop),
+                    verify the unverified tiers (hosted TEST Supabase read;
+                    Android native), and decide the merge. The delivery
+                    agent never merges.
 Blocked by        : —
 ```
 
@@ -384,21 +388,28 @@ verified clean; the discovery loop is CLOSED
 
 ## Feature gate
 
-- [ ] Every Task Gate PASS
-- [ ] Every Round Gate PASS
-- [ ] Every AC verified
-- [ ] `pnpm verify` PASS after the final local change
-- [ ] required fast GitHub CI PASS on the final HEAD
-- [ ] required runtime evidence recorded
-- [ ] required native tier(s) PASS, N/A, or explicitly unverified
-- [ ] Reviewer findings dispositioned
-- [ ] blocking/major fixes re-reviewed
-- [ ] Quality Audit clean
-- [ ] anything not verified explicitly recorded
-- [ ] shared/core changes justified
-- [ ] PR evidence matches the worklog
+- [x] Every Task Gate PASS
+- [x] Every Round Gate PASS
+- [x] Every AC verified
+- [x] `pnpm verify` PASS after the final local change
+- [x] required fast GitHub CI PASS on the final HEAD (final code HEAD
+      04a3889 — run 33615482805; remaining commits docs-only)
+- [x] required runtime evidence recorded (per-round journeys + the final
+      3-size/keyboard session; worklog)
+- [x] required native tier(s) explicitly unverified (Android; hosted TEST
+      Supabase read) — HUMAN HANDOFF items
+- [x] Reviewer findings dispositioned (26 through F-R01; R02/T03-R02
+      accepted — T03-R02 later resolved by F-R01)
+- [x] blocking/major fixes re-reviewed
+- [x] Quality Audit clean after resolutions (4 findings, all recorded
+      closed; review.md)
+- [x] anything not verified explicitly recorded (native tier, hosted read,
+      200% text scaling on web)
+- [x] shared/core changes justified (smoke-test fixture + design-system
+      aria bullet; worklog)
+- [x] PR evidence matches the worklog (PR #10 body updated at handoff)
 
-FEATURE GATE: PENDING
+FEATURE GATE: PASS — HUMAN HANDOFF (the delivery agent never merges)
 
 ## Blocked
 
