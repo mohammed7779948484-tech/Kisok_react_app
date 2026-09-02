@@ -1,0 +1,320 @@
+# Catalog — execution state
+
+**This file is the working memory.** Reasoning lives in `plan.md`; evidence lives
+in `worklog.md`. Keep this checkpoint and gate board current.
+
+## Current checkpoint
+
+```
+Current round     : Round 3 — Home, all products and search
+Current task      : T05 — All Products and route
+Current stage     : scaffolding
+Last gate         : T04 PASS — R12 test hardening resolved; fresh re-review found no findings
+Next legal action : commit and push T04 to Draft PR #7, then Lead runs the exact T05 Products screen and route scaffolds
+Blocked by        : —
+```
+
+## Rules
+
+- A task is **DONE only at `GATE: PASS`**.
+- Task N+1 does not start until every dependency is `PASS`.
+- A failed gate is fixed in that task, not compensated later.
+- Every task follows its declared verification mode from
+  `test-driven-development`.
+- No implementation task starts while `plan.md` is `DRAFT`.
+- The Lead runs every scaffold immediately before delegation; Implementers never
+  run the generator.
+
+## Status board
+
+| Task | Mode     | Acceptance                                          | Objective                                                            | Deps          | Stage       | Gate    |
+| ---- | -------- | --------------------------------------------------- | -------------------------------------------------------------------- | ------------- | ----------- | ------- |
+| T01  | behavior | Supporting AC-01–AC-07                              | Snapshot schema and pure Catalog view                                | —             | done        | PASS    |
+| T02  | behavior | AC-01                                               | Customer-safe Catalog query pipeline                                 | T01           | done        | PASS    |
+| T03  | behavior | Supporting AC-02–AC-08                              | Shared discovery navigation/grid/cards                               | T01           | done        | PASS    |
+| T04  | behavior | Supporting AC-02, AC-08                             | Catalog Home and Customer root route                                 | T02, T03      | done        | PASS    |
+| T05  | behavior | Supporting AC-03                                    | All Products and route                                               | T02, T03      | not started | PENDING |
+| T06  | behavior | Supporting AC-06                                    | Local Search and route                                               | T02, T03      | not started | PENDING |
+| T07  | behavior | AC-04                                               | Brand discovery/detail and routes                                    | T02, T03      | not started | PENDING |
+| T08  | behavior | AC-02, AC-05                                        | Category discovery/detail/filter, routes, complete root destinations | T02, T03, T07 | not started | PENDING |
+| T09  | behavior | AC-03, AC-06, AC-07, AC-08; Supporting AC-04, AC-05 | Product Detail and route                                             | T02–T08       | not started | PENDING |
+
+Stage: `not started` · `scaffolding` · `red/baseline` · `implementing` ·
+`green` · `checks` · `diff review` · `done`.
+
+## Round 1 — Validated data foundation
+
+### T01 — Snapshot schema and pure Catalog view
+
+- **Mode**: behavior
+- **Acceptance**: Supporting: `AC-01` through `AC-07`
+- **Depends on**: —
+- **Skills**: test-driven-development; supabase; supabase-postgres-best-practices
+- **Lead scaffold**: `pnpm generate schema catalog catalog-snapshot`
+- **Expected generated files**: `model/catalog-snapshot.schema.ts`,
+  `model/catalog-snapshot.schema.test.ts`
+- **Allowed manual files**: `model/catalog-snapshot.fixture.ts`,
+  `model/catalog-view.ts`, `model/catalog-view.test.ts`
+- **Scaffold status**: `READY`
+- **Allowed file scope**: paths above plus Catalog docs
+
+```
+[x] SCAFFOLD — schema command created the two expected model files; no skips/replacements
+[x] RED — 13 intended failures/1 pass before implementation; cycle regression also failed correctly
+[x] IMPLEMENT — exact schema/view delivered; cyclic category graph remediated
+[x] GREEN — Lead rerun: 2 suites, 15 tests PASS
+[x] AFFECTED CHECKS — typecheck, scoped lint/format and full lint PASS
+[x] TASK DIFF REVIEW — five allowed model files only; behavior correct
+[x] FRESH TASK REVIEW — R01/R03–R08 fixed and closure review found 0 blocking/major; R02 minor accepted
+GATE: PASS
+```
+
+### T02 — Customer-safe Catalog query pipeline
+
+- **Mode**: behavior
+- **Acceptance**: Acceptance: `AC-01`
+- **Depends on**: T01 PASS
+- **Skills**: test-driven-development; supabase; supabase-postgres-best-practices
+- **Lead scaffold**: `pnpm generate query catalog catalog`
+- **Expected generated files**: `api/fetch-catalog.ts`,
+  `queries/use-catalog.ts`, `queries/keys.ts`
+- **Allowed manual files**: `api/fetch-catalog.test.ts`,
+  `queries/use-catalog.test.tsx`
+- **Scaffold status**: `READY`
+- **Allowed file scope**: paths above plus Catalog docs
+
+```
+[x] SCAFFOLD — query command created API, hook and local keys exactly as planned
+[x] RED — 2 suites/4 intended failures against placeholder/raw query after correcting mock setup
+[x] IMPLEMENT — zero-arg callRpc boundary, one key/hook, stable CatalogView select
+[x] GREEN — Lead rerun: T02 2 suites/4 tests PASS
+[x] AFFECTED CHECKS — T01 15 tests, typecheck, scoped lint/format, full lint PASS
+[x] TASK DIFF REVIEW — five allowed files; one RPC; no direct reads/store/retry override
+[x] FRESH TASK REVIEW — no findings
+GATE: PASS
+```
+
+Round 1 gate: `PASS` — 4 suites/35 tests, typecheck/lint/format, fresh Round review clean
+
+## Round 2 — Shared discovery UI
+
+### T03 — Shared navigation, virtualized grid and entity cards
+
+- **Mode**: behavior
+- **Acceptance**: Supporting: `AC-02` through `AC-08`
+- **Depends on**: T01 PASS
+- **Skills**: test-driven-development; kisok-design-system;
+  kisok-react-native-rules
+- **Lead scaffolds**: component commands for `catalog-navigation`,
+  `catalog-grid`, `availability-badge`, `product-card`, `brand-card`,
+  `category-card`
+- **Expected generated files**: six files under `components/` with those names
+- **Allowed manual files**: colocated component `*.test.tsx` files
+- **Scaffold status**: `READY`
+- **Allowed file scope**: `features/catalog/components/**` plus Catalog docs
+
+```
+[x] SCAFFOLD — six feature-level component files created exactly as planned
+[x] RED — 6 suites failed, 14 intended behavior failures and 1 pass after harness correction
+[x] IMPLEMENT — navigation/grid/availability and three whole-card components delivered
+[x] GREEN — Lead rerun: 6 suites/15 tests PASS
+[x] AFFECTED CHECKS — T01/T02 35 tests, typecheck, scoped lint/format, full lint PASS
+[x] TASK DIFF REVIEW — 12 allowed component/test files; no data/router/store/shared leakage
+[x] FRESH TASK REVIEW — R09/R10/R11 resolved; fresh re-review found no findings
+GATE: PASS
+```
+
+Round 2 gate: `PASS` — 6 suites/15 tests, integrated regressions/static checks, fresh Round review clean
+
+## Round 3 — Home, all products and search
+
+### T04 — Catalog Home and Customer root route
+
+- **Mode**: behavior
+- **Acceptance**: Supporting: `AC-02`, `AC-08`
+- **Depends on**: T02 PASS, T03 PASS
+- **Skills**: test-driven-development; kisok-design-system;
+  kisok-react-native-rules; expo-router
+- **Lead scaffolds**: `pnpm generate screen catalog catalog-home`; then
+  `pnpm generate route catalog index --role=customer --screen=catalog-home --force`
+- **Expected generated/replaced files**: Catalog Home screen/test,
+  `app/(customer)/index.tsx`, and Catalog public export
+- **Allowed manual files**: —
+- **Scaffold status**: `READY`
+- **Allowed file scope**: Home screen directory, Customer root route,
+  `features/catalog/index.ts`, Catalog docs
+
+```
+[x] SCAFFOLD — Home screen/test created; Customer root placeholder replaced; public export added
+[x] RED — generated placeholder failed all 8 intended Home behaviors; invalid test fixtures later failed production schema correctly
+[x] IMPLEMENT — Home loading/error/empty/success, identity, bounded discovery and navigation delivered
+[x] GREEN — Lead/current focused 9 tests PASS; all Catalog 59 tests PASS
+[x] AFFECTED CHECKS — route/export, export:web, typecheck, scoped lint/format, full lint PASS
+[x] TASK DIFF REVIEW — four allowed paths; placeholder gone; optional sections/settings honest
+[x] FRESH TASK REVIEW — R12 resolved; fresh re-review found no findings
+GATE: PASS
+```
+
+### T05 — All Products and route
+
+- **Mode**: behavior
+- **Acceptance**: Supporting: `AC-03`
+- **Depends on**: T02 PASS, T03 PASS
+- **Skills**: test-driven-development; kisok-design-system;
+  kisok-react-native-rules; expo-router
+- **Lead scaffolds**: Products screen, then Products route
+- **Expected generated files**: Products screen/test,
+  `app/(customer)/products.tsx`, Catalog public export
+- **Allowed manual files**: —
+- **Scaffold status**: `PENDING`
+- **Allowed file scope**: Products screen directory, route, Catalog index/docs
+
+```
+[ ] SCAFFOLD
+[ ] RED — count/status/navigation behavior fails as intended
+[ ] IMPLEMENT
+[ ] GREEN — Products tests
+[ ] AFFECTED CHECKS — route/export and dependency tests/checks
+[ ] TASK DIFF REVIEW — scalable grid; unavailable products discoverable
+[ ] FRESH TASK REVIEW — no unresolved blocking/major finding
+GATE: PENDING
+```
+
+### T06 — Local Search and route
+
+- **Mode**: behavior
+- **Acceptance**: Supporting: `AC-06`
+- **Depends on**: T02 PASS, T03 PASS
+- **Skills**: test-driven-development; kisok-design-system;
+  kisok-react-native-rules; expo-router
+- **Lead scaffolds**: Search screen, then Search route
+- **Expected generated files**: Search screen/test,
+  `app/(customer)/search.tsx`, Catalog public export
+- **Allowed manual files**: —
+- **Scaffold status**: `PENDING`
+- **Allowed file scope**: Search screen directory, route, Catalog index/docs
+
+```
+[ ] SCAFFOLD
+[ ] RED — idle/too-short/no-match/results fail as intended
+[ ] IMPLEMENT
+[ ] GREEN — Search tests
+[ ] AFFECTED CHECKS — route/export and dependency tests/checks
+[ ] TASK DIFF REVIEW — local generic search; no SKU/barcode/network search
+[ ] FRESH TASK REVIEW — no unresolved blocking/major finding
+GATE: PENDING
+```
+
+Round 3 gate: `PENDING`
+
+## Round 4 — Brand and category discovery
+
+### T07 — Brand discovery/detail and routes
+
+- **Mode**: behavior
+- **Acceptance**: Acceptance: `AC-04`
+- **Depends on**: T02 PASS, T03 PASS
+- **Skills**: test-driven-development; kisok-design-system;
+  kisok-react-native-rules; expo-router
+- **Lead scaffolds**: Brands and Brand Detail screens; Brands and Brand Detail
+  routes
+- **Expected generated files**: two screen/test pairs, two routes, two Catalog
+  public exports
+- **Allowed manual files**: —; generated detail route is edited to pass `brandId`
+- **Scaffold status**: `PENDING`
+- **Allowed file scope**: Brand screen directories/routes, Catalog index/docs
+
+```
+[ ] SCAFFOLD
+[ ] RED — counts/scope/empty/stale-ID behavior fails as intended
+[ ] IMPLEMENT
+[ ] GREEN — Brand tests
+[ ] AFFECTED CHECKS — route params, export:web, dependency tests/checks
+[ ] TASK DIFF REVIEW — exact brand scope; no impossible zero-product detail
+[ ] FRESH TASK REVIEW — no unresolved blocking/major finding
+GATE: PENDING
+```
+
+### T08 — Category discovery/detail/filter and routes
+
+- **Mode**: behavior
+- **Acceptance**: Acceptance: `AC-02`, `AC-05`
+- **Depends on**: T02 PASS, T03 PASS, T07 PASS
+- **Skills**: test-driven-development; kisok-design-system;
+  kisok-react-native-rules; expo-router
+- **Lead scaffolds**: Categories and Category Detail screens; screen-local
+  Category Brand Filter; Categories and Category Detail routes
+- **Expected generated files**: two screen/test pairs,
+  `screens/category-detail/components/category-brand-filter.tsx`, two routes,
+  two Catalog public exports
+- **Allowed manual files**: Category Brand Filter test; generated detail route is
+  edited to pass `categoryId`
+- **Scaffold status**: `PENDING`
+- **Allowed file scope**: Category screen directories/routes, Catalog index/docs
+
+```
+[ ] SCAFFOLD
+[ ] RED — hierarchy/default filter/selected/no-match-reset behavior fails
+[ ] IMPLEMENT
+[ ] GREEN — Category tests
+[ ] AFFECTED CHECKS — route params, export:web, dependency tests/checks
+[ ] TASK DIFF REVIEW — direct-child aggregation and many-to-many rules hold
+[ ] FRESH TASK REVIEW — no unresolved blocking/major finding
+GATE: PENDING
+```
+
+Round 4 gate: `PENDING`
+
+## Round 5 — Product Detail discovery
+
+### T09 — Product Detail, generic variants/media and route
+
+- **Mode**: behavior
+- **Acceptance**: Acceptance: `AC-03`, `AC-06`, `AC-07`, `AC-08`; Supporting:
+  `AC-04`, `AC-05`
+- **Depends on**: T02–T08 PASS
+- **Skills**: test-driven-development; kisok-design-system;
+  kisok-react-native-rules; expo-router
+- **Lead scaffolds**: Product Detail screen; screen-local Product Media Gallery
+  and Variant Choice List; Product Detail route
+- **Expected generated files**: Product Detail screen/test, two screen-local
+  components, Product Detail route, Catalog public export
+- **Allowed manual files**: colocated tests for the two screen-local components;
+  generated route is edited to pass `productId`
+- **Scaffold status**: `PENDING`
+- **Allowed file scope**: Product Detail screen directory/route, Catalog index/docs
+
+```
+[ ] SCAFFOLD
+[ ] RED — stale ID/generic labels/media/availability/forbidden actions fail
+[ ] IMPLEMENT
+[ ] GREEN — Product Detail and component tests
+[ ] AFFECTED CHECKS — route params, export:web, complete feature checks
+[ ] TASK DIFF REVIEW — no Cart/quantity/price/Checkout; generic model honest
+[ ] FRESH TASK REVIEW — no unresolved blocking/major finding
+GATE: PENDING
+```
+
+Round 5 gate: `PENDING`
+
+## Feature gate
+
+- [ ] Every Task Gate PASS
+- [ ] Every Round Gate PASS
+- [ ] Every AC verified
+- [ ] `pnpm verify` PASS after the final local change
+- [ ] required fast GitHub CI PASS on the final HEAD
+- [ ] required runtime evidence recorded
+- [ ] required native tier(s) PASS, N/A, or explicitly unverified
+- [ ] Reviewer findings dispositioned
+- [ ] blocking/major fixes re-reviewed
+- [ ] Quality Audit clean
+- [ ] anything not verified explicitly recorded
+- [ ] shared/core changes justified
+- [ ] PR evidence matches the worklog
+
+FEATURE GATE: PENDING
+
+## Blocked
+
+- —
