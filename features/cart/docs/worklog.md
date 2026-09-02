@@ -823,3 +823,77 @@ clean.
 
 GATE: PASS (R-T10-01 tracked as T11 — the feature-level hole is closed by
 T11 before the Round 2 gate; the plan revision is recorded in plan.md)
+
+## ROUND 2 GATE — UI surfaces and public API
+
+Tasks: T06, T07, T08, T09, T10, T11 — ALL GATE: PASS.
+
+Accumulated round diff (72a03fb →): features/cart/components/** (6 files:
+quantity-stepper / cart-item-row / quick-cart-sheet pairs),
+features/cart/screens/full-cart/** (2 files: screen pair),
+features/cart/state/use-cart pair, features/cart/index.ts (public API),
+app/(customer)/cart.tsx (thin generated route — verified only),
+model MIN/MAX literal centralization (T06/T07 remediation rows), and
+features/cart/docs/** updates. NO file outside features/cart/** + the one
+route file.
+
+T11 gate record (behavior wiring; no worklog section of its own — the
+task packet's evidence lives in the Lead's workspace log, EXEC-3/T11 +
+GATE-T11): 2-file scope exact (screen +48 lines, test +208; 206+/50-);
+RED = the R-T10-01 proof test (pre-seeded durable envelope, no manual
+hydrate → screen stuck on SkeletonList); GREEN = screen consumes
+useCart() (one call, identical 6 CartView fields, bound actions with
+identical signatures, zero useCartStore references) + suite adapted to
+the auth gate (wrappers mirroring Stack.Protected, same-owner seeding);
+focused 14/14 ×4 stable, full 27/289. GATE: PASS (independent
+verification — see review.md T11 note).
+
+Subsystem verification (Lead delegate, on the full round state at 9b3b029):
+
+$ pnpm test → 27 suites / 289 tests PASS
+$ pnpm typecheck → clean
+$ pnpm lint → clean (architecture boundaries enforced)
+$ pnpm format:check → clean
+$ pnpm check:docs → PASS (63 files checked)
+
+Cross-task coherence (Lead delegate review of the combined state):
+
+- `rg "useCartStore" features/cart/screens/` → matches ONLY in
+  full-cart-screen.test.tsx (the sanctioned singleton-seeding pattern);
+  the screen itself: ZERO — it consumes useCart() only. QuickCartSheet's
+  direct store reads live in components/ (sanctioned, plan decision 15).
+- `rg "features/catalog|from \"@/core/supabase\"" features/cart/
+--glob '!*.md'` → no matches — no real imports; the negative contract
+  (backend-invisible cart) holds through the entire feature.
+- `git diff c07ca4d..HEAD --stat` → exactly the 4 declared files
+  (full-cart-screen.tsx, its test, review.md, todo.md) — nothing else
+  moved between the T10 gate and this one.
+- One cart model end-to-end: sheet (direct reads) and screen (useCart
+  view) read the SAME singleton; totals always selector-derived, never
+  mirrored; hydration has exactly ONE runtime owner (the useCart effect
+  keyed on profile.id — R-T10-01 closed); sign-out cleanup registration
+  is live through the index side-effect import; lock contract surfaces
+  identically in both presentations.
+
+Integration pre-check (Draft PR readiness):
+
+$ git merge-tree $(git merge-base origin/develop HEAD) origin/develop
+HEAD → clean — no conflicts: zero "changed in both" entries, zero
+conflict markers; every entry is "added in remote" (the feature's new
+files). merge-base 80b8ac3 = origin/develop tip = origin/main tip, so
+develop carries main's history forward and the PR merge is effectively
+fast-forward-able. Expected and fine.
+
+T11 deviation disposition (restore-pending skeleton): ACCEPTED — the
+transient `!hydrated` SkeletonList frame is unobservable in this harness
+(mock auth + AsyncStorage chains are pure microtasks that settle inside
+RNTL v14's awaited render/act); re-pinning it would require an
+unsanctioned timing seam testing the harness, not the app. Pinned
+instead: awaited landed-empty state + proof the hook caused it + no-guess
+inverses (no rows, no footer, no Clear Cart), while the `!hydrated` early
+return stays code-pinned and commented in the screen. The R-T10-01
+substance — runtime owner-scoped restore with NO manual hydrate — is
+proven more strongly by the durable-envelope test than a skeleton-frame
+pin ever would be (review.md R-T11-01).
+
+Round gate: PASS

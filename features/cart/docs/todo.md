@@ -258,7 +258,9 @@ access exists. See `Blocked`.
   types + `import "./state/sign-out-cleanup"` registration side-effect; public
   API test imports `@/features/cart` only.
 
-Round gate: `PENDING`
+Round gate: `PASS` — 27 suites / 289 tests, typecheck/lint/format/
+check:docs clean on the full round state; cross-task coherence reviewed
+(worklog.md "ROUND 2 GATE" section). Committed as 33dd590.
 
 ### T11 — FullCartScreen consumes useCart() (runtime wiring)
 
