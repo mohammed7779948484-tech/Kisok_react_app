@@ -6,11 +6,11 @@ in `worklog.md`. Keep this checkpoint and gate board current.
 ## Current checkpoint
 
 ```
-Current round     : Round 2 — Shared discovery UI
-Current task      : T03 — Shared navigation, virtualized grid and entity cards
-Current stage     : scaffolding
-Last gate         : Round 1 PASS; commit da6b6c8 pushed; Draft PR #7 active against develop
-Next legal action : Lead runs the exact T03 component scaffolds, verifies paths, then delegates a fresh T03 Implementer
+Current round     : Round 3 — Home, all products and search
+Current task      : T04 — Catalog Home and Customer root route
+Current stage     : not started (awaiting Lead JIT scaffold)
+Last gate         : Round 2 PASS; T03 PASS; commit/push to Draft PR #7 pending
+Next legal action : Lead commits Round 2, pushes feature/catalog, then runs T04 scaffolds (screen + forced root route)
 Blocked by        : —
 ```
 
@@ -31,7 +31,7 @@ Blocked by        : —
 | ---- | -------- | --------------------------------------------------- | -------------------------------------------------------------------- | ------------- | ----------- | ------- |
 | T01  | behavior | Supporting AC-01–AC-07                              | Snapshot schema and pure Catalog view                                | —             | done        | PASS    |
 | T02  | behavior | AC-01                                               | Customer-safe Catalog query pipeline                                 | T01           | done        | PASS    |
-| T03  | behavior | Supporting AC-02–AC-08                              | Shared discovery navigation/grid/cards                               | T01           | scaffolding | PENDING |
+| T03  | behavior | Supporting AC-02–AC-08                              | Shared discovery navigation/grid/cards                               | T01           | done        | PASS    |
 | T04  | behavior | Supporting AC-02, AC-08                             | Catalog Home and Customer root route                                 | T02, T03      | not started | PENDING |
 | T05  | behavior | Supporting AC-03                                    | All Products and route                                               | T02, T03      | not started | PENDING |
 | T06  | behavior | Supporting AC-06                                    | Local Search and route                                               | T02, T03      | not started | PENDING |
@@ -110,21 +110,21 @@ Round 1 gate: `PASS` — 4 suites/35 tests, typecheck/lint/format, fresh Round r
   `category-card`
 - **Expected generated files**: six files under `components/` with those names
 - **Allowed manual files**: colocated component `*.test.tsx` files
-- **Scaffold status**: `PENDING`
+- **Scaffold status**: `READY` (six components generated 2026-09-02; evidence in worklog)
 - **Allowed file scope**: `features/catalog/components/**` plus Catalog docs
 
 ```
-[ ] SCAFFOLD
-[ ] RED — card/navigation/grid behavior and semantics fail as intended
-[ ] IMPLEMENT
-[ ] GREEN — component tests
-[ ] AFFECTED CHECKS — T01 tests, typecheck, lint, format
-[ ] TASK DIFF REVIEW — design system only; scalable lists; no shared additions
-[ ] FRESH TASK REVIEW — no unresolved blocking/major finding
-GATE: PENDING
+[x] SCAFFOLD — six components generated exactly as planned; evidence in worklog
+[x] RED — 6 suites/29 tests failed against TODO placeholders (intended missing behavior)
+[x] IMPLEMENT — six presentational components + colocated tests in scope
+[x] GREEN — Lead rerun: 6 suites/29 tests PASS, zero console output
+[x] AFFECTED CHECKS — whole feature 10 suites/64 tests, typecheck, lint, format, check:docs PASS
+[x] TASK DIFF REVIEW — design system only; scalable lists; no shared additions
+[x] FRESH TASK REVIEW — 0 blocking/major; T03-R01 fixed (checkpoint currency), T03-R02 minor accepted
+GATE: PASS
 ```
 
-Round 2 gate: `PENDING`
+Round 2 gate: `PASS` — 10 suites/64 tests, typecheck/lint/format/check:docs, fresh Round review clean (0 findings); all three round assertions verified
 
 ## Round 3 — Home, all products and search
 

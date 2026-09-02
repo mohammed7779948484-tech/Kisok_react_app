@@ -236,3 +236,156 @@ ROUND 1 GATE: PASS
 - Pushed `feature/catalog` to origin.
 - Opened Draft PR [#7](https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/7) with head `feature/catalog` and base `develop`, using the project PR template with pending Feature Gate evidence.
 - The PR remains Draft; subsequent passed Tasks/Rounds will be committed and pushed to the same PR.
+
+### T03 — Shared navigation, virtualized grid and entity cards
+
+MODE: behavior
+ACCEPTANCE: Supporting AC-02 through AC-08
+
+SCAFFOLD (Lead)
+
+- `$ pnpm generate component catalog catalog-navigation`
+- `$ pnpm generate component catalog catalog-grid`
+- `$ pnpm generate component catalog availability-badge`
+- `$ pnpm generate component catalog product-card`
+- `$ pnpm generate component catalog brand-card`
+- `$ pnpm generate component catalog category-card`
+- Created: `features/catalog/components/catalog-navigation.tsx`,
+  `catalog-grid.tsx`, `availability-badge.tsx`, `product-card.tsx`,
+  `brand-card.tsx`, `category-card.tsx` — all six exactly as planned.
+- Skipped/replaced: none; `git status` after the six commands shows only the new
+  untracked `features/catalog/components/` directory.
+- Planned manual artifacts: colocated `*.test.tsx` files beside the six
+  components.
+- Lead inspected the generated placeholders: presentational-only contract
+  (props in, callbacks up), TODO markers, no fetch/store/Supabase imports.
+  Scaffold status: `READY`.
+
+RED (Implementer)
+
+- `$ pnpm exec jest features/catalog/components/availability-badge.test.tsx features/catalog/components/product-card.test.tsx features/catalog/components/brand-card.test.tsx features/catalog/components/category-card.test.tsx features/catalog/components/catalog-navigation.test.tsx features/catalog/components/catalog-grid.test.tsx --runInBand`
+- 6 suites / 29 tests failed, 0 passed. Every failure was "Unable to find an
+  element with text/role/button …" against the placeholders' `TODO: build X.`
+  render — the intended missing behavior, not an import or typing failure.
+- Six colocated test files written first: whole-card accessible names and
+  press routing for product/brand/category cards, textual availability,
+  selected-state navigation callbacks, and grid columns at mocked
+  compact/medium/expanded window widths (480/800/1280).
+
+IMPLEMENT (Implementer)
+
+- Six components implemented in place: `CatalogNavigation` (five Button
+  destinations, `h-touch` targets, `accessibilityState={{ selected }}`, single
+  `onNavigate(destination)` callback, no expo-router import), `CatalogGrid`
+  (real `@shopify/flash-list` FlashList, `useResponsiveValue` columns
+  2/3/4, `key={columns}` remount, memoized row renderer/press
+  handler/contentContainerStyle), `AvailabilityBadge` ("Available" /
+  "Out of stock" on Badge success/destructive), and memoized
+  `ProductCard`/`BrandCard`/`CategoryCard` whole-card Pressables composing
+  `Card`/`Text`/`AppImage` with accessible names carrying name + status.
+- Deviation from the task packet: FlashList v2.0.2 (installed) removed the
+  `estimatedItemSize` prop (verified against
+  `node_modules/@shopify/flash-list/dist/FlashListProps.d.ts`; v2 measures rows
+  itself), so `CatalogGrid` does not accept or forward it. Flagged for Lead
+  review against the plan's "memoized estimatedItemSize" wording.
+- Two test-side corrections during GREEN, both strengthening tests: (1)
+  `rerender` was initially passed the identical element reference, so React
+  bailed out and the width-change test failed for a test-setup reason — fixed
+  by creating a fresh element per render with the same stable props; (2) the
+  estimatedItemSize assertions were removed together with the dropped prop.
+
+GREEN (Implementer)
+
+- `$ pnpm exec jest features/catalog/components --runInBand`
+- 6 suites, 29 tests PASS, zero console output (verified by scanning the full
+  run log for `console.*`).
+
+AFFECTED CHECKS (Implementer)
+
+- T01/T02 regression: `$ pnpm exec jest features/catalog/model features/catalog/api features/catalog/queries --runInBand` → 4 suites, 35 tests PASS.
+- Whole feature: `$ pnpm exec jest features/catalog --runInBand` → 10 suites, 64 tests PASS.
+- `pnpm typecheck` → PASS.
+- Scoped ESLint: `$ pnpm exec eslint features/catalog/components --max-warnings=0` → PASS (after removing an unused import and fixing one array-type annotation).
+- Full `pnpm lint` (expo lint) → PASS.
+- Scoped Prettier: `$ pnpm exec prettier --check "features/catalog/components/*.tsx"` → PASS after `--write` on 4 files.
+
+DIFF (Implementer)
+
+- Change set is exactly the untracked `features/catalog/components/`
+  directory: six edited-in-place generated components plus six new colocated
+  test files. No shared/core additions, no `features/catalog/index.ts` edit,
+  no route/screen/model file touched. Five exploratory `zz-*.test.tsx` scratch
+  files from a prior interrupted probe session (inside the allowed scope,
+  never committed) were deleted.
+
+LEAD VERIFICATION (T03)
+
+- Lead read all six component implementations and all six test files; imports
+  audited: no Supabase/Zustand/TanStack/expo-router imports; semantic tokens
+  throughout; the single numeric style value is FlashList's
+  `contentContainerStyle` paddingBottom with a token-scale comment (NativeWind
+  classes cannot reach the FlashList content container).
+- Lead reruns: components 6 suites/29 tests PASS; whole feature 10 suites/64
+  tests PASS; `pnpm typecheck` PASS; full `pnpm lint` PASS; scoped Prettier
+  PASS; `pnpm check:docs` PASS after the Lead reworded its own todo.md
+  pipeline line (the implementer's only check:docs finding, correctly
+  attributed to the Lead's uncommitted text, not to T03 work).
+- Scope check via `git status`: exactly `features/catalog/components/**` (new)
+  plus Catalog docs edits. No shared/core file, no `index.ts`, no
+  route/screen/model/config file touched.
+- Deviation disposition: FlashList v2.0.2 removed `estimatedItemSize` (v2
+  measures rows itself; verified against installed
+  `FlashListProps.d.ts`). The Plan never pinned that prop — only the task
+  packet's guidance mentioned it — so no Plan change is required;
+  `renderItem`/`contentContainerStyle` memoization and the shared row handler
+  are implemented as required.
+- Five `zz-*.test.tsx` scratch probe files (untracked, created by an earlier
+  interrupted subagent launch inside the allowed scope) were deleted by the
+  implementer; nothing tracked was destroyed.
+
+FRESH TASK REVIEW (T03)
+
+- Fresh code-reviewer (independent context, read-only) loaded
+  `kisok-code-review`, `kisok-design-system`, `kisok-react-native-rules`.
+- Findings: 0 blocking, 0 major, 2 minor. T03-R01: todo checkpoint lagged the
+  worklog (Lead fixed while recording this review). T03-R02: label-helper
+  duplication across sibling components (Lead accepted with rationale —
+  test-pinned agreement, no shared promotion; recorded in review.md).
+- Reviewer independently reproduced: components 6 suites/29 tests PASS; whole
+  feature 10 suites/64 tests PASS; typecheck/lint/format/check:docs PASS.
+  RED not re-executable read-only; claim accepted as internally consistent
+  recorded evidence (failure mode matches placeholder render).
+- Verified clean: scope, KISOK boundaries, design-system composition,
+  accessibility, RN performance/virtualization, test quality, failure paths,
+  known dispositions.
+
+GATE: PASS
+
+### Round 2 Gate
+
+INTEGRATED CHECKS
+
+- `$ pnpm exec jest features/catalog --runInBand` → 10 suites, 64 tests PASS.
+- `pnpm typecheck` → PASS. `pnpm lint` → PASS. Scoped Prettier on
+  components/docs → PASS. `pnpm check:docs` → PASS (63 files).
+- Accumulated Round 2 diff: exactly the 12 new files under
+  `features/catalog/components/` plus Catalog control-document records.
+
+FRESH ROUND REVIEW
+
+- Fresh round reviewer (independent context, read-only) loaded
+  `kisok-code-review`, `kisok-design-system`, `kisok-react-native-rules`.
+- Findings: 0 blocking, 0 major, 0 minor.
+- All three plan assertions verified: composes from existing primitives; real
+  FlashList virtualization without pagination (responsive 2/3/4 columns,
+  stable row props, key-remount trade-off); no shared design-system file
+  added (git status confirms feature-only scope).
+- Cross-task coherence and T04–T09 consumability explicitly checked:
+  `CATALOG_DESTINATIONS` maps 1:1 onto planned flat routes; grid row contract
+  `({item, onPress})` matches every card's `onPress` signature; entity `id`
+  fields feed planned query-parameter routes; `AvailabilityBadge` consumable
+  by T09.
+- Reviewer independently reproduced: 10 suites/64 tests, zero console output,
+  typecheck/lint/format/check:docs, FlashList v2.0.2 type surface.
+
+ROUND 2 GATE: PASS
