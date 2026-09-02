@@ -878,3 +878,52 @@ confirmed correct (the Zustand ban is mechanically real; the +not-found
 argument holds).
 
 GATE: PASS
+
+### ROUND 2 GATE — kiosk safety UI and root routing
+
+Round content: T05 (mismatch screen + route), T06 (maintenance UI), T07
+(root integration). All three task gates PASS (commits ae8f9ca scaffold,
+531a13e, a8ae85c, 801f48c).
+
+ROUND REVIEW (fresh round-scope code-reviewer, agent-2f6b2304)
+No blocking or major findings. Two minors:
+R2-1 the sheet's onOpenChange passed the overlay's handler through
+UNGATED — the dialog primitive's built-in dismissal paths (scrim tap,
+Android hardware back, a11y escape) could dismiss the sheet
+mid-sign-out-flight, hiding a blocked/failed outcome (residual of the
+T06-R2 hazard class: that fix gated only the Close button) → FIXED
+(T06 implementer resumed): handleOpenChange wrapper ignores false while
+signOut.pending — one gate covering all three built-in paths; regression
+RED reproduced exactly (scrim press dismissed mid-flight,
+onOpenChange(false) called) then GREEN (12 feature suites / 129 tests).
+R2-2 brief.md's out-of-scope clause not reconciled with the pre-T07 plan
+amendment (still claimed only \_layout + route as app/ changes while
+app/index.tsx was also edited) → fixed by the Lead (one-line brief
+amendment naming app/index.tsx and pointing at plan Design decision 6).
+Seams examined — ALL CLEAN: sign-out reuse chain (both consumers wired
+identically; no parallel sign-out repo-wide), store consumption topology
+(overlay sole component reader; useRootTarget/useDevicePolicySync only
+other subscribers; zero zustand under app/; barrel exactly four exports),
+guard consistency chain (every target → existing route; standard flow
+meaning-equal to the 5aa440a baseline guard-by-guard; mismatch flow
+coherent end-to-end), maintenance session lifecycle (all four clear paths
+converge on the frozen LOCKED_MAINTENANCE via clearMaintenance —
+idempotent, no double-clear, no gap; timer keyed [expiresAt] re-armed/
+disarmed/cleaned correctly incl. Math.max(0,·)), ephemerality invariant
+across the round (no logger/console/storage in any round file; the
+assertions are real), read-only invariant (call-shaped grep zero; the
+lock-task pin's scope covers every round file), round-level verify +
+test arithmetic (22/211 → 23/216 → 26/240 → 29/266; every delta matches
+per-file counts; now 29/267 after R2-1's regression test), combined
+behavior story (kiosk customer / preparation-on-kiosk / standard / web
+all walk to the plan's endpoints; the Lead's runtime evidence
+corroborates), overlay mount seam (forward note satisfied as written;
+provider chain bare → absolute entry anchors to GestureHandlerRootView;
+PortalHost paints above).
+
+ROUND CHECKS
+$ pnpm verify → PASS (29 suites / 267 tests + guards; generator smoke)
+$ git diff 5aa440a..HEAD → the round's 21 files + this gate's two
+remediation files; no other shared files.
+
+ROUND GATE: PASS

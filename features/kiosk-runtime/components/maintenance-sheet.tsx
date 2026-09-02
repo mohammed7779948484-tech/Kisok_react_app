@@ -110,8 +110,19 @@ export function MaintenanceSheet({
     signOut.run();
   }
 
+  // Every dismissal the dialog primitive offers — scrim tap, Android
+  // hardware back, accessibility escape — funnels through this handler, as
+  // does the Close button (whose `disabled` state is belt-and-braces on top).
+  // A close request while a switch attempt is in flight is ignored: a blocked
+  // or failed outcome must stay visible, not be hidden behind a dismissed
+  // sheet (review findings T06-R2 / R2-1).
+  function handleOpenChange(next: boolean) {
+    if (!next && signOut.pending) return;
+    onOpenChange(next);
+  }
+
   return (
-    <AdaptiveSheet open={open} onOpenChange={onOpenChange}>
+    <AdaptiveSheet open={open} onOpenChange={handleOpenChange}>
       <AdaptiveSheetContent>
         <AdaptiveSheetHeader>
           <AdaptiveSheetTitle>Maintenance</AdaptiveSheetTitle>

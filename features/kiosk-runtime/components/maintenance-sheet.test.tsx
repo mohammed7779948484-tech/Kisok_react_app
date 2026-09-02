@@ -70,6 +70,30 @@ async function renderSheet(props: Partial<MaintenanceSheetProps>) {
   return view;
 }
 
+/**
+ * The sheet's scrim — the dialog primitive's Overlay. It is the only
+ * non-accessible touch responder in the tree, so it can be located for a
+ * faithful dismissal-path press: `userEvent.press` drives its Pressability
+ * responder handlers, exactly the same mechanism as every other press, so
+ * the tap travels the primitive's real scrim-dismissal route.
+ */
+function findScrim() {
+  const root = screen.root;
+  const scrim =
+    root === null
+      ? []
+      : root.queryAll(
+          (node) =>
+            node.props.accessible === false &&
+            typeof node.props.onStartShouldSetResponder === "function",
+        );
+  const first = scrim[0];
+  if (first === undefined) {
+    throw new Error("Sheet scrim not found in the rendered tree.");
+  }
+  return first;
+}
+
 beforeEach(async () => {
   logRecords = [];
   setLogSink((record) => logRecords.push(record));
@@ -262,5 +286,42 @@ describe("MaintenanceSheet — unlocked panel", () => {
       expect(screen.getByRole("button", { name: SWITCH_ACCOUNT })).not.toBeDisabled(),
     );
     expect(screen.getByRole("button", { name: CLOSE })).not.toBeDisabled();
+  });
+
+  it("keeps the sheet open when the dialog's own dismissal path fires mid-flight, then closes normally after", async () => {
+    let settleSignOut: (() => void) | undefined;
+    auth = installMockAuth({
+      signOut: () =>
+        new Promise((resolve) => {
+          settleSignOut = () => resolve({ error: null });
+        }),
+    });
+    const onOpenChange = jest.fn();
+    const user = userEvent.setup();
+    await renderSheet({ unlocked: true, onOpenChange });
+
+    await user.press(screen.getByRole("button", { name: SWITCH_ACCOUNT }));
+
+    // In flight: a scrim tap is the dialog primitive's OWN dismissal path
+    // (hardware back and accessibility escape funnel through the same
+    // onOpenChange). Dismissing now would hide a blocked or failed outcome
+    // — the exact thing the shared pipeline exists to surface (R2-1).
+    await user.press(findScrim());
+
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(screen.getByText(TITLE)).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: SWITCH_ACCOUNT })).toBeOnTheScreen();
+
+    await act(async () => {
+      settleSignOut?.();
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: SWITCH_ACCOUNT })).not.toBeDisabled(),
+    );
+
+    // Settled: the same dismissal path closes the sheet normally again.
+    await user.press(findScrim());
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });

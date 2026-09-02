@@ -118,8 +118,9 @@ Be explicit. This is what stops a feature growing while it is being built.
   change; device policy is intentionally independent of backend auth.
 - No Catalog or Preparation business behaviour or UI redesign; no changes under
   `features/catalog/**`, `features/preparation/**`, `app/(customer)/**`, or
-  `app/(preparation)/**` (the root `app/_layout.tsx` and a new top-level route
-  file are the only `app/` changes).
+  `app/(preparation)/**` (the root `app/_layout.tsx`, `app/index.tsx` (edit —
+  target-driven redirect, Lead amendment pre-T07, see the plan's Design
+  decision 6), and a new top-level route file are the only `app/` changes).
 - No Flutter-reference research or parity work (`KISOK_FLUTTER_PRODUCT_REFERENCE.md`
   is not a source for this feature).
 - No custom DPC, Device Owner implementation, launcher replacement, or Android

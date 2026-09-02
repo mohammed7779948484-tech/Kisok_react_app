@@ -235,7 +235,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Allowed file scope**: `features/kiosk-runtime/docs/mdm-operations.md`
 - **Focused verification**: `pnpm verify` green (check:docs); content review against the research packets (enrollment, kiosk profile, app config, silent install, updates/rollback, recovery, beta path, activation prerequisites, unverified list)
 
-Round gates: Round 1 `PASS` · Round 2 `PENDING` · Round 3 `PENDING`
+Round gates: Round 1 `PASS` · Round 2 `PASS` · Round 3 `PENDING`
 
 ## Feature gate
 

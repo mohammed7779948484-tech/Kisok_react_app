@@ -24,6 +24,9 @@ Implementation notes do not belong here; they belong in `worklog.md`.
 
 | T07-R1 | minor | Brief AC-03 lists a runtime web preview with the policy source stubbed to kiosk; Lead runtime evidence initially covered only the standard path (the plan had narrowed browser runtime deliberately) | brief.md AC-03 vs plan.md Verification scopes | fixed | RESOLVED at the T07 gate: kiosk-stubbed web preview recorded (entry + long-press + sheet + wrong/right code + 90s expiry re-lock; zero errors; uncommitted stub reverted byte-identical) + honest supersession note for the session-dependent routing (no preparation credentials in this environment; resolver/hook/12-suite test coverage; hardware at MDM enrollment) |
 
+| R2-1 | minor | Sheet dismissible mid-sign-out-flight via the dialog primitive's built-in paths (scrim tap, hardware back, a11y escape) — onOpenChange passed through ungated; T06-R2 had gated only the Close button | maintenance-sheet.tsx:114 vs @rn-primitives/dialog sources | fixed | T06 implementer resumed: handleOpenChange wrapper ignores false while signOut.pending (one gate, all three paths); regression RED reproduced (scrim press mid-flight) then green; 12 feature suites / 129 tests |
+| R2-2 | minor | brief.md out-of-scope clause not reconciled with the pre-T07 plan amendment (claimed only \_layout + route as app/ changes; app/index.tsx also edited) | brief.md:120-122 vs git diff 5aa440a..801f48c --name-status | fixed | Lead amended the brief's parenthetical to name app/index.tsx and point at plan Design decision 6 |
+
 Severity means: **blocking** — must not merge; **major** — fix in this feature;
 **minor** — worth doing, safe to defer with a note.
 
