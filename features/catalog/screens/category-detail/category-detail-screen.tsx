@@ -10,6 +10,7 @@ import { Button, Text } from "@/components/ui";
 import { CatalogGrid, type CatalogGridRowInfo } from "../../components/catalog-grid";
 import { CategoryCard } from "../../components/category-card";
 import { ProductCard } from "../../components/product-card";
+import { productCountLabel } from "../../model/labels";
 import type { CatalogCategoryView, CatalogProductView } from "../../model/catalog-view";
 import { useCatalog } from "../../queries/use-catalog";
 import {
@@ -297,13 +298,9 @@ function CategoryIdentity({ category }: CategoryIdentityProps) {
           {category.name}
         </Text>
         <Text variant="body" tone="muted">
-          {categoryProductCountLabel(category.productCount)}
+          {productCountLabel(category.productCount)}
         </Text>
       </View>
     </View>
   );
-}
-
-function categoryProductCountLabel(productCount: number): string {
-  return productCount === 1 ? "1 product" : `${productCount} products`;
 }

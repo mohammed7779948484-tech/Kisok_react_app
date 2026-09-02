@@ -10,6 +10,7 @@ import { CatalogGrid, type CatalogGridRowInfo } from "../../components/catalog-g
 import { CatalogNavigation, type CatalogDestination } from "../../components/catalog-navigation";
 import { ProductCard } from "../../components/product-card";
 import type { CatalogProductView } from "../../model/catalog-view";
+import { productCountLabel } from "../../model/labels";
 import { useCatalog } from "../../queries/use-catalog";
 
 /**
@@ -152,8 +153,4 @@ export function ProductsScreen() {
       </View>
     </Screen>
   );
-}
-
-function productCountLabel(count: number): string {
-  return count === 1 ? "1 product" : `${count} products`;
 }

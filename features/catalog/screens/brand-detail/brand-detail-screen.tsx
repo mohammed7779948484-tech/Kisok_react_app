@@ -9,6 +9,7 @@ import { Button, Text } from "@/components/ui";
 
 import { CatalogGrid, type CatalogGridRowInfo } from "../../components/catalog-grid";
 import { ProductCard } from "../../components/product-card";
+import { productCountLabel } from "../../model/labels";
 import type { CatalogBrandView, CatalogProductView } from "../../model/catalog-view";
 import { useCatalog } from "../../queries/use-catalog";
 
@@ -193,8 +194,4 @@ function BrandIdentity({ brand, productCount }: BrandIdentityProps) {
       </View>
     </View>
   );
-}
-
-function productCountLabel(count: number): string {
-  return count === 1 ? "1 product" : `${count} products`;
 }

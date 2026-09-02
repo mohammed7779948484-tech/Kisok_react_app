@@ -6,6 +6,7 @@ import { Card, Text } from "@/components/ui";
 import { cn } from "@/core/utils";
 
 import type { CatalogCategoryView } from "../model/catalog-view";
+import { productCountLabel } from "../model/labels";
 
 /**
  * Whole-card navigation for one category in the Catalog (AC-05).
@@ -22,11 +23,6 @@ export type CategoryCardProps = {
   className?: string;
 };
 
-/** Human-readable product count; the count is derived, never invented here. */
-function categoryProductCountLabel(productCount: number): string {
-  return productCount === 1 ? "1 product" : `${productCount} products`;
-}
-
 export const CategoryCard = memo(function CategoryCard({
   category,
   onPress,
@@ -35,7 +31,9 @@ export const CategoryCard = memo(function CategoryCard({
   const handlePress = useCallback(() => {
     onPress(category);
   }, [onPress, category]);
-  const countLabel = categoryProductCountLabel(category.productCount);
+  // The count label is the feature's shared copy helper (model/labels.ts) —
+  // the same sentence every Catalog surface speaks for a derived count.
+  const countLabel = productCountLabel(category.productCount);
 
   return (
     <Pressable

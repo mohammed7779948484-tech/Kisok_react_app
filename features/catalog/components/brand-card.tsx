@@ -6,6 +6,7 @@ import { Card, Text } from "@/components/ui";
 import { cn } from "@/core/utils";
 
 import type { CatalogBrandView } from "../model/catalog-view";
+import { productCountLabel } from "../model/labels";
 
 /**
  * Whole-card navigation for one brand in the Catalog (AC-04).
@@ -21,16 +22,13 @@ export type BrandCardProps = {
   className?: string;
 };
 
-/** Human-readable product count; the count is derived, never invented here. */
-function brandProductCountLabel(productCount: number): string {
-  return productCount === 1 ? "1 product" : `${productCount} products`;
-}
-
 export const BrandCard = memo(function BrandCard({ brand, onPress, className }: BrandCardProps) {
   const handlePress = useCallback(() => {
     onPress(brand);
   }, [onPress, brand]);
-  const countLabel = brandProductCountLabel(brand.productCount);
+  // The count label is the feature's shared copy helper (model/labels.ts) —
+  // the same sentence every Catalog surface speaks for a derived count.
+  const countLabel = productCountLabel(brand.productCount);
 
   return (
     <Pressable

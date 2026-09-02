@@ -1935,3 +1935,56 @@ catalog index --role=customer --screen=catalog-home --force`): the first
   (5f6154d, f4da5ac) failed ONLY at the Generator smoke test step — the
   same state-dependent check fixed above; every other job was green, and
   the fix turned the final run green.
+
+REMEDIATION (F-R01, final review — Implementer, Lead-authorized feature-gate remediation)
+
+- F-R01 (minor, the "1 product / N products" count-label helper existed in
+  5 places — the T03-R02 acceptance's documented fifth-consumer revisit
+  threshold was reached without the revisit): consolidated into ONE
+  feature-internal helper, per the T03-R02 acceptance's constraint (nothing
+  promoted to shared `components/`).
+- Created `features/catalog/model/labels.ts` — a tiny pure module exporting
+  `productCountLabel(count: number): string` returning
+  `count === 1 ? "1 product" : "${count} products"` — with a docblock that
+  documents the consolidation decision: T03-R02 accepted the duplication
+  until a fifth consumer appeared; the final review's F-R01 triggered the
+  documented revisit; the helper stays feature-internal because the phrasing
+  is Catalog-specific product-count copy pinned by this feature's tests, not
+  a reusable design-system primitive (a second feature needing the same
+  sentence is the promotion signal, and it would be a breaking-copy
+  decision, not a mechanical one).
+- Replaced the five local helpers with imports of the shared one, keeping
+  the string behavior BYTE-IDENTICAL (same expression, same words); the dead
+  local helpers and nothing else were removed:
+  - `features/catalog/components/brand-card.tsx` — `brandProductCountLabel`
+    deleted, import + `productCountLabel(brand.productCount)` at the same
+    call site;
+  - `features/catalog/components/category-card.tsx` —
+    `categoryProductCountLabel` deleted, import +
+    `productCountLabel(category.productCount)`;
+  - `features/catalog/screens/products/products-screen.tsx` — local
+    `productCountLabel` deleted, import + unchanged call site
+    (`products.length`);
+  - `features/catalog/screens/brand-detail/brand-detail-screen.tsx` — local
+    `productCountLabel` deleted, import + unchanged call site;
+  - `features/catalog/screens/category-detail/category-detail-screen.tsx`
+    — `categoryProductCountLabel` deleted, import +
+    `productCountLabel(category.productCount)`.
+- ZERO test churn, exactly as required: no test file was touched, and every
+  consumer's tests already pin the exact output — the byte-identical
+  consolidation is proven by the unchanged 182-test feature suite passing
+  with zero console output (a behavior change would have failed the pinned
+  "1 product"/"N products" assertions).
+
+Evidence after remediation:
+
+- Whole feature: `pnpm exec jest features/catalog --runInBand` →
+  `Test Suites: 21 passed, 21 total` / `Tests: 182 passed, 182 total`,
+  zero console output (unchanged counts — pure refactor).
+- `pnpm typecheck` → PASS (clean, `tsc --noEmit`).
+- `pnpm lint` → PASS (exit 0, no findings).
+- Scoped `prettier --write` on the six touched files → all six unchanged
+  (already formatted); `pnpm format:check` → PASS for the whole repo.
+- Diff scope: 5 modified files + 1 new file, all inside the authorized
+  F-R01 scope; `+12/−25` across the modified files plus the new 38-line
+  `model/labels.ts`; no test, shared, core, route, or barrel changes.
