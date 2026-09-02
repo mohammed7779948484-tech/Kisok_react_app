@@ -927,3 +927,94 @@ $ git diff 5aa440a..HEAD → the round's 21 files + this gate's two
 remediation files; no other shared files.
 
 ROUND GATE: PASS
+
+### T08 — release-signing config plugin
+
+MODE: config
+ACCEPTANCE: Supporting AC-07 (app-side half; workflow-side fail-closed
+checks are T09/T10)
+
+SCAFFOLD (Lead — none: the plugin IS the task's manual artifact; plugins/
+is the planned Expo local-plugin path)
+
+CONFIG-MODE EVIDENCE (fresh feature-implementer, agent-d3d973ec — the
+prebuild runs ARE the entry evidence; no RED for config mode)
+WITH env (DEMO values only, never real secrets):
+MYAPP*UPLOAD_STORE_FILE=kisok-upload.keystore MYAPP_UPLOAD_KEY_ALIAS=
+kisok-upload MYAPP_UPLOAD_STORE_PASSWORD=demo-store-pass
+MYAPP_UPLOAD_KEY_PASSWORD=demo-key-pass
+$ npx expo prebuild --platform android --no-install --clean → finished;
+grep android/gradle.properties → all four MYAPP_UPLOAD*_ entries present;
+android/app/build.gradle → guarded signingConfigs.release block present,
+buildTypes.release → signingConfig signingConfigs.release, sentry counts
+exactly 1 (no duplication); T01 outputs still generated (APP*RESTRICTIONS
+meta-data, lockTaskMode="if_whitelisted", res/xml/kiosk_restrictions.xml).
+Idempotency: non-clean re-run WITH env → md5sum -c OK for both files.
+WITHOUT env (run last): clean prebuild → grep BOTH files → NO MYAPP_UPLOAD*_
+entries, NO release block; template's debug-signed release default intact.
+Control proof: a prebuild with the plugin reference temporarily removed
+(restored immediately) produced BYTE-IDENTICAL output (md5 match) — the
+plugin's no-env output is indistinguishable from a build where it does
+not exist, which is exactly the property android-e2e.yml depends on.
+git status after all runs → no tracked changes beyond the intentional
+three files (prebuild's recurring package.json script mutation restored
+via git checkout per the plan's documented risk mitigation).
+
+IMPLEMENT
+plugins/with-android-release-signing.ts — typed ConfigPlugin; reads the
+four MYAPP*UPLOAD*_ env vars at prebuild time with STATIC member access
+(all-four-or-nothing; partial = absent → NO mod registration at all);
+with env: withGradleProperties writes the four entries (+ idempotency
+key-existence check) and withAppBuildGradle adds the documented
+hasProperty-guarded signingConfigs.release block + repoints
+buildTypes.release (brace-scoped — the debug build type is never touched;
+precise named fail() on template drift; sentries for insertion safety).
+Zero logging (values never echoed — they travel only into the generated,
+gitignored, ephemeral android/ tree).
+app.config.ts — one plugins-array entry + comment (inert without env;
+fail-closed presence checks live in the release workflow).
+.gitignore — _.keystore added to the signing-material block (covers
+root-level and nested; corroborated by the reviewer with git check-ignore).
+
+AFFECTED CHECKS
+$ pnpm typecheck → PASS; pnpm lint → PASS; pnpm format:check → PASS;
+$ pnpm test:ci → 29 suites / 267 tests PASS (unchanged counts — config
+change, no behavior).
+
+REVIEW (fresh code-reviewer, agent-d0a97366)
+One blocking, three minors:
+T08-F01 BLOCKING: process.env[KEY] computed access violates
+expo/no-dynamic-env-var (eslint-config-expo, global in the flat config) —
+pnpm lint passes only because expo lint scans src/app/components, but the
+pre-commit lint-staged gate (eslint --max-warnings=0 on every staged
+_.ts) hard-fails; reviewer independently executed the plugin in-memory
+against the real template first (gating/gradle/CNG all clean) → FIXED
+(implementer resumed): static member access (behavior-identical; the
+_\_KEY constants remain for the gradle keys/sentry) + [string, string][];
+eslint gate reproduced failing BEFORE the fix and clean AFTER (exit 0,
+--fix-dry-run has nothing to touch).
+T08-F02 minor: the .js import suffix (extensionless fails under Node 24
+type-stripping — reviewer probed both forms; expo has no exports map)
+sound but undocumented → FIXED: 3-line comment at the import + this
+entry's rationale.
+T08-F03 minor: config-mode evidence trail must land in the gate commit
+(not only in the handoff) → fixed by THIS entry (full prebuild matrix,
+md5 idempotency, control-run byte-identity, package.json restoration
+recorded above).
+T08-F04 minor: the T10 heads-up (release workflow must restore
+package.json after prebuild — prebuild mutates the android/ios scripts)
+lives only in the handoff → fixed by a one-line addition to todo.md's
+T10 focused verification.
+Axes found clean (independently executed via an in-memory harness against
+the real template): env gating (all-four/partial/no-env — NO mods
+registered on partial or absent, by construction), gradle correctness
+(block verbatim the documented RN pattern; repoint brace-scoped to
+release only; idempotent second application byte-identical), CNG
+discipline (git check-ignore proves \*.keystore coverage), app.config
+diff (single hunk), generated-tree corroboration (no-env state + T01
+outputs intact), scope discipline.
+Judgments: .js suffix SOUND (hard evidence); config-mode no-test decision
+AGREED (matches plan — a string-assertion unit test would assert on
+regenerated template content); T10 heads-up adequate once recorded (F-04).
+
+GATE: PASS

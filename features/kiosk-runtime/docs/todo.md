@@ -12,11 +12,11 @@ defeats its only purpose.
 ## Current checkpoint
 
 ```
-Current round     : 2
-Current task      : T06
-Current stage     : implementing
-Last gate         : T05 GATE: PASS
-Next legal action : gate T06 on the implementer's return, then T07 scaffold + delegation (root guard)
+Current round     : 3
+Current task      : T09
+Current stage     : not started
+Last gate         : T08 GATE: PASS
+Next legal action : delegate T09 (tools/release/verify-release-apk.ts + tests — planned manual artifacts, no scaffold needed), then T10
 
 Blocked by        : — (push credentials provided by the user; branch pushed and Draft PR #9 open — see Blocked below for what stays external)
 ```
@@ -47,7 +47,7 @@ Scan this first. Detail is below.
 | T05  | behavior        | Acceptance: AC-03                   | kiosk mismatch screen + route                                                | T03           | done        | PASS    |
 | T06  | behavior        | Acceptance: AC-05                   | maintenance UI (entry, unlock sheet, panel)                                  | T03           | done        | PASS    |
 | T07  | behavior-change | Acceptance: AC-03, AC-04            | root guard resolver + app/\_layout.tsx integration + static lock-task search | T04, T05, T06 | done        | PASS    |
-| T08  | config          | Supporting AC-07                    | release-signing config plugin + .gitignore                                   | —             | not started | PENDING |
+| T08  | config          | Supporting AC-07                    | release-signing config plugin + .gitignore                                   | —             | done        | PASS    |
 | T09  | behavior        | Acceptance: AC-08, Supporting AC-01 | tools/release/verify-release-apk.ts + tests                                  | —             | not started | PENDING |
 | T10  | config          | Supporting AC-07                    | android-release.yml workflow                                                 | T08, T09      | not started | PENDING |
 | T11  | behavior        | Acceptance: AC-09                   | tools/mdm/upload-beta.ts + tests                                             | —             | not started | PENDING |
@@ -194,7 +194,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Allowed manual files**: `.github/workflows/android-release.yml`
 - **Scaffold status**: `N/A — workflow file`
 - **Allowed file scope**: `.github/workflows/android-release.yml`
-- **Focused verification**: YAML parses; `pnpm verify` green (check:ci-scripts scans workflows); structural review against the design (dispatch-only, secret checks fail closed, verify step, artifact upload, permissions, persist-credentials, concurrency)
+- **Focused verification**: YAML parses; `pnpm verify` green (check:ci-scripts scans workflows); structural review against the design (dispatch-only, secret checks fail closed, verify step, artifact upload, permissions, persist-credentials, concurrency). The workflow must restore `package.json` after prebuild — prebuild mutates the android/ios scripts (the documented mitigation; T08-F04)
 
 ### T11 — MDM upload script
 

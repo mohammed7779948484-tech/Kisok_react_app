@@ -67,6 +67,13 @@ const config: ExpoConfig = {
     // DPC-allowlisted tablets and a normal app everywhere else. The app never
     // calls startLockTask/stopLockTask; the MDM owns enforcement.
     "./modules/kiosk-policy/app.plugin.js",
+    // KISOK kiosk-runtime: env-guarded release signing for the managed
+    // deployment path. Inert without the MYAPP_UPLOAD_* env — local dev and
+    // e2e CI keep the Expo template's debug-signed release default. With all
+    // four present at prebuild time it writes the guarded signing config into
+    // the generated, gitignored android/ tree only. Fail-closed
+    // secret-presence checks live in the release workflow, not the plugin.
+    "./plugins/with-android-release-signing.ts",
   ],
   experiments: {
     typedRoutes: true,
