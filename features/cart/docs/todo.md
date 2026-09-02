@@ -16,10 +16,10 @@ is the first thing the next agent reads.
 
 ```
 Current round     : 2
-Current task      : T08
+Current task      : T09
 Current stage     : not started (scaffold PENDING — Lead runs generator first)
-Last gate         : T07 GATE: PASS
-Next legal action : Lead scaffolds `pnpm generate component cart quick-cart-sheet`, then composes + delegates T08 (QuickCartSheet; honor T07 carry-forwards)
+Last gate         : T08 GATE: PASS
+Next legal action : Lead scaffolds `pnpm generate screen cart full-cart` then `pnpm generate route cart cart --role=customer --screen=full-cart`, then composes + delegates T09 (Full Cart screen + /cart route; honor T08 carry-forwards)
 Blocked by        : — (local work unblocked; Draft-PR push awaits credentials — see Blocked)
 ```
 
@@ -48,7 +48,7 @@ Scan this first. Detail is below.
 | T05  | behavior | Acceptance AC-07                             | Sign-out cleanup wiring                         | T04                | done        | PASS    |
 | T06  | behavior | Supporting AC-04, AC-12                      | QuantityStepper component                       | — (seq. after T05) | done        | PASS    |
 | T07  | behavior | Supporting AC-03, AC-04, AC-12               | CartItemRow component                           | T01, T06           | done        | PASS    |
-| T08  | behavior | Acceptance AC-10                             | QuickCartSheet adaptive surface                 | T04, T07           | not started | PENDING |
+| T08  | behavior | Acceptance AC-10                             | QuickCartSheet adaptive surface                 | T04, T07           | done        | PASS    |
 | T09  | behavior | Acceptance AC-11                             | Full Cart screen + /cart route                  | T04, T07           | not started | PENDING |
 | T10  | behavior | Acceptance AC-13                             | useCart hook + public API in index.ts           | T05, T08, T09      | not started | PENDING |
 
@@ -202,7 +202,7 @@ access exists. See `Blocked`.
 - **Lead scaffold**: `pnpm generate component cart quick-cart-sheet`
 - **Expected generated files**: `components/quick-cart-sheet.tsx`
 - **Allowed manual files**: `components/quick-cart-sheet.test.tsx`
-- **Scaffold status**: PENDING
+- **Scaffold status**: READY (ran; 1 file created)
 - **Allowed file scope**: `features/cart/components/**`,
   `features/cart/state/**` (read-only consumption)
 - **Spec**: public controlled surface `{open, onOpenChange, onViewFullCart?}`;
@@ -211,8 +211,7 @@ access exists. See `Blocked`.
   clearFailed → Alert destructive; locked → controls disabled; footer:
   Continue Shopping (AdaptiveSheetClose) + View Full Cart intent; total
   quantity in title; stateful (reads store; updates doc comment honestly);
-  tests cover BOTH presentations (default 1024×768 side panel + overridden
-  compact metrics bottom sheet).
+  tests cover BOTH presentations (Dimensions.set before render: 1024×768 side panel + 480×900 compact bottom sheet; jest's default window is 750×1334 compact portrait — initialMetrics drives insets only).
 
 ### T09 — Full Cart screen + /cart route
 

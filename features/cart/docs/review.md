@@ -126,3 +126,23 @@ presentation-only (caller-owned); the lucide mock standard text now includes
 Minus/Plus/Trash2/ImageOff; getByRole("dialog") is unusable with this
 RNTL/@rn-primitives combination — assert dialog openness via real
 headings/buttons; renderWithProviders already mounts PortalHost.
+
+| R-T08-01 | minor | plan.md risk row + todo.md T08 spec line factually inverted: the default test window is 750×1334 compact portrait (bottom sheet), and initialMetrics pins insets only — renderWithProviders exposes no initialMetrics option at all; the wrong premise would have misled T09 into a non-existent override mechanism | plan.md risk table; todo.md T08 spec; empirical probe (reviewer); adaptive-sheet.tsx:31,44-45 | fixed by Lead at gate — plan risk row + todo spec line reworded to the verified Dimensions.set({window, screen})-before-render pattern | done |
+| R-T08-02 | nit | doc comment stated the sheet is "exported through the feature's index" — index.ts is still `export {}` until T10 | quick-cart-sheet.tsx doc comment; features/cart/index.ts | fixed in remediation — softened to "intended for the feature's public index (the public-API task wires that export)" | done |
+| R-T08-03 | nit | inverse honesty un-pinned: no assertion that persisted/unknown render NO alert | quick-cart-sheet.test.tsx | fixed in remediation — text-query absence assertions in the populated + empty tests (probed: role "alert" not queryable under this RNTL build; the text inverse matches the positive assertions) | done |
+| R-T08-04 | nit | worklog entry recorded only after the review snapshot (evidence timing) | worklog headings | resolved — Lead recorded full evidence at gate | done |
+
+T08 review note: the reviewer verified the Dimensions-default claim
+empirically (default 750×1334 → compact portrait bottom sheet;
+initialMetrics drives insets/safe-area frame only; Dimensions.set genuinely
+re-drives useLayout both ways). Controlled contract, store wiring (no
+mirrored totals; real action signatures; act-safe write settling),
+persistence honesty (exact status union; unknown/persisted render nothing),
+empty/locked semantics, and test quality (non-vacuous closed/open
+structure; order-independent frame control; standardized lucide mock +
+ShoppingCart) all verified clean. Carry-forwards for T09: reuse the
+setFrame / Dimensions.set-before-render pattern and the
+resetCartSingleton/seedCart/settleDurableWrites helpers verbatim; Full
+Cart's empty state should use EmptyState's action prop (Browse Products →
+router.push("/")); the Alert role is NOT queryable under this RNTL build —
+alert assertions use text queries (positive and inverse).

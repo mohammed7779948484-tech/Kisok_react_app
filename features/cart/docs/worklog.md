@@ -566,3 +566,75 @@ dialog Content (plain View without accessible) — the heading/button-based
 openness assertion was judged sound and adopted as the pattern.
 
 GATE: PASS
+
+### T08 — QuickCartSheet adaptive surface
+
+MODE: behavior
+ACCEPTANCE: Acceptance AC-10
+
+SCAFFOLD (Lead, before delegating)
+$ pnpm generate component cart quick-cart-sheet
+created : features/cart/components/quick-cart-sheet.tsx
+skipped : none
+replaced : none
+manual : components/quick-cart-sheet.test.tsx (component capability generates
+no test template)
+
+RED (implementer, agent-f2377d83…)
+$ pnpm test -- quick-cart-sheet
+11 failed / 11 — `Unable to find …` (heading `Your Cart · N`, buttons, rows,
+alerts) against the scaffold's "TODO: build QuickCartSheet." — right class.
+One honest restructure at RED: the original "closed renders nothing" test
+passed vacuously (pure absence assertions); rebuilt as one-open +
+one-closed instance asserting the open content appears exactly once — which
+then failed correctly.
+
+IMPLEMENT
+quick-cart-sheet.tsx: stateful public surface on the REAL AdaptiveSheet (=
+DialogPrimitive.Root; controlled open/onOpenChange threaded verbatim); title
+carries selectTotalQuantity; ScrollView of CartItemRow (mutations via
+useCartStore.getState() with the store's real signatures); EmptyState when
+empty; Alert warning at memoryOnly / Alert destructive at clearFailed (exact
+status union from the store); rows disabled at locked; footer Continue
+Shopping (AdaptiveSheetClose asChild → onOpenChange(false)) + View Full Cart
+(onViewFullCart optional — hidden when absent; stays enabled while locked:
+navigation, not mutation). Doc comment honestly stateful (plan decision 12).
+DISCOVERY (empirical — implementer probe, reviewer re-verified): jest's
+default window is 750×1334 (compact portrait → bottom sheet), NOT the
+1024×768 the plan's risk row assumed; core/testing render initialMetrics
+drives insets only, not presentation. Tests set Dimensions.set({window,
+screen}) BEFORE render: 1024×768 → side panel, 480×900 → bottom sheet — both
+presentations genuinely exercised (View Full Cart interaction asserted under
+compact too). Plan risk row + todo spec line reworded by the Lead (R-T08-01).
+Store control: singleton setState seeding + beforeEach reset + setLogSink
+silencing (sanctioned pattern); settleDurableWrites settles the
+fire-and-forget persistNow inside act (zero act warnings).
+
+GREEN
+$ pnpm test -- quick-cart-sheet → 11/11, zero console output
+$ pnpm test → 25 suites / 266 tests PASS
+
+AFFECTED CHECKS
+$ pnpm typecheck / lint → clean; format:check clean; hook-eslint
+(--max-warnings=0, both files) → exit 0
+
+DIFF
+2 new files in features/cart/components/\*\*. No state-file edits (read-only
+consumption); no shared/core edits; index.ts untouched.
+
+TASK REVIEW (fresh, agent-770eb0a1…)
+0 blocking / 0 major / 1 minor / 3 nits (R-T08-01…04 — recorded in
+review.md). Dispositions: R-T08-01 (plan/todo risk-row inversion) → fixed by
+Lead at gate (both docs reworded with the verified facts); R-T08-02 (doc
+comment claimed index export) → fixed in remediation (softened to "intended
+for"; T10 wires it); R-T08-03 (no inverse alert-absence assertions) → fixed
+in remediation (text-query inverses in populated + empty tests; probed:
+accessibilityRole="alert" is NOT role-queryable under this RNTL build —
+same limitation class as the T07 dialog carry-forward); R-T08-04 → resolved
+by this entry.
+
+REMEDIATION (same implementer, resumed)
+R-T08-02 + R-T08-03 as above; re-verified: focused 11/11, full 25/266,
+typecheck/lint/format/hook-eslint clean.
+
+GATE: PASS
