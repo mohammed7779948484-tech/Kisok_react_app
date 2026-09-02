@@ -16,10 +16,10 @@ is the first thing the next agent reads.
 
 ```
 Current round     : 2
-Current task      : T07
+Current task      : T08
 Current stage     : not started (scaffold PENDING — Lead runs generator first)
-Last gate         : T06 GATE: PASS
-Next legal action : Lead scaffolds `pnpm generate component cart cart-item-row`, then composes + delegates T07 (CartItemRow + T06 deferred remediations R-T06-01/02)
+Last gate         : T07 GATE: PASS
+Next legal action : Lead scaffolds `pnpm generate component cart quick-cart-sheet`, then composes + delegates T08 (QuickCartSheet; honor T07 carry-forwards)
 Blocked by        : — (local work unblocked; Draft-PR push awaits credentials — see Blocked)
 ```
 
@@ -47,7 +47,7 @@ Scan this first. Detail is below.
 | T04  | behavior | Acceptance AC-03, AC-04, AC-05, AC-08, AC-09 | Store mutations/lock/summaries                  | T03                | done        | PASS    |
 | T05  | behavior | Acceptance AC-07                             | Sign-out cleanup wiring                         | T04                | done        | PASS    |
 | T06  | behavior | Supporting AC-04, AC-12                      | QuantityStepper component                       | — (seq. after T05) | done        | PASS    |
-| T07  | behavior | Supporting AC-03, AC-04, AC-12               | CartItemRow component                           | T01, T06           | not started | PENDING |
+| T07  | behavior | Supporting AC-03, AC-04, AC-12               | CartItemRow component                           | T01, T06           | done        | PASS    |
 | T08  | behavior | Acceptance AC-10                             | QuickCartSheet adaptive surface                 | T04, T07           | not started | PENDING |
 | T09  | behavior | Acceptance AC-11                             | Full Cart screen + /cart route                  | T04, T07           | not started | PENDING |
 | T10  | behavior | Acceptance AC-13                             | useCart hook + public API in index.ts           | T05, T08, T09      | not started | PENDING |
@@ -184,7 +184,7 @@ access exists. See `Blocked`.
 - **Lead scaffold**: `pnpm generate component cart cart-item-row`
 - **Expected generated files**: `components/cart-item-row.tsx`
 - **Allowed manual files**: `components/cart-item-row.test.tsx`
-- **Scaffold status**: PENDING
+- **Scaffold status**: READY (ran; 1 file created)
 - **Allowed file scope**: `features/cart/components/**`
 - **Spec**: AppImage (alt text, fallback), product name (Text body/h3),
   variant/options label (Text caption muted), QuantityStepper, remove

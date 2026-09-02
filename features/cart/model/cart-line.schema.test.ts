@@ -1,4 +1,9 @@
-import { addToCartInputSchema, cartLineSchema } from "./cart-line.schema";
+import {
+  addToCartInputSchema,
+  cartLineSchema,
+  MAX_LINE_QUANTITY,
+  MIN_LINE_QUANTITY,
+} from "./cart-line.schema";
 
 /**
  * Colocated with the schema it protects: the test is right there when the
@@ -67,6 +72,19 @@ describe("cart-line schema", () => {
     const result = cartLineSchema.safeParse({ ...validLine, quantity: 0 });
     expect(result.success).toBe(false);
     expect(issuePaths(result)).toContainEqual(["quantity"]);
+  });
+
+  it("pins the exported bounds: MIN_LINE_QUANTITY is 1, below MAX, and the schema range is exactly [MIN, MAX]", () => {
+    // Mirrors the MAX round-trip convention in cart-rules.test.ts: the exported
+    // constants ARE the schema's bounds — MIN parses, MIN − 1 rejects (R-T06-02).
+    expect(MIN_LINE_QUANTITY).toBe(1);
+    expect(MIN_LINE_QUANTITY).toBeLessThan(MAX_LINE_QUANTITY);
+    expect(cartLineSchema.safeParse({ ...validLine, quantity: MIN_LINE_QUANTITY }).success).toBe(
+      true,
+    );
+    expect(
+      cartLineSchema.safeParse({ ...validLine, quantity: MIN_LINE_QUANTITY - 1 }).success,
+    ).toBe(false);
   });
 
   it("rejects quantity 100 — the cap is ninety-nine", () => {

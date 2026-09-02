@@ -506,3 +506,63 @@ stays — R-T02-02 centralized only 99); R-T06-03 (compound test 4) → accepted
 as-is (nit).
 
 GATE: PASS
+
+### T07 — CartItemRow component (+ T06 deferred remediations)
+
+MODE: behavior
+ACCEPTANCE: Supporting AC-03, AC-04, AC-12
+
+SCAFFOLD (Lead, before delegating)
+$ pnpm generate component cart cart-item-row
+created : features/cart/components/cart-item-row.tsx
+skipped : none
+replaced : none
+manual : components/cart-item-row.test.tsx (component capability generates
+no test template)
+
+RED (implementer, agent-c6954107…)
+$ pnpm test -- cart-item-row → 7 failed / 7 — `Unable to find…` (product
+name, `Quantity: 2`, button `Remove Cappuccino`, image role) against the
+scaffold's "TODO: build CartItemRow." — right class: missing row content.
+$ pnpm test -- quantity-stepper → 1 failed / 8 — `Quantity: NaN` rendered,
+decrement enabled — precisely R-T06-01.
+$ pnpm test -- cart-line.schema → 1 failed / 15 — MIN_LINE_QUANTITY
+undefined — precisely R-T06-02.
+
+IMPLEMENT
+cart-item-row.tsx: presentational row — AppImage (alt = product name,
+fallback per its own contract), Text h3 product name, caption Text =
+variantLabel · optionValueLabels (snapshot-derived only), QuantityStepper
+wired (disabled at locked||pending), remove Button size="icon"
+variant="outline" + Icon Trash2 + accessibilityLabel "Remove <product>" →
+REAL ConfirmDialog (destructive, product-named copy, confirmLabel "Remove");
+only onConfirm calls onRemove. R-T06-01: quantity-stepper safeValue =
+Number.isFinite(value) ? value : min (display + disabled + emission
+uniformly). R-T06-02: schema exports MIN_LINE_QUANTITY (single literal,
+.min() uses it), stepper imports it, pinning test added. Tests: 7 row tests
+(real AppImage/ConfirmDialog/Button/Text unmocked; lucide mock =
+standardized text extended with Trash2/ImageOff), 1 NaN regression test,
+1 MIN pinning test.
+
+GREEN
+$ pnpm test -- cart-item-row → 7/7; quantity-stepper → 8/8;
+cart-line.schema → 15/15
+$ pnpm test → 24 suites / 255 tests PASS, zero console output
+$ pnpm typecheck / lint / format:check → clean
+$ npx eslint --max-warnings=0 on both test files → exit 0 (the hook's
+invocation; caught + fixed one unused var mid-run)
+
+DIFF
+6 files: cart-item-row pair (new), quantity-stepper pair + cart-line.schema
+pair (remediations). Nothing outside allowed scope; cart-rules.ts untouched;
+index.ts untouched.
+
+TASK REVIEW (fresh, agent-64b320d6…)
+0 blocking / 0 major / 0 minor / 3 nits (R-T07-01…03 — recorded in
+review.md, all accepted as-is with reasons). Reviewer verified all focused
+suites, the full 24/255, checks, the hook-eslint invocation, and scope; also
+verified against installed sources that RNTL 14.0.1 cannot role-query the
+dialog Content (plain View without accessible) — the heading/button-based
+openness assertion was judged sound and adopted as the pattern.
+
+GATE: PASS

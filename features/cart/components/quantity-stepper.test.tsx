@@ -103,4 +103,20 @@ describe("QuantityStepper", () => {
     await user.press(screen.getByRole("button", { name: "Decrease quantity" }));
     expect(onValueChange).toHaveBeenCalledWith(0);
   });
+
+  it("fails safe on a non-finite value: renders the min, disables decrement, emits only in-bounds values (R-T06-01)", async () => {
+    const onValueChange = jest.fn();
+    const user = userEvent.setup();
+    await renderWithProviders(<QuantityStepper value={Number.NaN} onValueChange={onValueChange} />);
+
+    // NaN must not reach the display or the buttons: the control behaves as
+    // though the value were the min, mirroring the domain layer's fail-safe.
+    expect(screen.getByText("1")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Quantity: 1")).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Decrease quantity" })).toBeDisabled();
+
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    expect(onValueChange).toHaveBeenCalledTimes(1);
+    expect(onValueChange).toHaveBeenCalledWith(2);
+  });
 });

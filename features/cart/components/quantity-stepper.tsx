@@ -4,7 +4,7 @@ import { View } from "react-native";
 import { Button, Icon, Text } from "@/components/ui";
 import { cn } from "@/core/utils";
 
-import { MAX_LINE_QUANTITY } from "../model/cart-line.schema";
+import { MIN_LINE_QUANTITY, MAX_LINE_QUANTITY } from "../model/cart-line.schema";
 
 /**
  * Presentational only: it receives a quantity and reports the next one upward.
@@ -29,8 +29,9 @@ export type QuantityStepperProps = {
   /** Current quantity. Controlled: the stepper never stores this locally. */
   value: number;
   /**
-   * Inclusive lower bound. Defaults to 1 — the domain minimum (AC-04:
-   * decrement is disabled at 1; removal is always the separate remove action).
+   * Inclusive lower bound. Defaults to the model's MIN_LINE_QUANTITY (1) — the
+   * domain minimum (AC-04: decrement is disabled at 1; removal is always the
+   * separate remove action).
    */
   min?: number;
   /**
@@ -47,8 +48,6 @@ export type QuantityStepperProps = {
   className?: string;
 };
 
-const MIN_LINE_QUANTITY = 1;
-
 export function QuantityStepper({
   value,
   min = MIN_LINE_QUANTITY,
@@ -57,15 +56,20 @@ export function QuantityStepper({
   disabled = false,
   className,
 }: QuantityStepperProps) {
+  // Non-finite value is a caller bug: fail safe to min for display, disabled
+  // logic, and emission — mirroring the domain layer (cart-rules.ts), so the
+  // control can never render or emit NaN/±Infinity (R-T06-01).
+  const safeValue = Number.isFinite(value) ? value : min;
+
   const decrement = () => {
     // Clamp defensively so a stray re-render can never emit an out-of-bounds value.
-    const next = Math.max(min, value - 1);
-    if (next !== value) onValueChange(next);
+    const next = Math.max(min, safeValue - 1);
+    if (next !== safeValue) onValueChange(next);
   };
 
   const increment = () => {
-    const next = Math.min(max, value + 1);
-    if (next !== value) onValueChange(next);
+    const next = Math.min(max, safeValue + 1);
+    if (next !== safeValue) onValueChange(next);
   };
 
   return (
@@ -74,23 +78,23 @@ export function QuantityStepper({
         variant="outline"
         size="icon"
         accessibilityLabel="Decrease quantity"
-        disabled={disabled || value <= min}
+        disabled={disabled || safeValue <= min}
         onPress={decrement}
       >
         <Icon as={Minus} />
       </Button>
       <Text
         variant="body"
-        accessibilityLabel={`Quantity: ${value}`}
+        accessibilityLabel={`Quantity: ${safeValue}`}
         accessibilityLiveRegion="polite"
       >
-        {value}
+        {safeValue}
       </Text>
       <Button
         variant="outline"
         size="icon"
         accessibilityLabel="Increase quantity"
-        disabled={disabled || value >= max}
+        disabled={disabled || safeValue >= max}
         onPress={increment}
       >
         <Icon as={Plus} />

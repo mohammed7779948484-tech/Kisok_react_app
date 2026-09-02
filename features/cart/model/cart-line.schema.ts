@@ -1,11 +1,14 @@
 import { z } from "zod";
 
 /**
- * The single source of the per-line quantity cap for the whole model layer:
- * min 1 is the domain rule; within persisted format v1 the 1–99 range is part
- * of the restore contract — changing it requires bumping the envelope version.
- * As a UX guard the server still validates at order time.
+ * The single source of the per-line quantity bounds for the whole model
+ * layer: min 1 is the domain rule (decrement never removes a line — removal is
+ * the separate confirmed remove action); the cap is a UX guard — the server
+ * still validates at order time. Within persisted format v1 the 1–99 range is
+ * part of the restore contract — changing either bound requires bumping the
+ * envelope version.
  */
+export const MIN_LINE_QUANTITY = 1;
 export const MAX_LINE_QUANTITY = 99;
 
 /**
@@ -32,7 +35,7 @@ export const cartLineSchema = z.object({
   ),
   // null when the variant has no image — AppImage renders its fallback.
   imageUri: z.string().nullable(),
-  quantity: z.number().int().min(1).max(MAX_LINE_QUANTITY),
+  quantity: z.number().int().min(MIN_LINE_QUANTITY).max(MAX_LINE_QUANTITY),
 });
 
 /**

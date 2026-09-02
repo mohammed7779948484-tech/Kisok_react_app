@@ -112,3 +112,17 @@ lucide-react-native jest.mock was judged the only in-contract solution
 (jest.config.js transform allowlist absent; shared/core-config edits forbidden
 by AC-13) — the Lead standardized the exact per-file mock text for T07/T08
 rather than widening scope.
+
+| R-T07-01 | nit | ±Infinity divergence: stepper maps ALL non-finite value → min while cart-rules maps +Inf → max; both fail safe; the remediation spec mandated the stepper behavior; reachability nil (schema int 1–99 on restore; setLineQuantity clamps) | quantity-stepper.tsx:59-62 vs cart-rules.ts:34-43 | accepted divergence — do NOT unify (would deviate from the remediation spec); surfaces feed validated CartLine.quantity so the branch stays dead | done |
+| R-T07-02 | nit | dialog dismissal paths other than Cancel (overlay press, hardware back, escape) untested — onRemove is wired exclusively to onConfirm so no dismissal path can fire it | cart-item-row.test.tsx:122-134; @rn-primitives dialog overlay behavior | accepted as-is; optional overlay-dismiss assertion when T08/T09 drive the real dialog anyway | done |
+| R-T07-03 | nit | row-test fixture lineId not in deriveLineId's full format (inherited from the T01 fixture); lineId is never rendered or asserted in the row test | cart-item-row.test.tsx:41 vs cart-rules.ts:10-17 | accepted; use full-id fixtures if a future fixture pass happens | done |
+
+T07 review note: 0 blocking / 0 major / 0 minor / 3 nits — all accepted
+as-is with reasons above. Carry-forwards for T08/T09 (recorded in the T08/T09
+task packets): the row owns and closes its own dialog (surfaces hold no
+dialog state); onSetQuantity receives already-clamped in-bounds values;
+onRemove fires exactly once per confirmed removal; pending is
+presentation-only (caller-owned); the lucide mock standard text now includes
+Minus/Plus/Trash2/ImageOff; getByRole("dialog") is unusable with this
+RNTL/@rn-primitives combination — assert dialog openness via real
+headings/buttons; renderWithProviders already mounts PortalHost.
