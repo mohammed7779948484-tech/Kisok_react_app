@@ -897,3 +897,27 @@ proven more strongly by the durable-envelope test than a skeleton-frame
 pin ever would be (review.md R-T11-01).
 
 Round gate: PASS
+
+## DRAFT PR — feature/cart → develop
+
+Push (one-off credential URL — nothing stored in .git/config or any
+file): feature/cart → origin (mohammed7779948484-tech/Kisok_react_app)
+as a NEW remote branch, no rejection; 15 commits pushed (80b8ac3..5a343e7
+— the whole feature: T01..T11 code + gates + docs). Upstream tracking
+set afterwards via a credential-less fetch (origin is public-readable;
+cosmetic only).
+
+PR: #8 — https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/8
+head feature/cart → base develop; state open, DRAFT (not for merge).
+Body: what (client-local cart), scope discipline (negative contract
+honored, no shared/core edits, features/cart/\*\* + the thin route), task
+trail T01→T11, verification summary (27 suites / 289 tests; checks
+clean; every task + round gate PASS), draft rationale (Lead final
+verification, code review, quality audit, CI pending), evidence
+pointers to this docs/ set. Created via the GitHub REST API (no gh CLI
+in this sandbox).
+
+The Draft PR opened AFTER Round 2 gate PASS per the workflow; Round 1's
+push constraint is resolved (its note above is the historical record).
+Next: develop integration check, Lead final verification, code review,
+quality audit, feature gate.

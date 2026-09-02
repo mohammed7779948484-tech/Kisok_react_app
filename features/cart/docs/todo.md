@@ -17,9 +17,9 @@ is the first thing the next agent reads.
 ```
 Current round     : 2
 Current task      : — (all tasks done)
-Last gate         : T11 GATE: PASS
-Next legal action : Round 2 gate
-Blocked by        : — (push credentials now available; Draft PR opens after Round 2 gate)
+Last gate         : ROUND 2 GATE: PASS (commit 33dd590)
+Next legal action : DEVELOP_INTEGRATION_CHECK → FINAL_VERIFICATION → code review → quality audit → feature gate
+Blocked by        : — (Draft PR #8 open — see Blocked)
 ```
 
 ## Rules
@@ -312,11 +312,4 @@ FEATURE GATE: PENDING
 
 What cannot proceed, and what it is waiting for. Empty is good.
 
-- **Draft-PR push (external)**: opening the Draft PR on GitHub requires pushing
-  `feature/cart` to origin. This sandbox has NO push credentials (no gh CLI,
-  no SSH binary, no stored token; `git push --dry-run` → "could not read
-  Username"). All local gates are unaffected. Required external action: push
-  access or the push itself (`git push -u origin feature/cart`) + PR creation
-  (base `develop`, draft). The Lead prepared to open it the moment access
-  exists. This does NOT block Tasks/Rounds/Reviews — only the remote PR
-  artifact and its CI evidence.
+- — (Draft PR #8 opened: https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/8)
