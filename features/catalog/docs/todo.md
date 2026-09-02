@@ -6,21 +6,24 @@ in `worklog.md`. Keep this checkpoint and gate board current.
 ## Current checkpoint
 
 ```
-Current round     : FINAL VERIFICATION (post-handoff session)
-Current task      : Live hosted TEST verification + adversarial findings
-                    (A remediated: T01 reopened→fixed→re-reviewed; B
-                    rejected as intentional; C pending live evidence)
-Current stage     : Baseline re-established on the restored repo (feature
-                    21/185, repo 38/323, pnpm verify exit 0); hosted live
-                    verification in progress on catalog-v2-super
-Last gate         : FEATURE GATE PASS (2026-09-02), reopened honestly at
-                    T01 for the used_* contract gap and restored after
-                    remediation + fresh re-review (A-REVIEW-1: 0
-                    blocking/0 major/0 minor)
-Next legal action : finish the hosted live journey evidence, disposition
-                    Finding C from live evidence, final deterministic
-                    verification + develop integration, fresh final review
-                    + quality audit, push to catalog-v2-super / PR #10 only
+Current round     : FINAL VERIFICATION (post-handoff session) — audit phase
+Current task      : Quality audit (fresh) after SHIP-READY final review
+Current stage     : Hosted TEST live session COMPLETE (worklog post-handoff
+                    section: real RPC, Zod, UI, a11y, responsive, console
+                    clean); findings A fixed + re-reviewed (F-R02), B/C
+                    rejected with rationale + live proof (F-R03/F-R04);
+                    final deterministic verification re-executed (21/185,
+                    38/323, pnpm verify 0, export:web 0); develop
+                    unchanged (0 behind/19 ahead); fresh final review
+                    F-REVIEW-2 SHIP-READY with 2 minors resolved by
+                    recording
+Last gate         : FEATURE GATE PASS (2026-09-02), T01 reopened→remediated
+                    →re-reviewed (A-REVIEW-1 clean), final review
+                    F-REVIEW-2 SHIP-READY
+Next legal action : run the fresh quality-auditor, record its result, push
+                    the final HEAD to catalog-v2-super / PR #10 only,
+                    verify CI on the exact final HEAD, update the PR body
+                    — never merge
 Blocked by        : —
 ```
 

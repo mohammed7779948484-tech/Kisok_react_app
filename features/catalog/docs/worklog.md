@@ -2281,3 +2281,36 @@ created, mutated, or deleted at any point.
 navigation were instantaneous on the dev-server build; note this is a
 development-mode Metro bundle, not a production-export performance
 measurement.
+
+### Fresh final review (F-REVIEW-2) + final deterministic verification recording
+
+- Fresh full-feature code-reviewer (read-only; skills: kisok-code-review,
+  supabase, kisok-design-system, kisok-react-native-rules) reviewed the exact
+  final diff `origin/develop...HEAD` (61 files; code commit `ac0455a` +
+  docs commit `c3c891c`) and all eight Acceptance Criteria against the
+  shipped code: verdict **SHIP-READY**, 0 blocking / 0 major / 2 minor
+  (F-R2-01 evidence-recording gap, F-R2-02 checkpoint lag). It independently
+  re-ran feature 21/185 + typecheck at the exact HEAD; re-derived the
+  used\_\* equivalence clause-by-clause; concurred with the F-R03/F-R04
+  rejections (corroborating the cold-route proof with
+  `unstable_settings = { anchor: "index" }`); and judged the hosted-read
+  gap genuinely closed.
+- F-R2-02 resolved: checkpoint refreshed with this entry (hosted session
+  complete; Finding C dispositioned; final review recorded).
+- F-R2-01 resolved by this entry — final-HEAD deterministic verification,
+  re-executed on the tree containing BOTH new commits:
+  - `pnpm exec jest features/catalog` → **21 suites / 185 tests PASS**
+  - `pnpm exec jest --ci --silent` → **38 suites / 323 tests PASS**
+  - `pnpm verify` → **exit 0**
+  - `pnpm export:web` → **exit 0** (all static routes, incl. the detail
+    routes)
+  - `origin/develop` at `80b8ac3` — unchanged since the branch's last
+    verified integration point (0 behind / 19 ahead): no re-integration
+    required.
+  - GitHub CI on the exact final pushed HEAD: recorded immediately below
+    once the push completes (the run id/result will be appended; never
+    silently assumed).
+- The todo feature-gate checklist's historical line naming `04a3889` remains
+  the record of THAT gate's CI evidence; the final code HEAD of this
+  session is `ac0455a` and its CI evidence is appended below after the
+  push.
