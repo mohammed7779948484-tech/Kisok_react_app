@@ -197,3 +197,27 @@ discriminating), no circular imports. R-T10-01 dispositioned as T11 (the
 plan revision is recorded in plan.md decision 15 + task table); R-T10-02
 corrected in the worklog; R-T10-03/04 remediated in-task and re-verified
 (9/9, 27/288, all checks clean).
+
+| R-T11-01 | minor | restore-pending SkeletonList presentation is code-pinned only — the transient `!hydrated` frame is unobservable in the harness (mock auth + AsyncStorage chains are pure microtasks that settle inside RNTL v14's awaited render/act) | full-cart-screen.test.tsx deviation comment; GATE-T11 probe (fresh shell) | accepted — pinned landed-empty + no-guess inverses (no rows, no footer, no Clear Cart); the `!hydrated` early return remains code-pinned and commented in the screen | done |
+
+T11 review note: independent Lead verification (GATE-T11, fresh context) —
+PASS. 2-file scope exact (screen 48 lines / test 208 lines; 206+/50-); ONE
+`useCart()` call destructuring the identical 6 CartView fields (lines,
+totalQuantity, distinctLineCount, persistence, hydrated, locked); mutations
+moved to the view's bound actions with identical signatures; zero
+`useCartStore` references in the screen (grep); test gate wrappers
+(AuthedCartScreen/AuthedCartRoute) mirror Stack.Protected
+(`ready && profile?.role === "customer"`); same-owner seeding rationale
+documented in-test (the hook's hydrate no-ops for the same owner, so seeded
+memory survives; the old different-owner seed would take the owner-switch
+reset path); the R-T10-01 proof test contains NO manual hydrate call (grep
+— only comments/state reads). Verification re-run fresh: focused 14/14 ×2
+zero console output; use-cart 9/9 + sign-out-cleanup 5/5; FULL 27 suites /
+289 tests; typecheck/lint/format:check/check:docs clean; hook-eslint
+(--max-warnings=0) on both files exit 0; auth suites 5/41; cart feature
+suites 10/151. Deviation R-T11-01 accepted with rationale: re-pinning the
+transient skeleton frame would require injecting an artificial timing seam
+into the storage/auth mocks — an unsanctioned seam testing the harness, not
+the app; the durable-envelope restore test covers R-T10-01's substance
+(runtime owner-scoped restore, AC-02 reachability) more strongly than a
+skeleton-frame pin ever would.

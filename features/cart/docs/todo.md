@@ -16,10 +16,9 @@ is the first thing the next agent reads.
 
 ```
 Current round     : 2
-Current task      : T11
-Current stage     : not started (no scaffold — behavior wiring task, plan decision 15)
-Last gate         : T10 GATE: PASS
-Next legal action : Lead composes + delegates T11 (FullCartScreen consumes useCart(); runtime hydration wiring — R-T10-01 remediation), then Round 2 gate, then Draft PR
+Current task      : — (all tasks done)
+Last gate         : T11 GATE: PASS
+Next legal action : Round 2 gate
 Blocked by        : — (push credentials now available; Draft PR opens after Round 2 gate)
 ```
 
@@ -39,19 +38,19 @@ Blocked by        : — (push credentials now available; Draft PR opens after Ro
 
 Scan this first. Detail is below.
 
-| Task | Mode     | Acceptance                                   | Objective                                       | Deps               | Stage       | Gate    |
-| ---- | -------- | -------------------------------------------- | ----------------------------------------------- | ------------------ | ----------- | ------- |
-| T01  | behavior | Supporting AC-01, AC-02, AC-03               | Line + persisted-cart Zod schemas               | —                  | done        | PASS    |
-| T02  | behavior | Supporting AC-03, AC-08                      | Pure cart rules (identity/merge/bounds/summary) | T01                | done        | PASS    |
-| T03  | behavior | Acceptance AC-01, AC-02, AC-06               | Store restore/persistence/ownership             | T01, T02           | done        | PASS    |
-| T04  | behavior | Acceptance AC-03, AC-04, AC-05, AC-08, AC-09 | Store mutations/lock/summaries                  | T03                | done        | PASS    |
-| T05  | behavior | Acceptance AC-07                             | Sign-out cleanup wiring                         | T04                | done        | PASS    |
-| T06  | behavior | Supporting AC-04, AC-12                      | QuantityStepper component                       | — (seq. after T05) | done        | PASS    |
-| T07  | behavior | Supporting AC-03, AC-04, AC-12               | CartItemRow component                           | T01, T06           | done        | PASS    |
-| T08  | behavior | Acceptance AC-10                             | QuickCartSheet adaptive surface                 | T04, T07           | done        | PASS    |
-| T09  | behavior | Acceptance AC-11                             | Full Cart screen + /cart route                  | T04, T07           | done        | PASS    |
-| T10  | behavior | Acceptance AC-13                             | useCart hook + public API in index.ts           | T05, T08, T09      | done        | PASS    |
-| T11  | behavior | Acceptance AC-02, AC-11 (runtime)            | FullCartScreen consumes useCart() (wiring)      | T09, T10           | not started | PENDING |
+| Task | Mode     | Acceptance                                   | Objective                                       | Deps               | Stage | Gate |
+| ---- | -------- | -------------------------------------------- | ----------------------------------------------- | ------------------ | ----- | ---- |
+| T01  | behavior | Supporting AC-01, AC-02, AC-03               | Line + persisted-cart Zod schemas               | —                  | done  | PASS |
+| T02  | behavior | Supporting AC-03, AC-08                      | Pure cart rules (identity/merge/bounds/summary) | T01                | done  | PASS |
+| T03  | behavior | Acceptance AC-01, AC-02, AC-06               | Store restore/persistence/ownership             | T01, T02           | done  | PASS |
+| T04  | behavior | Acceptance AC-03, AC-04, AC-05, AC-08, AC-09 | Store mutations/lock/summaries                  | T03                | done  | PASS |
+| T05  | behavior | Acceptance AC-07                             | Sign-out cleanup wiring                         | T04                | done  | PASS |
+| T06  | behavior | Supporting AC-04, AC-12                      | QuantityStepper component                       | — (seq. after T05) | done  | PASS |
+| T07  | behavior | Supporting AC-03, AC-04, AC-12               | CartItemRow component                           | T01, T06           | done  | PASS |
+| T08  | behavior | Acceptance AC-10                             | QuickCartSheet adaptive surface                 | T04, T07           | done  | PASS |
+| T09  | behavior | Acceptance AC-11                             | Full Cart screen + /cart route                  | T04, T07           | done  | PASS |
+| T10  | behavior | Acceptance AC-13                             | useCart hook + public API in index.ts           | T05, T08, T09      | done  | PASS |
+| T11  | behavior | Acceptance AC-02, AC-11 (runtime)            | FullCartScreen consumes useCart() (wiring)      | T09, T10           | done  | PASS |
 
 Stage is one of: `not started` · `scaffolding` · `red/baseline` ·
 `implementing` · `green` · `checks` · `diff review` · `done`.
@@ -269,6 +268,10 @@ Round gate: `PENDING`
 - **Skills**: test-driven-development, kisok-design-system
 - **Lead scaffold**: N/A — behavior wiring task added by the Lead at T10
   review (R-T10-01; plan design decision 15 — revision recorded in plan.md)
+- **Gate**: PASS (review 0 blocking / 0 major / 1 minor deviation accepted —
+  restore-pending skeleton frame unobservable in harness, pinned
+  landed-empty + code-pinned early return; see worklog + this file's T11
+  section)
 - **Expected generated files**: —
 - **Allowed manual files**: edits to
   `features/cart/screens/full-cart/full-cart-screen.tsx` + its test
