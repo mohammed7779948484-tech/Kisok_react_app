@@ -72,8 +72,8 @@ _None yet._
 Launched as fresh generic Super Z research contexts (no repository custom
 research agent matches internet/platform scopes; the Flutter/Supabase/UI
 researchers are explicitly N/A for this feature). Full packets were returned
-in-session; the durable record is the synthesis in `docs/plan.md` with
-per-finding primary-source URLs. Agent resume ids (Super Z coordination log):
+in-session; the durable record is the synthesis in the feature's
+`docs/plan.md` (the feature's plan) with per-finding primary-source URLs. Agent resume ids (Super Z coordination log):
 R-A `agent-87081c68…`, R-B `agent-f1269dfd…`, R-C `agent-3967d83b…`,
 R-D `agent-90263207…`, R-E `agent-10ed1c6b…`.
 
@@ -150,3 +150,122 @@ External dependency recorded: `git push --dry-run` fails — no GitHub
 credentials in this environment. Branch push / Draft PR / GitHub CI /
 live MDM dry-run are human/external actions (see plan Verification and
 brief Evidence).
+
+### T01 — SCAFFOLD (Lead, before delegating)
+
+manual scaffold (no generator capability covers Expo local modules):
+created : modules/kiosk-policy/expo-module.config.json
+modules/kiosk-policy/package.json (main: src/index.ts)
+modules/kiosk-policy/android/build.gradle (exact SDK-54
+module shape copied from node_modules/expo-splash-screen)
+modules/kiosk-policy/android/src/main/AndroidManifest.xml
+modules/kiosk-policy/app.plugin.js (FULLY IMPLEMENTED —
+structural config: APP_RESTRICTIONS meta-data via
+AndroidConfig.Manifest.addMetaDataItemToMainApplication,
+lockTaskMode=if_whitelisted via getMainActivityOrThrow,
+res/xml written via withDangerousMod)
+replaced : none
+manual : KioskPolicyModule.kt + src/index.ts remain for the T01
+implementer (task-owned files)
+app.config.ts edited: added "./modules/kiosk-policy/app.plugin.js"
+
+$ EXPO_NO_GIT_STATUS=1 npx expo prebuild --platform android --no-install --clean
+first run FAILED: "AndroidManifest.xml is missing the required MainApplication
+element" — plugin bug (passed modResults.manifest to
+getMainApplicationOrThrow instead of modResults root); fixed by using the
+installed API shape (getMainActivityOrThrow / getMainApplicationOrThrow take
+the AndroidManifest root object).
+second run: ✔ Finished prebuild
+generated-manifest checks (config-mode evidence):
+android/app/src/main/AndroidManifest.xml:15
+<meta-data android:name="android.content.APP_RESTRICTIONS"
+                 android:resource="@xml/kiosk_restrictions"/>
+android/app/src/main/AndroidManifest.xml:19
+android:lockTaskMode="if_whitelisted" on .MainActivity
+android/app/src/main/res/xml/kiosk_restrictions.xml exists with the three
+planned restriction keys (kiosk_device_role [string — deviation from the
+plan's "choice": string avoids res/values array resources; the MDM console
+presents a text field and the app validates the value — derivation
+unchanged], maintenance_unlock_code [string],
+maintenance_unlock_timeout_seconds [integer])
+prebuild side effect (documented risk, materialized): first run mutated
+package.json (scripts android→run:android, + ios script); restored with
+`git checkout -- package.json`. Tracked tree afterwards: only the intended
+app.config.ts + features/kiosk-runtime/docs/todo.md changes.
+$ pnpm typecheck → PASS; pnpm lint → PASS; pnpm format:check → PASS
+(after pnpm format fixed the new module files); pnpm test:ci → see
+VERIFICATION entry added after the implementer run.
+Kotlin compile: NOT possible locally (no Android SDK/gradle) — CI
+label-gated android-build job is the compile evidence once the PR exists
+(external dependency recorded).
+
+### T01 — Expo local module `modules/kiosk-policy` (Kotlin + JS wrapper)
+
+MODE: config
+ACCEPTANCE: Supporting AC-02, Supporting AC-01
+
+SCAFFOLD (Lead — recorded in the T01 SCAFFOLD entry above)
+
+IMPLEMENT (fresh feature-implementer, agent-58c092d1)
+modules/kiosk-policy/android/src/main/java/expo/modules/kioskpolicy/KioskPolicyModule.kt
+— Name("KioskPolicy"); Events("onRestrictionsChanged");
+AsyncFunction("getDevicePolicySnapshot") → { restrictions: Map (all keys
+incl. restrictions_pending; null-valued keys treated as unset), lockTaskPermitted,
+lockTaskModeState: none|locked|pinned }; dynamically registered receiver
+(ACTION_APPLICATION_RESTRICTIONS_CHANGED, RECEIVER_NOT_EXPORTED, guarded
+registration, unregister in OnStopObserving + OnDestroy); read-only (no
+startLockTask/stopLockTask/DPM writes).
+modules/kiosk-policy/src/index.ts
+— requireOptionalNativeModule("KioskPolicy") typed surface, null on
+web/test; no business logic.
+
+GREEN / VERIFICATION (config mode — commands run by implementer and Lead)
+$ EXPO_NO_GIT_STATUS=1 npx expo prebuild --platform android --no-install --clean
+✔ Finished prebuild (twice: after scaffold fix, and after implementation —
+package.json mutation restored each time via git checkout)
+generated manifest: APP_RESTRICTIONS meta-data (line 15) +
+android:lockTaskMode="if_whitelisted" (line 19) + res/xml/kiosk_restrictions.xml
+$ npx expo-modules-autolinking resolve --json --platform android
+→ @kisok/kiosk-policy → modules/kiosk-policy/android →
+expo.modules.kioskpolicy.KioskPolicyModule (no duplicates)
+$ pnpm typecheck → PASS; pnpm lint → PASS; pnpm format:check → PASS;
+pnpm test:ci → 17 suites / 138 tests PASS
+$ pnpm verify → PASS (check:docs green after F-01 fixes; generator smoke passed)
+
+AFFECTED CHECKS
+$ pnpm verify (full) → PASS (final line: "KISOK generator smoke test passed")
+Static safety (AC-04): repository-wide rg for startLockTask|stopLockTask —
+comments/docs only; module contains no DPM write calls.
+
+DIFF
+Untracked: modules/kiosk-policy/\*\* (7 files: 5 Lead-scaffolded + 2 implemented).
+Tracked edits: app.config.ts (one plugin entry + comment) and the feature
+control documents. Nothing else.
+
+REVIEW (fresh code-reviewer, agent-077e8b21)
+F-01 major — check:docs flagged 3 bare docs/<doc>.md references in control
+docs → FIXED by Lead (rephrased with feature-local qualifiers).
+F-02 major — worklog/todo not yet recording T01 implementation state →
+FIXED by this entry + todo.md update.
+F-03 minor — null-valued restriction keys would cross the bridge as null,
+breaking the TS union and making T02's Zod boundary reject the WHOLE
+snapshot (fail-open consequence) → REMEDIATED by the T01 implementer
+(resumed): null-valued keys are dropped (Android semantics: explicit null
+== unset) in Kotlin + doc comments updated in both files; Lead re-verified
+(typecheck/lint/format/test green). Fresh full re-review not re-run for
+this 2-line minor remediation — the Round 1 gate review (fresh context)
+covers the accumulated diff; rationale recorded here.
+F-04 minor — plan said kiosk_device_role "choice", shipped schema uses
+"string" → plan text reconciled by Lead (Design decision 4 now documents
+the choice→string rejection rationale).
+Reviewer axes found clean: Kotlin DSL vs installed SDK-54 sources (all
+symbols verified — nothing expected to fail compile), receiver lifecycle,
+conversion/degradation direction, lock-task mapping, read-only invariant,
+plugin correctness/idempotency, CNG compatibility, app.config.ts diff,
+JS wrapper typing, autolink resolution, full check suite, scope discipline.
+
+Kotlin compile: NOT provable locally (no Android SDK) — deferred to the
+label-gated android-build CI job once the PR exists (external dependency;
+documented plan risk; nothing in static contract review suggests failure).
+
+GATE: PASS

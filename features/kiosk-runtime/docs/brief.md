@@ -160,8 +160,8 @@ Be explicit. This is what stops a feature growing while it is being built.
 Link what this brief is based on: migration files, the Flutter reference for
 BEHAVIOUR only, existing screens, research findings.
 
-- Research Evidence Packets (2026-09-02), scopes A–E, recorded in
-  `docs/worklog.md` research phase and synthesized in `docs/plan.md`:
+- Research Evidence Packets (2026-09-02), scopes A–E, recorded in the feature's
+  `docs/worklog.md` research phase and synthesized in the feature's `docs/plan.md`:
   Android Enterprise/Dedicated Devices/Lock Task/Managed Configurations
   (developer.android.com, last-updated dates 2025-02 → 2026-08); Expo SDK 54
   local modules / config plugins / CNG / release signing (docs.expo.dev,

@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : 1
-Current task      : T01
+Current task      : T02
 Current stage     : not started
-Last gate         : plan READY (Lead Planning Review passed)
-Next legal action : Lead scaffold for T01 (modules/kiosk-policy manual scaffold + app.config.ts wiring), then delegate T01
+Last gate         : T01 GATE: PASS
+Next legal action : Lead scaffold for T02 (pnpm generate schema kiosk-runtime device-policy), then delegate T02
 Blocked by        : — (external: GitHub push credentials absent — affects PR/CI evidence only, not implementation)
 ```
 
@@ -67,10 +67,10 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Acceptance**: Supporting AC-02, AC-01
 - **Depends on**: —
 - **Skills**: test-driven-development, expo-dev-client
-- **Lead scaffold**: manual (planned) — `modules/kiosk-policy/{expo-module.config.json, android/build.gradle, android/src/main/AndroidManifest.xml, android/src/main/java/expo/modules/kioskpolicy/KioskPolicyModule.kt, src/index.ts, app.plugin.js}`; edit `app.config.ts` (add plugin reference). Reason: no KISOK generator capability covers Expo local modules; `create-expo-module` is interactive and over-scaffolds.
+- **Lead scaffold**: manual (planned) — `modules/kiosk-policy/{expo-module.config.json, package.json, android/build.gradle, android/src/main/AndroidManifest.xml, app.plugin.js (fully implemented — it is structural config)}`; edit `app.config.ts` (add plugin reference). Reason: no KISOK generator capability covers Expo local modules; `create-expo-module` is interactive and over-scaffolds.
 - **Expected generated files**: none (generator N/A for this task)
-- **Allowed manual files**: the module files above + `app.config.ts` (listed shared change)
-- **Scaffold status**: `N/A — no generator capability applies; Lead scaffolds the planned module files`
+- **Allowed manual files**: `modules/kiosk-policy/android/src/main/java/expo/modules/kioskpolicy/KioskPolicyModule.kt`, `modules/kiosk-policy/src/index.ts` (the native implementation the task owns)
+- **Scaffold status**: `N/A — no generator capability applies; Lead scaffolds the planned module structure + plugin`
 - **Allowed file scope**: `modules/kiosk-policy/**`, `app.config.ts`
 - **Focused verification**: `npx expo prebuild --platform android --no-install --clean` (with `EXPO_NO_GIT_STATUS=1`, then `git status` to prove no tracked file changed); generated manifest contains `android.content.APP_RESTRICTIONS` meta-data + `android:lockTaskMode="if_whitelisted"`; `android/app/src/main/res/xml/kiosk_restrictions.xml` exists with the three planned restriction keys; `pnpm typecheck && pnpm lint && pnpm test:ci && pnpm format:check`
 

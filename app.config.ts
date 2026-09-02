@@ -61,6 +61,12 @@ const config: ExpoConfig = {
         },
       },
     ],
+    // KISOK kiosk-runtime: declares the Android managed-configurations
+    // (app restrictions) schema and sets android:lockTaskMode="if_whitelisted"
+    // on the main activity so the SAME APK is a locked store kiosk on
+    // DPC-allowlisted tablets and a normal app everywhere else. The app never
+    // calls startLockTask/stopLockTask; the MDM owns enforcement.
+    "./modules/kiosk-policy/app.plugin.js",
   ],
   experiments: {
     typedRoutes: true,

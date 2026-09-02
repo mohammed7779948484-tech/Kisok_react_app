@@ -1,0 +1,7 @@
+{
+  "name": "@kisok/kiosk-policy",
+  "version": "0.1.0",
+  "description": "KISOK Android-only local Expo module: read-only device-policy snapshot (managed app restrictions + lock-task corroboration) and restrictions-change events.",
+  "main": "src/index.ts",
+  "private": true
+}

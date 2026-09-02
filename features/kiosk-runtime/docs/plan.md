@@ -21,7 +21,7 @@ status is the implementation-readiness signal.
 ## Research synthesis
 
 Five READ-ONLY evidence packets were gathered on 2026-09-02 (recorded in the
-feature `docs/worklog.md` research phase). Conclusions load-bearing for this
+feature's `docs/worklog.md` research phase). Conclusions load-bearing for this
 plan, each with its primary source:
 
 - **Kiosk enforcement is DPC/MDM-owned, not app-owned.** Dedicated devices are
@@ -180,7 +180,10 @@ lockTaskPermitted === true`; everything else (missing key, invalid value,
    Android guidance; no listener API exists). `restrictions_pending` marks a
    provisional snapshot → treated as standard until a later read corrects it.
 4. **Maintenance credential comes from the managed config, not Supabase.**
-   Restriction keys: `kiosk_device_role` (choice), `maintenance_unlock_code`
+   Restriction keys: `kiosk_device_role` (string — a `choice` type was
+   considered and rejected: it requires res/values array resources for no
+   enforcement gain, since the app validates the value anyway; the MDM console
+   presents a text field), `maintenance_unlock_code`
    (string — visible to MDM admins in the console; `hidden` risks the console
    not rendering a settable field), `maintenance_unlock_timeout_seconds`
    (integer, clamped 15–600, default 90). The code is compared inside the
