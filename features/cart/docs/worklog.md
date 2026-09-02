@@ -448,3 +448,61 @@ Cross-task coherence (Lead review of combined behavior):
   contract respected); no UI yet (Round 2).
 
 Round gate: PASS
+
+### T06 — QuantityStepper component
+
+MODE: behavior
+ACCEPTANCE: Supporting AC-04, AC-12
+
+SCAFFOLD (Lead, before delegating)
+$ pnpm generate component cart quantity-stepper
+created : features/cart/components/quantity-stepper.tsx
+skipped : none
+replaced : none
+manual : components/quantity-stepper.test.tsx (component capability generates
+no test template)
+
+RED (implementer, agent-45a7bd83…)
+$ pnpm test -- quantity-stepper
+7 failed / 7 — every failure was `Unable to find an element with role: button,
+name: …` (or the `Quantity: N` label) against the scaffold's "TODO: build
+QuantityStepper." — right class: controls/labels/value missing; module resolved
+and rendered (no import/typo errors).
+
+IMPLEMENT
+quantity-stepper.tsx: presentational control — props value, min (default 1),
+max (default MAX_LINE_QUANTITY imported from ../model/cart-line.schema — the
+single 99 literal), onValueChange, disabled, className merged last; Button
+size="icon" (h-touch/w-touch = 48dp) + Icon Minus/Plus with accessibilityLabel
+"Decrease quantity"/"Increase quantity"; value Text with accessibilityLabel
+`Quantity: N` + accessibilityLiveRegion="polite" (repo precedent: alert.tsx:34,
+input.tsx:46, error-state.tsx, offline-notice.tsx); emissions clamped
+(Math.max/Math.min), never fired when disabled or next===value. Test-local
+jest.mock("lucide-react-native") documented in-file — jest.config.js lacks the
+transform allowlist and shared/core-config edits are forbidden by AC-13, so the
+per-file mock is the only in-contract solution (Lead standardized the exact
+text for T07/T08; see review.md T06 note).
+
+GREEN
+$ pnpm test -- quantity-stepper → 7/7, zero console output
+$ pnpm test → 23 suites / 246 tests PASS
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean
+$ pnpm lint → clean
+$ pnpm format:check → clean (prettier run on the new test file, focused re-run
+7/7 after)
+
+DIFF
+2 new files in features/cart/components/\*\* (+ the Lead's todo.md
+scaffold-status edit). Nothing outside scope. index.ts untouched.
+
+TASK REVIEW (fresh, agent-c9c2e83b…)
+0 blocking / 0 major / 1 minor / 2 nits (R-T06-01…03 — recorded in review.md).
+Dispositions: R-T06-01 (NaN passthrough) → T07 (Number.isFinite fail-safe +
+regression test at the real wiring); R-T06-02 (MIN literal asymmetry) → T07
+(schema exports MIN_LINE_QUANTITY, stepper imports it; rules' internal floor
+stays — R-T02-02 centralized only 99); R-T06-03 (compound test 4) → accepted
+as-is (nit).
+
+GATE: PASS

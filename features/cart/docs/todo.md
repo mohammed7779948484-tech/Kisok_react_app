@@ -16,10 +16,10 @@ is the first thing the next agent reads.
 
 ```
 Current round     : 2
-Current task      : T06
+Current task      : T07
 Current stage     : not started (scaffold PENDING — Lead runs generator first)
-Last gate         : ROUND 1 GATE: PASS (commit bb6d170)
-Next legal action : Lead scaffolds `pnpm generate component cart quantity-stepper`, then composes + delegates T06 (QuantityStepper)
+Last gate         : T06 GATE: PASS
+Next legal action : Lead scaffolds `pnpm generate component cart cart-item-row`, then composes + delegates T07 (CartItemRow + T06 deferred remediations R-T06-01/02)
 Blocked by        : — (local work unblocked; Draft-PR push awaits credentials — see Blocked)
 ```
 
@@ -46,7 +46,7 @@ Scan this first. Detail is below.
 | T03  | behavior | Acceptance AC-01, AC-02, AC-06               | Store restore/persistence/ownership             | T01, T02           | done        | PASS    |
 | T04  | behavior | Acceptance AC-03, AC-04, AC-05, AC-08, AC-09 | Store mutations/lock/summaries                  | T03                | done        | PASS    |
 | T05  | behavior | Acceptance AC-07                             | Sign-out cleanup wiring                         | T04                | done        | PASS    |
-| T06  | behavior | Supporting AC-04, AC-12                      | QuantityStepper component                       | — (seq. after T05) | not started | PENDING |
+| T06  | behavior | Supporting AC-04, AC-12                      | QuantityStepper component                       | — (seq. after T05) | done        | PASS    |
 | T07  | behavior | Supporting AC-03, AC-04, AC-12               | CartItemRow component                           | T01, T06           | not started | PENDING |
 | T08  | behavior | Acceptance AC-10                             | QuickCartSheet adaptive surface                 | T04, T07           | not started | PENDING |
 | T09  | behavior | Acceptance AC-11                             | Full Cart screen + /cart route                  | T04, T07           | not started | PENDING |
@@ -167,7 +167,7 @@ access exists. See `Blocked`.
 - **Expected generated files**: `components/quantity-stepper.tsx`
 - **Allowed manual files**: `components/quantity-stepper.test.tsx` (test
   colocated; the component capability generates no test template)
-- **Scaffold status**: PENDING
+- **Scaffold status**: READY (ran; 1 file created)
 - **Allowed file scope**: `features/cart/components/**`
 - **Spec**: presentational (value, min, max, onValueChange, disabled);
   Button size="icon" h-touch/w-touch with Minus/Plus Icon; value Text

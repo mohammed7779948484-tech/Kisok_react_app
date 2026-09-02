@@ -98,3 +98,17 @@ runSignOutCleanup capture, and clearKisokStorage namespace wipe that NO
 swallow path exists; registration idempotent; real-zustand action-replacement
 test approach judged real behavior (no mock framework). 0 blocking / 0 major /
 5 minor — all dispositioned above.
+
+| R-T06-01 | minor | NaN `value` leaves both buttons enabled and emits NaN (NaN comparisons are false; `NaN !== NaN` passes the change guard) — the stepper amplifies non-finite input instead of failing safe; reachability low (schema int 1–99 on restore; setLineQuantity clamps) | quantity-stepper.tsx:62-68,77,93; node trace; cart-rules.ts:36-42; cart-store.ts:481 | defer to T07 — Number.isFinite fail-safe mirroring cart-rules + regression test where the real value source is wired | T07 |
+| R-T06-02 | nit | domain minimum 1 exists as a third literal (schema `.min(1)`, rules `Math.max(1,…)`, stepper `MIN_LINE_QUANTITY`) — asymmetric with the centralized MAX treatment of R-T02-02 | quantity-stepper.tsx:50; cart-line.schema.ts:35; cart-rules.ts:39 | defer to T07 — schema exports MIN_LINE_QUANTITY, stepper imports it (rules' floor logic unchanged) | T07 |
+| R-T06-03 | nit | test 4 compounds two scenarios (default 99 + override max=5) in one `it` | quantity-stepper.test.tsx:61-71 | accepted as-is (fresh render per scenario; cosmetic) | done |
+
+T06 review note: reviewer empirically re-ran all checks (focused 7/7; full 23
+suites/246; typecheck/lint/format clean; working tree contained only the two
+T06 files + the Lead's known todo.md scaffold-status edit). Bounds/callback
+clamping, a11y chains (names, live region, disabled→accessibilityState),
+mock neutrality, and RED credibility all verified clean. The
+lucide-react-native jest.mock was judged the only in-contract solution
+(jest.config.js transform allowlist absent; shared/core-config edits forbidden
+by AC-13) — the Lead standardized the exact per-file mock text for T07/T08
+rather than widening scope.
