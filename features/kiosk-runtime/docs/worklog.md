@@ -532,3 +532,89 @@ created : app/kiosk-mismatch.tsx (top-level route; nothing occupied the
 path — no --force needed)
 appended : features/kiosk-runtime/index.ts — export { KioskMismatchScreen }
 Scaffold status: READY
+
+### T05 — kiosk mismatch screen + route
+
+MODE: behavior
+ACCEPTANCE: AC-03 (AC-06 wiring for the screen's action)
+
+SCAFFOLD (Lead — generator screen + route; commit ae8f9ca; see the T05
+SCAFFOLD entry above)
+
+RED (fresh feature-implementer, agent-f7d5e464)
+$ pnpm jest features/kiosk-runtime
+Test Suites: 1 failed, 5 passed; Tests: 4 failed, 73 passed — the new tests
+cannot find "This is a customer tablet" or the
+"Sign out and return to customer sign-in" button (the generator placeholder
+renders instead; T01–T04 suites stayed green). Right failure: behaviour
+missing, not an import/typo error.
+
+IMPLEMENT
+screens/kiosk-mismatch/kiosk-mismatch-screen.tsx — Screen (all edges) →
+centered ScrollView → max-w-md column: Text h2 "This is a customer tablet",
+Text lead muted explanation (jargon-free), Button size="large" block labeled
+exactly "Sign out and return to customer sign-in" wired to
+useSignOutAction() from @/core/auth (AC-06 — no parallel sign-out logic);
+disabled={pending}; the pipeline's message rendered verbatim in
+Alert variant="warning" (accessibilityRole="alert" +
+accessibilityLiveRegion="polite" — announced, retryable). No store import,
+no Supabase, no visibility re-derivation (T07 owns routing); no component
+extraction (45-line screen).
+
+GREEN
+$ pnpm jest features/kiosk-runtime
+Test Suites: 6 passed, 6 total; Tests: 77 passed, 77 total
+First green attempt exposed an RNTL v14 limitation — getByRole("alert")
+cannot match the design-system Alert (plain View is not an accessibility
+element); the test pins the announcement contract on the Alert's own props
+(toHaveProp accessibilityRole/liveRegion) with a comment explaining why.
+Implementer mutation probes (restored byte-identical): Alert → plain
+destructive Text fails the blocked test; removing disabled={pending} fails
+the pending test.
+
+AFFECTED CHECKS
+$ pnpm typecheck → PASS; pnpm lint → PASS; pnpm format:check → PASS
+(implementer formatted its test file); $ pnpm test:ci → 23 suites / 215
+tests PASS.
+
+DIFF
+Tracked: the screen + test (implementer), todo.md board catch-up (Lead,
+reviewer T05-R2). Route file + index.ts untouched from generator output
+(reviewer verified byte-identical via git hash-object + template match).
+
+REVIEW (fresh code-reviewer, agent-598c15c7)
+No blocking or major findings. Two minors:
+T05-R1 plan's test strategy promises "blocked/failed message surfaced" but
+only the blocked outcome was tested at the screen seam → FIXED (implementer
+resumed): one failed-outcome test (mock signOut returns error + session
+retained → pipeline's failed reason in the announced Alert, exactly one
+signOut call with scope "local"); seam-sensitivity probe: flipping
+sessionAfterSignOut to null makes exactly this test fail — pins the failed
+mapping, not "a signOut call happened".
+T05-R2 control-record contradiction: committed todo.md status board said
+"not started/PENDING" for T01–T04 while the worklog recorded GATE: PASS
+(previous session's lag) → fixed by THIS commit (board catch-up included;
+board+checkpoint updated in the same commit as the gate from now on).
+Axes found clean: contract fidelity (message/action/pipeline-reuse/state
+honesty), design-system discipline (primitives only, semantic tokens,
+h-14 ≥ 48dp, accessible name, announced message, no colour-only meaning),
+screen purity (no store/Supabase/auth-context beyond useSignOutAction;
+route byte-identical to generator output), test quality (real-pipeline
+seam per sign-out-semantics pattern; RNTL v14 role-query rationale verified
+against installed RNTL/test-renderer source), scaffold integrity, pnpm
+verify exposure (six affected checks re-run green), scope discipline.
+
+PRE-COMMIT ADJUSTMENT (Lead)
+lint-staged runs `eslint --max-warnings=0` on staged files, which is
+stricter than `expo lint` on JSX apostrophes (react/no-unescaped-entities;
+the pre-existing unauthorized-screen.tsx carries the same latent error).
+The muted description moved to a JS string constant rendered via
+{DESCRIPTION} — the repo's own passing pattern (unauthorized-screen line
+22). Rendered text unchanged; all 78 tests stay green.
+
+GREEN AFTER REMEDIATION
+$ pnpm jest features/kiosk-runtime → 6 suites / 78 tests PASS;
+$ pnpm test:ci → 23 suites / 216 tests PASS; typecheck/lint/format:check
+re-run by the Lead → PASS; eslint on the screen file → clean.
+
+GATE: PASS

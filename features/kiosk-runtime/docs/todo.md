@@ -13,11 +13,11 @@ defeats its only purpose.
 
 ```
 Current round     : 2
-Current task      : T05
+Current task      : T06
 Current stage     : not started
-Last gate         : Round 1 GATE: PASS
-Next legal action : Lead scaffold for T05 (pnpm generate screen kiosk-runtime kiosk-mismatch, then route), then delegate T05
-Blocked by        : — (external: GitHub push credentials absent — affects PR/CI evidence only, not implementation)
+Last gate         : T05 GATE: PASS
+Next legal action : Lead scaffold for T06 (maintenance UI — generator screen/route for kiosk-maintenance if planned, plus any planned manual files), then delegate T06
+Blocked by        : — (push credentials provided by the user; branch pushed and Draft PR #9 open — see Blocked below for what stays external)
 ```
 
 ## Rules
@@ -39,11 +39,11 @@ Scan this first. Detail is below.
 
 | Task | Mode            | Acceptance                          | Objective                                                                    | Deps          | Stage       | Gate    |
 | ---- | --------------- | ----------------------------------- | ---------------------------------------------------------------------------- | ------------- | ----------- | ------- |
-| T01  | config          | Supporting AC-02, AC-01             | Expo local module + config plugin + app config wiring                        | —             | not started | PENDING |
-| T02  | behavior        | Acceptance: AC-02                   | model schema + fail-closed derivation                                        | T01           | not started | PENDING |
-| T03  | behavior        | Acceptance: AC-02                   | device-policy store (ephemeral maintenance session)                          | T02           | not started | PENDING |
-| T04  | behavior        | Supporting AC-02                    | native policy source + sync hook                                             | T03           | not started | PENDING |
-| T05  | behavior        | Acceptance: AC-03                   | kiosk mismatch screen + route                                                | T03           | not started | PENDING |
+| T01  | config          | Supporting AC-02, AC-01             | Expo local module + config plugin + app config wiring                        | —             | done        | PASS    |
+| T02  | behavior        | Acceptance: AC-02                   | model schema + fail-closed derivation                                        | T01           | done        | PASS    |
+| T03  | behavior        | Acceptance: AC-02                   | device-policy store (ephemeral maintenance session)                          | T02           | done        | PASS    |
+| T04  | behavior        | Supporting AC-02                    | native policy source + sync hook                                             | T03           | done        | PASS    |
+| T05  | behavior        | Acceptance: AC-03                   | kiosk mismatch screen + route                                                | T03           | done        | PASS    |
 | T06  | behavior        | Acceptance: AC-05                   | maintenance UI (entry, unlock sheet, panel)                                  | T03           | not started | PENDING |
 | T07  | behavior-change | Acceptance: AC-03, AC-04            | root guard resolver + app/\_layout.tsx integration + static lock-task search | T04, T05, T06 | not started | PENDING |
 | T08  | config          | Supporting AC-07                    | release-signing config plugin + .gitignore                                   | —             | not started | PENDING |
@@ -124,7 +124,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Lead scaffold**: `pnpm generate screen kiosk-runtime kiosk-mismatch` then `pnpm generate route kiosk-runtime kiosk-mismatch --role=shared --screen=kiosk-mismatch`
 - **Expected generated files**: `features/kiosk-runtime/screens/kiosk-mismatch/kiosk-mismatch-screen.tsx` + test (+ `components/` dir); `app/kiosk-mismatch.tsx`; `features/kiosk-runtime/index.ts` export appended by the route generator
 - **Allowed manual files**: none beyond generated
-- **Scaffold status**: PENDING
+- **Scaffold status**: READY (2026-09-02 — generator screen + route run by Lead; committed ae8f9ca; 23 suites / 212 tests green incl. template)
 - **Allowed file scope**: `features/kiosk-runtime/screens/kiosk-mismatch/**`, `features/kiosk-runtime/index.ts`, `app/kiosk-mismatch.tsx`
 - **Focused verification**: screen test (RED first) — renders for preparation-on-kiosk, sign-out control wired to `useSignOutAction`, blocked/failed message surfaced
 
@@ -246,7 +246,7 @@ audit findings this checklist points at.
 - [ ] Every Round Gate PASS
 - [ ] Every AC verified
 - [ ] `pnpm verify` PASS after the final local change
-- [ ] required fast GitHub CI PASS on the final HEAD — **external dependency: no push credentials in this environment; recorded as pending-external, never claimed**
+- [ ] required fast GitHub CI PASS on the final HEAD — **push now available (user-provided token): Draft PR #9 open, CI observed running on the PR; final-HEAD run still pending because rounds 2–3 continue**
 - [ ] required runtime evidence recorded (web standard-path regression at tablet sizes)
 - [ ] required native tier(s) PASS, N/A, or explicitly unverified (prebuild local PASS; Kotlin compile = CI label-gated, pending PR; physical kiosk = explicitly unverified)
 - [ ] Reviewer findings dispositioned
@@ -254,7 +254,7 @@ audit findings this checklist points at.
 - [ ] Quality Audit clean
 - [ ] anything not verified explicitly recorded
 - [ ] shared/core changes justified
-- [ ] PR evidence matches the worklog — **pending external push/PR**
+- [ ] PR evidence matches the worklog — **Draft PR #9 (base develop) open at feature/kiosk-runtime; every Lead gate-commit is pushed to it; final HEAD match still pending**
 
 FEATURE GATE: PENDING
 
@@ -262,6 +262,8 @@ FEATURE GATE: PENDING
 
 What cannot proceed, and what it is waiting for. Empty is good.
 
-- GitHub push credentials are absent in this environment (`git push --dry-run`
-  fails). All local work proceeds; branch push, Draft PR, GitHub CI, and the
-  live MDM dry-run are recorded as external human actions at handoff.
+- GitHub push credentials were provided by the user (session 2). Branch
+  `feature/kiosk-runtime` is pushed; Draft PR #9 (base `develop`) is open and
+  receives every Lead gate-commit. Still external/human-only:
+  the live ManageEngine MDM dry-run (needs the customer's MDM tenant), and
+  physical-kiosk verification (no physical tablet exists in this environment).
