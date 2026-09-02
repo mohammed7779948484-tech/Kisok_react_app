@@ -2147,3 +2147,137 @@ discovery screens; the honest single empty state with "Try again" is the
 minimal correct behavior. AC-08's journey guarantees concern the populated
 discovery journey; in the empty state the one meaningful action (refetch) is
 provided. No code change; rationale recorded here and in review.md (F-R03).
+
+### Adversarial Finding C — cold/direct detail-route back behavior (Lead disposition)
+
+**INVALID as a defect — no dead-end exists.** Live browser evidence (fresh
+tabs, `history.length === 1`, authenticated session):
+
+- `/product-detail?productId=c7f02e6d-…` (Float 3k) → "Go back" → `/`
+  (Catalog Home, "Demo Store" identity + sections)
+- `/brand-detail?brandId=7d9138bf-…` (Zyn) → "Go back" → `/` (Catalog Home)
+- `/category-detail?categoryId=4a395b38-…` (Vape Products) → "Go back" → `/`
+  (Catalog Home)
+- Stale brand id on a cold route (`…00000000-0000-4000-8000-000000000000`)
+  → the local "Brand not found" state, whose "Go back" also lands on Home.
+
+Expo Router's `goBack()` with an empty history falls back to the initial route
+(`/` — the Customer Catalog root), i.e. the router contract itself provides
+the safe way out; `router.canGoBack()` is not used (it throws on web DOM),
+and no feature-local fallback was needed. No code change; disposition
+recorded here and in review.md (F-R04).
+
+### Hosted TEST live end-to-end verification (the prior session's gap — now closed)
+
+Session: Expo web dev server (`pnpm web`, CI mode, port 8081) with the
+committed `.env` (hosted TEST project `akxigjsifwyolkadofnj.supabase.co`,
+`EXPO_PUBLIC_ENVIRONMENT=test`), real Chromium via agent-browser, Customer
+account `Customer@gmail.com` from `docs/environment.md`. The full hosted
+chain was exercised: Customer auth → protected Customer route → hosted TEST
+Supabase → real `get_customer_catalog()` → runtime Zod validation →
+TanStack Query → CatalogView → actual UI. The deterministic mocks were NOT
+used for this session.
+
+**Network evidence (browser request log):** exactly three hosted calls —
+`POST /auth/v1/token?grant_type=password` (200), `POST /rest/v1/rpc/
+current_active_profile` (200), `POST /rest/v1/rpc/get_customer_catalog`
+(200). No raw-table REST reads, no other RPC, no mutation endpoints. A
+direct anonymous RPC probe returned `42501 permission denied` (the
+active-Customer authorization holds outside the app too).
+
+**Payload + validation:** hosted snapshot `schema_version` is exactly
+`kiosk.catalog.lean.v1`; store settings carry `Demo Store`; 7 brands /
+15 products / 299 variants (58 unavailable) / 7 categories (4 roots + 3
+children) / 8 option types / 262 option values / 393 variant-option links /
+299 variant media / 15 product-category memberships. Runtime Zod accepted
+the real payload (every screen rendered; a parse failure would have shown
+`ErrorState`), including after the Finding-A hardening — the backward
+invariants hold on the real data (all brand counts ≥1: dozo 1, Zyn 3,
+Shots Hydroxy 1, Flum 4, 7-Hydro 1, Geekbar 3, UT bar 2).
+
+**Auth and route gating:** unauthenticated `/` → `/sign-in`; sign-in as the
+documented Customer → real Catalog Home (placeholder absent); `(preparation)`
+routes are excluded from the navigator for a customer role (`Stack.Protected`
+in `app/_layout.tsx`) — direct `/preparation` and `/orders` URLs land on the
+safe not-found screen; auth-layer sign-out (session teardown) → reload →
+sign-in gate → successful re-sign-in.
+
+**Catalog Home:** store identity ("Demo Store"); root navigation; bounded
+Brands (6) / root Categories (6) / Featured (8) sections; Browse-all
+actions; 11/11 real images loaded; textual availability; equal-width rows
+(4×299px at 1280; 2×210px at 480).
+
+**All Products:** "All products" + "15 products"; 15 cards; FlashList grid
+4-up/3-up/2-up at 1280/800/480 (300/244/212px, virtualizing 12 of 15 at
+480); opened the last product from a scrolled position; back returns to the
+list with context retained (push semantics kept the list mounted).
+
+**Search (real data):** product name ("UTBAR" → 1), brand name ("Flum" →
+4), category name ("Pouches" → 3), variant title ("Cool mint"), option
+value ("Watermelon"), case normalization ("fLuM" ≡ "Flum"); one-character
+too-short prompt; two-character start; no-match state ("xyzzy"); result
+count announced through `aria-live=polite` ("4 matching products"); result
+opens the exact Product Detail; SKU probe "KSK-000159" returns NO match
+(SKU/barcode are not customer search fields).
+
+**Brands:** 7 whole-card navigations with correct count labels; Zyn Brand
+Detail shows exactly its 3 products; no resolved brand was empty (the
+`used_brands` contract holds live); stale id → local "Brand not found".
+
+**Categories:** two-level hierarchy (Botanical Supplements 2 = children 7-
+Hydroxy 1 + Tablets & Chews 1; Vape Products 9 = child Disposable Vapes 9);
+root detail renders the Subcategories strip; child detail shows only its
+direct products and no subcategory strip; brand filter derives from the
+category's products (All Brands / Flum / Geekbar / UT bar), narrows to UT
+bar's 2 products, `aria-selected` exposed on filter + variants, All Brands
+reset restores 9.
+
+**Product Detail (UTBAR PRO 25k, 8 variants):** identity; brand chip →
+Brand Detail; category chip → Category Detail (exact ids); 7 available + 1
+"Out of stock" variant (unavailable selectable for inspection, state
+announced); title_override labels ("Blue Razz Icy"…) and ordered option
+labels ("Flavor: BLUE RAZZ ICY"…); selecting a variant switches the main
+image ("UTBAR PRO 25k — White gummy"); product-level availability in words;
+description verified on 7- Hydroxy ("21+"); ZERO cart/quantity/checkout/
+price/SKU/barcode strings in the DOM; zero nested interactive controls.
+
+**Navigation/history:** root switches kept `history.length` constant
+(replace semantics — no duplicate roots); back chains pop correctly
+(Category → Product → Products; Brand → Product); no redirect loops.
+
+**Background-refetch resilience (live):** after the successful snapshot,
+the RPC URL was blocked and two focus refetches were attempted — the
+populated Home remained on screen with zero `ErrorState` surfaces
+(T04-R03 rule holds against the real hosted backend).
+
+**Responsive:** 1280×800 / 800×1180 / 480×900 all clean (equal-width
+grids, no horizontal overflow, 48px variant/filter touch targets); resize
+between breakpoints remounts the grid stably. 200% browser zoom
+approximated at 640×400 CSS (products 2-up, product detail 0 clipped
+texts, no overflow, long text wraps) — this is browser magnification, NOT
+native Android OS font scaling, which remains device-unverified.
+
+**Keyboard/DOM:** Tab order follows root chips → cards; visible focus
+outline; `aria-selected` on selected root nav, brand filter, variants;
+`aria-live` search status; accessible names on all cards/buttons/inputs.
+
+**Console (entire session):** zero React warnings, zero invalid DOM
+nesting warnings, zero uncaught exceptions, zero unhandled rejections,
+zero TanStack/Supabase errors on successful journeys, zero image errors,
+zero Expo Router warnings. Expected noise classified: Metro/React
+dev-mode boot messages and `[auth]` state-change logs.
+
+**Honest live-data limitations (deterministic coverage exists for each):**
+the hosted TEST dataset contains no multi-media variants (gallery
+thumbnail switching), no unbranded/uncategorized products, no
+all-unavailable products, no one-variant products, and no diacritic-bearing
+names — those shapes are pinned by the feature's 185 deterministic tests,
+not live-exercised. The brand-filter no-match state is likewise
+deterministic-only (live data has no natural no-match). No hosted data was
+created, mutated, or deleted at any point.
+
+**Performance:** no pauses or jank observed with the populated catalog
+(15 products / 299 variants) — scrolling, filtering, variant selection and
+navigation were instantaneous on the dev-server build; note this is a
+development-mode Metro bundle, not a production-export performance
+measurement.
