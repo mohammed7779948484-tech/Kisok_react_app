@@ -14,7 +14,7 @@ import { cn } from "@/core/utils";
  *
  * Options are mutually exclusive, so the chip pattern mirrors
  * `CatalogNavigation`: every option is a 48dp Button whose selected state is
- * announced through `accessibilityState.selected` and mirrored visually by the
+ * announced through `aria-selected` and mirrored visually by the
  * primary/ghost variants (never colour alone — the state is queryable and
  * announced). "All Brands" is the default option, renders first, and pressing
  * it reports `null` — the reset-to-all case, which the screen also offers
@@ -64,7 +64,7 @@ export function CategoryBrandFilter({
         <Button
           variant={isAllBrandsSelected ? "primary" : "ghost"}
           accessibilityLabel="All Brands"
-          accessibilityState={{ selected: isAllBrandsSelected }}
+          aria-selected={isAllBrandsSelected}
           onPress={() => onSelectBrand(null)}
         >
           <Text>All Brands</Text>
@@ -77,7 +77,7 @@ export function CategoryBrandFilter({
               key={option.brandId}
               variant={isSelected ? "primary" : "ghost"}
               accessibilityLabel={option.name}
-              accessibilityState={{ selected: isSelected }}
+              aria-selected={isSelected}
               onPress={() => onSelectBrand(option.brandId)}
             >
               <Text>{option.name}</Text>

@@ -1423,3 +1423,106 @@ FRESH TASK REVIEW + REMEDIATION + RE-REVIEW + GATE (T08, Lead)
   PASS, export:web 21 static routes incl. `/categories` and `/category-detail`,
   check:docs PASS, diff scope exactly the T08 packet.
 - GATE: PASS — T08 complete.
+
+REMEDIATION (Round 4, Implementer — 2 minor round findings, Lead dispositioned FIX;
+round-level scope extension authorized for R4-R01)
+
+- R4-R01 (minor, selected chips not queryable on web): RN-web ignores the
+  legacy `accessibilityState` on Pressable, so the selected chip state was
+  invisible to assistive tech and role queries on web. Replaced with the
+  platform-safe `aria-selected` prop in exactly two files (no test changes):
+  `features/catalog/components/catalog-navigation.tsx:53` (the one T03-origin
+  edit of this remediation — the chip pattern's origin) and both chips in
+  `features/catalog/screens/category-detail/components/category-brand-filter.tsx`
+  ("All Brands" line 67, per-option chip line 80), plus the matching docblock
+  word in the filter. RN 0.81 supports `aria-selected` natively
+  (`accessibilityState` is deprecated), RN-web 0.21 maps it to the DOM
+  attribute, and RNTL v14 matches `aria-selected ?? accessibilityState?.selected`
+  identically — verified live: every existing selected-state pin stays green
+  with ZERO test churn (see the chip-suite run below).
+- R4-R02 (minor, Brand Detail root-nav absence unpinned — T08-R04 pinned only
+  Category Detail): mirrored the five root-destination absence assertions
+  (Home/Products/Brands/Categories/Search → `toBeNull()`) into
+  `features/catalog/screens/brand-detail/brand-detail-screen.test.tsx`'s
+  mount/valid-brand test, with the same AC-08 duplicate-root-history rationale
+  comment. Regression pin against current correct behaviour — run and PASS as
+  written.
+
+Evidence after remediation (all zero console output):
+
+- Chip-asserting suites with the new spelling:
+  `pnpm exec jest features/catalog/components features/catalog/screens/category-detail --runInBand`
+  → 8 suites / 51 tests PASS (catalog-navigation + brand-filter selected pins
+  included) — proving the zero-test-churn claim.
+- Whole feature: `pnpm exec jest features/catalog --runInBand` →
+  18 suites / 154 tests PASS (count unchanged; R4-R02's assertions live
+  inside an existing test).
+- `pnpm typecheck` → PASS (exit 0). `pnpm lint` → PASS (exit 0).
+- Scoped `prettier --write` on the three files → all "(unchanged)";
+  `prettier --check` PASS; suites re-run after with no diffs.
+- Scope: exactly the three authorized files + this worklog entry; no todo.md
+  box changes (the Round 4 gate box stays for the Lead).
+
+ROUND 4 GATE (Lead)
+
+- Lead integrated verification on `catalog-v2-super` (T07 8c6c50d + T08
+  36c8f62): whole feature 18 suites/154 tests PASS (zero console output,
+  re-run twice), typecheck, lint, prettier, check:docs PASS; export:web with
+  21 static routes incl. both brand and both category routes.
+- Browser journey on the exported web build (deterministic mock chain:
+  `.env.local` local-origin Supabase URL; SPA-fallback static server on 8932;
+  network route mocks for `auth/v1/token`, `auth/v1/user`,
+  `rest/v1/rpc/current_active_profile`, `rest/v1/rpc/get_customer_catalog`;
+  test-image host aborted; Metro --clear to re-inline env): sign-in → Home
+  (identity "KISOK Test Store", navigation, bounded brand/category/featured
+  sections); Home → Brands via root nav (REPLACE; URL /brands; 3 brand cards
+  with derived counts matching Home); whole-card press → /brand-detail?brandId=
+  1111…1111 exact (Maison Élite identity; ONLY its 2 products; Go back);
+  root nav → /categories (REPLACE; hierarchy adjacency Drínks 4 / Tóp Picks 2
+  / Gear 2 in exact flat order); whole-card press → /category-detail?
+  categoryId=3333…3333 exact (identity "Drínks, 4 products"; Subcategories
+  strip "Tóp Picks, 2 products"; 4 deduplicated products in backend order;
+  filter chips All Brands + 3 brands); select Maison Élite → grid narrowed to
+  its 2 products while the identity count stayed "4 products" (aggregated,
+  T08-R03 pin confirmed live; selected chip primary background); reset All
+  Brands → all 4 back; child press → /category-detail?categoryId=4444…4444
+  exact (Tóp Picks; direct-membership 2 products; correct 3 brand options —
+  Atelier absent); stale categoryId and stale brandId → local "Category not
+  found" / "Brand not found" states with honest removal copy + Go back (never
+  ErrorState); zero console output and zero page errors; network log shows
+  ONLY current_active_profile + get_customer_catalog RPCs (no direct table
+  reads).
+- Lead finding from the live DOM introspection: the selected chips exposed no
+  `aria-selected` in the web DOM (RN-web 0.21 does not map the legacy
+  `accessibilityState` object prop for Pressable; only the individual
+  `aria-selected` prop is mapped). Visual primary/ghost and native
+  announcement unaffected. Confirmed at RN-web source level by the fresh
+  Round reviewer → recorded as R4-R01 (minor).
+- Fresh Round reviewer (read-only; skills: kisok-code-review,
+  kisok-design-system, kisok-react-native-rules, expo-router): PASS verdict —
+  all nine round-level assertions verified clean (cross-screen count
+  consistency via the single view derivation; filtering local (api/queries
+  untouched since da6b6c8); AC-08 navigation incl. the R3-R01 switch hash ×5;
+  local not-found states; real-route-module param identity; single RPC
+  pipeline; T07-R01/T08 contract continuity; integrated evidence re-run
+  18/154 + typecheck + 21-route export; documentation coherent). 0 blocking /
+  0 major / 2 minors: R4-R01 (the a11y web-DOM gap, independently confirmed)
+  and R4-R02 (Brand Detail root-nav absence unpinned). Recorded in review.md.
+- Lead disposition: both FIX (round-level remediation, scope extension
+  explicitly authorized for `catalog-navigation.tsx` — the T03 origin of the
+  pattern): R4-R01 → `aria-selected` spelling swap in the two chip components
+  with ZERO test churn (RNTL v14 matches both spellings; 18/154 re-run PASS);
+  R4-R02 → five absence assertions mirrored into Brand Detail's mount test.
+  Remediation executed by the resumed T08 implementer (REMEDIATION (Round 4)
+  section above). The Lead additionally amended `docs/design-system.md`'s
+  "Announce state" bullet to prescribe the `aria-*` spelling (Lead-owned
+  repo-doc edit; justification: the doc prescribed the pattern, and the
+  platform-safe spelling prevents recurrence — R4-R01's root cause).
+- Lead live re-verification of the fix on a fresh export: the filter chips
+  expose `aria-selected=true` for the selected brand (others false) and the
+  root-nav chips expose `Categories=true` on /categories; console clean.
+- Re-review (resumed same Round reviewer): both R4-R01/R4-R02 RESOLVED; 0 new
+  findings; remediation footprint verified as exactly the authorized file set
+  - the Lead's doc edit; final recommendation PASS.
+- Round 4 gate: PASS. Working tree committed by the Lead on `catalog-v2-super`
+  and pushed (PR #10). Delivery continues with Round 5 / T09.

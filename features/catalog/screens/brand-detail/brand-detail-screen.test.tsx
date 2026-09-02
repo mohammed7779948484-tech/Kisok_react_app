@@ -332,6 +332,16 @@ describe("BrandDetailScreen", () => {
     // The obvious way back to the discovery surface that opened this detail.
     expect(screen.getByRole("button", { name: "Go back" })).toBeOnTheScreen();
 
+    // Root CatalogNavigation is deliberately absent on a detail screen (AC-08):
+    // its replace semantics, used from a pushed detail, would duplicate the
+    // root entry below. Pinned so a future root-nav regression on this screen
+    // fails here instead of stacking duplicate root history.
+    expect(screen.queryByRole("button", { name: "Home" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Products" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Brands" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Categories" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
+
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
   });
 

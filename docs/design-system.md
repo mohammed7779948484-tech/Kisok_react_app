@@ -142,8 +142,10 @@ Not a polish step — part of done.
 - **Touch targets ≥ 48dp.** `h-touch` on anything pressable.
 - **Accessible names.** `label` on `Input`; `accessibilityLabel` on any
   icon-only control.
-- **Announce state**, do not just colour it: `accessibilityState`,
-  `accessibilityLiveRegion="polite"` for errors and status.
+- **Announce state**, do not just colour it: pass the individual `aria-*`
+  props (`aria-selected`, `aria-disabled`, …) — RN-web does not map the legacy
+  `accessibilityState` object to DOM attributes, while `aria-*` works on both
+  native and web; `accessibilityLiveRegion="polite"` for errors and status.
 - **Text scaling to 200%** must not clip or overlap.
 - **No hover-only affordances.** This is a touch device.
 - **Reduced motion** respected — `Skeleton` already does.

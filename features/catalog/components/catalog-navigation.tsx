@@ -50,7 +50,7 @@ export function CatalogNavigation({ current, onNavigate, className }: CatalogNav
             variant={isSelected ? "primary" : "ghost"}
             onPress={() => onNavigate(destination)}
             accessibilityLabel={DESTINATION_LABELS[destination]}
-            accessibilityState={{ selected: isSelected }}
+            aria-selected={isSelected}
           >
             <Text>{DESTINATION_LABELS[destination]}</Text>
           </Button>

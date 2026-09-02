@@ -6,14 +6,13 @@ in `worklog.md`. Keep this checkpoint and gate board current.
 ## Current checkpoint
 
 ```
-Current round     : Round 4 — Brand and category discovery
-Current task      : Round 4 gate (T07 and T08 gated PASS)
-Current stage     : Round 4 integrated verification + fresh Round review next
-Last gate         : T08 PASS (2026-09-02, after T08-R01–R04 remediation +
-                    resumed re-review); T07 PASS; Round 3 PASS
-Next legal action : Lead runs the Round 4 integrated verification (incl.
-                    browser journey on the exported build), then dispatches
-                    the fresh Round 4 reviewer
+Current round     : Round 5 — Product Detail discovery
+Current task      : T09 — Product Detail, generic variants/media and route
+Current stage     : Round 4 gated PASS; next Lead action is the T09 JIT scaffold
+Last gate         : Round 4 PASS (2026-09-02, T07+T08, after R4-R01/R4-R02
+                    remediation + resumed re-review); Rounds 1–3 PASS
+Next legal action : Lead runs the T09 scaffolds (Product Detail screen, the
+                    two screen-local components, the route) then delegates
 Blocked by        : —
 ```
 
@@ -314,8 +313,16 @@ GATE: PASS
 GATE: PASS
 ```
 
-Round 4 gate: `PENDING` (T07/T08 gated; integrated verification + fresh
-Round review next)
+Round 4 gate: `PASS` — T07/T08 gated; Lead browser-verified the integrated
+journey on the exported web build (Home → Brands grid → Brand Detail exact
+param → Categories hierarchy adjacency → Category Detail with children strip,
+brand filter select/reset, aggregated identity count under filter → child
+Category Detail direct-membership scope → stale brand/category IDs → local
+not-found states; zero console output; only `current_active_profile` +
+`get_customer_catalog` RPCs hit); fresh Round review PASS (0 blocking/0 major;
+2 minors R4-R01/R4-R02 both fixed in round-level remediation and confirmed
+RESOLVED by the resumed re-review; the Lead live-verified the aria-selected
+fix in the real DOM); all nine round-level assertions verified clean
 
 ## Round 5 — Product Detail discovery
 
