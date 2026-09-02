@@ -1926,3 +1926,12 @@ catalog index --role=customer --screen=catalog-home --force`): the first
   format:check, test:ci 38 suites/320 tests (the R5-R01 pin included),
   check:docs, check:commits, check:e2e-appid, check:ci-scripts, db:verify,
   generate:smoke ALL green.
+
+- GitHub CI on the final HEAD `37a7133`: **success** — Verify
+  (typecheck, lint, format, tests, guards, db, generator) PASS, Web bundle
+  PASS, Expo doctor PASS; Android build / Android E2E jobs skipped by the
+  workflow's own conditions (native tier recorded as explicitly unverified
+  at the Feature Gate). Historical note: the two prior branch runs
+  (5f6154d, f4da5ac) failed ONLY at the Generator smoke test step — the
+  same state-dependent check fixed above; every other job was green, and
+  the fix turned the final run green.
