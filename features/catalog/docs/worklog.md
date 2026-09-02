@@ -1894,3 +1894,35 @@ ROUND 5 GATE (Lead)
   `catalog-v2-super` and pushed (PR #10). ALL ROUNDS COMPLETE — the feature
   proceeds to Feature-level verification (develop-integration check, full
   verify, CI, final review, Quality Audit, Feature Gate, HUMAN_HANDOFF).
+
+FEATURE-LEVEL VERIFICATION (Lead)
+
+- Develop-integration check: `git fetch origin --prune`, then
+  `git merge-base --is-ancestor origin/develop catalog-v2-super` → PASS
+  (develop 80b8ac3 is an ancestor; the branch is 14 commits ahead, 0 behind;
+  no divergence, no conflicts possible; PR #10 mergeable with develop).
+- Full `pnpm verify` (Feature Gate requirement: PASS after the final local
+  change): FIRST RUN FAILED at `generate:smoke` — the check "replaces the
+  customer index.tsx placeholder deliberately" read the TRACKED
+  `app/(customer)/index.tsx` and asserted it still contained
+  `FoundationPlaceholder`. That assumption was legitimately invalidated by
+  this feature's sanctioned T04 root-route step (`pnpm generate route
+catalog index --role=customer --screen=catalog-home --force`): the first
+  customer feature is DESIGNED to consume the placeholder (the check's own
+  comment documents the deliberate replacement). Root cause: the check's
+  implicit repo-state assumption, not the catalog feature.
+- Lead fix (shared-tool change, justification recorded per the Feature Gate
+  "shared/core changes justified" criterion):
+  `tools/generator/smoke-test.mjs` now seeds the scratch route with a
+  VERBATIM pre-feature placeholder fixture (customer + preparation, from the
+  pre-feature tracked content) instead of reading the tracked file, and the
+  moot "the repository was written to" assert (which read the tracked file)
+  was removed — every behavioral assertion is preserved (guarded skip
+  without --force, forced replacement, the route/export one-operation
+  coupling, temp-root isolation), and the check becomes state-independent
+  for every future first-feature. Minimal diff; the fixture is the exact
+  content the check previously copied.
+- Full `pnpm verify` re-run: **PASS** (exit 0) — typecheck, lint,
+  format:check, test:ci 38 suites/320 tests (the R5-R01 pin included),
+  check:docs, check:commits, check:e2e-appid, check:ci-scripts, db:verify,
+  generate:smoke ALL green.
