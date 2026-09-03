@@ -354,7 +354,7 @@ Checkout scope; no server Cart; PR stays DRAFT/unmerged.
 | Task  | Mode | Status  | Gate                                                                |
 | ----- | ---- | ------- | ------------------------------------------------------------------- |
 | H-T01 | bug  | DONE    | PASS (2096e5b) — fresh review 0 blk/0 maj/2 min, both dispositioned |
-| H-T02 | bug  | PENDING | —                                                                   |
+| H-T02 | bug  | DONE    | PASS (5da1ae8) — fresh review 0 blk/0 maj/3 min dispositioned       |
 | H-T03 | bug  | PENDING | —                                                                   |
 
 | Round | Scope                                       | Gate    |

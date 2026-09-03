@@ -1191,3 +1191,16 @@ features/cart`).
 - LEAD VERIFY: diff read file-by-file; independent runs matched every number; implementer stopped at the scope boundary and reported the out-of-scope blast radius instead of widening (correct conduct).
 - FRESH TASK REVIEW (0 blocking / 0 major / 2 minor — see review.md "H-T01 review"): RED reproduced empirically via stash; backward compatibility proven (only line-producing path is addItem → addLine → deriveLineId; PostgreSQL jsonb emits lowercase uuid text, so live data unaffected; theoretical uppercase-legacy payload falls into the designed corrupt-payload path). Both minors dispositioned and resolved.
 - TASK GATE: PASS.
+
+### H-T02 — sign-out failure / same-owner memory safety — GATE PASS (5da1ae8)
+
+- CLASSIFY: bug (H-F02, triaged VALID from current code).
+- RED (fresh implementer, test first): `pnpm exec jest features/cart/state/sign-out-cleanup.test.ts` → 1 failed / 5 passed; first failing assertion `expect(state.locked).toBe(false)` → Expected false / Received true — the stale session envelope surviving the full failure cycle (seed persisted+locked+hydrated → patched failing clear → runSignOutCleanup failures=["cart"] → finishSignOutHandoff emergency wipe "ok" → same-owner re-hydrate). Intended reason confirmed by the reviewer's independent stash reproduction.
+- IMPLEMENT (smallest fix, plan amendment decision 3): in sign-out-cleanup.ts, inside the rejected branch after clear() resolves and BEFORE the throw — `useCartStore.setState({ locked: false, ownerId: null, hydrated: false, persistence: "unknown" })`. Throw byte-identical; success path unchanged (keeps the honest "persisted"). Doc-comment rewritten to the new contract.
+- Evidence-backed deviation (Lead-accepted; plan decision 3 reconciled): a literally-unconditional reset would wipe the success path's honest `persisted` status and break the pre-existing success-path test; the scoped placement is the smallest correct fix and the success path is already coherent.
+- GREEN: suite 6/6 (new H-F02 lifecycle test: populated+locked cart, failed durable clear, emergency wipe, same-owner re-auth → empty, unlocked, coherent, mutations work, old cart does not resurrect — durable key contains exactly the new line).
+- AFFECTED CHECKS: cart 11 suites / 179 tests; integration 5 / 46; combined 16 / 225; core/auth 5 / 41; product-detail 3 / 32; typecheck 0; lint 0; prettier clean.
+- R-H02-4 follow-up (H-T02-FIX1): use-cart.ts comment refresh (success-path scoped, failure path documented); state suites identical 3/65 before and after.
+- LEAD VERIFY: diff read; independent runs matched; deviation verified sound.
+- FRESH TASK REVIEW: 0 blocking / 0 major / 3 minor — all dispositioned (see review.md "H-T02 review").
+- TASK GATE: PASS.

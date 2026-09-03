@@ -352,3 +352,33 @@ the separator stays unambiguous. No import cycle
 | R-H01-2 | minor    | 2 sibling rendering fixtures (cart-item-row, quick-cart-sheet tests) embedded the same malformed truncated lineId literal (never parsed through the schema; no assertion depends on it) | RESOLVED — same-class fixture pass authorized via the Lead's scope addendum and applied by the same implementer (H-T01-FIX2); the cappuccino fixture family now carries one canonical identity repo-wide |
 
 **H-T01 TASK GATE: PASS.**
+
+### H-T02 review (fresh code-reviewer, 2026-09-03, uncommitted tree → 5da1ae8)
+
+Verdict: **0 blocking / 0 major / 3 minor + 1 deferred micro-note — H-T02
+delivered as promised; the H-F02 failure path is fully closed.**
+
+The reviewer traced the complete production cycle
+(core/auth/context.tsx:273-283): clear() rejected → envelope reset → throw →
+runSignOutCleanup records ["cart"] → finishSignOutHandoff emergency-wipes
+kisok:\* (incl. the marker) → same-owner re-auth → restore() shortcut
+bypassed (hydrated === false) → owner-reset → real read against wiped disk →
+miss → coherent. The RED was empirically reproduced via the sanctioned stash
+round-trip (tree restored byte-identical, checksum-verified): 1 failed /
+5 passed with the first failing assertion `expect(state.locked).toBe(false)`
+→ Expected false / Received true — the stale envelope itself, not a patch
+artifact (the patched clear models the real clear's in-memory semantics).
+The throw block was verified byte-identical against HEAD. Every claimed
+check number re-verified identically (cart 11/179, integration 5/46, auth
+5/41, product-detail 3/32, typecheck 0, scoped eslint 0, prettier clean).
+The Lead-accepted deviation (scoped placement of the reset) was examined and
+confirmed sound; the reconciled plan wording matches the code exactly.
+
+| ID      | Severity                                            | Finding                                                                                                                                                                                                        | Disposition                                                                                                                                                                                                                                                                                                                            |
+| ------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R-H02-1 | minor (pre-existing, not introduced by this change) | Theoretical in-flight-restore interleave on the SUCCESS path: a restore whose post-read set lands after clear()'s synchronous set could resurrect lines in memory; the same-owner shortcut then preserves them | ACCEPTED-CARRY-FORWARD — unreachable in the delivered app (all hydrate call sites sit behind the auth gate; Phase 2 runs after the Supabase signOut round-trip); exists at merged HEAD; the H-F02 failure path now CONTAINS it (the reset forces a real restore whose owner-reset clears lines); out of this hardening's bounded scope |
+| R-H02-2 | minor (bookkeeping)                                 | The task brief said 2 changed files but the tree showed 3 — the third was the Lead's plan.md decision-3 reconciliation                                                                                         | RESOLVED — authorship made explicit: the plan.md hunk is the Lead's reconciliation edit, committed alongside the implementer's 2 files + the R-H02-4 comment refresh                                                                                                                                                                   |
+| R-H02-3 | minor (observation)                                 | sign-out-cleanup.test.ts deep-imports @/core/auth/sign-out (the repo's only feature→core deep import; mirrors context.tsx's own deep import)                                                                   | NOTED — test-only; no ESLint boundary rule covers that direction; the test documents why; recorded so it is not cited as precedent for production feature code                                                                                                                                                                         |
+| R-H02-4 | micro-note                                          | use-cart.ts post-clearCartForSignOut comment accurate only for the success path after the fix                                                                                                                  | RESOLVED — same-implementer comment accuracy refresh (H-T02-FIX1, 5da1ae8): success path scoped, failure path documented with the sign-out-cleanup.ts pointer, B-FR-02 carry-forward retained                                                                                                                                          |
+
+**H-T02 TASK GATE: PASS.**
