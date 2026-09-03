@@ -12,10 +12,10 @@ defeats its only purpose.
 ## Current checkpoint
 
 ```
-Current round     : 1 (of 2)
-Current task      : — (T02 PASS; Round 1 gate next)
-Last gate         : PLAN READY (Lead Planning Review clean — see worklog)
-Next legal action : Lead runs T01 (no scaffold — manual model file), delegates T01 to a fresh implementer
+Current round     : 2 (of 2) — Round 1 gate PASS
+Current task      : — (ready to scaffold + delegate T03)
+Last gate         : ROUND 1 GATE: PASS (fresh round reviewer 0 blocking; F-R1-1..3 dispositioned — see review.md)
+Next legal action : Lead reconciles plan decision 7 (done), scaffolds T03 (generate add-to-cart-button), delegates T03
 Blocked by        : —
 ```
 
@@ -35,8 +35,8 @@ Blocked by        : —
 
 | Task | Mode     | Acceptance                                       | Objective                                         | Deps     | Stage       | Gate |
 | ---- | -------- | ------------------------------------------------ | ------------------------------------------------- | -------- | ----------- | ---- |
-| T01  | behavior | Supporting AC-03, AC-04                          | Pure buildAddToCartInput mapping model            | —        | not started | —    |
-| T02  | behavior | Acceptance AC-01, AC-05; Supporting AC-08, AC-09 | Quick-cart context + experience provider          | —        | not started | —    |
+| T01  | behavior | Supporting AC-03, AC-04                          | Pure buildAddToCartInput mapping model            | —        | done        | PASS |
+| T02  | behavior | Acceptance AC-01, AC-05; Supporting AC-08, AC-09 | Quick-cart context + experience provider          | —        | done        | PASS |
 | T03  | behavior | Acceptance AC-02, AC-03, AC-04, AC-05            | AddToCartButton + Product Detail wiring           | T01, T02 | not started | —    |
 | T04  | behavior | Acceptance AC-06                                 | Persistent cart affordance + layout mount         | T02      | not started | —    |
 | T05  | behavior | Acceptance AC-07, AC-08, AC-11                   | Integration convergence + public API + boundaries | T03, T04 | not started | —    |
@@ -100,10 +100,14 @@ add-to-cart-button`
   `features/catalog/screens/product-detail/product-detail-screen.test.tsx`
   (the two Catalog files ONLY as the plan-justified owning-feature edit)
 - **Spec**: button maps source → input (T01 mapper), calls `addItem`,
-  opens quick cart (context); disabled when variant unavailable or cart
-  locked; Product Detail builds the source from its resolved view and
-  renders the button below the variant list; existing Product Detail
-  behavior unchanged.
+  opens quick cart (context); disabled when variant unavailable, cart
+  locked, OR the cart is not yet hydrated (F-R1-1 — the async durable
+  read means `hydrated === false` is a real transient window in which
+  addItem would be a logged no-op; disable is safe because hydrate()
+  terminates with `hydrated: true` on every path, so no permanent-disable
+  risk); a test presses Add during the pre-hydration window; Product
+  Detail builds the source from its resolved view and renders the button
+  below the variant list; existing Product Detail behavior unchanged.
 
 ### T04 — Persistent cart affordance + layout mount
 

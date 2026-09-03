@@ -151,12 +151,19 @@ option" || "Option N"`), so naively mapping `variant.label` produces the
 6. **Add always sends quantity 1** (quantity control stays in the cart —
    the merged UX guard caps at 99). _Rejected_: a quantity stepper on
    Product Detail (brief: "Cart controls remain local").
-7. **The Add action is disabled when the selected variant is unavailable
-   or the cart is locked** (honest disabled state, exposed as
-   accessibility state; the store no-ops anyway — this is defense in
-   depth). Unavailable variants stay fully selectable for inspection.
-   _Rejected_: hiding the Add button when unavailable (the affordance's
-   existence must be stable; brief AC-02).
+7. **The Add action is disabled when the selected variant is unavailable,
+   the cart is locked, OR the cart is not yet hydrated** (honest disabled
+   state, exposed as accessibility state; the store no-ops anyway — this
+   is defense in depth). Unavailable variants stay fully selectable for
+   inspection. The `hydrated === false` window is REAL (the durable read
+   is async; a press in that window would be a logged no-op — the F-R1-1
+   round-review finding), and disabling is safe because `hydrate()`
+   terminates with `hydrated: true` on every path, so there is no
+   permanent-disable risk. _Rejected_: hiding the Add button when
+   unavailable (the affordance's existence must be stable; brief AC-02);
+   also rejected: leaving the pre-hydration window unguarded (the
+   silent-no-op class AC-01 forbids; the cart renders controls disabled
+   rather than ignoring taps for exactly this class).
 8. **`onViewFullCart` = `router.push("/cart")` owned by the provider** —
    the QuickCartSheet contract explicitly leaves routing to the caller.
    _Rejected_: the sheet navigating itself (its own doc comment forbids a

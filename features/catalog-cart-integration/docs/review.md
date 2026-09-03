@@ -72,3 +72,16 @@ all commands re-run green. GATE: PASS.
 
 Reviewer verdict: faithful to plan decisions 1/8/9 and AC-01/AC-05/AC-08/
 AC-09; boundaries clean; test quality high; no blocking/major. GATE: PASS.
+
+## Round 1 review (C-R1-REVIEW, fresh round reviewer)
+
+| ID     | Severity | Finding                                                                                                                                                                                                    | Disposition                                                                                                                                                                                                                                                                                                           |
+| ------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F-R1-1 | major    | AC-01's no-silent-no-op guarantee was timing-only: the Add button's planned disabled conditions (unavailable/locked) omitted the `hydrated === false` transient window, in which addItem is a logged no-op | RESOLVED — plan decision 7 and the T03 spec reconciled (disabled when unavailable, locked, OR not yet hydrated; a pre-hydration-window press test required in T03). Safe because hydrate() terminates hydrated on every path. Plan stays READY — the reconciliation touches only T03's spec (Round 1 code unchanged). |
+| F-R1-2 | major    | todo.md stale at the handoff moment: status board showed all tasks not started, checkpoint lagged                                                                                                          | RESOLVED — board T01/T02 → done/PASS; checkpoint advanced to Round 1 gate PASS → Round 2; cause noted (a silent no-op string replace — the board's padded rows did not match)                                                                                                                                         |
+| F-R1-3 | minor    | T02 worklog entry lacked the SCAFFOLD block (the plan→command→filesystem chain)                                                                                                                            | RESOLVED — scaffold record appended below                                                                                                                                                                                                                                                                             |
+
+Reviewer verdict: scope isolation clean (11 files, all inside the feature);
+contracts coherent; hydration ownership causally proven; boundaries green;
+all checks re-run green (feature 21, cart 170, full 51/514, typecheck 0,
+lint/prettier/check:docs/check:commits clean). ROUND 1 GATE: PASS.

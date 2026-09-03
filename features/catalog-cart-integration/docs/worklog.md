@@ -63,8 +63,6 @@ Delete the lines that do not apply to the mode. An empty RED heading under a
 
 ## Entries
 
-_None yet._
-
 ## T01 — Pure AddToCartInput mapping model — GATE: PASS
 
 - Implementer: fresh feature-implementer (C-T01, Super Z agent-a9ca3c37);
@@ -123,3 +121,24 @@ features/catalog-cart-integration` 11/11; `pnpm typecheck` exit 0;
   Product Detail wiring (T03), no index.ts exports (T05), no separate
   context test file (folded), no isolated-module attribution test
   (documented nuance instead).
+
+## Round 1 gate — PASS (T01 + T02)
+
+- Combined checks at the round boundary: full suite `pnpm exec jest --ci
+--silent` → **51 suites / 514 tests PASS**; `pnpm typecheck` exit 0;
+  scoped eslint/prettier clean; `git diff 62f3634..f6c74eb` confined to
+  `features/catalog-cart-integration/**` (11 files).
+- Fresh round reviewer (C-R1-REVIEW): 0 blocking / 2 major / 1 minor —
+  F-R1-1 (pre-hydration no-op window) RESOLVED by reconciling plan
+  decision 7 + the T03 spec (Add disabled when unavailable, locked, OR
+  not hydrated; T03 must test the window); F-R1-2 (stale todo board)
+  RESOLVED (board + checkpoint advanced; root cause: a silent string
+  replace that did not match the padded table rows); F-R1-3 (missing
+  scaffold record) RESOLVED by this note: the Lead scaffolded T02 with
+  `pnpm generate component catalog-cart-integration catalog-cart-provider`
+  which created `components/catalog-cart-provider.tsx` (placeholder; the
+  commit 382ba2e diff shows it landing) — T01 had no scaffold (manual
+  model file per plan).
+- Template residue cleanup: the `_None yet._` placeholder line removed
+  from this worklog (the T01 entry replaced it in substance; the reviewer
+  flagged the leftover).
