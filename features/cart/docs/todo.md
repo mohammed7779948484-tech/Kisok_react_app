@@ -351,11 +351,11 @@ Branch `fix/cart-pre-checkout-hardening` from post-PR-#11 develop
 Findings: H-F01 VALID / H-F02 VALID / H-F03 VALID (reproduced live). No
 Checkout scope; no server Cart; PR stays DRAFT/unmerged.
 
-| Task  | Mode | Status  | Gate |
-| ----- | ---- | ------- | ---- |
-| H-T01 | bug  | PENDING | —    |
-| H-T02 | bug  | PENDING | —    |
-| H-T03 | bug  | PENDING | —    |
+| Task  | Mode | Status  | Gate                                                                |
+| ----- | ---- | ------- | ------------------------------------------------------------------- |
+| H-T01 | bug  | DONE    | PASS (2096e5b) — fresh review 0 blk/0 maj/2 min, both dispositioned |
+| H-T02 | bug  | PENDING | —                                                                   |
+| H-T03 | bug  | PENDING | —                                                                   |
 
 | Round | Scope                                       | Gate    |
 | ----- | ------------------------------------------- | ------- |

@@ -321,3 +321,34 @@ catalog regression, honest 13-AC test coverage). Reviewer re-ran: cart
 | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | B-FR-01 | minor    | RESOLVED — both Definition-of-Delivery boxes in brief.md ticked with pointers to the RUNTIME EVIDENCE section (sizes + measured targets; a11y assertions).                                                                                                                                                                                                                                                                                                                      |
 | B-FR-02 | minor    | ACCEPTED-CARRY-FORWARD — the post-sign-out `hydrated`-stale window is unreachable in the delivered app (all mutation sources unmount at the auth gate) and mitigated by the jest-proven owner-mismatch discard at the next different-owner hydrate; boundary comment in use-cart.ts extended to name the window for future programmatic integrators (the PHASE C integration re-hydrates via mounted useCart() consumers, which resets state through the profile-keyed effect). |
+
+---
+
+## POST-MERGE PRE-CHECKOUT HARDENING — task reviews
+
+### H-T01 review (fresh code-reviewer, 2026-09-03, uncommitted tree → 2096e5b)
+
+Verdict: **0 blocking / 0 major / 2 minor — H-T01 delivered as planned.**
+
+The reviewer independently reproduced the RED evidence empirically (stash
+technique with byte-identical tree restoration): 6 failing tests pre-fix for
+exactly the intended reasons (no canonicalization: "Expected: 3a7f… /
+Received: 3A7F…"; cross-casing non-merge ×2; malformed lineIds accepted ×3),
+and the new implementation against the OLD fixtures reproduced the exact
+12-failure rejection surface with the refine's exact ZodError message.
+Backward compatibility verified at the code level: the only line-producing
+path is addItem → addLine → deriveLineId; PostgreSQL jsonb emits lowercase
+uuid text, so pre-fix and post-fix derivations are byte-identical for every
+payload the real app has ever written; the theoretical uppercase-legacy
+payload falls into the designed corrupt-payload path (durable clear, start
+empty), never a crash. Lowercase-before-sort is the correct order
+(mixed-case hex would sort differently); `toLowerCase` is locale-independent;
+the separator stays unambiguous. No import cycle
+(persisted-cart.schema → cart-rules → cart-line.schema). Scope exact.
+
+| ID      | Severity | Finding                                                                                                                                                                                 | Disposition                                                                                                                                                                                              |
+| ------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R-H01-1 | minor    | Lead-owned plan.md/todo.md failed prettier (table padding/backtick spacing)                                                                                                             | RESOLVED — Lead ran prettier --write on both docs before the commit; format:check green                                                                                                                  |
+| R-H01-2 | minor    | 2 sibling rendering fixtures (cart-item-row, quick-cart-sheet tests) embedded the same malformed truncated lineId literal (never parsed through the schema; no assertion depends on it) | RESOLVED — same-class fixture pass authorized via the Lead's scope addendum and applied by the same implementer (H-T01-FIX2); the cappuccino fixture family now carries one canonical identity repo-wide |
+
+**H-T01 TASK GATE: PASS.**
