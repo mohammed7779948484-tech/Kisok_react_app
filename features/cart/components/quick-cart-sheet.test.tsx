@@ -361,6 +361,7 @@ describe("QuickCartSheet", () => {
     await renderSheet({ open: true, onOpenChange: jest.fn(), onViewFullCart }, COMPACT);
 
     expect(screen.getByRole("heading", { name: "Your Cart · 1" })).toBeOnTheScreen();
+    expect(screen.getByText(QUICK_CART_DESCRIPTION)).toBeOnTheScreen();
     expect(screen.getByText("Sparkling Water")).toBeOnTheScreen();
     expect(screen.getByLabelText("Quantity: 1")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Continue Shopping" })).toBeOnTheScreen();
