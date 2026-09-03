@@ -1204,3 +1204,23 @@ features/cart`).
 - LEAD VERIFY: diff read; independent runs matched; deviation verified sound.
 - FRESH TASK REVIEW: 0 blocking / 0 major / 3 minor — all dispositioned (see review.md "H-T02 review").
 - TASK GATE: PASS.
+
+### H-T03 — QuickCart DialogContent advisory warning — GATE PASS (e651812)
+
+- CLASSIFY: bug (H-F03, triaged VALID and REPRODUCED LIVE on 2026-09-03: every QuickCartSheet open emitted exactly the Radix `Warning: Missing \`Description\` or \`aria-describedby={undefined}\` for {DialogContent}.` — Add-to-cart open AND affordance reopen; dialog focus/Escape/close otherwise functional).
+- ROOT CAUSE: components/ui/adaptive-sheet.tsx exports no Description member while its sibling dialog.tsx exports DialogDescription; both consumers (QuickCartSheet, /ui-lab demo) rendered Title-only → the warning fires on the web variant.
+- RED (fresh implementer, tests first): 3 failed / 11 passed — typeof AdaptiveSheetDescription "function" vs "undefined"; text-query failures for the description; PLUS pnpm typecheck TS2305 (no exported member) — all intended reasons. jest-expo resolves the NATIVE dialog variant (the Radix warning never fires in jest), so the deterministic RED pins the missing accessibility contract per the plan's corrected RED strategy; the live browser journey owns the zero-warning evidence.
+- IMPLEMENT (decision 4): AdaptiveSheetDescription added to adaptive-sheet.tsx mirroring the sibling DialogDescription exactly (DialogPrimitive.Description asChild, Text variant="body" tone="muted", className passthrough); exported from components/ui/index.ts; QuickCartSheet renders "Review the items in your cart, or continue shopping." in the header (reworded once for react/no-unescaped-entities — H-T03-FIX1); the /ui-lab demo sheet (the other consumer) wired with "Side panel in landscape, bottom sheet otherwise.".
+- GREEN: quick-cart suite 14/14 (11 existing untouched + 3 new); cart 11/183; integration 5/46; components suites green; typecheck 0; lint 0; prettier clean.
+- Harness note: role="dialog" Views are invisible to ByRole under this RNTL build (T07 carry-forward) — test (c) locates the dialog content via the public test-renderer queryAll and scopes with within(); the mechanism was proven during RED.
+- LEAD VERIFY: full cart 11/183 + integration 5/46 + components re-run; diff read across all 6 files; both consumers confirmed wired.
+- FRESH TASK REVIEW: performed at the Round 2 gate (combined review).
+- TASK GATE: PASS.
+
+### H-T03b — store-level composed-path convergence pin — GATE PASS (e651812)
+
+- CLASSIFY: behavior (test-only pin; Round 1 reviewer R1-02).
+- The implementer wrote the test but exceeded its turn budget before reporting; the Lead completed verification directly: GREEN 51/51 in cart-store.test.ts; cart 11/183.
+- RED TEETH (Lead-run, the sanctioned revert technique): with the PRE-H-T01 schema checked out from 6161a4c, the new test FAILS at the first assertion — expect(lines).toEqual([]) receives the restored malformed line (deep-equality +23 diff): the exact pre-hardening behavior where a semantically malformed lineId restores instead of clearing. Schema restored from HEAD; tree byte-identical; suite green again.
+- The pin: semantically malformed lineId on disk → restore treats it as corrupt → durable key cleared → cart starts empty (shared-kiosk safety: the corrupt blob is removed, not left for the next cold start).
+- TASK GATE: PASS.
