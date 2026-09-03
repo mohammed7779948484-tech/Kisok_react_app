@@ -6,6 +6,7 @@ import {
   AdaptiveSheet,
   AdaptiveSheetClose,
   AdaptiveSheetContent,
+  AdaptiveSheetDescription,
   AdaptiveSheetFooter,
   AdaptiveSheetHeader,
   AdaptiveSheetTitle,
@@ -81,6 +82,9 @@ export function QuickCartSheet({
       <AdaptiveSheetContent className={className}>
         <AdaptiveSheetHeader>
           <AdaptiveSheetTitle>{`Your Cart · ${totalQuantity}`}</AdaptiveSheetTitle>
+          <AdaptiveSheetDescription>
+            Review the items in your cart, or continue shopping.
+          </AdaptiveSheetDescription>
         </AdaptiveSheetHeader>
 
         {persistence === "memoryOnly" ? (

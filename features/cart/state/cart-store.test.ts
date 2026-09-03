@@ -289,6 +289,35 @@ describe("hydrate — owner-scoped restore (AC-01, AC-02)", () => {
     expect(raw.map.has(KEY)).toBe(false);
   });
 
+  it("treats a semantically malformed lineId as corrupt: clean start + durable clear (H-T03b)", async () => {
+    // R1-02 convergence pin. The two halves were each already proven: the
+    // schema rejects a line whose lineId is not its derived identity
+    // (persisted-cart.schema.test.ts), and restore() durably clears OTHER
+    // corrupt shapes (the JSON and version tests above). This pins the
+    // COMPOSED path end-to-end at the store: the schema's semantic refine
+    // firing inside backend.read is what routes this payload down the corrupt
+    // path. The line is otherwise fully valid — only the lineId is wrong
+    // (H-F01's exact malformed shape: non-empty, unique, but not the derived
+    // identity) — because a line that restores with a wrong id can never merge
+    // with a later add of the same selection.
+    const raw = createMemoryStore();
+    seedCart(raw, {
+      version: 1,
+      ownerId: OWNER_A,
+      lines: [{ ...espressoLine, lineId: "garbage-id" }],
+    });
+    const useStore = createCartStore(createJsonStorage(raw));
+
+    await useStore.getState().hydrate(OWNER_A);
+
+    expect(useStore.getState().lines).toEqual([]);
+    expect(useStore.getState().persistence).toBe("persisted");
+    expect(useStore.getState().hydrated).toBe(true);
+    // Shared-kiosk safety: the corrupt blob is removed, not left for the next
+    // cold start — it may be a previous customer's cart.
+    expect(raw.map.has(KEY)).toBe(false);
+  });
+
   it("reports clearFailed when a corrupt payload cannot be durably cleared", async () => {
     const raw: KeyValueStore = {
       getItem: async () => "{not valid json",
