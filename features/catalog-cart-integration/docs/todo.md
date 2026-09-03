@@ -13,9 +13,9 @@ defeats its only purpose.
 
 ```
 Current round     : 2 (of 2)
-Current task      : — (all five tasks PASS)
-Last gate         : T05 GATE: PASS (fresh reviewer GATE-SAFE 0/0/3 — closure items closed); Round 2 gate next
-Next legal action : Round 2 gate (combined checks + fresh round reviewer), then open the DRAFT PR and run the feature-gate live hosted journey
+Current task      : —
+Last gate         : FINAL REVIEW: SHIP-READY (fresh reviewer 0 blocking / 0 major / 3 minor — FR-01 fixed here, FR-02/FR-03 dispositioned; Round 2 gate + live journey already recorded)
+Next legal action : Quality Audit (fresh quality-auditor), then the Feature Gate decision and HUMAN_HANDOFF (the Draft PR is open; the agent never merges it)
 Blocked by        : —
 ```
 
@@ -147,17 +147,17 @@ cart-access-button`
 
 ## Feature gate checklist
 
-- [ ] Every Task Gate PASS
-- [ ] Every Round Gate PASS
-- [ ] Every AC verified (incl. the live hosted journey)
-- [ ] `pnpm verify` PASS after the final change
-- [ ] `pnpm export:web` PASS
-- [ ] required fast GitHub CI PASS on the final HEAD
-- [ ] real hosted Customer Catalog → Local Cart journey verified live
-- [ ] protected PRs untouched (verified at handoff)
-- [ ] reviewer findings dispositioned; blocking/major fixes re-reviewed
-- [ ] Quality Audit clean
-- [ ] anything not verified explicitly recorded
+- [x] Every Task Gate PASS
+- [x] Every Round Gate PASS
+- [x] Every AC verified (incl. the live hosted journey)
+- [x] `pnpm verify` PASS after the final change
+- [x] `pnpm export:web` PASS
+- [x] required fast GitHub CI PASS on the final HEAD (e630689: Verify / Web bundle / Expo doctor success)
+- [x] real hosted Customer Catalog → Local Cart journey verified live
+- [ ] protected PRs untouched (verified at handoff — final check pending at handoff)
+- [x] reviewer findings dispositioned; blocking/major fixes re-reviewed (0 blocking / 0 major outstanding; final review SHIP-READY)
+- [ ] Quality Audit clean (pending — next legal action)
+- [x] anything not verified explicitly recorded (native tier, OS 200% scaling, second-customer runtime, badge corner geometry beyond the box measurement)
 
 ## Blocked
 

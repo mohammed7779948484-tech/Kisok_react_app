@@ -141,3 +141,19 @@ state-ownership and test-quality axis (all re-run checks green: full
 54/543, typecheck 0, verify 0); the single major was a pre-verified
 live-journey failure now fixed within the sanctioned file set. ROUND 2
 GATE: PASS.
+
+## FINAL REVIEW (C-FINAL-REVIEW, fresh full-feature reviewer, exact HEAD e630689)
+
+Verdict: **SHIP-READY** — 0 blocking / 0 major / 3 minor. The reviewer
+independently re-ran the entire evidence chain green (integration 5/46,
+catalog+cart 37/405, full 54/543, typecheck 0, scoped eslint 0, prettier
+clean, pnpm verify 0) and verified all 11 ACs against the shipped code,
+the architecture (one cart model, no mirrored state, public-only
+boundaries), the hydration window, the R-FR-05 closure chain, the mapping
+anti-duplication, and both structurally-forced deviation dispositions.
+
+| ID    | Severity | Finding                                                                                      | Disposition                                                                                                                                                                                                                                                                        |
+| ----- | -------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-01 | minor    | stale todo checkpoint + unchecked gate/brief boxes                                           | RESOLVED — checkpoint advanced to post-final-review; feature-gate checklist boxes ticked (audit + protected-PR check remain open by design); brief delivery boxes ticked with evidence pointers                                                                                    |
+| FR-02 | minor    | R2-01 clearance is static 96px; native inset > 24dp reintroduces the overlap class           | ACCEPTED-CARRY-FORWARD — scoped to the brief's tablet/desktop sizes (verified live at all three); native tier is explicitly UNVERIFIED; inset-aware clearance recorded as the device-tier follow-up                                                                                |
+| FR-03 | minor    | catalog brief AC-07 contradicts the shipped screen (supersession not cross-referenced there) | RESOLVED — one-line superseded-clause note applied to the catalog brief AC-07 row per the brief's own stability rules (marked superseded with the reason + pointer; quantity/Checkout/price/stock prohibitions explicitly stand); catalog suites re-green 26/235; check:docs green |

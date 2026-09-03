@@ -81,8 +81,12 @@ inside the reused QuickCartSheet.
 - [x] Applicable read/mutation states above are handled. (No new network
       states; UI states enumerated under AC-02/AC-05/AC-06; cart states
       surface through the reused public QuickCartSheet.)
-- [ ] Works at the tablet sizes in `docs/design-system.md` (landscape and portrait).
-- [ ] Accessible: roles and labels on interactive elements; no colour-only meaning.
+- [x] Works at the tablet sizes in `docs/design-system.md` (landscape and portrait).
+      (LIVE HOSTED JOURNEY: 1280×800 / 800×1180 / 480×900 — zero horizontal overflow at
+      all three; affordance measured 48×48; Add clearance 96px verified at 480.)
+- [x] Accessible: roles and labels on interactive elements; no colour-only meaning.
+      (Accessible names, disabled-as-state, text-carrying badge, dialog role + focus
+      containment + Escape close — component tests + the live journey.)
 
 ## Scope
 
