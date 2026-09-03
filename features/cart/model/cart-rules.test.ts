@@ -100,6 +100,27 @@ describe("deriveLineId", () => {
     expect(milkFirst).toBe(sizeFirst);
   });
 
+  it("derives one identity for the same uuids spelled with different hex case (PostgreSQL semantics)", () => {
+    // PostgreSQL compares uuid text case-insensitively, so identity must too —
+    // or two differently-cased copies of one selection are two lines that
+    // never merge (H-F01). Upper vs lower hex, plus a different array order:
+    // still one identity.
+    const lower = deriveLineId({
+      variantId: CAPPUCCINO_VARIANT_ID,
+      optionSelections: [sizeSelection, oatMilkSelection],
+    });
+    const upperReordered = deriveLineId({
+      variantId: CAPPUCCINO_VARIANT_ID.toUpperCase(),
+      optionSelections: [
+        { ...oatMilkSelection, optionValueId: OAT_MILK_OPTION_VALUE_ID.toUpperCase() },
+        { ...sizeSelection, optionValueId: SIZE_OPTION_VALUE_ID.toUpperCase() },
+      ],
+    });
+    expect(upperReordered).toBe(lower);
+    // Both are the canonical lowercase derivation — not some third spelling.
+    expect(lower).toBe(CAPPUCCINO_LINE_ID);
+  });
+
   it("derives a different id for a different option-value set", () => {
     const bothOptions = deriveLineId({
       variantId: CAPPUCCINO_VARIANT_ID,
@@ -150,6 +171,39 @@ describe("addLine", () => {
 
   it("caps a merge at the maximum line quantity", () => {
     const lines = addLine(addLine([], cappuccinoInput(50)), cappuccinoInput(60));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.quantity).toBe(MAX_LINE_QUANTITY);
+  });
+
+  it("merges a re-add of the same selection spelled with different uuid hex casing", () => {
+    // The runtime consequence of canonical identity: the SAME selection to
+    // PostgreSQL must merge into ONE line even when the caller's uuid hex
+    // casing differs (H-F01 sub-finding).
+    const upperCased: AddToCartInput = {
+      ...cappuccinoInput(3),
+      variantId: CAPPUCCINO_VARIANT_ID.toUpperCase(),
+      optionSelections: [
+        { ...sizeSelection, optionValueId: SIZE_OPTION_VALUE_ID.toUpperCase() },
+        { ...oatMilkSelection, optionValueId: OAT_MILK_OPTION_VALUE_ID.toUpperCase() },
+      ],
+    };
+    const lines = addLine(addLine([], cappuccinoInput(2)), upperCased);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.quantity).toBe(5);
+    // The merged line keeps the canonical lowercase identity.
+    expect(lines[0]?.lineId).toBe(CAPPUCCINO_LINE_ID);
+  });
+
+  it("caps a cross-casing merge at the maximum line quantity", () => {
+    const upperCased: AddToCartInput = {
+      ...cappuccinoInput(60),
+      variantId: CAPPUCCINO_VARIANT_ID.toUpperCase(),
+      optionSelections: [
+        { ...sizeSelection, optionValueId: SIZE_OPTION_VALUE_ID.toUpperCase() },
+        { ...oatMilkSelection, optionValueId: OAT_MILK_OPTION_VALUE_ID.toUpperCase() },
+      ],
+    };
+    const lines = addLine(addLine([], cappuccinoInput(50)), upperCased);
     expect(lines).toHaveLength(1);
     expect(lines[0]?.quantity).toBe(MAX_LINE_QUANTITY);
   });

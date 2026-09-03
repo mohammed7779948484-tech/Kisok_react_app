@@ -46,7 +46,8 @@ const milkSelection = {
 
 /** A populated line with an image and two ordered option selections. */
 const cappuccinoLine: CartLine = {
-  lineId: "3a7f2c1d-9b4e-4d6a-8f2c-7e1b5d9a4c3f|e5d3c8a1|1a2b3c4d",
+  lineId:
+    "3a7f2c1d-9b4e-4d6a-8f2c-7e1b5d9a4c3f|1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d|e5d3c8a1-6f2b-4c9d-8a7e-3b1f4d6c8a2b",
   variantId: "3a7f2c1d-9b4e-4d6a-8f2c-7e1b5d9a4c3f",
   productId: "0f4a9d3e-2b1c-4f8a-9e7d-5c6b8a3f1d2e",
   productDisplayName: "Cappuccino",

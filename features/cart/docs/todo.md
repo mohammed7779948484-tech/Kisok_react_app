@@ -340,3 +340,24 @@ FEATURE GATE: PASS (2026-09-02) — every task and round gate PASS, 13/13 ACs je
 What cannot proceed, and what it is waiting for. Empty is good.
 
 - — (nothing blocked: Draft PR #8 is complete and stays DRAFT, awaiting human review — https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/8)
+
+---
+
+## POST-MERGE PRE-CHECKOUT HARDENING — checkpoint (2026-09-03)
+
+Branch `fix/cart-pre-checkout-hardening` from post-PR-#11 develop
+`6161a4c9708875c5f811401c8e6bd1066a59ec39`. Amendment: plan.md
+"POST-MERGE PRE-CHECKOUT HARDENING" (status READY after Lead Planning Review).
+Findings: H-F01 VALID / H-F02 VALID / H-F03 VALID (reproduced live). No
+Checkout scope; no server Cart; PR stays DRAFT/unmerged.
+
+| Task  | Mode | Status  | Gate |
+| ----- | ---- | ------- | ---- |
+| H-T01 | bug  | PENDING | —    |
+| H-T02 | bug  | PENDING | —    |
+| H-T03 | bug  | PENDING | —    |
+
+| Round | Scope                                       | Gate    |
+| ----- | ------------------------------------------- | ------- |
+| 1     | H-T01 + H-T02 (domain/session safety)       | PENDING |
+| 2     | H-T03 (runtime/accessibility + convergence) | PENDING |
