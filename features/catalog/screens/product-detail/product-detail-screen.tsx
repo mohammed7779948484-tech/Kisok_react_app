@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
 import { Button, Text } from "@/components/ui";
+import { AddToCartButton, type CatalogCartSource } from "@/features/catalog-cart-integration";
 
 import { AvailabilityBadge } from "../../components/availability-badge";
 import type { CatalogProductView } from "../../model/catalog-view";
@@ -55,9 +56,17 @@ import { VariantChoiceList } from "./components/variant-choice-list";
  * selected variant's derived media and the resolved active id, and remounts
  * its large image by the resolved URI (Design decision 12).
  *
- * No quantity control, price, stock count, identifier display or ordering
- * affordance exists anywhere on this screen — no approved Cart public API
- * exists yet (brief "Out of scope"), so none is faked.
+ * No quantity control, price, stock count, identifier display or other
+ * ordering affordance exists anywhere on this screen. The ONE exception is
+ * the sanctioned Add-to-cart action below the variant list: the
+ * catalog-cart-integration feature's plan deliberately superseded this
+ * screen's original "zero cart affordances" statement (catalog brief AC-07,
+ * written when no Cart public API existed) for exactly this action. The
+ * screen renders the integration's PUBLIC `AddToCartButton` from a
+ * structural `CatalogCartSource` it derives here — the owning screen knows
+ * its own shapes — and the button, not this screen, owns every cart call:
+ * quantity stays fixed at 1 per press (control lives in the cart), and no
+ * price, stock, or identifier crosses the seam.
  *
  * Back affordance: the brief pins "detail screens retain an obvious way back
  * to the discovery surface that opened them", so a header `Go back` control
@@ -185,9 +194,42 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
   const activeMediaAssetId =
     pickedMedia?.mediaAssetId ?? variant.primaryMedia?.mediaAssetId ?? null;
 
+  // The integration seam (plan decision 2): the owning screen derives the
+  // structural source from its OWN resolved view — raw `title_override` (the
+  // mapper trims), the variant's derived primary image (cover fallback
+  // already applied by the model), the ordered option pairs, and the
+  // variant's position — and hands it to the integration's public Add
+  // action. Structural by design: no composed label and no catalog view type
+  // crosses the feature boundary, so the T01 label rule stays the integration's.
+  const addSource: CatalogCartSource = {
+    productId: product.id,
+    productName: product.name,
+    variant: {
+      id: variant.id,
+      titleOverride: variant.title_override,
+      isAvailable: variant.is_available,
+      primaryImageUri: variant.primaryMedia?.secureUrl ?? null,
+      options: variant.options.map((option) => ({
+        optionTypeId: option.type.id,
+        optionValueId: option.value.id,
+        optionValueLabel: option.value.value,
+        optionTypeName: option.type.name,
+      })),
+    },
+    variantCount: product.variants.length,
+    variantIndex: product.variants.findIndex((candidate) => candidate.id === variant.id),
+  };
+
   return (
     <Screen>
-      <ScrollView contentContainerClassName="gap-4 px-6 pb-6 pt-6">
+      {/* pb-24 (96px): clears the integration's persistent cart affordance —
+          an absolutely-positioned 48dp button anchored 24px above the viewport
+          bottom-right (plus safe-area inset). At end-of-scroll the Add action
+          is the last content, so its bottom edge must sit above the
+          affordance's band (24+48+inset ≤ 96 at the brief's tablet/desktop
+          sizes) or a corner press on the primary CTA would open the Quick
+          Cart instead (R2-01). */}
+      <ScrollView contentContainerClassName="gap-4 px-6 pb-24 pt-6">
         <Button variant="ghost" onPress={handleBack} className="self-start">
           <Text>Go back</Text>
         </Button>
@@ -248,6 +290,12 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
           selectedVariantId={variant.id}
           onSelectVariant={handleSelectVariant}
         />
+        {/* The plan-sanctioned Add action (see the doc comment): rendered only
+            on the resolved-product path, below the variant list, so it follows
+            the resolved selection. The integration's button owns every cart
+            call and the Quick Cart open — this screen renders and derives
+            nothing else for it. */}
+        <AddToCartButton source={addSource} />
       </ScrollView>
     </Screen>
   );
