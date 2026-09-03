@@ -241,6 +241,10 @@ the screen export to `features/cart/index.ts`, which T10 then completes.)
 
 Allowed manual files (with the reason no capability fits):
 
+- `features/cart/model/pg-uuid.ts` (+ `pg-uuid.test.ts`) — added by the
+  2026-09-03 staged-integration T01 reopen: a Cart-local
+  PostgreSQL-canonical UUID validator (see todo.md reopen record); no
+  generator capability produces boundary validators (B-AUD-04 note).
 - `features/cart/model/cart-rules.ts` (+ `cart-rules.test.ts`) — pure domain
   rules: line identity derivation, merge/distinct-line decisions, quantity
   bounds, summary derivation. Domain rules have no generator capability.
