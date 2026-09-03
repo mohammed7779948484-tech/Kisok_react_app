@@ -64,3 +64,27 @@ Delete the lines that do not apply to the mode. An empty RED heading under a
 ## Entries
 
 _None yet._
+
+## T01 — Pure AddToCartInput mapping model — GATE: PASS
+
+- Implementer: fresh feature-implementer (C-T01, Super Z agent-a9ca3c37);
+  RED first: `pnpm exec jest
+features/catalog-cart-integration/model/add-to-cart-mapping.test.ts` →
+  "Test suite failed to run — Cannot find module './add-to-cart-mapping'"
+  (module-absent = the planned entry evidence; the @/features/cart TYPE
+  import resolved, so the failure was the missing behavior, not a typo).
+- GREEN: same command → 1 suite / 11 tests PASS; `pnpm exec jest
+features/catalog-cart-integration` 11/11; `pnpm typecheck` exit 0;
+  scoped eslint 0 problems; prettier clean.
+- Files: `model/add-to-cart-mapping.ts` (CatalogCartSource + label rule +
+  7-key mapper) + `model/add-to-cart-mapping.test.ts` — both inside the
+  allowed scope; nothing else touched; nothing exported from index.ts.
+- Fresh task reviewer (C-T01-REVIEW): 0 blocking / 0 major / 3 minor.
+  C-T01-R1 (precedence pin: option-backed + variantCount 1) and C-T01-R2
+  (accepted override-family overlap pin) — both fixed additively by the
+  Lead (two new tests; suite now 13/13; prettier/typecheck re-green).
+  C-T01-R3 (repo evidence transcription) — closed by THIS entry.
+- Label rule verified against the hazard sources: option-backed captions
+  compose as "Flavor, Strength · Watermelon · Strong" (each value exactly
+  once); override family pinned as accepted data-dependent overlap
+  (verbatim rule, plan decision 3).

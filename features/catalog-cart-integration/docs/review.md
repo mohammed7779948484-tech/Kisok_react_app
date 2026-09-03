@@ -49,3 +49,16 @@ dispositioned. It returns findings; the Lead records them here.
 - Definition of Done (`AGENTS.md`) met: TODO
 
 Audit result: `PENDING`
+
+## T01 review (C-T01-REVIEW, fresh task reviewer)
+
+| ID       | Severity | Finding                                                | Disposition                                                                                              |
+| -------- | -------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| C-T01-R1 | minor    | precedence branch unpinned (options vs variantCount 1) | RESOLVED — additive precedence-pin test (option-backed single-variant → "Flavor, Strength"); suite 13/13 |
+| C-T01-R2 | minor    | accepted override-family overlap unpinned/undocumented | RESOLVED — additive pin test + comment documenting the verbatim-override acceptance (plan decision 3)    |
+| C-T01-R3 | minor    | repo worklog evidence not yet transcribed              | RESOLVED — T01 evidence recorded in worklog.md at gate closure                                           |
+
+Reviewer verdict: code correct against plan decisions 2-4 and brief
+AC-03/AC-04; boundaries clean (type-only public cart import, no catalog
+imports, nothing exported from the index); RED plausibility confirmed;
+all commands re-run green. GATE: PASS.
