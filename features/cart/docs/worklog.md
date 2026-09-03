@@ -1085,3 +1085,68 @@ semantics before any patch:
   confirmed no false widening, additive-only tests, scope confined to
   features/cart/model/\*\*. Two out-of-scope observations O-1/O-2 dispositioned
   in review.md below.
+
+## STAGED-INTEGRATION LIVE VERIFICATION (2026-09-03, static export at fe39934 + spot-check at 6d02743)
+
+Browser record against the REAL hosted TEST project (production static
+export `pnpm export:web` served via clean-URL rewrite server on
+127.0.0.1:8081; the same web-bundle job CI builds green):
+
+- **Sign-in (real, hosted)**: unauthenticated entry boots to /sign-in;
+  Customer@gmail.com signs in end-to-end; console clean.
+- **Auth gate**: signed-out direct /cart → client-redirect to /sign-in once
+  and settles; cart content never renders unauthenticated.
+- **/cart empty state**: renders with the Browse Products escape.
+- **Cold restore incl. UUID remediation LIVE PROOF**: a seeded 2-line
+  envelope whose FIRST line uses a canonical non-RFC PostgreSQL UUID
+  (`a1b2c3d4-e5f6-0789-0abc-def012345678` — version nibble 0, variant
+  nibble 0) restored completely on cold full-page load (both lines, names,
+  variant/options captions "Standard" and "Mint · Strong", quantities 2+3,
+  summary "5 items · 2 lines"). Under the pre-remediation `z.uuid()` this
+  envelope would have been rejected → clean start. The remediation is
+  proven live, not only by jest.
+- **Quantity +/−**: 2→3 and 3→2 applied; summary recomputed live
+  ("5 items · 2 lines").
+- **Reload persistence**: after edits, reload → quantities 3+2 restored;
+  the durable envelope matches memory exactly.
+- **Confirmed remove**: dialog ("Remove Non-RFC Probe Product?… Cancel /
+  Remove") → line removed, "2 items · 1 line", envelope durably updated.
+- **Confirmed clear**: dialog ("Clear the cart?… Cancel / Remove All") →
+  empty state renders through the hook's own restore; durable key REMOVED.
+- **Sign-out through the app's REAL pipeline**: no customer-facing sign-out
+  affordance exists on this branch (the placeholder home that carried it
+  was replaced by Catalog — customer shell is future scope), so the real
+  signOut() pipeline was exercised through the Preparation experience's
+  mounted Sign out button (preparing@gmail.com): guards → fail-closed
+  handoff marker → `supabase.auth.signOut({scope:"local"})` →
+  runSignOutCleanup → finishSignOutHandoff. Observed: redirect to
+  /sign-in, auth token CLEARED, handoff marker lifecycle clean (set →
+  removed on success). The Customer's cart envelope surviving that
+  preparation-session sign-out is the documented R-FR-05 module-load
+  semantics (cart module not loaded in that session; mitigated by the
+  jest-proven owner-scoped mismatch discard at the next different-owner
+  hydrate) — not a new finding.
+- **Re-authentication**: signing back in as the same Customer restored
+  their own cart (correct owner-match contract); a cart cleared through
+  the app's own UI did NOT resurrect after clear → reload → re-sign-in
+  (key absent, empty state honest).
+- **Responsive**: 1280×800, 800×1180, 480×900 — zero horizontal overflow
+  (scrollWidth == clientWidth at all three); at 480×900 the Remove control
+  measures 48px wide; decrement correctly disabled at quantity 1.
+- **Console/network**: zero console messages and zero page errors across
+  the entire session; network log shows only real hosted auth/profile/
+  catalog RPC calls — NO cart REST/RPC/Realtime calls anywhere (the cart
+  is pure client state).
+- **Final-HEAD spot-check**: re-exported at 6d02743 and re-verified the
+  non-RFC restore + clean console; test localStorage state removed after
+  verification (no fabricated stale carts left).
+
+Explicitly unverified (honest): customer-role sign-out UI affordance does
+not exist on this branch (future customer-shell scope) — the Customer-cart
+sign-out cleanup itself is jest-proven through the real registration
+(AC-07) and the app's real signOut pipeline was live-verified as above;
+second-customer owner-mismatch at runtime — only one Customer TEST account
+exists (jest-covered, as before); native/device tier (no device; unchanged
+from prior session); the `pnpm web` dev-server transport (prior session's
+environmental inotify ENOSPC blocker; static export substituted — the same
+Web-bundle job CI runs).
