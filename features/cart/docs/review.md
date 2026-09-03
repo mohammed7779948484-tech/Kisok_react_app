@@ -280,3 +280,28 @@ Explicitly unverified, with reasons:
   customer TEST account exists; the behavior is jest-covered.
 - native/device tier — AsyncStorage is jest-mocked in the harness; no cart
   maestro flow exists (N/A by plan).
+
+## STAGED-INTEGRATION REMEDIATION REVIEW (B-REVIEW-UUID, fresh reviewer)
+
+Scope: the uncommitted UUID contract-fidelity remediation on feature/cart
+(after develop integration at ce48674). Verdict: **VERIFIED — 0 blocking /
+0 major / 0 minor.**
+
+| ID  | Severity                   | Finding                                                                                                                                                                                                                                                            | Evidence                                                          | Disposition                                                                                                                                                                                                                                                                                                                               |
+| --- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| O-1 | observation (out of scope) | Same-class latent over-strictness one boundary upstream: `activeProfileSchema.id` pins `z.uuid()` (RFC nibbles). Cart's ownerId originates from the `current_active_profile()` projection. Latent only — Supabase `auth.users.id` is `gen_random_uuid()` v4 today. | `core/auth/types.ts:15` (reviewer evidence)                       | ACCEPTED-LIMITATION, recorded by the Lead: core/\*\* is outside both Cart's file scope and this staged assignment's bounded authority; profile ids are v4 by platform default, so the stricter auth boundary cannot reject real data today. Carry-forward note for any future core/auth feature that touches profile identity validation. |
+| O-2 | observation (out of scope) | Generator template placeholder id uses `z.uuid()`, so future generated model schemas can inherit the same latent trap.                                                                                                                                             | `tools/generator/templates/model/schema.ts.ejs:23` (TODO-replace) | RECORDED by the Lead as a template note for future generator work; not actionable in this assignment (the template line is generator-owned scaffold; changing shared tooling is outside Cart's scope). The Cart feature demonstrates the correct boundary semantics in `model/pg-uuid.ts` for future reference.                           |
+
+Reviewer's independent verification (from the returned report): contract
+fidelity empirically proven against the repo's own zod — all 512
+version×variant nibble combinations × both cases accepted by the new
+validator while the old `z.uuid()` rejects 448 of them; 18-value malformed
+corpus (wrong grouping, non-hex, wrong lengths, empty, non-string, braced
+GUID, URN form, whitespace) zero wrongly accepted; strip/omit semantics
+verified empirically; no false widening (quantity bounds, label min-1s,
+version literal, unique-lineId refine, nullable imageUri, ownerless-envelope
+guard all byte-identical); diff confined to features/cart/model/\*\* (4
+modified + 2 new); RED evidence genuine (8 failed / 52 passed pre-fix, each
+failing value empirically an old-z.uuid() rejection); suites re-run green
+(170 cart / 66 model), typecheck/eslint/prettier clean; public API and types
+unchanged.

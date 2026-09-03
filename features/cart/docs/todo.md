@@ -15,12 +15,39 @@ The single answer to "where are we?". Update it whenever any of it changes; it
 is the first thing the next agent reads.
 
 ```
-Current round     : done
-Current task      : —
-Last gate         : FEATURE GATE: PASS (final gates recorded — verification, code review, quality audit, runtime evidence)
-Next legal action : HUMAN_HANDOFF — Draft PR #8 stays DRAFT; a human reviews and decides the merge
-Blocked by        : — (human review of Draft PR #8 — see Blocked)
+Current round     : done (post-merge-integration remediation round complete)
+Current task      : — (T01 reopened and re-gated — see T01 reopen record below)
+Last gate         : T01 GATE: PASS (restored 2026-09-03 after the UUID contract-fidelity remediation + fresh review 0/0/0)
+Next legal action : fresh full-feature review against CURRENT develop (which now contains Catalog), then live browser re-verification, final exact-head CI, then the human-authorized merge of PR #8
+Blocked by        : —
 ```
+
+### T01 reopen record (2026-09-03, staged-integration assignment)
+
+The original Feature Gate PASS stands for the delivery as merged-in-parallel.
+The staged-integration assignment (PR #10 Catalog first merged to develop,
+then Cart re-verified and remediated against it) reopened T01's scope for a
+contract-fidelity bug found by independent review and triaged VALID by the
+Lead:
+
+- **Finding**: Cart schemas used Zod `z.uuid()` (RFC-9562 version nibble
+  [1-8] + variant nibble [89abAB], exact nil/max exceptions only) where the
+  boundary contract is PostgreSQL's canonical `uuid` (any 8-4-4-4-12 hex,
+  case-insensitive; no CHECK constraints in migrations). Catalog on develop
+  validates the ids that feed Cart with exactly the PG-canonical semantics;
+  `addToCartInputSchema` was stricter → `addItem()` logged no-op on
+  legitimate data → silent Add-to-Cart failure once integration wires it.
+- **Workflow**: bug-mode RED-first (8 new acceptance tests failed pre-fix at
+  Expected:true/Received:false; 3+2 negative controls green before and
+  after) → smallest fix (Cart-local `model/pg-uuid.ts`
+  `postgresUuidSchema`, replacing `z.uuid()` at variantId/productId/
+  optionTypeId/optionValueId/ownerId) → GREEN 66/66 model, 170/170 cart,
+  493 repo, typecheck/lint/format clean → Lead verification re-run → fresh
+  code-reviewer (B-REVIEW-UUID): **VERIFIED, 0 blocking / 0 major / 0
+  minor**; two out-of-scope observations O-1/O-2 dispositioned in
+  review.md.
+- **Gate**: restored PASS. No architecture change, no backend change, no
+  migration, no RLS change, no catalog import, no public-API change.
 
 ## Rules
 

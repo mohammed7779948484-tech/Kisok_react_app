@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { postgresUuidSchema } from "./pg-uuid";
+
 /**
  * The single source of the per-line quantity bounds for the whole model
  * layer: min 1 is the domain rule (decrement never removes a line — removal is
@@ -22,14 +24,14 @@ export const MAX_LINE_QUANTITY = 99;
  */
 export const cartLineSchema = z.object({
   lineId: z.string().min(1),
-  variantId: z.uuid(),
-  productId: z.uuid(),
+  variantId: postgresUuidSchema,
+  productId: postgresUuidSchema,
   productDisplayName: z.string().min(1),
   variantLabel: z.string().min(1),
   optionSelections: z.array(
     z.object({
-      optionTypeId: z.uuid(),
-      optionValueId: z.uuid(),
+      optionTypeId: postgresUuidSchema,
+      optionValueId: postgresUuidSchema,
       optionValueLabel: z.string().min(1),
     }),
   ),

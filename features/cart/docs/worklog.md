@@ -1021,3 +1021,67 @@ design — component tests stand); second-customer owner-mismatch at runtime
 (one TEST account; jest-covered); native/device tier (no cart maestro flow —
 N/A by plan). Screenshots (5) + logs: the Lead workspace runtime-evidence/
 directory.
+
+## STAGED-INTEGRATION REMEDIATION (2026-09-03, post Catalog→develop merge)
+
+Context: the human authorized a staged delivery — Catalog PR #10 merged to
+develop first (merge commit 4280994), then Cart re-verified and remediated
+against that develop before its own authorized merge. Cart integrated
+origin/develop into feature/cart at merge commit **ce48674** with ZERO
+conflicts (the parallel-isolation discipline held; Cart's 27-file diff never
+touched catalog files and vice versa).
+
+### Baseline after integration (pre-remediation, at ce48674)
+
+- `pnpm exec jest features/cart` → 151/151 PASS
+- `pnpm exec jest --ci --silent` → 48 suites / 474 tests PASS
+- `pnpm run typecheck` → exit 0; `pnpm run lint` → exit 0;
+  `pnpm run format` → unchanged; `pnpm run verify` → exit 0
+
+### UUID contract-fidelity finding — triaged VALID (major), remediated
+
+The Lead verified the independent finding from current code + PostgreSQL
+semantics before any patch:
+
+- Zod 4.2.1 `uuid()` regex (`node_modules/zod/v4/core/regexes.js:17-19`)
+  enforces RFC-9562 version nibble `[1-8]` AND variant nibble `[89abAB]`,
+  with only exact nil/max UUID exceptions.
+- PostgreSQL's canonical `uuid` accepts ANY 8-4-4-4-12 hex (case-insensitive);
+  the repo's migrations place no uuid-format CHECK constraints — ids default
+  to `gen_random_uuid()` (v4) but nothing forbids other canonical values.
+- Catalog (merged on develop) validates every RPC id with
+  `postgresUuidSchema` = PG-canonical regex
+  (`features/catalog/model/catalog-snapshot.schema.ts:20-24`) — so ids that
+  pass the whole Catalog chain could still be rejected by
+  `addToCartInputSchema` → `addItem()` logged no-op (cart-store.ts:444-462)
+  → silent user-facing failure once Catalog integration wires Add-to-Cart.
+- Empirical probe (Lead, 8/8): four canonical non-RFC PostgreSQL UUIDs
+  (version nibble 0/9/a, variant nibble 0/e, near-nil) all REJECTED by the
+  old schema; all pass the PG-canonical regex.
+
+**Workflow** (bug mode, RED first):
+
+- RED (fresh implementer B-REMEDIATE-UUID): +6 acceptance tests in
+  cart-line.schema.test.ts and +2 in persisted-cart.schema.test.ts —
+  `pnpm exec jest features/cart/model` → **8 failed / 52 passed**, every
+  failure at Expected:true/Received:false (payload rejected = the missing
+  behavior, not typo/import); 5 negative controls green before and after.
+- IMPLEMENT (smallest fix): NEW `model/pg-uuid.ts` — Cart-local
+  `postgresUuidSchema` (PG-canonical regex, rationale documented in-file);
+  `z.uuid()` → `postgresUuidSchema` at variantId, productId, optionTypeId,
+  optionValueId (cart-line.schema.ts) and ownerId (persisted-cart.schema.ts).
+  Types unchanged (infers `string`). No catalog import (Catalog's regex was
+  EVIDENCE, not a dependency), no shared/global abstraction, no backend/
+  migration/RLS change, no public-API change.
+- GREEN: `features/cart/model` 66/66; `features/cart` 170/170; full repo
+  49 suites/493 tests; typecheck exit 0; eslint model exit 0; prettier clean.
+- New colocated `model/pg-uuid.test.ts` pins all 16 version nibbles × all 16
+  variant nibbles × both cases + nil/max/near-nil + 18-value malformed
+  corpus (Lead-sanctioned manual artifact, same category as cart-rules.ts).
+- Lead verification re-run reproduced all of the above.
+- Fresh reviewer B-REVIEW-UUID: **VERIFIED — 0 blocking / 0 major / 0
+  minor**; independently re-derived the contract fidelity (512 nibble
+  combinations accepted by new / 448 rejected by old), re-ran the suites,
+  confirmed no false widening, additive-only tests, scope confined to
+  features/cart/model/\*\*. Two out-of-scope observations O-1/O-2 dispositioned
+  in review.md below.

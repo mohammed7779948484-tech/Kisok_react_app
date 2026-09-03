@@ -92,4 +92,50 @@ describe("persisted-cart schema", () => {
     });
     expect(distinct.success).toBe(true);
   });
+
+  // --- Canonical PostgreSQL uuid contract (B-REMEDIATE-UUID) -----------------
+  //
+  // ownerId is a server-issued profile id: PostgreSQL's uuid text is any
+  // 8-4-4-4-12 hex with no version/variant nibble rule, so a canonical
+  // non-RFC ownerId must restore, not be discarded as a corrupt payload.
+
+  it("accepts a canonical non-RFC ownerId (version nibble 9, variant nibble 0)", () => {
+    const result = persistedCartSchema.safeParse({
+      ...validCart,
+      ownerId: "d94a2f7b-1c3e-9b5a-0f8d-6e2c7b1a4d3e",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a near-nil canonical ownerId (not the exact nil uuid)", () => {
+    const result = persistedCartSchema.safeParse({
+      ...validCart,
+      ownerId: "00000000-0000-0000-0000-000000000001",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  // Controls: malformed ownerIds stay rejected — the loosening never widens
+  // beyond the canonical uuid TEXT shape.
+
+  it("still rejects an ownerId with wrong grouping or non-hex characters", () => {
+    const grouped = persistedCartSchema.safeParse({
+      ...validCart,
+      ownerId: "d94a2f7b1c3e4b5a9f8d6e2c7b1a4d3e",
+    });
+    expect(grouped.success).toBe(false);
+    expect(issuePaths(grouped)).toContainEqual(["ownerId"]);
+
+    const nonHex = persistedCartSchema.safeParse({
+      ...validCart,
+      ownerId: "d94a2f7b-1c3e-4b5a-9f8d-6e2c7b1a4d3g",
+    });
+    expect(nonHex.success).toBe(false);
+    expect(issuePaths(nonHex)).toContainEqual(["ownerId"]);
+  });
+
+  it("still rejects an empty-string ownerId and a non-string ownerId", () => {
+    expect(persistedCartSchema.safeParse({ ...validCart, ownerId: "" }).success).toBe(false);
+    expect(persistedCartSchema.safeParse({ ...validCart, ownerId: 42 }).success).toBe(false);
+  });
 });

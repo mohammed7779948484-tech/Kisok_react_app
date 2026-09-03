@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { cartLineSchema } from "./cart-line.schema";
+import { postgresUuidSchema } from "./pg-uuid";
 
 /**
  * The persisted cart payload, validated when restored from storage.
@@ -15,7 +16,7 @@ import { cartLineSchema } from "./cart-line.schema";
 export const persistedCartSchema = z
   .object({
     version: z.literal(1),
-    ownerId: z.uuid(),
+    ownerId: postgresUuidSchema,
     lines: z.array(cartLineSchema),
   })
   .refine((cart) => new Set(cart.lines.map((line) => line.lineId)).size === cart.lines.length, {

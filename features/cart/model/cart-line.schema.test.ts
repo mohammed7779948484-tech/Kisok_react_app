@@ -158,4 +158,100 @@ describe("cart-line schema", () => {
     expect(result.success).toBe(false);
     expect(issuePaths(result)).toContainEqual(["quantity"]);
   });
+
+  // --- Canonical PostgreSQL uuid contract (B-REMEDIATE-UUID) -----------------
+  //
+  // PostgreSQL's uuid type accepts any 8-4-4-4-12 hex — no RFC 9562
+  // version/variant nibble rule, and no migration CHECK constrains ids to
+  // gen_random_uuid()'s v4 shape. Catalog validates ids with exactly this
+  // canonical shape, so ids the whole server chain accepts must parse here:
+  // a rejected add-to-cart input is a logged no-op in the store's add path.
+
+  it("accepts a variantId whose version nibble is 0 (canonical, not RFC 9562)", () => {
+    const result = cartLineSchema.safeParse({
+      ...validLine,
+      variantId: "0f4a9d3e-2b1c-0f8a-8e7d-5c6b8a3f1d2e",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a productId whose version nibble is 9", () => {
+    const result = cartLineSchema.safeParse({
+      ...validLine,
+      productId: "0f4a9d3e-2b1c-9f8a-8e7d-5c6b8a3f1d2e",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts an optionTypeId whose variant nibble is 0", () => {
+    const result = cartLineSchema.safeParse({
+      ...validLine,
+      optionSelections: [
+        { ...sizeSelection, optionTypeId: "b2e1a4c3-8f7d-4a2b-0c6e-1d3f5a7b9c2d" },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts an optionValueId whose variant nibble is f", () => {
+    const result = cartLineSchema.safeParse({
+      ...validLine,
+      optionSelections: [
+        { ...sizeSelection, optionValueId: "e5d3c8a1-6f2b-4c9d-fe7e-3b1f4d6c8a2b" },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a line whose ids are near-nil canonical hex (not the exact nil uuid)", () => {
+    const nearNilLine = {
+      ...validLine,
+      lineId: "00000000-0000-0000-0000-000000000001|00000000-0000-0000-0000-000000000004",
+      variantId: "00000000-0000-0000-0000-000000000001",
+      productId: "00000000-0000-0000-0000-000000000002",
+      optionSelections: [
+        {
+          optionTypeId: "00000000-0000-0000-0000-000000000003",
+          optionValueId: "00000000-0000-0000-0000-000000000004",
+          optionValueLabel: "Large",
+        },
+      ],
+    };
+    expect(cartLineSchema.safeParse(nearNilLine).success).toBe(true);
+  });
+
+  it("accepts a canonical non-RFC uuid on the add-to-cart input — Catalog's payload", () => {
+    const { lineId: _derivedByRules, ...input } = validLine;
+    const result = addToCartInputSchema.safeParse({
+      ...input,
+      variantId: "3a7f2c1d-9b4e-ad6a-0f2c-7e1b5d9a4c3f",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  // Controls: the loosening is to PostgreSQL's canonical uuid TEXT shape only —
+  // every malformed id stays rejected exactly as before.
+
+  it("still rejects a 36-hex-character id with no grouping", () => {
+    const result = cartLineSchema.safeParse({
+      ...validLine,
+      variantId: "3a7f2c1d9b4e4d6a8f2c7e1b5d9a4c3f",
+    });
+    expect(result.success).toBe(false);
+    expect(issuePaths(result)).toContainEqual(["variantId"]);
+  });
+
+  it("still rejects a 36-character id with a non-hex character", () => {
+    const result = cartLineSchema.safeParse({
+      ...validLine,
+      variantId: "3a7f2c1d-9b4e-4d6a-8f2c-7e1b5d9a4c3g",
+    });
+    expect(result.success).toBe(false);
+    expect(issuePaths(result)).toContainEqual(["variantId"]);
+  });
+
+  it("still rejects an empty-string id and a non-string id", () => {
+    expect(cartLineSchema.safeParse({ ...validLine, variantId: "" }).success).toBe(false);
+    expect(cartLineSchema.safeParse({ ...validLine, variantId: 42 }).success).toBe(false);
+  });
 });
