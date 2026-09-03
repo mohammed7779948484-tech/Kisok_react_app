@@ -361,4 +361,4 @@ Checkout scope; no server Cart; PR stays DRAFT/unmerged.
 | Round | Scope                                           | Gate                     |
 | ----- | ----------------------------------------------- | ------------------------ |
 | 1     | H-T01 + H-T02 (domain/session safety)           | PASS (0 blk/0 maj/2 min) |
-| 2     | H-T03 + H-T03b (runtime/a11y + convergence pin) | PENDING                  |
+| 2     | H-T03 + H-T03b (runtime/a11y + convergence pin) | PASS (0 blk/0 maj/2 min) |

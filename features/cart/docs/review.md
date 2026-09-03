@@ -406,3 +406,36 @@ Full suite 54/552 reproduced identically (543 baseline + 8 H-T01 + 1 H-T02).
 | R1-02 | minor    | No store-level test pins the composed path "semantically malformed lineId on disk → restore treats it as corrupt → durable clear + start empty" (both halves individually proven; plumbing shape-agnostic) | RESOLVED — scheduled as micro-task H-T03b in Round 2 (test-only pin in cart-store.test.ts; task graph + todo updated) |
 
 **ROUND 1 GATE: PASS.**
+
+### Round 2 gate review (fresh code-reviewer, 2026-09-03, commits e651812 + bc986bd + the R2-1 follow-up)
+
+Verdict: **0 blocking / 0 major / 2 minor + 1 micro-note — ROUND 2 GATE: PASS.**
+(This review also discharges the H-T03 task review — see the worklog note.)
+
+Examined clean: the new AdaptiveSheetDescription is byte-for-byte the a11y
+shape of the sibling DialogDescription (asChild → Text variant body tone
+muted, DescriptionProps typing, placed after the Title); the primitive chain
+genuinely wires aria-describedby on web (rn-primitives dialog.web → Radix
+Content :277 sets aria-describedby=descriptionId; Description :308 carries
+the id; DescriptionWarning :353-364 fires only when the element is missing)
+— the fix wires real aria-describedby, it does not merely silence. Only two
+production AdaptiveSheet consumers exist and both are wired; the barrel
+export is purely additive. The description is screen-reader-useful, inside
+the header under the Title, does not duplicate the count, renders in BOTH
+presentations (children unconditional). Console honesty verified (no console
+mock in setup; the Radix warning genuinely unreachable in jest; the tests
+honestly delegate the zero-warning browser evidence). H-T03b composes
+schema+store end-to-end with the real backend post-state assertion. RED
+teeth re-proven independently in a disposable copy (pre-H-T01 schema → the
+malformed line restores with the exact +23 diff; pre-Round-2 code → 3 failed
+
+- TS2305). Scope exact; no suppressions; no aria-describedby={undefined}
+  hack in code. All check numbers reproduced (54/556 full, 27/285 scoped).
+
+| ID   | Severity                                          | Finding                                                                                                                                     | Disposition                                                                                                              |
+| ---- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| R2-1 | minor                                             | No compact-presentation pin for the description (the 3 new tests ran in the LANDSCAPE default)                                              | RESOLVED — one assertion added to the existing compact/portrait test (H-T03-FIX2); the pin now covers both presentations |
+| R2-2 | minor (pre-existing, not introduced by this diff) | ConfirmDialog renders its Description conditionally — a future Title-only caller re-enters the warning class (all current callers pass one) | LEDGERED — recorded as a pattern note for future consumers; no change required in this hardening                         |
+| R2-3 | micro-note                                        | ui-lab demo body's first sentence near-duplicates the new description                                                                       | ACCEPTED — cosmetic only, dev-only surface; the demo's own body text predates the change                                 |
+
+**ROUND 2 GATE: PASS.**
