@@ -257,7 +257,7 @@ cart-access-button` (placeholder committed with the T03 gate; replaced
 - Files: `convergence.test.tsx` (NEW — 12 tests: public-API key-equality
   pin with runtime + type layers + 25 forbidden names + export-statement
   scan (3 exact relative-only export-froms, no cart re-export, no star);
-  fs boundary scans over all 13 feature files (no deep cart/catalog, no
+  fs boundary scans over all 11 in-feature source files + the 2 sanctioned edits (no deep cart/catalog, no
   Supabase, self-alias + relative-escape rails) + the two sanctioned
   out-of-feature edits pinned; AC-07 merge/distinct nets through the
   PUBLIC cart path with mapper-built inputs; AC-08 real disk→memory
@@ -280,3 +280,14 @@ cart-access-button` (placeholder committed with the T03 gate; replaced
   (tautological runtime mirror in the type-layer test) ACCEPTED — the
   in-file comment documents the three-layer rationale (satisfies →
   typecheck; export-statement scan → the gap-closer).
+
+## Round 2 gate — PASS (T03 + T04 + T05)
+
+- Combined checks: full suite 54 suites/543 tests; `pnpm typecheck` 0;
+  `pnpm run verify` exit 0; accumulated diff 62f3634..fca1a2a = 19 files
+  (16 in-feature + exactly the 3 declared out-of-feature).
+- Fresh round reviewer (C-R2-REVIEW): 0 blocking / 1 major / 2 minor —
+  R2-01 (affordance/Add-button corner overlap at end-of-scroll) RESOLVED
+  by pb-24 clearance in the sanctioned product-detail file (suite re-green
+  32/32; the benign overlap class on other browsing screens recorded as
+  accepted); R2-02/R2-03 doc fixes applied.

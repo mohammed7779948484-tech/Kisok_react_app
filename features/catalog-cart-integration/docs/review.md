@@ -123,7 +123,21 @@ pinned; RN/design rules clean; all suites re-run green. GATE: PASS.
 | C-T05-R3 | minor    | type-layer runtime assertion mirrors a local const (tautological alone)     | ACCEPTED — documented three-layer rationale (satisfies + export-statement scan carry the teeth)                       |
 
 Reviewer verdict: GATE-SAFE — pin gapless (runtime/type/scan layers),
-drills credible and reverted, boundary scans cover all 13 feature files
+drills credible and reverted, boundary scans cover all 11 in-feature source files + the 2 sanctioned edits
 plus the two sanctioned edits, convergence nets through the public path
 only, real disk→memory re-hydration, end-to-end rendered net; all
 commands re-run green. GATE: PASS.
+
+## Round 2 review (C-R2-REVIEW, fresh round reviewer)
+
+| ID    | Severity | Finding                                                                                                                                                                                                               | Disposition                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R2-01 | major    | deterministic overlap: the floating affordance sits on the Add button's bottom-right corner at end-of-scroll on all three brief sizes — a corner press on the primary CTA would open the Quick Cart instead of adding | RESOLVED — product-detail ScrollView bottom padding raised pb-6 → pb-24 (96px clears the affordance's 24+48+inset band at the brief's tablet/desktop sizes; comment in-file). The same overlap CLASS on non-sanctioned browsing screens' bottom-flush cards is benign (non-primary, non-CTA targets; scrolling past is natural) — recorded as accepted. Product-detail suite re-green 32/32. |
+| R2-02 | minor    | "13 feature files" wording arithmetically wrong (11 in-feature + 2 sanctioned edits)                                                                                                                                  | RESOLVED — wording corrected in worklog.md + review.md                                                                                                                                                                                                                                                                                                                                       |
+| R2-03 | minor    | mangled T04 spec line (blockquote fragment) in todo.md                                                                                                                                                                | RESOLVED — re-flowed                                                                                                                                                                                                                                                                                                                                                                         |
+
+Reviewer verdict: functionally gate-safe on every contract, boundary,
+state-ownership and test-quality axis (all re-run checks green: full
+54/543, typecheck 0, verify 0); the single major was a pre-verified
+live-journey failure now fixed within the sanctioned file set. ROUND 2
+GATE: PASS.

@@ -222,7 +222,14 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
 
   return (
     <Screen>
-      <ScrollView contentContainerClassName="gap-4 px-6 pb-6 pt-6">
+      {/* pb-24 (96px): clears the integration's persistent cart affordance —
+          an absolutely-positioned 48dp button anchored 24px above the viewport
+          bottom-right (plus safe-area inset). At end-of-scroll the Add action
+          is the last content, so its bottom edge must sit above the
+          affordance's band (24+48+inset ≤ 96 at the brief's tablet/desktop
+          sizes) or a corner press on the primary CTA would open the Quick
+          Cart instead (R2-01). */}
+      <ScrollView contentContainerClassName="gap-4 px-6 pb-24 pt-6">
         <Button variant="ghost" onPress={handleBack} className="self-start">
           <Text>Go back</Text>
         </Button>
