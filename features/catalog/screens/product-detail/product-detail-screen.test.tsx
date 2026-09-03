@@ -1,5 +1,18 @@
+import { useAuth } from "@/core/auth";
 import { AppError } from "@/core/errors";
-import { act, renderWithProviders, screen, userEvent, waitFor } from "@/core/testing";
+import { resetLogging, setLogSink } from "@/core/logging";
+import { storage, storageKey } from "@/core/storage";
+import {
+  act,
+  installMockAuth,
+  renderWithProviders,
+  screen,
+  TEST_PROFILE,
+  userEvent,
+  waitFor,
+} from "@/core/testing";
+import { getCartSnapshot } from "@/features/cart";
+import { CatalogCartProvider } from "@/features/catalog-cart-integration";
 
 import { fetchCatalog } from "../../api/fetch-catalog";
 import {
@@ -53,6 +66,17 @@ import { ProductDetailScreen } from "./product-detail-screen";
  * (identity, gallery, variant list) are bounded and ScrollView-composed — so
  * the Home screen test's real-timer macrotask flush is the established pattern
  * here.
+ *
+ * The catalog-cart-integration seam (that feature's T03): the screen now
+ * renders the integration's public AddToCartButton on the resolved-product
+ * path, so every resolved-path render goes through the authed +
+ * integration-provider harness below — the way the customer layout mounts
+ * this screen once the provider is wired at layout level (T04). The screen
+ * itself still imports nothing from `@/features/cart`: the integration's
+ * button owns every cart call. The two "no add-to-cart affordance" pins in
+ * the inspection-only test were superseded by the integration brief's AC-02
+ * (exactly one sanctioned Add action; every other ordering affordance stays
+ * pinned out).
  */
 jest.mock("../../api/fetch-catalog", () => ({
   fetchCatalog: jest.fn(),
@@ -69,11 +93,17 @@ jest.mock("expo-router", () => ({
   useLocalSearchParams: () => mockLocalSearchParams,
 }));
 
-// AppImage's fallback icon renders a lucide icon; stub it so gallery and card
-// fallback paths render without the SVG machinery.
+// AppImage's fallback icon renders a lucide icon; the catalog-cart
+// integration's Add action renders the ShoppingCart icon and the Quick Cart
+// sheet its rows/steppers — stub the standardized set so gallery fallbacks,
+// the Add action and an open sheet render without the SVG machinery.
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
   ImageOff: () => null,
+  ShoppingCart: () => null,
+  Minus: () => null,
+  Plus: () => null,
+  Trash2: () => null,
 }));
 
 const mockFetchCatalog = fetchCatalog as jest.MockedFunction<typeof fetchCatalog>;
@@ -301,15 +331,100 @@ function countImagesDisplayingUri(root: QueryableRoot | null, uri: string): numb
   }).length;
 }
 
-beforeEach(() => {
+/** The single durable key the cart's hydrate() reads — disk hygiene between tests. */
+const CART_KEY = storageKey("cart", "lines");
+
+/**
+ * One owner id per test whose cart state is asserted: the store's
+ * owner-switch reset inside hydrate() re-baselines memory between tests
+ * through the public surface only (the store singleton is not importable
+ * from this feature — the integration suite's pattern). The resolved-path
+ * tests that never press Add share one owner; their same-owner re-hydrate is
+ * the store's own idempotent no-op.
+ */
+const SCREEN_OWNER = "7f8e9d0c-1b2a-4c3d-8e4f-5a6b7c8d9e0f";
+const ADD_ACTION_OWNER = "8e9f0a1d-2c3b-4d4e-8f5a-6b7c8d9e0f1a";
+const UNAVAILABLE_OWNER = "9f0a1b2e-3d4c-4e5f-8a6b-7c8d9e0f1a2b";
+const PRESS_ADD_OWNER = "a1b2c3d4-5e6f-4a70-8b7c-8d9e0f1a2b3c";
+
+/**
+ * Gates the screen on auth readiness and the integration provider, exactly
+ * as the app will mount it once T04 wires the customer layout: the (customer)
+ * group renders behind `ready && profile?.role === "customer"`, and the
+ * provider supplies the Quick Cart context the screen's Add action consumes
+ * (`useActiveProfile()`/`useQuickCart()` throwing outside their providers is
+ * the contract, not a defect for the screen to code around — the
+ * full-cart and integration suites' AuthedHarness pattern).
+ */
+function AuthedProductDetail({ productId }: { productId: string }) {
+  const { status, profile } = useAuth();
+  if (status !== "ready" || profile === null) return null;
+  return (
+    <CatalogCartProvider>
+      <ProductDetailScreen productId={productId} />
+    </CatalogCartProvider>
+  );
+}
+
+/** The same gate for the route-module test: the route renders inside the (customer) group. */
+function AuthedProductDetailRoute() {
+  const { status, profile } = useAuth();
+  if (status !== "ready" || profile === null) return null;
+  return (
+    <CatalogCartProvider>
+      <ProductDetailRoute />
+    </CatalogCartProvider>
+  );
+}
+
+/** installMockAuth restored after every test — the integration suite's holder pattern. */
+const mockAuthHolder: { current: ReturnType<typeof installMockAuth> | null } = { current: null };
+
+/**
+ * Renders the resolved-path screen behind the real auth gate and the real
+ * integration provider — the mounting the customer layout will provide.
+ */
+async function renderProductDetail(productId: string, ownerId: string = SCREEN_OWNER) {
+  mockAuthHolder.current = installMockAuth({
+    profile: { ...TEST_PROFILE, id: ownerId },
+  });
+  return renderWithProviders(<AuthedProductDetail productId={productId} />, {
+    withAuth: true,
+  });
+}
+
+/**
+ * The Add press persists fire-and-forget; one macrotask turn lets the cart's
+ * serialized write chain settle inside act (the integration suite's pattern —
+ * the store is not importable here to call `persistNow`).
+ */
+async function settleDurableWrites() {
+  await act(async () => {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  });
+}
+
+beforeEach(async () => {
   mockRouterPush.mockClear();
   mockRouterReplace.mockClear();
   mockRouterBack.mockClear();
   mockLocalSearchParams.productId = undefined;
+  // The provider's useCart() hydrate/mutation paths log by design; keep the
+  // suite silent per the repo convention.
+  setLogSink(() => {});
+  // Disk hygiene: the provider-mounted useCart() hydrate() reads the cart key,
+  // so a previous test's envelope must not leak into the next one's restore.
+  // Through the app's own API.
+  await storage.remove(CART_KEY);
 });
 
 afterEach(() => {
   mockFetchCatalog.mockReset();
+  resetLogging();
+  mockAuthHolder.current?.restore();
+  mockAuthHolder.current = null;
 });
 
 describe("ProductDetailScreen", () => {
@@ -318,9 +433,10 @@ describe("ProductDetailScreen", () => {
   it("mounts the populated Product Detail for the requested product from one successful snapshot", async () => {
     mockFetchCatalog.mockResolvedValue(createCatalogSnapshotFixture());
 
-    await renderWithProviders(
-      <ProductDetailScreen productId={catalogFixtureIds.products.coffee} />,
-    );
+    // Resolved-path renders go through the authed + integration-provider
+    // harness: the screen's Add action consumes useCart()/useQuickCart(), so it
+    // mounts the way the customer layout mounts it (see the harness above).
+    await renderProductDetail(catalogFixtureIds.products.coffee);
 
     await waitFor(() =>
       expect(screen.getByRole("header", { name: "Café Crème" })).toBeOnTheScreen(),
@@ -369,21 +485,23 @@ describe("ProductDetailScreen", () => {
 
   it("renders no quantity, price, stock or identifier affordance anywhere", async () => {
     // The fixture carries SKUs, barcodes and the global low-stock threshold;
-    // none of it may surface. Catalog is inspection only — no Cart public API
-    // exists, so every ordering affordance is forbidden copy (AC-07).
+    // none of it may surface. Catalog stays inspection-only beyond the ONE
+    // sanctioned Add action (supersession: the catalog-cart-integration
+    // brief's AC-02 renders exactly one Add action below the variant list —
+    // that action's own behaviour is pinned in the integration suite and the
+    // Add describe block below; here the remaining pins keep every OTHER
+    // ordering affordance out).
     mockFetchCatalog.mockResolvedValue(createCatalogSnapshotFixture());
 
-    await renderWithProviders(
-      <ProductDetailScreen productId={catalogFixtureIds.products.coffee} />,
-    );
+    await renderProductDetail(catalogFixtureIds.products.coffee);
 
     await waitFor(() =>
       expect(screen.getByRole("header", { name: "Café Crème" })).toBeOnTheScreen(),
     );
 
-    // No Cart/Checkout actions, by role or by copy.
-    expect(screen.queryByRole("button", { name: /add to cart|checkout|buy|order/i })).toBeNull();
-    expect(screen.queryByText(/add to cart/i)).toBeNull();
+    // No Cart/Checkout ordering actions beyond the sanctioned Add to cart —
+    // no checkout, buy, or order copy, by role or text.
+    expect(screen.queryByRole("button", { name: /checkout|buy|order/i })).toBeNull();
     expect(screen.queryByText(/checkout/i)).toBeNull();
 
     // No quantity control of any kind.
@@ -408,7 +526,7 @@ describe("ProductDetailScreen", () => {
   it("labels the product's variants with all three model label forms and the derived product availability", async () => {
     mockFetchCatalog.mockResolvedValue(snapshotWithKettle());
 
-    await renderWithProviders(<ProductDetailScreen productId={extraProductIds.kettle} />);
+    await renderProductDetail(extraProductIds.kettle);
 
     await waitFor(() =>
       expect(screen.getByRole("header", { name: "Studio Kettle" })).toBeOnTheScreen(),
@@ -466,9 +584,7 @@ describe("ProductDetailScreen", () => {
     mockFetchCatalog.mockResolvedValue(snapshotWithKettle());
     const user = userEvent.setup();
 
-    const { root } = await renderWithProviders(
-      <ProductDetailScreen productId={extraProductIds.kettle} />,
-    );
+    const { root } = await renderProductDetail(extraProductIds.kettle);
 
     await waitFor(() =>
       expect(
@@ -522,7 +638,7 @@ describe("ProductDetailScreen", () => {
     mockFetchCatalog.mockResolvedValue(snapshotWithKettle());
     const user = userEvent.setup();
 
-    await renderWithProviders(<ProductDetailScreen productId={extraProductIds.kettle} />);
+    await renderProductDetail(extraProductIds.kettle);
 
     await waitFor(() =>
       expect(
@@ -571,7 +687,7 @@ describe("ProductDetailScreen", () => {
   it("renders an unavailable-only product with its Standard option and the shared image fallback", async () => {
     mockFetchCatalog.mockResolvedValue(createCatalogSnapshotFixture());
 
-    await renderWithProviders(<ProductDetailScreen productId={catalogFixtureIds.products.tote} />);
+    await renderProductDetail(catalogFixtureIds.products.tote);
 
     await waitFor(() =>
       expect(screen.getByRole("header", { name: "Everyday Tote" })).toBeOnTheScreen(),
@@ -603,9 +719,7 @@ describe("ProductDetailScreen", () => {
     mockFetchCatalog.mockResolvedValue(createCatalogSnapshotFixture());
     const user = userEvent.setup();
 
-    await renderWithProviders(
-      <ProductDetailScreen productId={catalogFixtureIds.products.coffee} />,
-    );
+    await renderProductDetail(catalogFixtureIds.products.coffee);
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Maison Élite" })).toBeOnTheScreen(),
@@ -668,8 +782,12 @@ describe("ProductDetailScreen", () => {
 
     // The real generated route: it reads `useLocalSearchParams` and hands the
     // id to the screen as a prop. Proven behaviourally — the screen resolves
-    // the exact product the mocked params carry, and no other.
-    await renderWithProviders(<ProductDetailRoute />);
+    // the exact product the mocked params carry, and no other. Rendered
+    // behind the same auth + provider gate the (customer) group provides.
+    mockAuthHolder.current = installMockAuth({
+      profile: { ...TEST_PROFILE, id: SCREEN_OWNER },
+    });
+    await renderWithProviders(<AuthedProductDetailRoute />, { withAuth: true });
 
     await waitFor(() =>
       expect(screen.getByRole("header", { name: "Studio Kettle" })).toBeOnTheScreen(),
@@ -756,9 +874,7 @@ describe("ProductDetailScreen", () => {
       .mockResolvedValueOnce(snapshotWithKettle())
       .mockRejectedValueOnce(retryableCatalogError);
 
-    const { queryClient } = await renderWithProviders(
-      <ProductDetailScreen productId={extraProductIds.kettle} />,
-    );
+    const { queryClient } = await renderProductDetail(extraProductIds.kettle);
 
     await waitFor(() =>
       expect(screen.getByRole("header", { name: "Studio Kettle" })).toBeOnTheScreen(),
@@ -795,9 +911,7 @@ describe("ProductDetailScreen", () => {
       .mockResolvedValueOnce(snapshotWithOption3Removed());
     const user = userEvent.setup();
 
-    const { queryClient } = await renderWithProviders(
-      <ProductDetailScreen productId={extraProductIds.kettle} />,
-    );
+    const { queryClient } = await renderProductDetail(extraProductIds.kettle);
 
     await waitFor(() =>
       expect(
@@ -846,5 +960,173 @@ describe("ProductDetailScreen", () => {
     ).toBe(kettleImageUrls.matte1);
 
     expect(mockFetchCatalog).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("ProductDetailScreen — Add to cart (catalog-cart-integration seam)", () => {
+  /**
+   * The integration's plan-justified owning-feature edit (brief AC-02): the
+   * screen renders the integration's PUBLIC AddToCartButton below the variant
+   * list from a structural source derived here. These tests drive the real
+   * seam end to end — the real integration provider (for the button's
+   * useQuickCart context and the Quick Cart sheet), the real single cart
+   * store behind a real auth profile — exactly as the customer layout will
+   * mount this screen once T04 wires the provider in.
+   */
+
+  it("renders the Add to cart action for a resolved product with an available selected variant, enabled — and nothing in the cart yet", async () => {
+    mockFetchCatalog.mockResolvedValue(snapshotWithKettle());
+
+    await renderProductDetail(extraProductIds.kettle, ADD_ACTION_OWNER);
+
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: "Studio Kettle" })).toBeOnTheScreen(),
+    );
+
+    // AC-02: the Add action exists on the resolved path, below the variant
+    // list, enabled while the selected (default: first) variant is available.
+    const addButton = screen.getByRole("button", { name: "Add to cart" });
+    expect(addButton).toBeOnTheScreen();
+    await waitFor(() => expect(addButton).not.toBeDisabled());
+
+    // Exactly one Add action — the accessible name is unique on the screen.
+    expect(screen.getAllByRole("button", { name: "Add to cart" })).toHaveLength(1);
+
+    // No press happened: the cart holds nothing for this profile.
+    expect(getCartSnapshot().lines).toEqual([]);
+
+    expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it("flips Add disabled when an UNAVAILABLE variant is selected — the variant stays selectable for inspection", async () => {
+    mockFetchCatalog.mockResolvedValue(snapshotWithKettle());
+    const user = userEvent.setup();
+
+    await renderProductDetail(extraProductIds.kettle, UNAVAILABLE_OWNER);
+
+    const addButton = await screen.findByRole("button", { name: "Add to cart" });
+    await waitFor(() => expect(addButton).not.toBeDisabled());
+
+    // Selecting the unavailable option-backed variant (Design decision 9:
+    // inspection stays possible) flips the Add action disabled…
+    await user.press(
+      screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Out of stock" }),
+    );
+    expect(
+      screen.getByRole("button", {
+        name: "Color: Rouge, Size: Lárge, Out of stock",
+        selected: true,
+      }),
+    ).toBeOnTheScreen();
+    expect(addButton).toBeDisabled();
+
+    // …and a press attempt in that state changes nothing in the cart.
+    await user.press(addButton);
+    await settleDurableWrites();
+    expect(getCartSnapshot().lines).toEqual([]);
+
+    // Switching back to the available variant re-enables Add — the
+    // affordance is stable, never removed (brief AC-02).
+    await user.press(screen.getByRole("button", { name: "Matte Black Edition, Available" }));
+    await waitFor(() => expect(addButton).not.toBeDisabled());
+
+    expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it("pressing Add with an available selection puts the T01-mapped line in the real cart and opens the Quick Cart with it", async () => {
+    // The Café Crème base fixture: the default selection is the UNAVAILABLE
+    // "Signature roast", and the AVAILABLE selection is the option-backed
+    // configurable variant — so the press exercises the AC-04 label rule
+    // (option TYPE names as the label, values only through the selections).
+    mockFetchCatalog.mockResolvedValue(createCatalogSnapshotFixture());
+    const user = userEvent.setup();
+
+    await renderProductDetail(catalogFixtureIds.products.coffee, PRESS_ADD_OWNER);
+
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: "Café Crème" })).toBeOnTheScreen(),
+    );
+    const addButton = screen.getByRole("button", { name: "Add to cart" });
+    // The unavailable default selection leaves Add disabled…
+    await waitFor(() => expect(addButton).toBeDisabled());
+
+    // …and selecting the available option-backed variant enables it.
+    await user.press(screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Available" }));
+    await waitFor(() => expect(addButton).not.toBeDisabled());
+
+    await user.press(addButton);
+    // The Add press persists fire-and-forget; settle the write queue inside
+    // act before asserting (the integration suite's settle pattern).
+    await settleDurableWrites();
+
+    // The single real cart model holds exactly the mapped line: quantity 1
+    // (plan decision 6), the variant's derived primary image (the model
+    // already fell back to the product cover for this media-less variant),
+    // and the T01 label rule — option TYPE names, values only in selections.
+    const snapshot = getCartSnapshot();
+    expect(snapshot.lines).toHaveLength(1);
+    expect(snapshot.lines[0]).toMatchObject({
+      variantId: catalogFixtureIds.variants.configurable,
+      productId: catalogFixtureIds.products.coffee,
+      productDisplayName: "Café Crème",
+      variantLabel: "Color, Size",
+      optionSelections: [
+        {
+          optionTypeId: catalogFixtureIds.optionTypes.color,
+          optionValueId: catalogFixtureIds.optionValues.rouge,
+          optionValueLabel: "Rouge",
+        },
+        {
+          optionTypeId: catalogFixtureIds.optionTypes.size,
+          optionValueId: catalogFixtureIds.optionValues.large,
+          optionValueLabel: "Lárge",
+        },
+      ],
+      imageUri: "https://res.cloudinary.com/kisok/image/upload/coffee-cover.png",
+      quantity: 1,
+    });
+    expect(snapshot.totalQuantity).toBe(1);
+
+    // And the press opened the Quick Cart through the integration context:
+    // the sheet shows the fresh line — the AC-04-composed caption (each
+    // option value exactly once) and the updated total in the title.
+    expect(screen.getByText("Color, Size · Rouge · Lárge")).toBeOnTheScreen();
+    expect(screen.getByRole("heading", { name: "Your Cart · 1" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Continue Shopping" })).toBeOnTheScreen();
+
+    expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders no Add action outside the resolved-product path — loading, error, empty and not-found carry no ordering affordance", async () => {
+    // Loading: the first snapshot never resolves.
+    mockFetchCatalog.mockReturnValue(new Promise(() => {}));
+    await renderWithProviders(
+      <ProductDetailScreen productId={catalogFixtureIds.products.coffee} />,
+    );
+    expect(screen.getByLabelText("Loading the catalog…")).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Add to cart" })).toBeNull();
+    mockFetchCatalog.mockReset();
+
+    // Error with no snapshot.
+    mockFetchCatalog.mockRejectedValue(retryableCatalogError);
+    await renderWithProviders(
+      <ProductDetailScreen productId={catalogFixtureIds.products.coffee} />,
+    );
+    await waitFor(() => expect(screen.getByText("Something went wrong")).toBeOnTheScreen());
+    expect(screen.queryByRole("button", { name: "Add to cart" })).toBeNull();
+    mockFetchCatalog.mockReset();
+
+    // Whole-catalog empty.
+    mockFetchCatalog.mockResolvedValue(emptyCatalogSnapshot());
+    await renderWithProviders(<ProductDetailScreen productId={STALE_PRODUCT_ID} />);
+    await waitFor(() => expect(screen.getByText("The catalog is empty")).toBeOnTheScreen());
+    expect(screen.queryByRole("button", { name: "Add to cart" })).toBeNull();
+    mockFetchCatalog.mockReset();
+
+    // Local not-found projection of a successful snapshot.
+    mockFetchCatalog.mockResolvedValue(createCatalogSnapshotFixture());
+    await renderWithProviders(<ProductDetailScreen productId={STALE_PRODUCT_ID} />);
+    await waitFor(() => expect(screen.getByText(PRODUCT_NOT_FOUND_TITLE)).toBeOnTheScreen());
+    expect(screen.queryByRole("button", { name: "Add to cart" })).toBeNull();
   });
 });

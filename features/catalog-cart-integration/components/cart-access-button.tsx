@@ -1,0 +1,31 @@
+import { View } from "react-native";
+
+import { Text } from "@/components/ui";
+import { cn } from "@/core/utils";
+
+/**
+ * Presentational only: it receives data and reports interactions upward.
+ *
+ * Scope: shared across the catalog-cart-integration feature.
+ * Ownership follows the nearest stable consumer — move it up only when a
+ * second consumer actually appears, not in anticipation of one.
+ *
+ * It must not fetch, must not read a store, and must not import the Supabase
+ * client. Keeping components dumb is what makes them testable without a
+ * provider tree and reusable across screens.
+ *
+ * Use design-system components and semantic token classes — never a raw hex
+ * colour or an inline dimension that should be a token.
+ */
+export type CartAccessButtonProps = {
+  // TODO: the data this component renders, and the callbacks it reports.
+  className?: string;
+};
+
+export function CartAccessButton({ className }: CartAccessButtonProps) {
+  return (
+    <View className={cn("gap-2", className)}>
+      <Text variant="body">TODO: build CartAccessButton.</Text>
+    </View>
+  );
+}

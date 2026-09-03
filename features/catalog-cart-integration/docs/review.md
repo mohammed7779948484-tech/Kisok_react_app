@@ -85,3 +85,18 @@ Reviewer verdict: scope isolation clean (11 files, all inside the feature);
 contracts coherent; hydration ownership causally proven; boundaries green;
 all checks re-run green (feature 21, cart 170, full 51/514, typecheck 0,
 lint/prettier/check:docs/check:commits clean). ROUND 1 GATE: PASS.
+
+## T03 review (C-T03-REVIEW, fresh task reviewer)
+
+| ID       | Severity | Finding                                                                                                     | Disposition                                                                                                                                                                                                                                                      |
+| -------- | -------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C-T03-R1 | major    | index wiring deviation real in tree but unreconciled in plan/todo (T05's planned RED impossible as written) | RESOLVED — plan.md T05 row + todo.md T05 spec reconciled (RED driver = absent pin suite; T05 owns pin + scans + regression nets); deviation dispositioned ACCEPTED in the T03 worklog entry (structurally forced, documented, minimal, exact plan-named surface) |
+| C-T03-R2 | minor    | transient unshippable state until T04 mounts the provider (useQuickCart throws outside it)                  | RECORDED — no export/live journey between T03 and T04 gates; noted in worklog + todo checkpoint                                                                                                                                                                  |
+| C-T03-R3 | minor    | T03 worklog entry absent at review time                                                                     | RESOLVED — full entry recorded at gate closure (scaffold, both RED layers incl. the empty-index trigger, GREEN, affected checks, deviation)                                                                                                                      |
+
+Reviewer verdict: code gate-safe — AC-02/03/04/05 faithful through the
+real path (adapter exact, mapper chain, add-then-open pinned by outcome,
+F-R1-1 window test sound); boundaries clean (public-only imports, zero
+catalog/cart deep imports, supersession pins honest and scoped); a11y
+clean (stable accessible name, disabled as state, 48dp, decorative
+icon); all suites re-run green. GATE: PASS.

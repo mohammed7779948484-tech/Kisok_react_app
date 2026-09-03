@@ -12,10 +12,10 @@ defeats its only purpose.
 ## Current checkpoint
 
 ```
-Current round     : 2 (of 2) — Round 1 gate PASS
-Current task      : — (ready to scaffold + delegate T03)
-Last gate         : ROUND 1 GATE: PASS (fresh round reviewer 0 blocking; F-R1-1..3 dispositioned — see review.md)
-Next legal action : Lead reconciles plan decision 7 (done), scaffolds T03 (generate add-to-cart-button), delegates T03
+Current round     : 2 (of 2)
+Current task      : — (T03 PASS; next: delegate T04 — scaffold already on disk)
+Last gate         : T03 GATE: PASS (fresh reviewer 0 blocking / 1 major doc-reconciliation + 2 minors — all closed by the Lead; see review.md)
+Next legal action : delegate T04 (persistent affordance + layout mount), then T05; NO export/live journey until T04 mounts the provider (C-T03-R2)
 Blocked by        : —
 ```
 
@@ -37,7 +37,7 @@ Blocked by        : —
 | ---- | -------- | ------------------------------------------------ | ------------------------------------------------- | -------- | ----------- | ---- |
 | T01  | behavior | Supporting AC-03, AC-04                          | Pure buildAddToCartInput mapping model            | —        | done        | PASS |
 | T02  | behavior | Acceptance AC-01, AC-05; Supporting AC-08, AC-09 | Quick-cart context + experience provider          | —        | done        | PASS |
-| T03  | behavior | Acceptance AC-02, AC-03, AC-04, AC-05            | AddToCartButton + Product Detail wiring           | T01, T02 | not started | —    |
+| T03  | behavior | Acceptance AC-02, AC-03, AC-04, AC-05            | AddToCartButton + Product Detail wiring           | T01, T02 | done        | PASS |
 | T04  | behavior | Acceptance AC-06                                 | Persistent cart affordance + layout mount         | T02      | not started | —    |
 | T05  | behavior | Acceptance AC-07, AC-08, AC-11                   | Integration convergence + public API + boundaries | T03, T04 | not started | —    |
 
@@ -133,9 +133,12 @@ cart-access-button`
 - **Acceptance**: Acceptance: AC-07, AC-08, AC-11
 - **Depends on**: T03, T04
 - **Skills**: test-driven-development, expo-router
-- **Lead scaffold**: N/A — convergence tests + public API wiring
-- **Allowed manual files**: `index.ts` completion (public surface:
-  `CatalogCartProvider`, `AddToCartButton`, type `CatalogCartSource`)
+- **Lead scaffold**: N/A — convergence/pin tests
+- **Allowed manual files**: — (the public index trio was already wired in
+  T03 as a structurally forced, documented deviation — the task-mandated
+  public import could not resolve against an empty index; T05 OWNS the
+  key-equality pin that locks the surface, boundary scans, and the
+  convergence regression nets; C-T03-R1 reconciliation)
 - **Allowed file scope**: `features/catalog-cart-integration/**`
 - **Spec**: public index pinned by key equality; add same selection ×2 →
   merged line; different variant/options → distinct lines; re-hydration

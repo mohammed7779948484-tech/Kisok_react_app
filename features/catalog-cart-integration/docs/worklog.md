@@ -142,3 +142,59 @@ features/catalog-cart-integration` 11/11; `pnpm typecheck` exit 0;
 - Template residue cleanup: the `_None yet._` placeholder line removed
   from this worklog (the T01 entry replaced it in substance; the reviewer
   flagged the leftover).
+
+## T03 — AddToCartButton + Product Detail wiring — GATE: PASS
+
+- Lead scaffold: `pnpm generate component catalog-cart-integration
+add-to-cart-button` (created the placeholder that the implementer
+  replaced).
+- Implementer: fresh feature-implementer (C-T03, Super Z
+  agent-666ce083). HONEST PRE-WORK NOTE: an interrupted prior attempt's
+  unreported output was found in the working tree (no runtime-worklog
+  entry, nothing committed); the implementer preserved it OUTSIDE the
+  repo (`/home/z/my-project/tool-results/c-t03-prior-attempt/`, file
+  copies + patch + mtime timeline), reset tracked files to HEAD,
+  restored the component to the generator placeholder, and executed the
+  full sequence from a clean state. Baseline at delegation: 5 suites/49
+  tests green.
+- RED (two layers): component suite 5 failed / 5 total ("Unable to find
+  an element with role: button, name: Add to cart" + TODO placeholder
+  text — imports resolved, missing behavior); screen suite 16 passed / 3
+  failed (the 3 positive Add tests fail with no Add action rendering;
+  the negative state pin passed as designed; the screen-suite RED vs the
+  empty index first surfaced as the unresolved PUBLIC import — the exact
+  trigger of the documented index deviation).
+- GREEN: component 5/5; screen 19/19 (15 existing + 4 new); integration
+  3 suites/26; product-detail 3/32; whole catalog 24 suites/215; cart
+  11/170; full repo 52 suites/523; typecheck 0; scoped eslint 0;
+  prettier clean.
+- Files: components/add-to-cart-button.tsx (placeholder replaced:
+  canAdd = available && hydrated && !locked; add-then-open order;
+  defense-in-depth handler guard; stable label; 48dp primary Button with
+  decorative ShoppingCart icon), components/add-to-cart-button.test.tsx
+  (5 tests incl. the F-R1-1 window test holding AsyncStorage getItem
+  open), product-detail-screen.tsx (ADDITIVE owning-feature edit: one
+  public import + plan-verbatim source adapter + the button + doc-comment
+  supersession note), product-detail-screen.test.tsx (additive harness
+  with the real provider + 4 new tests; two "no add-to-cart affordance"
+  pins deliberately superseded — narrowed to checkout/buy/order with a
+  loud comment; all other pins unchanged), index.ts (FLAGGED DEVIATION,
+  dispositioned below).
+- **Index deviation disposition (C-T03-R1)**: ACCEPTED — the public trio
+  (`AddToCartButton`, `CatalogCartProvider`, `CatalogCartSource` type —
+  exactly the plan-named surface) was wired by T03 because the
+  task-mandated public import could not resolve against the empty index
+  and deep imports are ESLint errors; documented in-file; plan/todo T05
+  lines reconciled (T05's RED driver is now the absent pin suite; T05
+  owns the key-equality pin + boundary scans + convergence regression
+  nets).
+- **C-T03-R2 (transient mid-round state)**: recorded — the provider is
+  not yet mounted at layout level (T04 pending), and useQuickCart throws
+  outside the provider, so NO export/live journey may run between the
+  T03 and T04 gates. Proceed to T04 before any live verification.
+- Fresh task reviewer (C-T03-REVIEW): 0 blocking / 1 major / 2 minor —
+  R1 (doc reconciliation) RESOLVED here; R2 (no-export note) recorded;
+  R3 (this entry) closed by it. Reviewer's independent re-runs matched:
+  integration 3/26, product-detail 3/32, catalog 24/215, cart 11/170,
+  full 52/523, typecheck/eslint/prettier clean; verdict "code is
+  gate-safe".
