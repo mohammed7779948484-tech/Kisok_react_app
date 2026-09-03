@@ -130,7 +130,13 @@ export function useCart(): CartView {
 // through the public API only, never the store. Callers outside a mounted
 // useCart() consumer must hydrate first (`hydrateCart`, or a mounted
 // `useCart()` elsewhere) — until the store hydrates, their mutations are
-// logged no-ops: the store gates on `hydrated` by design. Name mapping onto
+// logged no-ops: the store gates on `hydrated` by design. One window the
+// gate does NOT cover: after `clearCartForSignOut`, `hydrated` stays true
+// with the previous ownerId until the next hydrate — unreachable in the
+// delivered app (every mutation source unmounts at the auth gate) and
+// covered by the owner-mismatch discard at the next different-owner hydrate
+// (B-FR-02 carry-forward; future programmatic integrators must re-hydrate
+// before driving mutations). Name mapping onto
 // the store's actions: public lockCart/unlockCart/hydrateCart →
 // store lock/unlock/hydrate.
 

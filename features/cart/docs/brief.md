@@ -84,8 +84,14 @@ behaviour.
 
 - [x] Applicable read/mutation states above are handled. (N/A — local-only UI;
       the genuinely reachable states are specified in AC-02/AC-05/AC-06/AC-10/AC-11.)
-- [ ] Works at the tablet sizes in `docs/design-system.md` (landscape and portrait).
-- [ ] Accessible: roles and labels on interactive elements; no colour-only meaning.
+- [x] Works at the tablet sizes in `docs/design-system.md` (landscape and portrait).
+      (RUNTIME EVIDENCE, review.md: 1280×800 / 800×1180 / 480×900 — zero horizontal
+      overflow; measured touch targets at 480×900: steppers 48×48, Remove 48×48,
+      Clear Cart 432×56. Component suites pin both AdaptiveSheet frames.)
+- [x] Accessible: roles and labels on interactive elements; no colour-only meaning.
+      (a11y names/roles/live-region/toBeDisabled() asserted across suites — 26
+      disabled-state assertions; disabled exposed as state, warnings announce
+      politely; AC-12 evidence table in worklog.md.)
 
 ## Scope
 

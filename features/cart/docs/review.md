@@ -305,3 +305,19 @@ modified + 2 new); RED evidence genuine (8 failed / 52 passed pre-fix, each
 failing value empirically an old-z.uuid() rejection); suites re-run green
 (170 cart / 66 model), typecheck/eslint/prettier clean; public API and types
 unchanged.
+
+## STAGED-INTEGRATION FULL REVIEW (B-FULL-REVIEW, fresh reviewer vs origin/develop 4280994)
+
+Verdict: **FINDINGS — 0 blocking / 0 major / 2 minor (B-FR-01, B-FR-02)**;
+functionally merge-ready. All 14 assignment axes examined and clean (single
+Zustand store, durable owner-scoped restore, serialized persistence honesty,
+sign-out cleanup registration, lock semantics, thin route, QuickCartSheet,
+13-name public API pin, zero catalog/supabase imports, zero backend changes,
+UUID remediation empirically genuine, conflict-free develop merge with zero
+catalog regression, honest 13-AC test coverage). Reviewer re-ran: cart
+170/170, repo 49/493, typecheck/lint/prettier clean.
+
+| ID      | Severity | Disposition (Lead)                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B-FR-01 | minor    | RESOLVED — both Definition-of-Delivery boxes in brief.md ticked with pointers to the RUNTIME EVIDENCE section (sizes + measured targets; a11y assertions).                                                                                                                                                                                                                                                                                                                      |
+| B-FR-02 | minor    | ACCEPTED-CARRY-FORWARD — the post-sign-out `hydrated`-stale window is unreachable in the delivered app (all mutation sources unmount at the auth gate) and mitigated by the jest-proven owner-mismatch discard at the next different-owner hydrate; boundary comment in use-cart.ts extended to name the window for future programmatic integrators (the PHASE C integration re-hydrates via mounted useCart() consumers, which resets state through the profile-keyed effect). |
