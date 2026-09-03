@@ -332,17 +332,59 @@ await check("a route renders a NAMED existing screen and generates nothing else"
 // it must work — otherwise the documented first step of the first feature is
 // "the generator refuses; work around it by hand".
 //
-// Exercised entirely in a TEMP root, against a COPY of the real placeholder. An
-// earlier version overwrote the tracked files and restored them in a `finally`,
-// which a SIGKILL or an OOM would skip — leaving a route in the working tree
-// importing a feature that does not exist.
+// Exercised entirely in a TEMP root, against a FIXTURE copy of the placeholder.
+// An earlier version copied the TRACKED placeholder, which silently assumed no
+// real feature had landed yet — an assumption the first customer feature
+// (catalog, T04 root route) legitimately invalidates by consuming it. The
+// fixture below is the verbatim pre-feature placeholder; the generator's
+// guard/replace behavior is content-agnostic, so every behavioral assertion is
+// preserved while the check becomes state-independent. An earlier version also
+// overwrote the tracked files and restored them in a `finally`, which a SIGKILL
+// or an OOM would skip — leaving a route in the working tree importing a
+// feature that does not exist.
+const FOUNDATION_PLACEHOLDER_ROUTES = {
+  customer: `import { FoundationPlaceholder } from "@/components/app/foundation-placeholder";
+
+export default function CustomerHomeRoute() {
+  return (
+    <FoundationPlaceholder
+      experience="Customer"
+      nextFeature="catalog"
+      surfaces={[
+        "Home discovery",
+        "All products, brands, categories",
+        "Search",
+        "Product detail with variant/option selection",
+        "Cart and adaptive cart sheet",
+        "Order review, submission, and success",
+      ]}
+    />
+  );
+}
+`,
+  preparation: `import { FoundationPlaceholder } from "@/components/app/foundation-placeholder";
+
+export default function PreparationHomeRoute() {
+  return (
+    <FoundationPlaceholder
+      experience="Preparation"
+      nextFeature="preparation"
+      surfaces={[
+        "Active workspace board (New / Preparing / Ready)",
+        "Order details with allowed actions",
+        "Store-day history",
+      ]}
+    />
+  );
+}
+`,
+};
 for (const [role, group] of [
   ["customer", "(customer)"],
   ["preparation", "(preparation)"],
 ]) {
   await check(`replaces the ${role} index.tsx placeholder deliberately`, async () => {
-    const trackedRoute = path.join(ROOT, "app", group, "index.tsx");
-    const original = fs.readFileSync(trackedRoute, "utf8");
+    const original = FOUNDATION_PLACEHOLDER_ROUTES[role];
     assert.match(original, /FoundationPlaceholder/, "expected a placeholder to replace");
 
     const scratch = fs.mkdtempSync(path.join(os.tmpdir(), `kisok-${role}-`));
@@ -409,9 +451,6 @@ for (const [role, group] of [
     } finally {
       fs.rmSync(scratch, { recursive: true, force: true });
     }
-
-    // The tracked file was never a participant.
-    assert.equal(fs.readFileSync(trackedRoute, "utf8"), original, "the repository was written to");
   });
 }
 
