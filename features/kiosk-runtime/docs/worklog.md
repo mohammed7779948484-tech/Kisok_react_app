@@ -1203,3 +1203,76 @@ scoping verified CORRECT against @expo/cli exportEmbedAsync + @expo/env
 precedence in node_modules.
 
 GATE: PASS
+
+### RECOVERY RESEARCH (2026-09-03) — targeted MDM API revalidation for T11
+
+READ-ONLY researcher (agent-89756a09), fresh context, current official
+manageengine.com/mobile-device-management/api/\* pages fetched live (no
+credentials, no tenant access; 638-entry docs searchindex enumerated to rule
+out missed pages). Purpose: resolve the ONE genuinely ambiguous T11
+contract (reading an existing app's version for the monotonic pre-check)
+and confirm the pinned plan endpoints. Full Evidence Packet returned to the
+Lead; load-bearing conclusions:
+
+R-01 App Repository reads document only STRING versions: GET
+/api/v1/mdm/apps list (paginated 50/page, oauthscope
+MDMOnDemand.MDMDeviceMgmt.READ) returns apps[] with app_id, app_name,
+app_type, version (string) and release_labels[]{release_label_id,
+release_label_name, app_version (string)}; Get App Details exists (docs
+internally inconsistent between /apps/{app_id} and
+/apps/{app_id}/labels/{label_id} paths). No integer versionCode field is
+documented on any repository read; app_version_code appears only on the
+device-scoped GET /api/v1/mdm/devices/{id}/apps and in the PUT
+update-an-app response example. → T11's pre-check compares the incoming
+version against the documented string version fields; the server stays the
+authority on the Android versionCode increase.
+[manageengine.com/mobile-device-management/api/apps/, api/devices/,
+api/pagination/]
+
+R-02 Two-phase upload: POST /emsapi/files with Module: MDM_APP_MGMT header
+(.apk supported) → response carries fileID, fileName, customerID,
+expiryDate AND fileStatus: 2 already. NO /emsapi/fileupload/status polling
+endpoint exists anywhere in current docs (0 hits across the search index);
+the deprecated /api/v1/mdm/files is banner-marked. Multipart key: prose
+says "file", code examples say "fileName" (docs self-contradiction; the
+written prose contract is used, discrepancy recorded). → T11 confirms
+upload completion from the upload response's fileStatus instead of a
+polling loop. [api/files/]
+
+R-03 App create POST /api/v1/mdm/apps — current docs mark app_name,
+app_type (2 = Enterprise per example), app_file ("File ID of the app
+package file uploaded … with MDM_APP_MGMT module"), app_category_id,
+supported_devices (3 = Both), release_label_id as Required (the latter two
+are additions vs the 2026-09-02 synthesis); optional bundle_identifier,
+description, etc. Add version PUT /api/v1/mdm/apps/{app_id}/labels/
+{release_label_id} with app_file + force_update_in_label confirmed.
+Channels POST /api/v1/mdm/labels {"channel_name":"Beta"} →
+{"release_label_id":...} confirmed. Approve POST /api/v1/mdm/apps/{app_id}/
+labels/{label_id}/approve with silent_install/retire_old_version/
+notify_user_via_email + version_label + distribute_update confirmed —
+never called by our automation. [api/apps/]
+
+R-04 Group association POST /api/v1/mdm/groups/{group_id}/apps with
+{"app_details":[{app_id, release_label_id}],"silent_install":true}
+confirmed verbatim on the Groups page (the Apps-page variant is
+unprefixed/ambiguous — the Groups-page form is used).
+[api/groups/#associate-apps-to-a-group]
+
+R-05 OAuth refresh exchange POST https://accounts.zoho.<dc>/oauth/v2/token
+with refresh_token, client_id, client_secret, redirect_uri ("should be
+same redirect url mentioned while registering Client"),
+grant_type=refresh_token confirmed; access_token 1 h; max 10 access tokens
+per refresh token per 10 min. Exact response JSON body not shown on the
+page (fields in prose: access_token, expires_in). [api/oauth/]
+
+R-06 429 / COM0002 "API Limit Exceeded" / error envelope
+{error_code, error_description, localized_error_description} confirmed;
+the numeric 60/min + 5-min-lock figures are NOT in current docs (legacy
+help/api/cloud pages 403; archive unreachable) → conservative soft limits
+for backoff only. [api/oauth/#errors]
+
+Disposition (Lead): plan research synthesis + design decision 10 amended
+in place with dated revalidation notes; no AC, feature-shape, or
+task-graph change; plan remains READY after Lead consistency re-check of
+the changed lines. Research packet summary only recorded here — the
+researcher's full transcript stays out of the control documents.

@@ -122,6 +122,27 @@ app_file, supported_devices}`; add version
   **logs as exposure** and revokes — mask token-derived values, never echo
   raw token responses. [manageengine.com/mobile-device-management/api + help
   /api/cloud/*, zoho.com/developer/oauth/*, 2026]
+  **Recovery revalidation (2026-09-03, fresh read-only researcher, current
+  official `mobile-device-management/api/*` docs; evidence packet in the
+  feature's worklog research phase)**: (a) the current docs show the upload
+  response itself carrying `fileStatus: 2` and document NO
+  `/emsapi/fileupload/status` polling endpoint — T11 confirms upload
+  completion from the upload response's `fileStatus` instead of a polling
+  loop; (b) app-create (`POST /api/v1/mdm/apps`) now documents
+  `app_category_id` and `release_label_id` as additional Required arguments
+  — T11 resolves a category id and passes the Beta label id at create
+  time; (c) the multipart key is `file` in the docs prose (code examples
+  use `fileName` — the written contract is used and the discrepancy
+  recorded); (d) App Repository reads document only STRING versions
+  (`GET /api/v1/mdm/apps` list: top-level `version`, per-label
+  `release_labels[].app_version`) — the monotonic pre-check compares the
+  incoming version against the existing app's documented version fields,
+  with the server remaining the authority on the versionCode increase;
+  (e) 429/`COM0002`/error envelope are confirmed, while the numeric
+  "60/min, 5-min lock" figures are not stated in current docs and are
+  treated as conservative soft limits for backoff. No AC, feature shape,
+  or task-graph change results; the plan stays `READY` (Lead consistency
+  re-check of the changed lines only).
 - **GitHub Actions safety**: secrets are available to **same-repo** PR runs
   (fork protection does not help) → gate release jobs by trigger
   (workflow_dispatch / tags), not by "PRs don't get secrets"; unset secret →
@@ -243,11 +264,17 @@ lockTaskPermitted === true`; everything else (missing key, invalid value,
 10. **MDM automation is upload-only, beta-first, fail-closed.**
     `tools/mdm/upload-beta.ts` (Node 24 native TS, unit-tested with mocked
     `fetch`) implements: token exchange (masked), optional dry-run
-    (read-only: list apps/groups), two-phase APK upload, app create-or-update
-    (app_type 2), versionCode monotonic pre-check, Beta release label,
+    (read-only: list apps/groups), two-phase APK upload (file → fileID,
+    completion confirmed from the upload response's `fileStatus` — current
+    docs carry no polling endpoint; see research synthesis revalidation),
+    app create-or-update (app_type 2, with the documented Required
+    `app_category_id` and Beta `release_label_id` on create), version
+    monotonic pre-check (incoming version compared against the existing
+    app's documented string version fields; the server remains the
+    authority on the Android versionCode increase), Beta release label,
     association to exactly the configured non-production group with
-    `silent_install: true`, status polling. It REFUSES to run without a group
-    id, refuses the production group id, and contains no call to
+    `silent_install: true`, 429/COM0002 backoff. It REFUSES to run without
+    a group id, refuses the production group id, and contains no call to
     `approve`/`distribute_update`. The workflow takes a prior
     `android-release` run id as input and re-verifies the downloaded artifact —
     the build workflow is the only builder, and a human inspects the artifact

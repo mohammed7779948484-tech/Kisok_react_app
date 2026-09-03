@@ -207,7 +207,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Allowed manual files**: `tools/mdm/upload-beta.ts` + `upload-beta.test.ts`
 - **Scaffold status**: `N/A — no generator capability covers repo tooling`
 - **Allowed file scope**: `tools/mdm/**`
-- **Focused verification**: script tests (RED first) — mocked `fetch` covering token exchange/masking, dry-run read-only, two-phase upload, app create/update payloads, monotonic versionCode refusal, group refusal (missing/production), silent_install association, rate-limit backoff, error envelope; self-contained for Node 24
+- **Focused verification**: script tests (RED first) — mocked `fetch` covering token exchange/masking, dry-run read-only, two-phase upload, app create/update payloads, monotonic versionCode refusal, group refusal (missing/production), silent_install association, rate-limit backoff, error envelope; self-contained for Node 24. Contract per the 2026-09-03 research revalidation (plan research synthesis): upload completion confirmed from the upload response's `fileStatus` (no polling endpoint in current docs); app create carries the documented Required `app_category_id` + Beta `release_label_id`; the monotonic pre-check compares versions via the documented string `version`/`release_labels[].app_version` fields; multipart key `file` per the docs prose
 
 ### T12 — mdm-beta-upload workflow
 
