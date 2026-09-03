@@ -481,16 +481,27 @@ warning.
    cart-rules (model-internal, no cycle: rules → line-schema;
    persisted-schema → line-schema + rules). Rejected: duplicating a second
    identity algorithm inside the schema (drift risk — explicitly forbidden).
-3. **Sign-out memory reset is unconditional and ordered BEFORE the throw.**
+3. **Sign-out failure-path memory reset, ordered BEFORE the throw.**
    `clearCartForSignOut` resets the full session envelope
    (`locked: false, ownerId: null, hydrated: false, persistence: "unknown"`)
-   after `clear()` resolves and BEFORE the rejection throw. The next hydrate
-   then sees `hydrated === false` and runs the real restore against the
-   (emergency-wiped) disk: empty, unlocked, coherent. Rejected: changing the
-   same-owner hydrate shortcut semantics (a real re-read contract change
-   touching every session, not just the failure path); swallowing the throw
-   (forbidden — failure visibility must be preserved); a second sign-out path
-   (forbidden).
+   inside the rejected branch, after `clear()` resolves and BEFORE the
+   rejection throw. The next hydrate then sees `hydrated === false` and runs
+   the real restore against the (emergency-wiped) disk: empty, unlocked,
+   coherent. Rejected: changing the same-owner hydrate shortcut semantics (a
+   real re-read contract change touching every session, not just the failure
+   path); swallowing the throw (forbidden — failure visibility must be
+   preserved); a second sign-out path (forbidden).
+   - Reconciliation (2026-09-03, during H-T02): the original wording said
+     the reset was "unconditional". The implementer proved empirically that
+     a literally-unconditional reset (also on the SUCCESS path) would wipe
+     the honest `persistence: "persisted"` that `clear()` just proved, breaking
+     the existing success-path contract (its test pins `persisted`). The
+     success path needs no envelope reset at all — it is already coherent
+     (empty, unlocked, `persisted`, disk actually cleared; a different-owner
+     hydrate runs the owner-switch reset, and the same-owner shortcut then
+     operates on non-stale state). The scoped placement closes the exact
+     H-F02 failure path with the smallest change; the invariant is
+     unchanged.
 4. **H-F03 fix is a shared-primitive completion + consumer wiring.** Add
    `AdaptiveSheetDescription` to `components/ui/adaptive-sheet.tsx` mirroring
    the sibling `DialogDescription` pattern (`DialogPrimitive.Description
