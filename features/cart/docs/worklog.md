@@ -1150,3 +1150,28 @@ exists (jest-covered, as before); native/device tier (no device; unchanged
 from prior session); the `pnpm web` dev-server transport (prior session's
 environmental inotify ENOSPC blocker; static export substituted — the same
 Web-bundle job CI runs).
+
+## FINAL (STAGED) VERIFICATION — 2026-09-03, exact final tree
+
+- Cart focused suite: **11 suites / 170 tests PASS** (`pnpm exec jest
+features/cart`).
+- Full repo suite: **49 suites / 493 tests PASS** (`pnpm exec jest --ci
+--silent`).
+- `pnpm typecheck` exit 0; `pnpm lint` exit 0; `pnpm run format` unchanged;
+  `pnpm verify` exit 0 (full battery incl. guards/db/generator smoke);
+  `pnpm export:web` exit 0 at the final code tree (docs-only commits after
+  fe39934; final-HEAD export spot-checked live).
+- Exact-head GitHub CI at code HEAD **74f16fe** (run 33704624494):
+  Verify (typecheck, lint, format, tests, guards, db, generator) **success**;
+  Web bundle **success**; Expo doctor **success**; Maestro + Android
+  prebuild label-gated skipped by design.
+- Quality audit (B-AUDIT, fresh): **CLEAN-WITH-OBSERVATIONS**; the
+  auditor re-ran cart/full/typecheck/lint/prettier digit-for-digit on
+  74f16fe and independently verified the merge, diff confinement, UUID
+  RED arithmetic, and all live GitHub state. B-AUD-01/02/03 (checkpoint
+  lag, uncited CI, stale PR body) are closed by this commit + the PR body
+  update; B-AUD-04 noted in plan.md (sanctioned manual artifact);
+  B-AUD-05 (text-scaling evidence gap) carried as a known recording gap.
+- CART_FINAL_PR_HEAD=74f16fe8283b09c2e222dc4871590d92b3d5f587; this
+  docs-only commit that records the evidence is the true final merge HEAD;
+  its CI run is verified before the authorized merge executes.

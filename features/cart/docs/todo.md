@@ -15,10 +15,10 @@ The single answer to "where are we?". Update it whenever any of it changes; it
 is the first thing the next agent reads.
 
 ```
-Current round     : done (post-merge-integration remediation round complete)
-Current task      : — (T01 reopened and re-gated — see T01 reopen record below)
-Last gate         : T01 GATE: PASS (restored 2026-09-03 after the UUID contract-fidelity remediation + fresh review 0/0/0)
-Next legal action : fresh full-feature review against CURRENT develop (which now contains Catalog), then live browser re-verification, final exact-head CI, then the human-authorized merge of PR #8
+Current round     : done (staged-integration re-delivery complete)
+Current task      : —
+Last gate         : re-delivery gates complete — develop integration (ce48674), T01 UUID remediation re-gated, B-REVIEW-UUID 0/0/0, B-FULL-REVIEW 0/0/2 dispositioned, live re-verification recorded, B-AUDIT CLEAN-WITH-OBSERVATIONS (B-AUD-01/02/03 closed by this commit)
+Next legal action : human-authorized merge of PR #8 (this assignment is authorized to execute it after exact-final-head CI is green on this commit)
 Blocked by        : —
 ```
 
