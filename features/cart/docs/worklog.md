@@ -1175,3 +1175,19 @@ features/cart`).
 - CART_FINAL_PR_HEAD=74f16fe8283b09c2e222dc4871590d92b3d5f587; this
   docs-only commit that records the evidence is the true final merge HEAD;
   its CI run is verified before the authorized merge executes.
+
+---
+
+## POST-MERGE PRE-CHECKOUT HARDENING (2026-09-03, branch fix/cart-pre-checkout-hardening from 6161a4c)
+
+### H-T01 — persisted semantic identity invariant — GATE PASS (2096e5b + docs 3c8ca1d)
+
+- CLASSIFY: bug (H-F01, triaged VALID from current code).
+- RED (fresh implementer, written first): `pnpm exec jest features/cart/model/persisted-cart.schema.test.ts features/cart/model/cart-rules.test.ts` → 6 failed / 38 passed, every failure the intended reason (malformed lineIds accepted ×3; raw-case join "Expected: 3a7f… / Received: 3A7F…"; cross-casing non-merge ×2). Baseline pre-edit: model 4/66 PASS; cart+integration 16/216 PASS.
+- IMPLEMENT (smallest fix, plan amendment decisions 1+2): `deriveLineId` lowercases variantId + each optionValueId BEFORE sort/join (canonical identity per PostgreSQL case-insensitive uuid semantics; postgresUuidSchema deliberately untouched; optionTypeId/productId untouched — not identity inputs); `persistedCartSchema` gains `.refine(lines.every(line => line.lineId === deriveLineId(line)))` importing the ONE domain helper (no second algorithm; no import cycle — schema → rules → line-schema).
+- GREEN: model folder 4 suites / 74 tests PASS. New tests: schema +5 (wrong lineId rejected; two semantic-identical fake ids rejected; canonical optioned+plain accepted; uppercase-joined derivation rejected; uppercase fields + canonical lineId accepted), rules +3 (one identity across hex case + order; cross-casing merge; cross-casing merge capped).
+- Blast radius (Lead scope addendum, plan.md "Allowed file scope" → H-T01): the invariant correctly REJECTED 5 pre-existing fixtures embedding the exact H-F01 malformed shape — cart-store.test.ts espressoLine, use-cart.test.tsx cappuccinoLine, full-cart-screen.test.tsx cappuccinoLine (the 12 failing tests), then cart-item-row.test.tsx + quick-cart-sheet.test.tsx cappuccinoLine (reviewer R-H01-2, same class). All corrected to the true derived identity `3a7f2c1d-…|1a2b3c4d-…|e5d3c8a1-…`; fixture lineId strings only — zero assertions changed. R-T07-03's anticipated fixture pass is now done.
+- AFFECTED CHECKS: cart 11 suites / 178 tests; integration 5 / 46; cart+integration+catalog 37 suites / 413 tests; `pnpm typecheck` exit 0; `pnpm lint` exit 0; prettier clean on all changed files (+ Lead formatted plan.md/todo.md per R-H01-1).
+- LEAD VERIFY: diff read file-by-file; independent runs matched every number; implementer stopped at the scope boundary and reported the out-of-scope blast radius instead of widening (correct conduct).
+- FRESH TASK REVIEW (0 blocking / 0 major / 2 minor — see review.md "H-T01 review"): RED reproduced empirically via stash; backward compatibility proven (only line-producing path is addItem → addLine → deriveLineId; PostgreSQL jsonb emits lowercase uuid text, so live data unaffected; theoretical uppercase-legacy payload falls into the designed corrupt-payload path). Both minors dispositioned and resolved.
+- TASK GATE: PASS.
