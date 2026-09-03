@@ -291,3 +291,94 @@ cart-access-button` (placeholder committed with the T03 gate; replaced
   by pb-24 clearance in the sanctioned product-detail file (suite re-green
   32/32; the benign overlap class on other browsing screens recorded as
   accepted); R2-02/R2-03 doc fixes applied.
+
+## LIVE HOSTED JOURNEY (2026-09-03, production static export at a5f18e7, real TEST project)
+
+The full real path, end to end, as the documented Customer
+(Customer@gmail.com) against the hosted TEST Supabase
+(akxigjsifwyolkadofnj.supabase.co), at 1280×800 unless noted:
+
+- **Authentication**: unauthenticated entry boots to /sign-in (gate
+  holds); real hosted sign-in; zero Preparation/Admin exposure.
+- **Hosted catalog truth**: the app executed the real
+  `get_customer_catalog()` (12 RPC calls logged) and
+  `current_active_profile` (14 calls); real products/brands/categories
+  rendered on every surface.
+- **Add first product** (Perks → variant "24mg 10tabs bottle",
+  Available): Add enabled; press → QuickCartSheet opened with the exact
+  product, caption, image, quantity 1; title "Your Cart · 1"; NO silent
+  no-op anywhere in the session.
+- **Caption/mapping (live)**: override family → "24mg 10tabs bottle ·
+  10 tab · Tablets · Bottle · 24mg" (override verbatim + each option
+  value exactly once); option-backed no-override family (Mello Pro 50k
+  "Flavor: Sour apple ice") → cart caption "Flavor · Sour apple ice" —
+  the type name + the value, with NO "Flavor: Sour apple ice · Sour
+  apple ice"-style duplication.
+- **Unavailable variant** (Mello Pro 50k → "Clear, Out of stock"):
+  variant remains selectable for inspection; honest availability text
+  unchanged; Add renders [disabled]; a press attempt left the durable
+  cart state byte-identical.
+- **Same-selection merge**: re-adding the same variant → "Your Cart ·
+  2", ONE line, quantity 2 (the cart's own merge rule, live).
+- **Distinct selection**: adding "Grape 125mg 4tabs" → a distinct line
+  ("Your Cart · 3", 2 lines), caption "Grape 125mg 4tabs · 4 tab ·
+  Grape · Tablets · 125mg".
+- **Quick Cart**: totals track every mutation; quantity + (2→3) and
+  remove-with-confirmation (Mello line) exercised IN the sheet;
+  Continue Shopping closes; View Full Cart navigates to /cart; the
+  sheet reopens later from the affordance without any mutation.
+- **Persistent affordance**: rendered on Home, Products, Search, Brand
+  detail visits, Category detail visits, and Product Detail; ABSENT on
+  /cart (verified by count 0); badge text "Open cart, N items" tracks
+  the single model's totalQuantity live (0 → no badge).
+- **Full Cart**: /cart renders the same lines/captions/images with
+  steppers and confirmed destructive actions; no prices, no stock, no
+  money anywhere.
+- **Reload persistence**: full page reload at /cart restored both lines
+  with quantities 2+1; the durable envelope matched memory exactly
+  ("24mg 10tabs bottle:2 | Grape 125mg 4tabs:1").
+- **Sign-out safety (R-FR-05 closure PROVEN live)**: with the provider
+  mounted, the cart feature module (and its sign-out cleanup
+  registration) is loaded for the whole session — the preparation
+  account's real Sign out (the app's full pipeline) CLEARED the
+  customer's durable cart key (contrast: the pre-integration Phase B
+  run where a fresh session's sign-out left the envelope on disk);
+  token cleared; handoff marker lifecycle clean.
+- **Re-authentication**: signing back in as Customer → cart EMPTY, key
+  ABSENT, no resurrection; the affordance and empty states honest.
+- **Background refetch/navigation**: navigating Home → Products →
+  Product Detail → Add → QuickCart → Continue Shopping → Search →
+  product → Add → View Full Cart → browse caused catalog refetches
+  with the cart badge intact throughout; no redirect loops; sensible
+  history.
+- **Responsive**: 1280×800 — zero horizontal overflow, affordance
+  measured 48×48; 800×1180 — zero overflow, all controls present;
+  480×900 — zero overflow, affordance 48×48, and the R2-01 fix
+  verified at end-of-scroll: the Add button's bottom clearance is
+  exactly 96px, clear of the affordance's 48dp band (no overlap).
+- **Accessibility/DOM**: stable accessible names ("Add to cart"; "Open
+  cart, N items"; "Remove <product>"); disabled exposed as state;
+  the sheet renders as a role=dialog with focus containment
+  (dialog.contains(document.activeElement) true) and Escape closes it;
+  the badge carries text; no nested-interactive violations observed in
+  the trees.
+- **Console/network**: ZERO page errors; the ONLY console output is
+  the advisory `Missing Description for DialogContent` warning from
+  the @rn-primitives dialog primitive, emitted once per QuickCartSheet
+  open (4 opens → 4 warnings) — a PRE-EXISTING characteristic of the
+  merged cart's public sheet first exercised live by this integration
+  (the sheet carries an accessible title; the warning is advisory, not
+  an error; disposition: carry-forward note for the cart/adaptive-sheet
+  owner, outside this feature's sanctioned files); network log shows
+  ONLY auth/profile/catalog RPCs — ZERO cart REST/RPC/Realtime calls
+  (the local /cart document fetches are the static server itself).
+- Test localStorage state (envelope + session) removed after the
+  session; no fabricated carts left behind.
+
+Explicitly unverified at this tier (honest): Android native tier and OS
+200% font scaling (no device in the environment — browser zoom is not
+claimed as OS scaling, per the repo's own rule); the second-customer
+cross-owner leak (one Customer test account — jest-covered by the cart
+suite and re-verified through the convergence net); the live badge
+corner-inset geometry beyond the class pin + the 48×48 box measurement
+above.
