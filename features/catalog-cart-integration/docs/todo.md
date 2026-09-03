@@ -13,9 +13,9 @@ defeats its only purpose.
 
 ```
 Current round     : 2 (of 2)
-Current task      : — (T04 PASS; next: delegate T05 — the convergence/pin task)
-Last gate         : T04 GATE: PASS (fresh reviewer GATE-SAFE 0/0/3 — all closure items closed; see review.md)
-Next legal action : delegate T05 (public-API key-equality pin + boundary scans + convergence regression nets), then the feature-gate live hosted journey (now unblocked)
+Current task      : — (all five tasks PASS)
+Last gate         : T05 GATE: PASS (fresh reviewer GATE-SAFE 0/0/3 — closure items closed); Round 2 gate next
+Next legal action : Round 2 gate (combined checks + fresh round reviewer), then open the DRAFT PR and run the feature-gate live hosted journey
 Blocked by        : —
 ```
 
@@ -33,13 +33,13 @@ Blocked by        : —
 
 ## Status board
 
-| Task | Mode     | Acceptance                                       | Objective                                         | Deps     | Stage       | Gate |
-| ---- | -------- | ------------------------------------------------ | ------------------------------------------------- | -------- | ----------- | ---- |
-| T01  | behavior | Supporting AC-03, AC-04                          | Pure buildAddToCartInput mapping model            | —        | done        | PASS |
-| T02  | behavior | Acceptance AC-01, AC-05; Supporting AC-08, AC-09 | Quick-cart context + experience provider          | —        | done        | PASS |
-| T03  | behavior | Acceptance AC-02, AC-03, AC-04, AC-05            | AddToCartButton + Product Detail wiring           | T01, T02 | done        | PASS |
-| T04  | behavior | Acceptance AC-06                                 | Persistent cart affordance + layout mount         | T02      | done        | PASS |
-| T05  | behavior | Acceptance AC-07, AC-08, AC-11                   | Integration convergence + public API + boundaries | T03, T04 | not started | —    |
+| Task | Mode     | Acceptance                                       | Objective                                         | Deps     | Stage | Gate |
+| ---- | -------- | ------------------------------------------------ | ------------------------------------------------- | -------- | ----- | ---- |
+| T01  | behavior | Supporting AC-03, AC-04                          | Pure buildAddToCartInput mapping model            | —        | done  | PASS |
+| T02  | behavior | Acceptance AC-01, AC-05; Supporting AC-08, AC-09 | Quick-cart context + experience provider          | —        | done  | PASS |
+| T03  | behavior | Acceptance AC-02, AC-03, AC-04, AC-05            | AddToCartButton + Product Detail wiring           | T01, T02 | done  | PASS |
+| T04  | behavior | Acceptance AC-06                                 | Persistent cart affordance + layout mount         | T02      | done  | PASS |
+| T05  | behavior | Acceptance AC-07, AC-08, AC-11                   | Integration convergence + public API + boundaries | T03, T04 | done  | PASS |
 
 Stage is one of: `not started` · `scaffolding` · `red/baseline` ·
 `implementing` · `green` · `checks` · `diff review` · `done`.

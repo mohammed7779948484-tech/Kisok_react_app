@@ -244,3 +244,39 @@ cart-access-button` (placeholder committed with the T03 gate; replaced
   live journey checklist (48dp + badge legibility + safe-area clearance
   - no overlap at all three sizes; pathname walked on every browsing
     route + /cart with a non-zero cart).
+
+## T05 — Integration convergence — GATE: PASS
+
+- Implementer: fresh feature-implementer (C-T05, Super Z agent-2c5fe6d8).
+- RED (the reconciled plan's driver — the absent pin suite):
+  `pnpm exec jest features/catalog-cart-integration/convergence.test.tsx`
+  → exit 1, "Pattern … 0 matches" (no tests found); baseline 4/34 green.
+- GREEN: 12/12; integration 5 suites/46; full repo 54 suites/543
+  (exactly +1 suite/+12 over the T04 gate); typecheck 0; scoped eslint
+  0; prettier clean (one --write on a comparator chain, re-green).
+- Files: `convergence.test.tsx` (NEW — 12 tests: public-API key-equality
+  pin with runtime + type layers + 25 forbidden names + export-statement
+  scan (3 exact relative-only export-froms, no cart re-export, no star);
+  fs boundary scans over all 13 feature files (no deep cart/catalog, no
+  Supabase, self-alias + relative-escape rails) + the two sanctioned
+  out-of-feature edits pinned; AC-07 merge/distinct nets through the
+  PUBLIC cart path with mapper-built inputs; AC-08 real disk→memory
+  re-hydration through @/core/storage + public hydrateCart; an
+  end-to-end rendered net (real provider + button from the public index,
+  double press merges, sheet "Your Cart · 2", affordance "Open cart, 2
+  items")); `index.ts` (doc-comment T05 note only — exports
+  byte-identical to T03's wiring).
+- **Teeth drills (both fully reverted; tree verified clean by the fresh
+  reviewer via git status/stash/diff)**: (A) a temp poisoned in-feature
+  file (deep cart + @supabase/supabase-js + ../../catalog escape) → the
+  boundary scan FAILED naming all three violations; (B) a temp stray
+  `export { buildAddToCartInput }` in index.ts → BOTH pin layers failed
+  (Object.keys + export-statement count). The pin suite demonstrably
+  rejects violations.
+- Fresh task reviewer (C-T05-REVIEW): **GATE-SAFE** — 0 blocking / 0
+  major / 3 minor: R1 (this entry) closed; R2 (denylist leniencies)
+  ACCEPTED — no current violation; ESLint blocks deep imports; the
+  allowlist inversion is recorded as future net-hardening; R3
+  (tautological runtime mirror in the type-layer test) ACCEPTED — the
+  in-file comment documents the three-layer rationale (satisfies →
+  typecheck; export-statement scan → the gap-closer).

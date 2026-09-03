@@ -113,3 +113,17 @@ Reviewer verdict: GATE-SAFE — AC-06 all clauses verified through the
 single cart model; positioning/z-order analysis sound (portal sheet
 above in-tree affordance); provider edit additive; layout thin and
 pinned; RN/design rules clean; all suites re-run green. GATE: PASS.
+
+## T05 review (C-T05-REVIEW, fresh task reviewer)
+
+| ID       | Severity | Finding                                                                     | Disposition                                                                                                           |
+| -------- | -------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| C-T05-R1 | minor    | T05 worklog/board lag at review time                                        | RESOLVED — entry + board advanced at gate closure                                                                     |
+| C-T05-R2 | minor    | boundary scan is a denylist (future public cross-feature import would pass) | ACCEPTED — no current violation; deep imports blocked by ESLint; allowlist inversion recorded as future net-hardening |
+| C-T05-R3 | minor    | type-layer runtime assertion mirrors a local const (tautological alone)     | ACCEPTED — documented three-layer rationale (satisfies + export-statement scan carry the teeth)                       |
+
+Reviewer verdict: GATE-SAFE — pin gapless (runtime/type/scan layers),
+drills credible and reverted, boundary scans cover all 13 feature files
+plus the two sanctioned edits, convergence nets through the public path
+only, real disk→memory re-hydration, end-to-end rendered net; all
+commands re-run green. GATE: PASS.

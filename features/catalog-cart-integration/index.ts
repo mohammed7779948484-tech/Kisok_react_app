@@ -24,6 +24,13 @@
  * screen tests wrapping the real `CatalogCartProvider` from the same index —
  * cannot resolve against an empty index. This is the minimal set T03's
  * contract requires; T05 still owns pinning and any final surface decisions.
+ *
+ * NOTE (T05 implementer): the pin now exists — `convergence.test.tsx` at the
+ * feature root locks this exact trio by key equality (runtime `Object.keys`,
+ * a type-level `satisfies` const, and an export-statement scan that also
+ * proves nothing here re-exports `@/features/cart`), and its boundary scans
+ * + convergence regression nets complete the C-T03-R1 reconciliation. The
+ * trio above is verified as-is; T05 changed no export.
  */
 export { AddToCartButton } from "./components/add-to-cart-button";
 export { CatalogCartProvider } from "./components/catalog-cart-provider";
