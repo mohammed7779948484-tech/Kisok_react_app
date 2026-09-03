@@ -198,3 +198,49 @@ add-to-cart-button` (created the placeholder that the implementer
   integration 3/26, product-detail 3/32, catalog 24/215, cart 11/170,
   full 52/523, typecheck/eslint/prettier clean; verdict "code is
   gate-safe".
+
+## T04 — Persistent cart affordance + customer layout mount — GATE: PASS
+
+- Lead scaffold: `pnpm generate component catalog-cart-integration
+cart-access-button` (placeholder committed with the T03 gate; replaced
+  by the implementer).
+- Implementer: fresh feature-implementer (C-T04, Super Z
+  agent-2d231f9d). RED: 7 failed / 9 passed (5 affordance tests + the
+  /products render + the layout pin fail on the missing role and the
+  missing provider import; the /cart-absence test passes trivially —
+  honestly noted, its /products sibling carries the RED).
+- GREEN: focused 16/16; integration 4 suites/34; catalog 25/223; cart
+  11/170; full repo 53 suites/531 (+8 exactly); typecheck 0; scoped
+  eslint 0 (incl. the layout file + both mock-completed files);
+  prettier clean.
+- Files: cart-access-button.tsx (no props; useCart().totalQuantity +
+  useQuickCart().openQuickCart; 48dp icon Button + decorative
+  ShoppingCart + Badge primary with count text only when > 0; accessible
+  name "Open cart[, N items]"; press opens ONLY),
+  cart-access-button.test.tsx (5 tests: empty/no-badge, 2-line/5-item
+  badge "5", press-opens-with-no-mutation snapshot, both frames +
+  h-touch/w-touch class pin, locked-still-opens),
+  catalog-cart-provider.tsx (minimal addition: usePathname gate
+  `pathname !== "/cart"`, useSafeAreaInsets bottom, wrapper relative
+  flex-1, absolute bottom-6 right-6 affordance),
+  catalog-cart-provider.test.tsx (additive: /products renders, /cart
+  hides with children+sheet functional, layout structural pin via the
+  full-cart suite's readFileSync+importSpecifiers pattern),
+  app/(customer)/\_layout.tsx (thin mount: one public import + Stack
+  wrapped + one doc-comment line — 23 lines total).
+- **Deviation (C-T04-R2) — ACCEPTED**: two out-of-scope +8-line
+  assertion-neutral mock completions (usePathname: () => "/product-detail"
+  in the expo-router mocks of add-to-cart-button.test.tsx and
+  product-detail-screen.test.tsx) — structurally forced by the
+  provider's usePathname in suites rendering the real provider
+  (TypeError otherwise; the real pathname for the route; zero assertion
+  changes; loud in-file comments; a shared core/testing mock helper is a
+  future Lead-level consolidation, correctly not attempted). Fresh
+  reviewer independently verified the forcing, neutrality, and the
+  convention claim (13 in-file mocks; no core/testing helper exists).
+- Fresh task reviewer (C-T04-REVIEW): **GATE-SAFE** — 0 blocking / 0
+  major / 3 minor: R1 (this entry) closed; R2 (deviation) ACCEPTED
+  above; R3 (geometry only class-pinned) carried into the feature-gate
+  live journey checklist (48dp + badge legibility + safe-area clearance
+  - no overlap at all three sizes; pathname walked on every browsing
+    route + /cart with a non-zero cart).

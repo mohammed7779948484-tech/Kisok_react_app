@@ -91,6 +91,14 @@ const mockLocalSearchParams: { productId?: string } = {};
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace, back: mockRouterBack }),
   useLocalSearchParams: () => mockLocalSearchParams,
+  // T04 (structurally forced, Lead to disposition): the catalog-cart
+  // integration's provider — which the harness below mounts around this
+  // screen — now calls `usePathname()` for the persistent cart affordance's
+  // `/cart` gate, so this suite's module mock must expose it. Assertion-
+  // neutral — no assertion in this file changed; the pathname reports this
+  // screen's own route, so the affordance renders there exactly as the
+  // delivered app renders it.
+  usePathname: () => "/product-detail",
 }));
 
 // AppImage's fallback icon renders a lucide icon; the catalog-cart

@@ -1,3 +1,5 @@
+import { readFileSync } from "fs";
+import { resolve } from "path";
 import type { ReactNode } from "react";
 import { Dimensions, Text, View } from "react-native";
 
@@ -43,12 +45,17 @@ import { useQuickCart } from "./quick-cart-context";
  * The provider owns the View Full Cart navigation intent (plan decision 8), so
  * it calls `useRouter()` from expo-router — the full-cart-screen.test.tsx
  * pattern: a minimal module mock whose `useRouter` returns one router whose
- * `push` is a jest.fn the tests assert against. The `mock` prefix keeps the
- * reference inside jest's factory allowlist.
+ * `push` is a jest.fn the tests assert against. T04 adds the affordance's
+ * route gate: the provider calls `usePathname()` to hide the affordance on
+ * `/cart`, so the mock also exposes a controllable pathname. The `mock`
+ * prefix keeps both references inside jest's factory allowlist.
  */
 const mockRouterPush = jest.fn();
+/** The pathname the mocked `usePathname` reports — reset per test in beforeEach. */
+const mockPathname: { current: string } = { current: "/products" };
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
+  usePathname: () => mockPathname.current,
 }));
 
 /**
@@ -87,6 +94,8 @@ const CLOSE_OWNER = "3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f";
 const VIEWCART_OWNER = "4d5e6f7a-8b9c-4d0e-8f1a-3b4c5d6e7f8a";
 const CLEANUP_OWNER = "5e6f7a8b-9c0d-4e1f-8a2b-4c5d6e7f8a9b";
 const ADD_OWNER = "6f7a8b9c-0d1e-4f2a-8b3c-5d6e7f8a9b0c";
+const AFFORDANCE_OWNER = "708192a3-b4c5-4d6e-8f7a-9c0d1e2f3a4b";
+const CART_ROUTE_OWNER = "8192a3b4-c5d6-4e7f-8a0b-1e2f3a4b5c6d";
 
 const sizeSelection = {
   optionTypeId: "b2e1a4c3-8f7d-4a2b-9c6e-1d3f5a7b9c2d",
@@ -153,6 +162,27 @@ function setFrame({ width, height }: Frame) {
 /** Read the cart key back through the app's real storage API (identity parse — only the hit/miss status matters here). */
 async function readCartKey() {
   return storage.read(KEY, (raw) => raw);
+}
+
+/**
+ * The customer layout the provider is mounted in — the T04 thin mount. Read
+ * as SOURCE (the full-cart suite's ROUTE_PATH pattern): the layout renders an
+ * expo-router `Stack`, which needs a navigation container no jest tree here
+ * supplies, so the mount contract is pinned structurally instead.
+ */
+const LAYOUT_PATH = resolve(__dirname, "../../../app/(customer)/_layout.tsx");
+
+/** Every module specifier the layout source imports (from-imports and side-effect imports). */
+function importSpecifiers(source: string): string[] {
+  // Each regex captures exactly one specifier, but `noUncheckedIndexedAccess`
+  // types a match group as possibly absent — narrow honestly rather than cast.
+  const fromImports = [...source.matchAll(/from\s+["']([^"']+)["']/g)]
+    .map((match) => match[1])
+    .filter((specifier): specifier is string => typeof specifier === "string");
+  const sideEffectImports = [...source.matchAll(/(?:^|\n)\s*import\s+["']([^"']+)["']/g)]
+    .map((match) => match[1])
+    .filter((specifier): specifier is string => typeof specifier === "string");
+  return [...fromImports, ...sideEffectImports];
 }
 
 /**
@@ -225,6 +255,9 @@ beforeEach(async () => {
   // silent per the repo convention.
   setLogSink(() => {});
   mockRouterPush.mockClear();
+  // Every test starts on a browsing route; the /cart-gate tests override this
+  // before rendering.
+  mockPathname.current = "/products";
   // Disk hygiene: hydrate() reads this key, so a previous test's envelope must
   // not leak into the next one's restore. Through the app's own API.
   await storage.remove(KEY);
@@ -397,5 +430,54 @@ describe("CatalogCartProvider", () => {
     expect(snapshot.lines).toHaveLength(1);
     expect(snapshot.lines[0]?.productDisplayName).toBe("Cappuccino");
     expect(snapshot.totalQuantity).toBe(1);
+  });
+});
+
+describe("CatalogCartProvider — persistent affordance (AC-06, plan decision 5)", () => {
+  it('renders the affordance while on a browsing route (pathname "/products")', async () => {
+    await renderProvider(<Text>child-probe</Text>, AFFORDANCE_OWNER);
+
+    // The affordance is part of the provider's tree on every browsing
+    // surface: Home, Products, Search, Brands, Categories, Product Detail.
+    expect(await screen.findByRole("button", { name: "Open cart" })).toBeOnTheScreen();
+  });
+
+  it('hides the affordance exactly on "/cart" — children and the sheet stay functional', async () => {
+    const user = userEvent.setup();
+    mockPathname.current = "/cart";
+    await renderProvider(<QuickCartProbe />, CART_ROUTE_OWNER);
+
+    // Children render as before…
+    expect(screen.getByText("child-probe")).toBeOnTheScreen();
+    // …the affordance is ABSENT (a cart button on the full cart screen would
+    // be a redundant no-op — plan decision 5)…
+    expect(screen.queryByRole("button", { name: "Open cart" })).toBeNull();
+
+    // …and the sheet the provider renders still works through the context the
+    // children consume — hiding the button removes nothing else.
+    await user.press(screen.getByRole("button", { name: "Open Quick Cart" }));
+    await screen.findByRole("heading", { name: "Your Cart · 0" });
+    expect(screen.getByText("Your cart is empty")).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Continue Shopping" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "View Full Cart" })).toBeOnTheScreen();
+  });
+});
+
+describe("customer layout mount (plan decision 1; brief AC-11 thin-mount share)", () => {
+  it("app/(customer)/_layout.tsx is the thin mount: CatalogCartProvider wraps the Stack, and no other feature is imported", () => {
+    const layoutSource = readFileSync(LAYOUT_PATH, "utf8");
+    const specifiers = importSpecifiers(layoutSource);
+
+    // The T04 mount: the provider arrives through the integration's public
+    // index — the one sanctioned way another module may reach this feature.
+    expect(specifiers).toContain("@/features/catalog-cart-integration");
+    // And the provider actually WRAPS the Stack, not just an unused import.
+    expect(layoutSource).toContain("CatalogCartProvider");
+
+    // Thin-mount discipline, the full-cart route suite's sanctioned-set shape:
+    // anything beyond the router's own Stack and the public index is out of
+    // place here (and would fail the app/** ESLint boundary anyway).
+    const sanctioned = new Set(["expo-router", "@/features/catalog-cart-integration"]);
+    expect(specifiers.filter((specifier) => !sanctioned.has(specifier))).toEqual([]);
   });
 });

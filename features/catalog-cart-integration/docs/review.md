@@ -100,3 +100,16 @@ F-R1-1 window test sound); boundaries clean (public-only imports, zero
 catalog/cart deep imports, supersession pins honest and scoped); a11y
 clean (stable accessible name, disabled as state, 48dp, decorative
 icon); all suites re-run green. GATE: PASS.
+
+## T04 review (C-T04-REVIEW, fresh task reviewer)
+
+| ID       | Severity | Finding                                                    | Disposition                                                                                                                                                                                                                                                     |
+| -------- | -------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C-T04-R1 | minor    | T04 worklog entry absent at review time                    | RESOLVED — full entry recorded at gate closure                                                                                                                                                                                                                  |
+| C-T04-R2 | minor    | two out-of-scope mock completions flagged, undispositioned | ACCEPTED — structurally forced (provider usePathname), assertion-neutral (+8 lines each, zero assertion edits), documented in-file; shared core/testing mock helper deferred as future Lead-level consolidation (13 suites use in-file mocks — repo convention) |
+| C-T04-R3 | minor    | affordance geometry class-pinned only (jsdom)              | CARRIED — added to the feature-gate live journey checklist (48dp, badge legibility, safe-area clearance, no overlap at 3 sizes; pathname on every browsing route)                                                                                               |
+
+Reviewer verdict: GATE-SAFE — AC-06 all clauses verified through the
+single cart model; positioning/z-order analysis sound (portal sheet
+above in-tree affordance); provider edit additive; layout thin and
+pinned; RN/design rules clean; all suites re-run green. GATE: PASS.

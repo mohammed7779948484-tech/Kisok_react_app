@@ -53,10 +53,18 @@ import type { CatalogCartSource } from "../model/add-to-cart-mapping";
  * mocked — the T02 provider suite's minimal mock: one stable router whose
  * `push` is a jest.fn. The `mock` prefix keeps the reference inside jest's
  * factory allowlist.
+ *
+ * T04 (structurally forced, Lead to disposition): the real provider rendered
+ * by the harness below now also calls `usePathname()` for the persistent
+ * affordance's `/cart` gate, so this suite's module mock must expose it.
+ * Assertion-neutral — no assertion in this file changed; the pathname reports
+ * the route this suite actually exercises (Product Detail), so the affordance
+ * renders exactly as it does in the delivered app there.
  */
 const mockRouterPush = jest.fn();
 jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
+  usePathname: () => "/product-detail",
 }));
 
 /**
