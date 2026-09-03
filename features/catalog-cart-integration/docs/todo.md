@@ -13,7 +13,7 @@ defeats its only purpose.
 
 ```
 Current round     : 1 (of 2)
-Current task      : — (T01 PASS; next: delegate T02)
+Current task      : — (T02 PASS; Round 1 gate next)
 Last gate         : PLAN READY (Lead Planning Review clean — see worklog)
 Next legal action : Lead runs T01 (no scaffold — manual model file), delegates T01 to a fresh implementer
 Blocked by        : —

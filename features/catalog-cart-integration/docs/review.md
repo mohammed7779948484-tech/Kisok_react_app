@@ -62,3 +62,13 @@ Reviewer verdict: code correct against plan decisions 2-4 and brief
 AC-03/AC-04; boundaries clean (type-only public cart import, no catalog
 imports, nothing exported from the index); RED plausibility confirmed;
 all commands re-run green. GATE: PASS.
+
+## T02 review (C-T02-REVIEW, fresh task reviewer)
+
+| ID       | Severity | Finding                                                                          | Disposition                                                                                                                                                         |
+| -------- | -------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C-T02-R1 | minor    | AC-09 test's causal claim slightly overstated in-file (one jest module registry) | RESOLVED — comment softened to the accurate composite-proof framing (hydration test = causal dependency; cleanup test = end-to-end public contract); re-green 21/21 |
+| C-T02-R2 | minor    | provider suite runs landscape frame only                                         | ACCEPTED — provider has no layout branches; both-frame sheet behavior pinned by the cart suite; T04 covers both frames for the affordance                           |
+
+Reviewer verdict: faithful to plan decisions 1/8/9 and AC-01/AC-05/AC-08/
+AC-09; boundaries clean; test quality high; no blocking/major. GATE: PASS.

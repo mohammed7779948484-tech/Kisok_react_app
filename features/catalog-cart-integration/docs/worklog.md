@@ -88,3 +88,38 @@ features/catalog-cart-integration` 11/11; `pnpm typecheck` exit 0;
   compose as "Flavor, Strength · Watermelon · Strong" (each value exactly
   once); override family pinned as accepted data-dependent overlap
   (verbatim rule, plan decision 3).
+
+## T02 — Quick-cart context + experience provider — GATE: PASS
+
+- Implementer: fresh feature-implementer (C-T02, Super Z agent-70cf8ecc).
+- RED stage 1 (module absent): "Cannot find module './quick-cart-context'"
+  (the @/features/cart and provider imports resolved — failure = missing
+  implementation). RED stage 2 (placeholder still present): 7 failed /
+  1 passed — children swallowed by the TODO placeholder, sheet/controls
+  absent, `snapshot.hydrated` false (nothing mounted useCart); the single
+  pass is the provider-independent throw contract (honest note).
+- GREEN: provider suite 8/8; integration feature 2 suites/21 tests; cart
+  suites untouched-green (13 suites/191 tests combined run); typecheck 0;
+  scoped eslint 0; prettier clean (after one --write).
+- Files: components/catalog-cart-provider.tsx (placeholder replaced:
+  useCart mounted, QuickCartSheet public+controlled, onViewFullCart →
+  router.push("/cart") + close, children-first flex-1 layout View),
+  components/quick-cart-context.tsx (null-default context, throwing
+  useQuickCart), components/catalog-cart-provider.test.tsx (8 tests: throw
+  contract, children, context open/close, sheet-own close, View Full Cart
+  push+close, AC-01 real hydration from a seeded durable envelope, AC-09
+  runSignOutCleanup clears memory+durable key, AC-05 real add surfaces in
+  the real sheet).
+- Fresh task reviewer (C-T02-REVIEW): 0 blocking / 0 major / 2 minor.
+  C-T02-R1 (AC-09 attribution nuance — one jest registry) — RESOLVED by
+  softening the in-file comment (the causal provider dependency is proven
+  by the hydration test; this test proves the end-to-end public contract);
+  suite re-green 21/21 after the comment edit. C-T02-R2 (landscape-only
+  frame in this suite) — ACCEPTED with note: the provider has zero layout
+  branches (controlled props only); both-frame behavior is pinned by the
+  cart's own quick-cart-sheet suite, and T04 adds both-frame affordance
+  coverage per plan.
+- Deliberately NOT done (per plan): no persistent affordance (T04), no
+  Product Detail wiring (T03), no index.ts exports (T05), no separate
+  context test file (folded), no isolated-module attribution test
+  (documented nuance instead).
