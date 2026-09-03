@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : 3
-Current task      : T10
+Current task      : T11
 Current stage     : not started
-Last gate         : T09 GATE: PASS
-Next legal action : delegate T10 (.github/workflows/android-release.yml — config mode), then T11
+Last gate         : T10 GATE: PASS (recovered, fresh evidence, gate commit pushed)
+Next legal action : delegate T11 (tools/mdm/upload-beta.ts + tests — behavior mode), then T12
 
 Blocked by        : — (push credentials provided by the user; branch pushed and Draft PR #9 open — see Blocked below for what stays external)
 ```
@@ -49,7 +49,7 @@ Scan this first. Detail is below.
 | T07  | behavior-change | Acceptance: AC-03, AC-04            | root guard resolver + app/\_layout.tsx integration + static lock-task search | T04, T05, T06 | done        | PASS    |
 | T08  | config          | Supporting AC-07                    | release-signing config plugin + .gitignore                                   | —             | done        | PASS    |
 | T09  | behavior        | Acceptance: AC-08, Supporting AC-01 | tools/release/verify-release-apk.ts + tests                                  | —             | done        | PASS    |
-| T10  | config          | Supporting AC-07                    | android-release.yml workflow                                                 | T08, T09      | not started | PENDING |
+| T10  | config          | Supporting AC-07                    | android-release.yml workflow                                                 | T08, T09      | done        | PASS    |
 | T11  | behavior        | Acceptance: AC-09                   | tools/mdm/upload-beta.ts + tests                                             | —             | not started | PENDING |
 | T12  | config          | Supporting AC-09                    | mdm-beta-upload.yml workflow                                                 | T09, T11      | not started | PENDING |
 | T13  | config          | Acceptance: AC-10                   | docs/mdm-operations.md operational contract                                  | T01–T12       | not started | PENDING |
@@ -233,7 +233,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Allowed manual files**: `features/kiosk-runtime/docs/mdm-operations.md`
 - **Scaffold status**: `N/A — documentation`
 - **Allowed file scope**: `features/kiosk-runtime/docs/mdm-operations.md`
-- **Focused verification**: `pnpm verify` green (check:docs); content review against the research packets (enrollment, kiosk profile, app config, silent install, updates/rollback, recovery, beta path, activation prerequisites, unverified list)
+- **Focused verification**: `pnpm verify` green (check:docs); content review against the research packets (enrollment, kiosk profile, app config, silent install, updates/rollback, recovery, beta path, activation prerequisites, unverified list); MUST also cover the android-release dispatch contract per T10-F02 — who may dispatch, that the human must create the four ANDROID*KEYSTORE*\* repository Actions secrets first (naming names, never values), that `workflow_dispatch` only lists/needs the workflow file on the default branch before the first dispatch, and that the MDM upload workflow downloads the `kisok-release-apk` artifact by name + run id within its 30-day retention window
 
 Round gates: Round 1 `PASS` · Round 2 `PASS` · Round 3 `PENDING`
 

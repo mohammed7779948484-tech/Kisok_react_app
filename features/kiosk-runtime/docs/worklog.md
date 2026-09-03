@@ -1097,3 +1097,109 @@ fixtures), self-containment + Node 24 execution (node-builtin only; smoke
   own diagnostics are precise; a pre-check adds TOCTOU + a second path).
 
 GATE: PASS
+
+### T10 — android-release workflow (RECOVERY — fresh workspace, fresh evidence)
+
+MODE: config
+ACCEPTANCE: Supporting AC-07 (workflow-side fail-closed half; AC-08's
+verify-before-delivery is exercised by this workflow's verify step)
+
+SCAFFOLD (Lead — none: the workflow file IS the planned manual artifact;
+`N/A — workflow file`; no generator command run)
+
+RECOVERY CONTEXT (Lead): prior local T10 was lost with the disposable
+sandbox (workflow-file push was credential-blocked then). Reconstructed
+from the durable Plan (design decisions 8/9/11/12) + retained context as
+guidance only. This entry records ONLY fresh evidence from the recovered
+workspace at 23a4222. Push credential: token workflow scope verified in
+advance via OAuth scope header (repo, workflow, write:packages).
+
+LEAD VERIFIED FACTS FED TO THE TASK (all fresh):
+expo config --json → version 1.0.0, android.versionCode absent → Expo
+default 1 (checked against the installed @expo/config-plugins
+android/Version.js: getVersionCode = android?.versionCode ?? 1,
+getVersionName = android?.version ?? version); local prebuild →
+android/app/build.gradle `versionCode 1` / `versionName "1.0.0"`; prebuild
+mutates package.json (android script + ios script added) → restored via
+git checkout (T08-F04 fact revalidated, working tree clean); Node 24.19
+runs the full pnpm verify green; verify script CLI contract re-read
+(INPUT_SPECS + success line).
+
+IMPLEMENT (fresh feature-implementer, agent-4802d768)
+.github/workflows/android-release.yml (228 lines + remediation, 238 final)
+— workflow*dispatch ONLY; permissions contents:read; checkout@v7 with
+persist-credentials:false; release-scoped concurrency
+(group: workflow name, cancel-in-progress: false — serialized, an
+in-flight signing build is never cancelled); fail-closed secret presence
+check as the FIRST work step (four ANDROID_KEYSTORE_BASE64/
+ANDROID_KEYSTORE_PASSWORD/ANDROID_KEY_ALIAS/ANDROID_KEY_PASSWORD as step
+env, non-empty loop via ${!name}, exit 1 naming only the missing NAME);
+Node 24 job (native TS for the T09 tool); expected APK identity DERIVED
+from `npx expo config --json` with Expo's exact defaulting and every
+derived value validated as a simple token (package/versionName
+`[A-Za-z0-9.*+-]+`, versionCode `^[0-9]+$`) BEFORE any $GITHUB_ENV write;
+prebuild with all four MYAPP_UPLOAD_* (STORE_FILE=kisok-upload.keystore
+literal + three secrets) and EXPO_PUBLIC_* placeholders scoped to the
+prebuild STEP only — gradle's `expo export:embed`loads the committed .env
+(hosted TEST project) and process env would win over it, so job-level
+placeholders would have baked ci-placeholder values into the shipped APK
+(reviewer verified @expo/env precedence in the installed toolchain);`git checkout -- package.json`restore (T08-F04); keystore base64-decoded
+AFTER prebuild into gitignored android/app/ with an empty-output fail;`./gradlew assembleRelease --no-daemon`(no ABI override — tablet ABIs from
+expo-build-properties); aapt2/apksigner located from $ANDROID_HOME/
+build-tools (newest, explicit --aapt2/--apksigner, named error if absent);
+verify step (shell: bash, set -o pipefail) runs`node tools/release/verify-release-apk.ts`with the derived identity and
+tee-captures the log, then asserts the`APK verification passed` success
+line (T09-F02); upload-artifact@v7 name kisok-release-apk, exact APK path,
+if-no-files-found: error, retention 30 days (human inspection gap before
+the separate manual MDM upload; T12 downloads by name + run id).
+
+GREEN (implementer + Lead re-ran independently)
+$ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/android-release.yml'))" → YAML_OK
+$ pnpm exec prettier --check <file> → clean
+$ pnpm check:ci-scripts → 4 workflows, 10 checks, pass (now scans the new file)
+$ pnpm check:docs → 63 files pass
+$ pnpm verify → exit 0 (30 suites / 301 tests unchanged — no TS/TSX touched)
+$ git status --porcelain → exactly `?? .github/workflows/android-release.yml`
+Implementer embedded-script diligence (mock envs outside the repo): secret
+check fails closed naming the missing secret; identity derivation against
+the real evaluated config (com.kisok.kiosk / 1.0.0 / 1); tool-locate picks
+newest build-tools; verify-step logic propagates exit codes through tee
+under pipefail and the no-success-line case fails; keystore decode
+roundtrip + empty-secret failure; real T09 script under Node 24 fails
+closed with no inputs, --help exits 0 (and --help is correctly REJECTED by
+the success-line grep — reviewer verified).
+
+AFFECTED CHECKS
+$ pnpm verify → PASS (Lead re-ran after remediation; exit 0).
+
+REVIEW (fresh code-reviewer, agent-cb06c837)
+No blocking, no major. Two minors:
+T10-F01 minor: EXPECTED_VERSION_CODE lacked token validation before the
+$GITHUB_ENV write (GITHUB_ENV line-injection class; defense-in-depth since
+app.config.ts is trusted repo content) → FIXED (implementer resumed):
+String(versionCode) tested against ^[0-9]+$ with a named single-line error;
+the env write and final log use the validated token; /tmp mock matrix
+proves 1/"12"/7 pass, "7a"/newline/"1.5"/"" fail with the env file NOT
+written; Lead re-read the diff and re-ran YAML/prettier/verify. Fresh full
+re-review not re-run for this ~10-line minor defense-in-depth remediation
+(T01-F03 precedent) — the Round 3 gate review covers the accumulated diff.
+T10-F02 minor: the dispatch contract (who may dispatch, human must create
+the four repo secrets first, workflow_dispatch needs the file on the
+default branch before first dispatch, 30-day artifact window T12 uses) has
+no durable documentation; T10's scope was exactly one file → recorded as a
+T13 requirement in todo.md (T09-F02 precedent: the todo's T13 focused
+verification now pins it).
+Reviewer-verified clean: AC-07 fail-closed ordering (before any toolchain
+work; all-four-or-nothing matches the plugin contract; the T09 debug-cert
+rejection makes a debug-signed published artifact impossible); AC-08
+wiring (flags match INPUT_SPECS; artifact path matches the ABI story);
+T08-F04 restore present; secrets hygiene (keystore only into gitignored
+tree; artifact carries only the APK; nothing echoes values); structural
+safety (permissions/persist-credentials/concurrency/timeout/
+if-no-files-found); conventions (action versions, pnpm-before-node, Java
+17; Node 24 documented plan-backed deviation); scope discipline; every
+failure path traced to a job failure before publish. EXPO_PUBLIC step
+scoping verified CORRECT against @expo/cli exportEmbedAsync + @expo/env
+precedence in node_modules.
+
+GATE: PASS
