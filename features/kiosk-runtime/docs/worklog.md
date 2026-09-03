@@ -1276,3 +1276,141 @@ in place with dated revalidation notes; no AC, feature-shape, or
 task-graph change; plan remains READY after Lead consistency re-check of
 the changed lines. Research packet summary only recorded here — the
 researcher's full transcript stays out of the control documents.
+
+### T11 — MDM upload script (RECOVERY — fresh workspace, fresh evidence)
+
+MODE: behavior
+ACCEPTANCE: AC-09
+
+SCAFFOLD (Lead — none: tools/mdm/ is the planned manual tool path; `N/A —
+no generator capability covers repo tooling`)
+
+RECOVERY CONTEXT (Lead): prior local T11 was lost with the disposable
+sandbox. Reconstructed from the durable Plan (design decision 10, as
+amended by the 2026-09-03 research revalidation) + retained context as
+guidance only. Contract-driven: the plan's revalidated synthesis is the
+authority (upload completion from the response's fileStatus; create
+carries app_category_id + release_label_id; documented string versions;
+multipart key `file` per docs prose).
+
+RED (fresh feature-implementer, agent-3557f547)
+$ pnpm jest tools/mdm
+Cannot find module './upload-beta' from 'tools/mdm/upload-beta.test.ts'
+However, Jest was able to find: './upload-beta.test.ts'
+(76-test spec found; the only unmet dependency was the script — the
+honest T09-pattern RED. Fresh-reviewer note: reproducing the RED now
+would require deleting the implementation, which the reviewer's
+read-only mandate forbids; the pattern is identical to T09's recorded
+RED and matches todo.md's planned entry evidence.)
+
+IMPLEMENT
+tools/mdm/upload-beta.ts (1604 lines after remediations) — the
+Beta-only, non-production-first MDM Cloud upload CLI: pure exported
+functions + injectable seams (fetchImpl/readFile/sleep/errorSink/
+outputSink); thin CLI main(); argv[1] direct-run guard (T09 pattern,
+inert under jest); node-builtin imports only (node:buffer,
+node:fs/promises, node:path, node:process) — self-contained Node 24
+native TS; exit codes 0/1; --help lists every flag/env pair. Flow: ONE
+Zoho OAuth refresh-token exchange (urlencoded params incl. optional
+redirect_uri; one exchange per run per the 10-token/10-min throttle) →
+paginated app list read (50/page, short-page stop, 100-page bound,
+match by app_name) → monotonic version pre-check (numeric per
+component; Beta-label app_version preferred over top-level version;
+unparsable/missing → fail closed; refusal BEFORE any upload and in
+dry-run too) → two-phase upload POST {mdm}/emsapi/files (Module:
+MDM_APP_MGMT header, multipart key `file` — docs prose contract, the
+docs' own `fileName` examples recorded as a discrepancy; completion
+from the response's fileStatus == 2; any other status fails closed
+with the actual value) → create POST /api/v1/mdm/apps {app_name,
+app_type: 2, app_file, app_category_id, supported_devices: 3,
+release_label_id} OR add-version PUT /api/v1/mdm/apps/{app_id}/labels/
+{label_id} {app_file, force_update_in_label: true} → Beta label
+POST /api/v1/mdm/labels {"channel_name":"Beta"} (label name must be
+exactly "Beta"; others refused) → associate POST /api/v1/mdm/groups/
+{group_id}/apps {"app_details":[{app_id, release_label_id}],
+"silent_install": true} (exactly one group; missing/empty group id
+refused; production-group-id equality refused before any network).
+Backoff: 429/COM0002/5xx retried bounded (3 attempts, 1s/2s; sleeps
+injected, fake-timer-pinned); non-retryable 4xx immediate. Error
+envelope {error_code, error_description} surfaced, never raw dumps.
+9 documented data centres with paired accounts/mdm hosts (us default).
+Masking: every emitted line passes redaction of the known secret
+values (see T11-F01 remediation for the pre-emission hardening); the
+token is registered before any MDM call that could echo it. NO call to
+approve/distribute_update/retire_old_version anywhere (grep + happy-
+path sequence assertion).
+tools/mdm/upload-beta.test.ts (1521 lines after remediations) — 90
+tests, all through a fake recorded fetch (zero network, zero
+filesystem, all sinks injected → zero console output).
+
+GREEN
+$ pnpm jest tools/mdm → 1 suite, 90 tests PASS (76 original + 6 T11-F01
+
+- 8 T11-R1; one strengthened)
+  $ pnpm test:ci → 31 suites / 391 tests PASS (was 30/301; +1 suite, +90)
+  $ pnpm typecheck / pnpm lint / pnpm format:check / pnpm exec eslint
+  --max-warnings=0 tools/ → all clean (T08-F01 lesson held: static
+  process.env member access only)
+  $ pnpm verify → exit 0
+  Local Node-24 fail-closed smoke: no-inputs → exit 1 + the 7
+  named-variable messages (no network); --help → exit 0 (Lead re-verified
+  exit codes directly); production-group equality → exit 1; non-Beta
+  label → exit 1 named.
+
+AFFECTED CHECKS
+$ pnpm verify → PASS (Lead re-ran after each remediation; exit 0,
+31 suites / 391 tests).
+
+REVIEW (fresh code-reviewer, agent-c2ef160a)
+One major, one minor:
+T11-F01 MAJOR: input-resolution failure lines bypassed the redaction
+wrapper — a positional argv token (e.g. a pasted secret from a dropped
+flag) was echoed verbatim through the RAW errorSink before the
+redacting context existed; same gap in the direct-run catch (reviewer
+live-reproduced it) → FIXED (implementer resumed): collectSecretValues
+(argv+env, both flag forms) built before any emission; resolution
+failures routed through redactSecrets; the positional message drops
+the raw value; formatDirectRunFailure (exported, unit-tested) replaces
+the raw catch write; success-path secret list is the union incl. the
+losing side of overrides; 6 new masking tests. Lead re-ran the
+reviewer's exact reproduction: exit 1, secret value ABSENT from all
+output.
+T11-F02 minor: optional inputs hard-fail when set-but-empty (Actions
+unset-var renders "") — fail-closed direction but a realistic T12
+wiring trap → DISPOSITIONED to T12 (todo.md T12 focused verification:
+export optional env only when non-empty).
+FRESH RE-REVIEW (new code-reviewer, agent-06acbd9f) of the T11-F01
+remediation: verdict "adequately fixed as filed" — no raw-sink bypass
+remains; all seven remediation claims verified; prior clean areas
+re-verified intact; two new minors:
+T11-R1 minor: residual paste-leak class — a credential-shaped value
+existing ONLY in a non-credential argv slot is quoted verbatim by
+typed-validation messages (narrow: the wired T12 case is fully
+redacted; leak needs a manual mis-paste with the credential nowhere
+correct) → FIXED (implementer resumed): typed validations of
+non-credential inputs (data-centre enum, numeric ids, MDM_DRY_RUN)
+stop quoting the received value entirely (structurally closed —
+nothing to leak); free-form echoes (app name/version/APK path/label)
+kept as diagnostics and union-redacted when matching a known secret;
+collectSecretValues doc comment rewritten to the precise guarantee;
+8 new tests with a PASTED_SECRET that exists nowhere else. Lead
+live-re-verified with env -i: --data-centre/--group-id <secret> →
+exit 1, secret ABSENT (grep count 0), messages name variable + shape.
+T11-R2 minor: control-record state (no T11 worklog/review rows at
+re-review time) → resolved by THIS gate commit (this entry + the
+review.md rows). Unknown-flag name echo kept deliberately (the name is
+the typo diagnostic; embedded-secret case is redacted by the union —
+test-pinned; judgment recorded per the re-reviewer's "your judgment").
+Axes found clean across the review pair: AC-09 scope (Beta-only,
+non-production-only, dry-run read-only, zero production operations —
+sequence-asserted), fail-closed ordering (all validation before any
+network; requests length 0 asserted), contract fidelity to the
+2026-09-03 research packet (endpoints, params, bodies, pagination,
+fileStatus, force_update_in_label, silent_install, app_type 2,
+supported_devices 3, 9 data centres, one exchange per run), monotonic
+semantics (1.0.10 > 1.0.9; label-version preference; unparsable →
+refuse), backoff bounds, test quality (behavior-named, exact payload
+assertions, zero console output), self-containment, T09 structural
+parity, scope discipline.
+
+GATE: PASS

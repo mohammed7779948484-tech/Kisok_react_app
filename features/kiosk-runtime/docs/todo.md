@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : 3
-Current task      : T11
+Current task      : T12
 Current stage     : not started
-Last gate         : T10 GATE: PASS (recovered, fresh evidence, gate commit pushed)
-Next legal action : delegate T11 (tools/mdm/upload-beta.ts + tests — behavior mode), then T12
+Last gate         : T11 GATE: PASS (recovered, fresh evidence; major T11-F01 fixed + fresh re-review; gate commit pushed)
+Next legal action : delegate T12 (.github/workflows/mdm-beta-upload.yml — config mode), then T13
 
 Blocked by        : — (push credentials provided by the user; branch pushed and Draft PR #9 open — see Blocked below for what stays external)
 ```
@@ -50,7 +50,7 @@ Scan this first. Detail is below.
 | T08  | config          | Supporting AC-07                    | release-signing config plugin + .gitignore                                   | —             | done        | PASS    |
 | T09  | behavior        | Acceptance: AC-08, Supporting AC-01 | tools/release/verify-release-apk.ts + tests                                  | —             | done        | PASS    |
 | T10  | config          | Supporting AC-07                    | android-release.yml workflow                                                 | T08, T09      | done        | PASS    |
-| T11  | behavior        | Acceptance: AC-09                   | tools/mdm/upload-beta.ts + tests                                             | —             | not started | PENDING |
+| T11  | behavior        | Acceptance: AC-09                   | tools/mdm/upload-beta.ts + tests                                             | —             | done        | PASS    |
 | T12  | config          | Supporting AC-09                    | mdm-beta-upload.yml workflow                                                 | T09, T11      | not started | PENDING |
 | T13  | config          | Acceptance: AC-10                   | docs/mdm-operations.md operational contract                                  | T01–T12       | not started | PENDING |
 
@@ -220,7 +220,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Allowed manual files**: `.github/workflows/mdm-beta-upload.yml`
 - **Scaffold status**: `N/A — workflow file`
 - **Allowed file scope**: `.github/workflows/mdm-beta-upload.yml`
-- **Focused verification**: YAML parses; `pnpm verify` green; structural review (dispatch-only, dry-run default, artifact download by run id, re-verify before upload, secret checks, masking, permissions, persist-credentials, concurrency)
+- **Focused verification**: YAML parses; `pnpm verify` green; structural review (dispatch-only, dry-run default, artifact download by run id, re-verify before upload, secret checks, masking, permissions, persist-credentials, concurrency). Per T11-F02 (Lead disposition): the workflow exports the OPTIONAL tool env vars (MDM_APP_CATEGORY_ID / MDM_PRODUCTION_GROUP_ID / MDM_REDIRECT_URI) to the step env ONLY when non-empty — an Actions unset var renders as "" and the tool deliberately hard-fails on set-but-empty optional inputs; the required MDM_CLIENT_ID / MDM_CLIENT_SECRET / MDM_REFRESH_TOKEN are always exported
 
 ### T13 — ManageEngine operational contract
 
