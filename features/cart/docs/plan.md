@@ -521,14 +521,16 @@ asChild` + muted body Text), export it from `components/ui/index.ts`, and
 
 ## Task graph
 
-| Task  | Mode | Acceptance             | Objective                                                                 | Depends on | Required Skills                                                        |
-| ----- | ---- | ---------------------- | ------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------- |
-| H-T01 | bug  | Supporting AC-03/AC-02 | Canonical identity: UUID-cased `deriveLineId` + persisted semantic refine | —          | test-driven-development                                                |
-| H-T02 | bug  | Supporting AC-07       | Sign-out failure → same-owner re-auth coherence                           | —          | test-driven-development                                                |
-| H-T03 | bug  | Supporting AC-06       | QuickCart opens with no DialogContent advisory; description linked        | —          | test-driven-development, kisok-design-system, kisok-react-native-rules |
+| Task   | Mode                     | Acceptance             | Objective                                                                                                                                                  | Depends on | Required Skills                                                        |
+| ------ | ------------------------ | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------- |
+| H-T01  | bug                      | Supporting AC-03/AC-02 | Canonical identity: UUID-cased `deriveLineId` + persisted semantic refine                                                                                  | —          | test-driven-development                                                |
+| H-T02  | bug                      | Supporting AC-07       | Sign-out failure → same-owner re-auth coherence                                                                                                            | —          | test-driven-development                                                |
+| H-T03  | bug                      | Supporting AC-06       | QuickCart opens with no DialogContent advisory; description linked                                                                                         | —          | test-driven-development, kisok-design-system, kisok-react-native-rules |
+| H-T03b | behavior (test-only pin) | Supporting AC-02       | Store-level composed-path pin: semantically malformed lineId on disk → restore treats it as corrupt → durable clear + start empty (Round 1 reviewer R1-02) | H-T01      | test-driven-development                                                |
 
 Rounds: Round 1 = H-T01 + H-T02 (domain/session safety). Round 2 = H-T03
-(runtime/accessibility + convergence). H-T01 and H-T02 are independent (model
+(runtime/accessibility + convergence) + H-T03b (the R1-02 store-level
+composed-path convergence pin — test-only, cart-store.test.ts). H-T01 and H-T02 are independent (model
 vs state seams) but share the sign-out/hydrate intersection only through
 existing tests, so they may run sequentially in Round 1.
 
@@ -552,6 +554,11 @@ existing tests, so they may run sequentially in Round 1.
     catching real malformed data is the finding proven, not a test to weaken);
     R-T07-03 in the original review anticipated this exact fixture pass.
 - H-T02: `features/cart/state/sign-out-cleanup.ts`, `sign-out-cleanup.test.ts`
+  - Lead scope addendum (2026-09-03, Round 1 gate R1-01): the comment-only
+    accuracy refresh of the post-`clearCartForSignOut` window note in
+    `features/cart/state/use-cart.ts` (reviewer micro-note R-H02-4 —
+    comment text only, zero executable change) is part of H-T02's blast
+    radius; authorization mirrored here per the Round 1 reviewer.
 - H-T03: `components/ui/adaptive-sheet.tsx`, `components/ui/index.ts`,
   `components/app/ui-lab.tsx` (the other consumer — 2-line demo update,
   explicitly justified by decision 4),

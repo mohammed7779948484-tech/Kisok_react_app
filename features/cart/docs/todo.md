@@ -351,13 +351,15 @@ Branch `fix/cart-pre-checkout-hardening` from post-PR-#11 develop
 Findings: H-F01 VALID / H-F02 VALID / H-F03 VALID (reproduced live). No
 Checkout scope; no server Cart; PR stays DRAFT/unmerged.
 
-| Task  | Mode | Status  | Gate                                                                |
-| ----- | ---- | ------- | ------------------------------------------------------------------- |
-| H-T01 | bug  | DONE    | PASS (2096e5b) — fresh review 0 blk/0 maj/2 min, both dispositioned |
-| H-T02 | bug  | DONE    | PASS (5da1ae8) — fresh review 0 blk/0 maj/3 min dispositioned       |
-| H-T03 | bug  | PENDING | —                                                                   |
+| Task   | Mode     | Status  | Gate                                                                |
+| ------ | -------- | ------- | ------------------------------------------------------------------- |
+| H-T01  | bug      | DONE    | PASS (2096e5b) — fresh review 0 blk/0 maj/2 min, both dispositioned |
+| H-T02  | bug      | DONE    | PASS (5da1ae8) — fresh review 0 blk/0 maj/3 min dispositioned       |
+| H-T03  | bug      | PENDING | —                                                                   |
+| H-T03b | behavior | PENDING | —                                                                   |
 
-| Round | Scope                                       | Gate    |
-| ----- | ------------------------------------------- | ------- |
-| 1     | H-T01 + H-T02 (domain/session safety)       | PENDING |
-| 2     | H-T03 (runtime/accessibility + convergence) | PENDING |
+| Round | Scope                                           | Gate                     |
+| ----- | ----------------------------------------------- | ------------------------ |
+| 1     | H-T01 + H-T02 (domain/session safety)           | PASS (0 blk/0 maj/2 min) |
+| 2     | H-T03 + H-T03b (runtime/a11y + convergence pin) | PENDING                  |
+| 2     | H-T03 (runtime/accessibility + convergence)     | PENDING                  |

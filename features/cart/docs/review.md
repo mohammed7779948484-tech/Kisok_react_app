@@ -382,3 +382,27 @@ confirmed sound; the reconciled plan wording matches the code exactly.
 | R-H02-4 | micro-note                                          | use-cart.ts post-clearCartForSignOut comment accurate only for the success path after the fix                                                                                                                  | RESOLVED — same-implementer comment accuracy refresh (H-T02-FIX1, 5da1ae8): success path scoped, failure path documented with the sign-out-cleanup.ts pointer, B-FR-02 carry-forward retained                                                                                                                                          |
 
 **H-T02 TASK GATE: PASS.**
+
+## Round 1 gate review (fresh code-reviewer, 2026-09-03, diff 6161a4c..a2d18db)
+
+Verdict: **0 blocking / 0 major / 2 minor — ROUND 1 GATE: PASS.**
+
+All Round 1 axes examined clean: one authoritative identity rule end-to-end
+(deriveLineId is the only lineId producer in source, grep-verified; the
+schema refine reuses it; addLine merges by it; addToCartInputSchema
+strip-drops supplied ids; restore validates on read); UUID equivalence
+everywhere incl. the integration seam (deriveLineId is in the convergence
+suite's forbidden-specifier list — the seam never reimplements identity);
+hydration/restore hit/miss/mismatch-discard/corrupt→durable-clear unchanged
+(the stricter schema routes malformed identities through the same
+shape-agnostic corrupt plumbing); the full sign-out failure machine leaks
+nothing into an authenticated session in either re-auth order; locking
+semantics unchanged and pinned; core/ untouched (zero diff); scope exact.
+Full suite 54/552 reproduced identically (543 baseline + 8 H-T01 + 1 H-T02).
+
+| ID    | Severity | Finding                                                                                                                                                                                                    | Disposition                                                                                                           |
+| ----- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| R1-01 | minor    | The comment-only use-cart.ts refresh (R-H02-4) sat outside plan.md's written H-T02 file scope; authorization existed only in review.md/worklog                                                             | RESOLVED — one-line scope addendum mirrored into plan.md (same pattern as H-T01's fixture addendum)                   |
+| R1-02 | minor    | No store-level test pins the composed path "semantically malformed lineId on disk → restore treats it as corrupt → durable clear + start empty" (both halves individually proven; plumbing shape-agnostic) | RESOLVED — scheduled as micro-task H-T03b in Round 2 (test-only pin in cart-store.test.ts; task graph + todo updated) |
+
+**ROUND 1 GATE: PASS.**
