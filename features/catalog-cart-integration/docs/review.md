@@ -157,3 +157,38 @@ anti-duplication, and both structurally-forced deviation dispositions.
 | FR-01 | minor    | stale todo checkpoint + unchecked gate/brief boxes                                           | RESOLVED — checkpoint advanced to post-final-review; feature-gate checklist boxes ticked (audit + protected-PR check remain open by design); brief delivery boxes ticked with evidence pointers                                                                                    |
 | FR-02 | minor    | R2-01 clearance is static 96px; native inset > 24dp reintroduces the overlap class           | ACCEPTED-CARRY-FORWARD — scoped to the brief's tablet/desktop sizes (verified live at all three); native tier is explicitly UNVERIFIED; inset-aware clearance recorded as the device-tier follow-up                                                                                |
 | FR-03 | minor    | catalog brief AC-07 contradicts the shipped screen (supersession not cross-referenced there) | RESOLVED — one-line superseded-clause note applied to the catalog brief AC-07 row per the brief's own stability rules (marked superseded with the reason + pointer; quantity/Checkout/price/stock prohibitions explicitly stand); catalog suites re-green 26/235; check:docs green |
+
+## QUALITY AUDIT (C-AUDIT, fresh quality-auditor, exact HEAD 4f7eed3)
+
+Verdict: **CLEAN-WITH-OBSERVATIONS**. Every re-runnable claim reproduced
+identically (integration 5/46, full 54/543, typecheck 0, catalog filter
+26/235, cart 11/170, scoped eslint/prettier 0); live GitHub verified PR
+#11 open/draft/unmerged at 4f7eed3 with CI run 33725144035 all-success;
+PR #10 genuinely merged (4280994 in develop history) and PR #8 genuinely
+merged (62f3634 = develop tip); protected PRs #6/#7/#9 unchanged at
+1ecda7c/305399d/23a4222; the diff is exactly the dispositioned 20 files;
+zero Supabase / deep imports; the deviations and the FR-03 supersession
+honestly recorded; runtime evidence corresponds to final code (everything
+after a5f18e7 is docs-only); the live journey record internally coherent
+and honest about its limits.
+
+| ID     | Severity | Finding                                                                           | Disposition                                                                                          |
+| ------ | -------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| AUD-01 | minor    | todo.md labeled e630689 as "final HEAD" (CI green on both)                        | RESOLVED — line refreshed to 4f7eed3 (run 33725144035) with e630689 kept as the historical code HEAD |
+| AUD-02 | minor    | PR #11 body said the journey/review/audit/CI were "pending"                       | RESOLVED — PR body refreshed at handoff (this gate record)                                           |
+| AUD-03 | minor    | AC-11 said "only two" out-of-feature files; the FR-03 catalog-brief note is a 3rd | RESOLVED — AC-11 text now enumerates it with the disposition pointer                                 |
+| AUD-04 | cosmetic | unfilled generator template rows at the top of review.md                          | RESOLVED — noted as intentionally unused (findings live in the dated sections)                       |
+
+## FEATURE GATE — PASS
+
+All checklist items green: 5/5 Task Gates, 2/2 Round Gates, 11/11 ACs
+(with the live hosted journey), pnpm verify 0, export:web 0, exact-final-
+head CI green, hosted Customer Catalog → Local Cart journey verified,
+cart persistence + sign-out cleanup + Quick Cart + persistent access +
+unavailable-variant blocking verified, no server Cart/network path,
+a11y/responsive evidence recorded, final reviewer SHIP-READY (0
+blocking / 0 major), Quality Audit CLEAN-WITH-OBSERVATIONS (all
+observations closed), genuine UNVERIFIED items explicit (native tier,
+OS 200% scaling, second-customer runtime, badge corner geometry beyond
+the 48×48 measurement). The Integration PR remains DRAFT and UNMERGED —
+HUMAN_HANDOFF.
