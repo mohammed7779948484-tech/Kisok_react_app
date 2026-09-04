@@ -2658,3 +2658,45 @@ clean; check:ci-scripts + verify green (Lead re-ran test:ci).
 GATE: PASS (R5-07 closed — the Beta target is now an admin-controlled
 allowlist; dispatch cannot override it). Commit + push attempt follows
 (push still blocked — human token prerequisite recorded).
+
+### T28 — run provenance validation before cross-run artifact download (Round 5)
+
+CONFIG MODE (fresh feature-implementer, agent-e4cc085e): a new workflow
+step "Validate the release run before downloading its artifact" inserted
+exactly between the MDM-secrets check and the download step —
+GET /repos/{repo}/actions/runs/{run-id} with the job's github.token
+(actions: read — no new permissions; curl; HTTP status captured
+separately so 404 is a named failure); jq @tsv extraction of ONLY the
+five validated fields; validates workflow path (exact or @ref-suffixed —
+stronger than "ends with": prefix-gamed paths rejected) AND name
+"Android release"; status completed AND conclusion success; head_branch ∈
+{main, develop} (documented engineering allowlist — closes the
+same-version branch-swap hole content re-verification cannot). Every
+failure exits 1 with a precise ::error::; the full run JSON (actor emails
+etc.) never echoed; no inline ${{ }} in the run block (env plumbing
+only); the download step byte-identical to HEAD (structural assertion:
+parsed-doc-minus-new-step == HEAD doc).
+
+Verification: the extracted run block executed against a mock Actions API
+(401s unauthenticated requests) — the required matrix (a)–(f) PLUS seven
+adversarial rows = 13/13 pass, no-leak invariants asserted per row; the
+fresh reviewer then ran an INDEPENDENT 17-row adversarial matrix (array/
+scalar/null/empty JSON shapes, empty-name field-shift, tab-in-name,
+capitalization, prefix-gamed path, ::error:: injection probe, 404/403/500/
+transport) — 17/17 pass, again under bash -eo pipefail. YAML parses;
+check:ci-scripts green; pnpm verify exit 0 (69 suites / 980 tests
+unchanged).
+
+REVIEW (fresh code-reviewer, agent-57a0a0c0): **0 blocking / 0 major / 1
+minor** — T28-F1: the jq comment overstated the read's field-count
+guarantee (empty/null fields shift left under IFS-whitespace tabs;
+behavior verified fail-closed in all shift paths, but the stated invariant
+was wrong and edge errors misattribute). CLOSED by a same-implementer
+comment-only resume (the comment now states the true invariant + the
+accepted misattribution edge; the reviewer's field-shift repro was
+independently reproduced by the implementer first; 13/13 matrix re-run
+green; structural assertions 10/10).
+
+GATE: PASS (R5-12 closed as defense-in-depth; content re-verification
+unchanged and still primary). Commit + push attempt follows (push still
+blocked — human token prerequisite recorded).

@@ -5,8 +5,9 @@ name: MDM Beta upload
 # requires write access to the repository, which is the access boundary for
 # who can talk to the MDM tenant. It does NOT build anything: the Android
 # release workflow is the only builder (plan decision 10). Given the run id
-# of a prior Android release run, this workflow downloads that run's
-# kisok-release-apk artifact, RE-VERIFIES it with
+# of a prior Android release run, this workflow validates that run's
+# provenance (R5-12), downloads that run's kisok-release-apk artifact,
+# RE-VERIFIES it with
 # tools/release/verify-release-apk.ts against the identity derived from the
 # app config, and only then runs tools/mdm/upload-beta.ts (DRY-RUN BY
 # DEFAULT) against the ManageEngine MDM Cloud: the "Beta" release label,
@@ -155,11 +156,141 @@ jobs:
           done
           exit "$missing"
 
+      # PROVENANCE GATE (R5-12 — defense-in-depth recommended by the Round 5
+      # research, NOT a documented product requirement). The dispatch input
+      # is any NUMERIC run id, and workflow_dispatch lets anyone with write
+      # access run the Android release workflow from ANY ref — so a backdoored
+      # branch carrying the same app config would build an artifact that
+      # passes EVERY content check below (same package, same versionCode/
+      # versionName, same pinned upload-cert SHA-256, same embedded bundle).
+      # Content re-verification cannot see WHERE an artifact was built; only
+      # the run's identity can. So before anything is downloaded, ask the
+      # Actions REST API who this run is, and fail closed unless it is a
+      # successful run of the Android release workflow from a release-source
+      # branch. Per R5-C2 the workflow-identity and conclusion checks are
+      # secondary defenses (fail fast, audit attribution, nicer errors) — the
+      # head_branch allowlist is the one element that closes the real,
+      # otherwise-open branch-swap hole. The lookup uses `actions: read`
+      # (already granted above — the documented minimal permission for BOTH
+      # the run lookup and the artifact download) with the same github.token
+      # the download step below passes to its action, so no new permission is
+      # introduced. Only the five validated fields are ever echoed — never
+      # the full run JSON (it carries actor emails and other fields this
+      # step has no business printing).
+      - name: Validate the release run before downloading its artifact
+        shell: bash
+        env:
+          # The house rule — no inline ${{ }} inside any run: script — applies
+          # here too: the URL is assembled in bash from env values, and RUN_ID
+          # (a dispatch input) never appears in the script text. GITHUB_API_URL
+          # and GITHUB_REPOSITORY restate the runner's own documented defaults
+          # so every script input is visible in one place; GITHUB_TOKEN is
+          # scoped to this step and read only by curl's Authorization header.
+          GITHUB_API_URL: ${{ github.api_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run-id }}
+        run: |
+          run_url="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID"
+          # --show-error keeps transport failures visible in the log; the HTTP
+          # status is captured separately so a 404 is a NAMED failure instead
+          # of curl's generic exit 22. No retries: provenance is established
+          # once, and a transient failure means a re-dispatch.
+          http_code="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/release-run.json" \
+            --write-out "%{http_code}" \
+            --header "Authorization: Bearer $GITHUB_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            "$run_url")" || {
+            echo "::error::The run lookup request itself failed — $run_url could not be reached, so the provenance of run $RUN_ID cannot be established and its artifact will not be downloaded."
+            exit 1
+          }
+          case "$http_code" in
+            200) ;;
+            404)
+              echo "::error::Actions run $RUN_ID was not found — GET $run_url returned HTTP 404. The run-id dispatch input must be the id of a prior Android release run."
+              exit 1
+              ;;
+            *)
+              echo "::error::The run lookup returned HTTP $http_code (expected 200) — the provenance of run $RUN_ID cannot be established, so its artifact will not be downloaded."
+              exit 1
+              ;;
+          esac
+          # jq (preinstalled on ubuntu-latest) extracts ONLY the five fields
+          # this step validates, tab-separated: @tsv escapes any tab or
+          # newline INSIDE a value, so a value can never inject extra fields.
+          # The read below has the opposite invariant: an empty or null
+          # field yields consecutive tabs, and tab is IFS whitespace, so the
+          # fields shift LEFT — which always lands an empty value in the
+          # head-branch variable. Malformed field shapes therefore fail
+          # closed (the error may attribute the failure to a shifted field
+          # rather than the truly missing one; that misattribution is
+          # accepted — real GitHub run objects carry all five fields). An
+          # unparsable or non-object response is a NAMED failure here rather
+          # than a silent empty string later.
+          run_fields="$(jq -r \
+            '[.name // "", .path // "", .status // "", .conclusion // "", .head_branch // ""] | @tsv' \
+            "$RUNNER_TEMP/release-run.json")" || {
+            echo "::error::The run lookup response for run $RUN_ID is not the expected workflow-run JSON — the provenance cannot be established, so its artifact will not be downloaded."
+            exit 1
+          }
+          IFS=$'\t' read -r run_name run_path run_status run_conclusion run_head_branch <<<"$run_fields"
+          # 1) Workflow identity: the path is the stronger identity (the
+          #    workflow FILE in this repository); the display name is checked
+          #    as well. Both are pinned constants of this pipeline, exactly
+          #    like the branch allowlist below — renaming the workflow file
+          #    or its display name is a deliberate change, and this case
+          #    statement is the one reviewed line that must move with it.
+          case "$run_path" in
+            ".github/workflows/android-release.yml" | ".github/workflows/android-release.yml"@*)
+              ;;
+            *)
+              echo "::error::Run $RUN_ID belongs to workflow path '$run_path', not '.github/workflows/android-release.yml' — only the Android release workflow may produce the artifact this workflow uploads."
+              exit 1
+              ;;
+          esac
+          if [ "$run_name" != "Android release" ]; then
+            echo "::error::Run $RUN_ID is a run of workflow '$run_name', not 'Android release' — only the Android release workflow may produce the artifact this workflow uploads."
+            exit 1
+          fi
+          # 2) Run outcome: finished, and successful.
+          if [ "$run_status" != "completed" ]; then
+            echo "::error::Run $RUN_ID has status '$run_status', not 'completed' — an in-flight or queued run's artifact must never be uploaded."
+            exit 1
+          fi
+          if [ "$run_conclusion" != "success" ]; then
+            echo "::error::Run $RUN_ID concluded '$run_conclusion', not 'success' — a failed, cancelled or unknown-outcome build's artifact must never be uploaded."
+            exit 1
+          fi
+          # 3) Release-source branch. ENGINEERING CHOICE (R5-12): {main,
+          #    develop} are the branches a release may be dispatched from —
+          #    post-review, post-merge sources, never a feature branch. This
+          #    is the check that closes the same-version branch-swap hole;
+          #    a future change to the allowlist is one reviewed line here.
+          case "$run_head_branch" in
+            main | develop)
+              ;;
+            *)
+              echo "::error::Run $RUN_ID was built from head branch '$run_head_branch', which is not in the release-source allowlist {main, develop} — an artifact built from any other branch would still pass every content check below when the version matches (R5-12), so the run is refused before anything is downloaded."
+              exit 1
+              ;;
+          esac
+          # Success: one auditable line carrying exactly the five validated
+          # fields — never the full run JSON.
+          echo "run $RUN_ID provenance accepted: '$run_name' ($run_path), $run_status/$run_conclusion, head branch '$run_head_branch'."
+
       # The artifact was built and verified by the Android release workflow,
-      # and a human inspected it in between (plan decision 10). Download it
-      # BY NAME from the chosen run id — the download goes through the
-      # Actions API, which is why the job carries `actions: read` and the
-      # action takes an explicit github-token (checkout persisted no
+      # and a human inspected it in between (plan decision 10). The step above
+      # already established the run's PROVENANCE (R5-12): content
+      # re-verification below is strong — package identity, versionCode/
+      # versionName, the pinned upload-cert SHA-256, the embedded bundle —
+      # but it cannot see WHERE the artifact was built, and a same-version
+      # artifact from a different branch would pass every content check; the
+      # run-identity gate (workflow path + successful conclusion +
+      # release-source branch) is what closes that hole. Both are needed.
+      # Download it BY NAME from the chosen run id — the download goes
+      # through the Actions API, which is why the job carries `actions: read`
+      # and the action takes an explicit github-token (checkout persisted no
       # credential). digest-mismatch defaults to error, so a corrupted
       # artifact fails closed; a missing artifact fails the action loudly and
       # is never swallowed. The artifact contains exactly one file,
