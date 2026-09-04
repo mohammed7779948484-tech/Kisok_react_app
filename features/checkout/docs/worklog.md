@@ -678,3 +678,84 @@ R2-01 seam tests. R2-02/R2-03 fixed in todo by the Lead (board rows,
 round number, the T12 note).
 
 ROUND 2 GATE: PASS
+
+### T08 — Order Review screen + order-line-row
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-02, AC-03
+
+SCAFFOLD (Lead, before delegating)
+$ pnpm generate component checkout order-line-row
+$ pnpm generate screen checkout order-review
+created : features/checkout/components/order-line-row.tsx (+ test)
+features/checkout/screens/order-review/order-review-screen.tsx
+(+ test)
+skipped : —
+replaced : —
+manual : —
+
+RED (behavior)
+$ npx jest features/checkout/components/order-line-row.test.tsx features/checkout/screens/order-review/order-review-screen.test.tsx
+Tests: 11 failed, 11 total
+Every failure is the intended missing CONTENT against the placeholder
+tree: "Unable to find an element with text: Review Your Order" (the
+placeholder renders "OrderReview" + TODO), "Unable to find an element
+with accessibility label: Cappuccino" (the row renders TODO). Zero
+console output (after scoping the delayed-read spy to the cart key only
+— the sign-out-cleanup spy precedent).
+
+IMPLEMENT
+components/order-line-row.tsx — read-only line presentation: AppImage
+(h-20 w-20 rounded-lg, alt = productDisplayName, null → ImageOff
+fallback), Text h3 name + caption "variantLabel · option labels"
+(CartItemRow's exact composition), Text body quantity with
+accessibilityLabel "Quantity: N". No stepper/remove/callbacks/prices.
+CartLine TYPE-ONLY import from @/features/cart.
+components/order-line-row.test.tsx — NEW colocated test: read-only
+snapshot + zero buttons, Quantity label, fallback rendering.
+screens/order-review/order-review-screen.tsx — the full-cart structure
+exactly: edges contract; !hydrated → SkeletonList; heading "Review Your
+Order" + persistence alerts (full-cart's copy); ScrollView of
+OrderLineRow (bounded at 100 lines — commented); fixed footer with the
+"N items · M lines" summary + Back to Cart (outline large →
+router.push("/cart")) + Confirm Order (primary large block, disabled
+unless hydrated && lines>0 && !locked, onPress a documented inert
+placeholder for T09); empty → EmptyState with the Back to Cart escape
+(no Confirm rendered); locked → Confirm disabled, escape enabled.
+screens/order-review/order-review-screen.test.tsx — 8 tests: populated
+review (the RED case incl. no-price assertion), restore-pending skeleton
+(cart-key-scoped delayed read), empty escape, memoryOnly + clearFailed
+via REAL failure paths, Back pushes /cart, locked, compact 480×900.
+Cart singleton driven through the PUBLIC API only in tests (the store is
+deliberately not public).
+
+GREEN
+$ npx jest features/checkout → 10 suites / 242 tests (zero console noise)
+$ npx jest features/cart → 11 suites / 187 tests (unregressed)
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean
+$ npx eslint <4 files> --max-warnings=0 → exit 0
+$ npx prettier --check <4 files> → clean
+
+TASK REVIEW (fresh code-reviewer, agent-048028f6)
+Verified by direct diff: structural fidelity to full-cart (edges
+contract, alerts byte-identical, bounded-list rationale); the read-only
+row's purity + caption composition char-for-char; accessibility
+(role+name queries, disabled forwarded, ≥48dp); the confirm-enablement
+rule; real-failure-path persistence tests (stronger than full-cart's
+seeded-status ones); the restore-pending frame genuinely observable
+(closes full-cart's R-T11-01 deviation); RN rules (no falsy && renders,
+text-in-Text); boundaries (no Supabase, public-API only, index not
+widened — correct for T08); all suite/typecheck/lint runs reproduced.
+Findings: F-1 minor (prettier on the Lead's in-flight worklog edit —
+fixed with this entry), F-2 minor (worklog evidence — this entry).
+No code findings.
+
+DIFF
+features/checkout/components/order-line-row.tsx (new)
+features/checkout/components/order-line-row.test.tsx (new)
+features/checkout/screens/order-review/order-review-screen.tsx (new)
+features/checkout/screens/order-review/order-review-screen.test.tsx (new)
+
+GATE: PASS
