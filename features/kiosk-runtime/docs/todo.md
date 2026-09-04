@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : 4 — post-review remediation (T14–T20)
-Current task      : — (Round 4 gate PASS; develop integration next)
+Current task      : — (final review complete: FR2-01/02 fixed, FR2-03 accepted; fresh re-review next)
 Current stage     : RESEARCH GATE COMPLETE (7/7 packets, Lead spot-checked; IR verdict matrix in review.md); Plan remediation amendment READY after Lead Planning Review. T14 PASS (IR-01); T15 PASS (IR-03/04/05); T16 PASS (R5 drifts); T14–T19 PASS (IR-01/03/04/05/06/08 + R5 drifts + IR-07 hardening).
 Last gate         : (historical) FEATURE GATE: PASS @ b71c828 — REOPENED 2026-09-04; no remediation task gate yet
-Next legal action : Lead: push the R4-1 fix (this commit), then git fetch origin and integrate current origin/develop (IR-09) non-destructively; re-run affected verification on the integrated HEAD; then final verification -> fresh final review -> fresh quality audit -> NEW Feature Gate.
+Next legal action : Lead: push the FR2-01/02 record fixes (this commit), then launch the FRESH final re-reviewer (new context) to confirm convergence (0 blocking / 0 major), then the fresh quality-auditor, then the NEW Feature Gate checklist.
 
 REMEDIATION_START_FEATURE_SHA=b71c8285c6e26fb6fd1463c4b0a81cd8ae1afe31
 REMEDIATION_START_DEVELOP_SHA=3a25640b602a685c690a4b467b6e900625484c89 (develop advanced past the earlier integration point 6161a4c — PR #12 cart hardening; re-integration required before final verification)

@@ -2210,3 +2210,31 @@ mdm-upload` (upload job) with the human-migration follow-up comments.
   below at completion. Maestro/E2E: N/A per plan (skipped, not PASS).
 - **Fast CI on db3a50d**: Verify / Web bundle / Expo doctor / Android
   prebuild — outcome recorded below at completion.
+
+- **Fast CI + native tier on the EXACT final HEAD 7d6702d** (FR2-01
+  remediation — recorded with run ids; the db3a50d runs were CANCELLED as
+  superseded by the evidence commit's synchronize events, and the build
+  label's outcome landed on the final HEAD): **CI run 33857102917
+  SUCCESS** (fast tier: Verify / Web bundle / Expo doctor / Android
+  prebuild check all success, check-suite runs 91755501768/91755501769);
+  **Android build run 33857102920 SUCCESS** (label-gated native compile
+  tier, completed on 7d6702d); Maestro flows skipped (N/A per plan);
+  Android E2E skipped (run 33857103028 — never claimed PASS).
+
+## Final full-feature review (fresh, post-remediation) — FR2 series
+
+Fresh final reviewer (agent-49d1b14b, HEAD 7d6702d): **0 blocking / 1 major
+/ 2 minor.** FR2-01 (major, records): the final-verification entry's CI
+outcomes were dangling promises — the reviewer independently verified the
+7d6702d runs green (ids above) and required the record + attribution fix
+(this commit). FR2-02 (minor): todo.md checkpoint one step behind (fixed in
+this commit). FR2-03 (minor): the identity-derivation script is duplicated
+byte-for-byte in both secret-bearing workflows — ACCEPTED with rationale:
+the duplication is the documented plan design (byte-identical by contract,
+reviewed in T18); a desync fails CLOSED (the MDM re-verify compares against
+a different expected identity and exits 1), so it is a maintenance cost,
+not a fail-open hazard; if ever extracted to a shared script, that is a
+deliberate future change with its own task. Coverage: all ACs verified
+clean, all remediation closures verified, no regression against T01–T13,
+scope clean (49-file expected list), pins re-resolved, 68/894 re-run by the
+reviewer.
