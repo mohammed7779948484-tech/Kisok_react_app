@@ -15,11 +15,11 @@ The single answer to "where are we?". Update it whenever any of it changes; it
 is the first thing the next agent reads.
 
 ```
-Current round     : 1
+Current round     : 2
 Current task      : — (round complete)
-Current stage     : T07 GATE PASS — Round 2 complete; ROUND GATE pending
-Last gate         : T07 GATE PASS (Round 2 tasks complete)
-Next legal action : Round 2 gate — accumulated diff review + fresh Round reviewer
+Current stage     : ROUND 2 GATE PASS — Round 3 starting
+Last gate         : ROUND 2 GATE PASS
+Next legal action : Lead scaffold T08 (component + screen), then delegate
 Blocked by        : —
 ```
 
@@ -47,8 +47,8 @@ Scan this first. Detail is below.
 | T03  | behavior | Supporting AC-06, AC-07               | checkout-attempt record schema                             | T02                     | done        | PASS    |
 | T04  | behavior | Supporting AC-07–AC-10                | submit-order api + mutation hook                           | T01                     | done        | PASS    |
 | T05  | behavior | Supporting AC-07, AC-11               | Cart `clearCartDurable()` extension                        | —                       | done        | PASS    |
-| T06  | behavior | Acceptance: AC-04, AC-06, AC-09–AC-11 | Checkout attempt store (state machine + durable lifecycle) | T02, T03, T04, T05      | not started | PENDING |
-| T07  | behavior | Acceptance: AC-12                     | Sign-out guard + cleanup registration                      | T06                     | not started | PENDING |
+| T06  | behavior | Acceptance: AC-04, AC-06, AC-09–AC-11 | Checkout attempt store (state machine + durable lifecycle) | T02, T03, T04, T05      | done        | PASS    |
+| T07  | behavior | Acceptance: AC-12                     | Sign-out guard + cleanup registration                      | T06                     | done        | PASS    |
 | T08  | behavior | Acceptance: AC-02, AC-03              | Order Review screen + order-line-row                       | —                       | not started | PENDING |
 | T09  | behavior | Acceptance: AC-04, AC-08–AC-10        | Review submission flow + outcome panels                    | T04, T06, T08           | not started | PENDING |
 | T10  | behavior | Supporting AC-14                      | Catalog settings seam                                      | —                       | not started | PENDING |
@@ -230,6 +230,12 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Acceptance**: `Acceptance: AC-13`
 - **Depends on**: T06, T07
 - **Skills**: test-driven-development, kisok-design-system, expo-router
+- **Note (from Round 2 review R2-03 / sign-out-cleanup.ts edge-timing)**: the
+  recovery gate must fire `recover()` at layout mount and sign-out-reachable
+  UI must stay blocked (or the store's recordLoaded guard consulted) until
+  the first durable read lands — the sign-out guard reads the IN-MEMORY
+  record, so the restart window (a durable record from a prior session not
+  yet loaded) is closed by THIS composition, not by the guard alone.
 - **Lead scaffold**: `pnpm generate component checkout recovery-gate`
 - **Expected generated files**: `components/recovery-gate.tsx` (+ test)
 - **Allowed manual files**: edit `app/(customer)/_layout.tsx` (mount the gate),

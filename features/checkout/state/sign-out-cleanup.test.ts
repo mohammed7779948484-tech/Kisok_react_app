@@ -1,9 +1,11 @@
 import { runSignOutCleanup, runSignOutGuards, type SignOutGuardResult } from "@/core/auth";
 import { resetLogging, setLogSink } from "@/core/logging";
 import { storage, storageKey } from "@/core/storage";
+import { unlockCart, type CartLine } from "@/features/cart";
 
 import { checkoutAttemptSchema, type CheckoutAttempt } from "../model/checkout-attempt.schema";
-import { useAttemptStore, type AttemptState } from "./attempt-store";
+import { normalizeCartLines } from "../model/normalized-request";
+import { useAttemptStore, type AttemptState, type PrepareResult } from "./attempt-store";
 // The module under test. Its import IS the behaviour under test: checkout's
 // sign-out guard + cleanup register here, as a module side-effect.
 import { clearCheckoutForSignOut } from "./sign-out-cleanup";
@@ -32,6 +34,19 @@ jest.mock("lucide-react-native", () => {
     ShoppingCart: makeIcon("ShoppingCart"),
   };
 });
+
+/**
+ * The R2-01 seam tests below drive the REAL prepareAttempt on the singleton
+ * store, whose default deps mint the id through expo-crypto — and the
+ * jest-expo ExpoCrypto native-module mock stubs `randomUUID()` to return
+ * `undefined`, which would persist a record the attempt schema must reject
+ * (the attempt-store's own lazy-namespace seam exists for exactly this — its
+ * factory tests inject an idFactory, but the SINGLETON cannot be injected).
+ * Only this feature imports expo-crypto, so replacing the module is total.
+ */
+jest.mock("expo-crypto", () => ({
+  randomUUID: () => "11111111-2222-4333-8444-555555556666",
+}));
 
 /**
  * T07 — checkout's sign-out guard + cleanup registration (AC-12).
@@ -83,7 +98,7 @@ const VARIANT_ID = "9c2d5e1a-3f4b-4a8c-b7d6-8e9f0a1b2c3d";
 const PRODUCT_ID = "5d6e7f8a-9b0c-4d1e-8f2a-3b4c5d6e7f8a";
 
 /** One plain line snapshot — the same shape the attempt-store tests round-trip. */
-const WATER_SNAPSHOT = {
+const WATER_SNAPSHOT: CartLine = {
   lineId: VARIANT_ID,
   variantId: VARIANT_ID,
   productId: PRODUCT_ID,
@@ -369,6 +384,177 @@ describe("checkout sign-out guard + cleanup (AC-12)", () => {
     await expect(guards).resolves.toEqual({
       status: "blocked",
       reason: "An order submission is still unresolved.",
+    });
+  });
+
+  describe("R2-01 — the T06↔T07 seam: an in-flight unresolved identity is never destroyed", () => {
+    /**
+     * Park the attempt key's durable write on the REAL storage singleton: the
+     * attempt key's next `storage.write` resolves only once `release()` is
+     * called, and `started` settles the moment the write begins. This makes
+     * the prepare-mint window (the serialized op has started, its write is in
+     * flight, the record is not yet in memory) deterministic for a guard
+     * snapshot or a cleanup invocation — the exact window where the old code
+     * showed `record: null` + `phase: "idle"`, approved the sign-out, and let
+     * the post-handoff cleanup raw-remove the freshly persisted UNRESOLVED
+     * record (R2-01(a) — the duplicate-order seam).
+     */
+    const parkAttemptWrite = () => {
+      const realWrite = storage.write;
+      let release: () => void = () => {};
+      let signal: () => void = () => {};
+      const started = new Promise<void>((resolve) => {
+        signal = resolve;
+      });
+      const spy = jest
+        .spyOn(storage, "write")
+        .mockImplementation(async (key: string, value: unknown) => {
+          if (key !== KEY) return realWrite(key, value);
+          signal();
+          await new Promise<void>((resolve2) => {
+            release = resolve2;
+          });
+          return realWrite(key, value);
+        });
+      return { started, release: () => release(), restore: () => spy.mockRestore() };
+    };
+
+    /** The pre-recovered singleton with a clean disk, mid nothing. */
+    async function recoveredSingleton() {
+      await useAttemptStore.getState().recover(OWNER);
+    }
+
+    it("the guard BLOCKS a sign-out while a prepare write is in flight — the identity survives (R2-01a)", async () => {
+      const parked = parkAttemptWrite();
+      let preparePromise: Promise<PrepareResult> | undefined;
+      try {
+        await recoveredSingleton();
+        preparePromise = useAttemptStore.getState().prepareAttempt({
+          ownerId: OWNER,
+          lines: [WATER_SNAPSHOT],
+          normalized: normalizeCartLines([WATER_SNAPSHOT]),
+        });
+        await parked.started; // mid-prepare: the durable write is in flight
+
+        // THE GUARD SNAPSHOT, mid-write: applyPrepare sets phase
+        // "submitting" synchronously BEFORE the write, so the in-flight
+        // submission is visible with zero race and the sign-out is REFUSED
+        // — in the legal flow the cleanup is never even invoked while the
+        // identity is live. (Before R2-01 the guard read record: null +
+        // phase "idle" here and approved; the post-handoff cleanup then
+        // destroyed the unresolved record, and the in-flight submission
+        // resolved against a null record — a retry or restart re-minted a
+        // client_request_id and could duplicate the order.)
+        await expect(runSignOutGuards()).resolves.toEqual({
+          status: "blocked",
+          reason: "An order submission is still unresolved.",
+        });
+
+        parked.release();
+        const prepared = await preparePromise;
+        if (!prepared.ok) throw new Error(`fixture prepare failed: ${prepared.reason}`);
+
+        // The refused sign-out left the identity intact: durable,
+        // unresolved, in memory — and the guard STILL blocks on it.
+        const persisted = await readPersistedAttempt();
+        if (persisted.status !== "hit") {
+          throw new Error(
+            "expected the unresolved record to be durable after the refused sign-out",
+          );
+        }
+        expect(persisted.value.status).toBe("unresolved");
+        expect(persisted.value.clientRequestId).toBe(prepared.request.clientRequestId);
+        const state = useAttemptStore.getState();
+        expect(state.record?.status).toBe("unresolved");
+        expect(state.phase).toBe("submitting");
+        await expect(runSignOutGuards()).resolves.toEqual({
+          status: "blocked",
+          reason: "An order submission is still unresolved.",
+        });
+      } finally {
+        parked.release();
+        parked.restore();
+        await preparePromise?.catch(() => undefined);
+        // The parked prepare locked the REAL cart through the singleton's
+        // default deps; hand it back — in the full lifecycle the cart's own
+        // cleanup owns this, but these tests bypass runSignOutCleanup().
+        unlockCart();
+      }
+    });
+
+    it("the cleanup's wipe is CHAIN-ENQUEUED: it queues BEHIND an in-flight prepare write instead of interleaving it (R2-01b)", async () => {
+      // The old raw remove ran OFF the store's serialized durable-op chain,
+      // so a sign-out landing mid-write interleaved the wipe with the
+      // in-flight durable write — the wrong-direction interleaving the
+      // reviewer flagged. The cleanup now drives the store's
+      // clearForSignOut, whose remove is ONE chain-enqueued op: it runs
+      // strictly after every earlier-enqueued op and can never interleave
+      // one. The direct call here deliberately bypasses the guard — the
+      // guard owns the legal flow (the test above); this pins the wipe's
+      // ordering no matter who invokes it.
+      const events: string[] = [];
+      const realWrite = storage.write;
+      const realRemove = storage.remove;
+      let release: () => void = () => {};
+      let signal: () => void = () => {};
+      const started = new Promise<void>((resolve) => {
+        signal = resolve;
+      });
+      const writeSpy = jest
+        .spyOn(storage, "write")
+        .mockImplementation(async (key: string, value: unknown) => {
+          if (key !== KEY) return realWrite(key, value);
+          events.push("write-start");
+          signal();
+          await new Promise<void>((resolve2) => {
+            release = resolve2;
+          });
+          const result = await realWrite(key, value);
+          events.push("write-landed");
+          return result;
+        });
+      const removeSpy = jest.spyOn(storage, "remove").mockImplementation(async (key: string) => {
+        if (key === KEY) events.push("remove");
+        return realRemove(key);
+      });
+      let preparePromise: Promise<PrepareResult> | undefined;
+      try {
+        await recoveredSingleton();
+        preparePromise = useAttemptStore.getState().prepareAttempt({
+          ownerId: OWNER,
+          lines: [WATER_SNAPSHOT],
+          normalized: normalizeCartLines([WATER_SNAPSHOT]),
+        });
+        await started; // mid-prepare: the write is in flight
+
+        // The cleanup fires mid-write (the exact call the old raw remove
+        // answered immediately, off the chain):
+        const cleanupDone = clearCheckoutForSignOut();
+        release();
+        const prepared = await preparePromise;
+        if (!prepared.ok) throw new Error(`fixture prepare failed: ${prepared.reason}`);
+        await cleanupDone;
+
+        // The interleaving direction, pinned: the wipe ran strictly AFTER
+        // the write landed. Before R2-01 the events came back
+        // ["write-start", "remove", "write-landed"] — the remove racing the
+        // in-flight write, which became identity destruction the moment the
+        // write landed after it (or the guard had approved mid-write).
+        expect(events).toEqual(["write-start", "write-landed", "remove"]);
+        // The wipe itself completed honestly: disk clean, envelope reset.
+        expect((await readPersistedAttempt()).status).toBe("miss");
+        const state = useAttemptStore.getState();
+        expect(state.record).toBeNull();
+        expect(state.recordLoaded).toBe(false);
+        expect(state.phase).toBe("idle");
+        expect(state.persistence).toBe("persisted");
+      } finally {
+        release();
+        writeSpy.mockRestore();
+        removeSpy.mockRestore();
+        await preparePromise?.catch(() => undefined);
+        unlockCart();
+      }
     });
   });
 });

@@ -636,3 +636,45 @@ features/checkout/state/sign-out-cleanup.test.ts (new)
 features/checkout/index.ts (side-effect import only)
 
 GATE: PASS
+
+### ROUND 2 GATE — attempt lifecycle & safety
+
+ROUND DIFF REVIEW (Lead)
+0781e40..HEAD plus the round-remediation changes: T05 (cart seam, 4
+files), T06 (attempt store, 912+1075 lines), T07 (sign-out registration,
+138+374), round remediation (+437 across the store + cleanup files).
+All code inside features/checkout/ + the planned cart seam files.
+
+ROUND CHECKS
+$ pnpm test → 62 suites / 791 tests, zero console output
+$ pnpm typecheck → clean
+$ pnpm lint → zero warnings (exit 0)
+
+ROUND REVIEW (fresh code-reviewer, agent-29912c0b)
+Examined and clean: T05↔T06 deps binding typecheck-pinned;
+hydrate-before-clear composition verified against the cart's chain;
+T06↔T07 shape/semantics agreement; the full lifecycle walk (prepare →
+each resolve → cleanup → sign-out → recovery) — every transition traced
+in code AND tests; cross-feature integrity (cart suites green, both
+sign-out registrations co-exist, exact-failure assertion); round
+completeness (everything Round 3/4 consumes is exported).
+Findings: R2-01 MAJOR (the cleanup's raw remove could destroy an
+in-flight unresolved identity: prepare-mint window + recover-read
+window — the exact duplicate-order hazard the guard exists to prevent),
+R2-02 minor (todo board stale), R2-03 minor (T12 missing the
+sign-out-window note), R2-04 minor (reuse path no owner check → K1003),
+R2-05 minor (overlapping-prepare + resolveSuccess-on-null untested).
+Remediation (fresh round-remediation implementer, agent-1a3ffb43, with
+full RED evidence — the wrong-direction interleaving reproduced exactly:
+events ["write-start","remove","write-landed"] before the fix):
+chain-enqueued clearForSignOut() store action (the cart clear()
+precedent) now driven by the cleanup — the wipe can never interleave an
+in-flight prepare/recover op; applyPrepare sets phase "submitting"
+SYNCHRONOUSLY before the durable write (revert on failure) and the guard
+blocks on unresolved OR submitting (same contract reason string);
+same-fingerprint reuse now requires the same owner; overlapping-prepare
+test (one write, identical ids) + resolveSuccess-on-null no-op + the two
+R2-01 seam tests. R2-02/R2-03 fixed in todo by the Lead (board rows,
+round number, the T12 note).
+
+ROUND 2 GATE: PASS

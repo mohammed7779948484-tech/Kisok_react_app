@@ -268,6 +268,12 @@ export type AttemptState = {
   recover: (ownerId: string) => Promise<RecoveryOutcome>;
   retryCleanup: () => Promise<void>;
   resetForNextCustomer: () => Promise<StorageWriteResult>;
+  /**
+   * The UNGATED durable wipe the sign-out cleanup drives (AC-12, R2-01) —
+   * see `applyClearForSignOut` below for the chain-enqueue reasoning and the
+   * envelope-reset semantics.
+   */
+  clearForSignOut: () => Promise<StorageWriteResult>;
   enterReview: () => void;
 };
 
@@ -387,10 +393,14 @@ export function createAttemptStore(
       const { record } = get();
 
       if (record?.status === "unresolved") {
-        if (record.fingerprint === input.normalized.fingerprint) {
-          // Same logical request — a RETRY of the same submission. The record
-          // is already durable: that IS the retry-safety, so NO new write and
-          // NO new id — the exact payload is handed back for resubmission.
+        if (
+          record.fingerprint === input.normalized.fingerprint &&
+          record.ownerId === input.ownerId
+        ) {
+          // Same logical request by the SAME owner — a RETRY of the same
+          // submission. The record is already durable: that IS the
+          // retry-safety, so NO new write and NO new id — the exact payload
+          // is handed back for resubmission.
           set({ phase: "submitting", conflict: null, failure: null });
           deps.lockCart();
           return {
@@ -399,11 +409,14 @@ export function createAttemptStore(
           };
         }
         // Defensive (the flow never allows cart edits while unresolved), but
-        // the store must not silently rebind an identity to a changed request
-        // — that could mint a second order for a customer who already has one
-        // in flight (AC-06).
+        // the store must not silently rebind an identity — not to a CHANGED
+        // logical request, and never to a DIFFERENT profile (R2-04): the live
+        // clientRequestId belongs to whoever minted it, and handing it to
+        // another owner would submit THEIR cart under the first owner's
+        // idempotency identity — either way a second order could be created
+        // for a customer who already has one in flight (AC-06).
         log.warn(
-          "prepareAttempt refused: an unresolved attempt exists for a different logical request",
+          "prepareAttempt refused: the unresolved attempt exists for a different logical request or profile",
         );
         return { ok: false, reason: "unresolved-attempt-exists" };
       }
@@ -419,6 +432,20 @@ export function createAttemptStore(
       // safety core). The screen only gets a request to submit once this
       // write has landed, so an ambiguous result can always be recovered by
       // replaying the durable id.
+      //
+      // The phase flips to "submitting" SYNCHRONOUSLY here — BEFORE the
+      // durable write — and is REVERTED if the write fails (R2-01(a)):
+      // setting the record only after the write resolved left a window
+      // where a sign-out guard snapshotting mid-write saw `record: null` +
+      // `phase: "idle"`, approved, and the post-handoff cleanup then wiped
+      // the freshly persisted unresolved identity (its in-flight submission
+      // resolved against nothing, and a retry or restart re-minted a
+      // client_request_id — a possible duplicate order). The synchronous
+      // flip makes the in-flight submission visible for that whole window
+      // with zero race; the revert keeps the machine exactly where it was
+      // for a submission that will never happen.
+      const previousPhase = get().phase;
+      set({ phase: "submitting" });
       const minted: CheckoutAttempt = {
         version: 1,
         ownerId: input.ownerId,
@@ -430,11 +457,13 @@ export function createAttemptStore(
       };
       const written = await backend.write(STORAGE_KEY, minted);
       if (written.status === "rejected") {
-        // No record in memory, phase stays idle, cart NOT locked: the network
-        // call must not happen (AC-06). `persistence` is left untouched — with
-        // no record in memory there is nothing to call "memoryOnly", and the
-        // failure is reported honestly through the returned result; a standing
-        // `clearFailed` (stale record still on disk) must not be downgraded.
+        // No record in memory, the phase is reverted to what it was, cart NOT
+        // locked: the network call must not happen (AC-06). `persistence` is
+        // left untouched — with no record in memory there is nothing to call
+        // "memoryOnly", and the failure is reported honestly through the
+        // returned result; a standing `clearFailed` (stale record still on
+        // disk) must not be downgraded.
+        set({ phase: previousPhase });
         log.error("prepareAttempt aborted: the attempt could not be made durable before submit", {
           key: STORAGE_KEY,
           reason: written.error.message,
@@ -450,11 +479,12 @@ export function createAttemptStore(
       }
       set({
         record: minted,
-        phase: "submitting",
         conflict: null,
         failure: null,
         persistence: "persisted",
       });
+      // The phase is already "submitting" — the synchronous flip above owns
+      // it from here on.
       deps.lockCart();
       return {
         ok: true,
@@ -861,6 +891,60 @@ export function createAttemptStore(
       return removed;
     };
 
+    // ---- clearForSignOut (AC-12 — the sign-out cleanup's wipe, R2-01) --------
+    /**
+     * The UNGATED durable wipe the sign-out cleanup drives — exactly how the
+     * cart's cleanup drives the cart store's `clear()`. `resetForNextCustomer`
+     * is GATED (confirmed + cleanup done) because the Next-Customer reset it
+     * serves must refuse while anything is unresolved or cleanup is unsafe;
+     * sign-out needs an unconditional wipe, and the sign-out GUARD
+     * (sign-out-cleanup.ts) is what decides one is legal — it blocks while a
+     * record is unresolved OR a submission is in flight (phase
+     * "submitting").
+     *
+     * WHY the remove is chain-enqueued (R2-01): it runs as ONE op on the
+     * serialized durable-op chain, so an in-flight prepare write or recover
+     * read can never be INTERLEAVED with the wipe — the remove runs strictly
+     * after every earlier-enqueued op (the old raw remove from the cleanup
+     * could land mid-write and destroy a freshly persisted UNRESOLVED
+     * identity — the duplicate-order seam), and any later-enqueued op sees
+     * the post-reset envelope below: the reset lands in the remove's settle
+     * cascade, ahead of every later chain op. A sign-out during an in-flight
+     * recover read therefore cannot resurrect DISK state either — the remove
+     * lands after the read, covering whatever it loaded; the loaded record
+     * may transiently sit in MEMORY during teardown (the read's apply
+     * precedes the remove), but the post-remove reset wipes it, so the
+     * residual is memory-only and harmless — the next session reads clean
+     * disk.
+     *
+     * The envelope reset is the full sign-out reset the cleanup used to apply
+     * itself, applied AFTER the remove resolves, OUTSIDE the op — the op is
+     * the backend remove alone (the store's pattern: a state update lands
+     * after its backend op resolves, never in flight with it).
+     * `recordLoaded: false` is deliberate: the next session's `recover()`
+     * must run a REAL read against whatever disk holds then, never a
+     * shortcut on pre-sign-out memory. On a rejected remove the reset still
+     * runs — BEFORE the rejection can propagate (the cleanup throws on it,
+     * and after the throw core/auth's emergency wipe owns DISK, so nothing
+     * else would ever reset MEMORY) — and `persistence` is "unknown", NOT
+     * "clearFailed": the emergency wipe may already have erased the stale
+     * record, and a stale `clearFailed` would keep warning about data that
+     * may be gone (the cart's H-F02 reasoning); "unknown" forces the next
+     * `recover()` to find out.
+     */
+    const applyClearForSignOut = async (): Promise<StorageWriteResult> => {
+      const removed = await runSerialized(() => backend.remove(STORAGE_KEY));
+      set({
+        record: null,
+        recordLoaded: false,
+        phase: "idle",
+        conflict: null,
+        failure: null,
+        persistence: removed.status === "persisted" ? "persisted" : "unknown",
+      });
+      return removed;
+    };
+
     return {
       record: null,
       recordLoaded: false,
@@ -869,8 +953,10 @@ export function createAttemptStore(
       conflict: null,
       failure: null,
 
-      // Every durable-touching action runs as ONE serialized op: see the chain
-      // above. `resolveUnknown` and `enterReview` touch no backend and stay
+      // Every durable-touching action runs its backend IO as ONE serialized
+      // op: see the chain above. `clearForSignOut` enqueues its remove the
+      // same way and applies its envelope reset after the op resolves.
+      // `resolveUnknown` and `enterReview` touch no backend and stay
       // synchronous.
       prepareAttempt: (input: PrepareInput): Promise<PrepareResult> =>
         runSerialized(() => applyPrepare(input)),
@@ -894,6 +980,13 @@ export function createAttemptStore(
       retryCleanup: (): Promise<void> => runSerialized(() => applyRetryCleanup()),
 
       resetForNextCustomer: (): Promise<StorageWriteResult> => runSerialized(() => applyReset()),
+
+      // NOT itself wrapped in runSerialized: the op inside
+      // applyClearForSignOut (the backend remove) already enqueues on the
+      // chain, and wrapping the whole action would enqueue it behind itself —
+      // a deadlock (the same reason applyReplay routes to the raw resolvers
+      // rather than the re-enqueueing public actions).
+      clearForSignOut: (): Promise<StorageWriteResult> => applyClearForSignOut(),
 
       enterReview: () => {
         const { phase } = get();

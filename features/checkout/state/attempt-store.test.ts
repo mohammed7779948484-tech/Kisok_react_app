@@ -257,6 +257,36 @@ function flakyWriteBackend() {
   return { raw, failWrites: () => (failing = true) };
 }
 
+/**
+ * A backend whose FIRST write parks until `releaseWrite()` — the deterministic
+ * mid-prepare window of R2-01(a): the serialized op has started, its durable
+ * write is in flight, and the record is not yet in memory. `writeStarted`
+ * settles the moment the write begins; `writes()` counts real setItem calls.
+ */
+function deferredWriteBackend() {
+  const raw = createMemoryStore();
+  const baseSetItem = raw.setItem;
+  let writes = 0;
+  let parked = false;
+  let release: () => void = () => {};
+  let signal: () => void = () => {};
+  const writeStarted = new Promise<void>((resolve) => {
+    signal = resolve;
+  });
+  raw.setItem = async (key: string, value: string) => {
+    writes += 1;
+    if (!parked) {
+      parked = true;
+      signal();
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    }
+    return baseSetItem(key, value);
+  };
+  return { raw, writeStarted, releaseWrite: () => release(), writes: () => writes };
+}
+
 /** Parse whatever is durably under KEY through the attempt schema, like a cold start would. */
 function readPersistedRecord(raw: RawStore): CheckoutAttempt {
   const stored = raw.map.get(KEY);
@@ -458,6 +488,126 @@ describe("prepareAttempt — persist before submit (AC-06)", () => {
 
     expect(result).toMatchObject({ ok: false, reason: "confirmed-attempt-present" });
   });
+
+  it("flips phase to submitting SYNCHRONOUSLY, before the durable write (R2-01a)", async () => {
+    // The prepare-mint window, made deterministic: the write parks, so the
+    // snapshot lands exactly between the op's start and the record landing
+    // in memory — where a sign-out guard must still see the live submission.
+    // The old code set phase only AFTER the write resolved, so mid-write the
+    // guard read record: null + phase "idle" and approved a sign-out that
+    // then wiped the freshly persisted unresolved identity (R2-01(a), the
+    // duplicate-order seam).
+    const deferred = deferredWriteBackend();
+    const store = createStore({ raw: deferred.raw });
+    await store.useStore.getState().recover(OWNER_A);
+
+    const prepared = store.useStore.getState().prepareAttempt({
+      ownerId: OWNER_A,
+      lines: LINES,
+      normalized: NORMALIZED,
+    });
+    await deferred.writeStarted; // mid-write
+
+    const midWrite = store.useStore.getState();
+    expect(midWrite.phase).toBe("submitting");
+    expect(midWrite.record).toBeNull();
+
+    deferred.releaseWrite();
+    const result = await prepared;
+
+    expect(result).toMatchObject({
+      ok: true,
+      request: { clientRequestId: "00000000-0000-4000-8000-000000000001" },
+    });
+    expect(store.useStore.getState().phase).toBe("submitting");
+    expect(store.useStore.getState().record?.status).toBe("unresolved");
+    expect(store.counts().lock).toBe(1);
+  });
+
+  it("reverts the phase to its previous value when the durable write fails (R2-01a)", async () => {
+    // After a definite conflict the machine sits in "stock-conflict" with no
+    // record. A retried prepare whose write fails must return the machine to
+    // EXACTLY that phase — not strand it in "submitting" (the sync set above
+    // is a loan against the write, and a failed loan is repaid).
+    const flaky = flakyWriteBackend();
+    const store = createStore({ raw: flaky.raw });
+    await store.useStore.getState().recover(OWNER_A);
+    await store.useStore
+      .getState()
+      .prepareAttempt({ ownerId: OWNER_A, lines: LINES, normalized: NORMALIZED });
+    await store.useStore.getState().resolveStockConflict(CONFLICTS);
+    flaky.failWrites();
+
+    const result = await store.useStore
+      .getState()
+      .prepareAttempt({ ownerId: OWNER_A, lines: LINES, normalized: NORMALIZED });
+
+    expect(result).toMatchObject({ ok: false, reason: "persist-failed" });
+    expect(store.useStore.getState().phase).toBe("stock-conflict");
+    expect(store.useStore.getState().record).toBeNull();
+    // No new lock for a submission that will never happen; the conflict's
+    // unlock still stands.
+    expect(store.counts().lock).toBe(1);
+    expect(store.counts().unlock).toBe(1);
+  });
+
+  it("refuses to hand another owner the live identity even for the same fingerprint (R2-04)", async () => {
+    // Defensive (unreachable in the delivered composition — the flow never
+    // lets a second profile reach prepare while an unresolved record
+    // exists), but exactly the guard class this round is about: the
+    // clientRequestId belongs to whoever minted it, and handing it to a
+    // different owner would submit THEIR cart under the first owner's
+    // idempotency identity.
+    const store = await preparedStore();
+    const before = store.raw.map.get(KEY);
+
+    const result = await store.useStore
+      .getState()
+      .prepareAttempt({ ownerId: OWNER_B, lines: LINES, normalized: NORMALIZED });
+
+    expect(result).toMatchObject({ ok: false, reason: "unresolved-attempt-exists" });
+    // The existing identity is untouched: no re-mint, no rewrite, no lock.
+    expect(store.raw.map.get(KEY)).toBe(before);
+    expect(store.useStore.getState().record?.clientRequestId).toBe(
+      "00000000-0000-4000-8000-000000000001",
+    );
+    expect(store.useStore.getState().record?.ownerId).toBe(OWNER_A);
+    expect(store.counts().lock).toBe(1);
+  });
+
+  it("serializes overlapping prepares: exactly ONE durable write, both resolve ok with the IDENTICAL id (R2-05)", async () => {
+    // The serialized durable-op chain claim, now with teeth: a second
+    // prepare overlapping a deferred write must WAIT for the first op to
+    // settle and then REUSE its record — idempotent retry, no second id, no
+    // second write. Without serialization the second op would read
+    // record: null while the first write was in flight, mint a SECOND
+    // client_request_id, and race a SECOND durable write onto the key.
+    const deferred = deferredWriteBackend();
+    const store = createStore({ raw: deferred.raw });
+    await store.useStore.getState().recover(OWNER_A);
+
+    const first = store.useStore.getState().prepareAttempt({
+      ownerId: OWNER_A,
+      lines: LINES,
+      normalized: NORMALIZED,
+    });
+    await deferred.writeStarted; // the first write is in flight
+    const second = store.useStore.getState().prepareAttempt({
+      ownerId: OWNER_A,
+      lines: LINES,
+      normalized: NORMALIZED,
+    });
+    deferred.releaseWrite();
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    expect(firstResult).toEqual({
+      ok: true,
+      request: { clientRequestId: "00000000-0000-4000-8000-000000000001", items: NORMALIZED.items },
+    });
+    expect(secondResult).toEqual(firstResult);
+    expect(deferred.writes()).toBe(1);
+  });
 });
 
 describe("resolveSuccess — capture, durably confirm, THEN clear (D4, AC-07/AC-11)", () => {
@@ -517,6 +667,33 @@ describe("resolveSuccess — capture, durably confirm, THEN clear (D4, AC-07/AC-
     // The reset gate must refuse until cleanup is proven safe.
     const reset = await store.useStore.getState().resetForNextCustomer();
     expect(reset.status).toBe("rejected");
+  });
+
+  it("resolveSuccess with NO record is a no-op: nothing written, no clear, no phase change (R2-05)", async () => {
+    // The defensive branch R2-01(a) makes reachable in the wild (a wipe raced
+    // a live submission and the identity was destroyed before the server
+    // answered): the store must do NOTHING — fabricating a confirmed record
+    // would pin a success payload to a dead identity, and a cart clear would
+    // fire for an attempt that does not exist.
+    const store = createStore();
+    await store.useStore.getState().recover(OWNER_A);
+    const writes = countWrites(store.raw);
+
+    await store.useStore.getState().resolveSuccess({
+      orderId: SUCCESS_RESPONSE.order_id,
+      displayNumber: SUCCESS_RESPONSE.display_number,
+      createdAt: SUCCESS_RESPONSE.created_at,
+    });
+
+    expect(writes()).toBe(0);
+    expect(store.raw.map.has(KEY)).toBe(false);
+    expect(store.counts().hydrate).toBe(0);
+    expect(store.counts().clear).toBe(0);
+    expect(store.counts().unlock).toBe(0);
+    const state = store.useStore.getState();
+    expect(state.record).toBeNull();
+    expect(state.phase).toBe("idle");
+    expect(state.persistence).toBe("unknown");
   });
 
   it("keeps the DURABLE record unresolved when the confirmed write fails, but still clears", async () => {
@@ -1071,5 +1248,104 @@ describe("defensive guards — duplicate and late resolves (F-06-05)", () => {
 
     expect(store.submitCalls()).toEqual([]);
     expect(store.useStore.getState().phase).toBe("idle");
+  });
+});
+
+describe("clearForSignOut — the sign-out wipe (AC-12, R2-01)", () => {
+  it("removes the durable record and resets the full envelope, returning the honest result", async () => {
+    const store = await preparedStore();
+
+    const removed = await store.useStore.getState().clearForSignOut();
+
+    expect(removed).toEqual({ status: "persisted" });
+    expect(store.raw.map.has(KEY)).toBe(false);
+    const state = store.useStore.getState();
+    expect(state.record).toBeNull();
+    // recordLoaded: false is deliberate — the next session's recover() must
+    // run a REAL read against whatever disk holds then.
+    expect(state.recordLoaded).toBe(false);
+    expect(state.phase).toBe("idle");
+    expect(state.conflict).toBeNull();
+    expect(state.failure).toBeNull();
+    expect(state.persistence).toBe("persisted");
+  });
+
+  it("a rejected remove still resets the envelope and returns the rejection", async () => {
+    const store = await preparedStore({ raw: createMemoryStore({ failOn: "removeItem" }) });
+
+    const removed = await store.useStore.getState().clearForSignOut();
+
+    expect(removed.status).toBe("rejected");
+    // The memory reset happens BEFORE the rejection propagates: the sign-out
+    // cleanup throws on this result, and after the throw core/auth's
+    // emergency wipe owns DISK — nothing after it would ever reset MEMORY.
+    // `persistence` is "unknown", not "clearFailed": the emergency wipe may
+    // already have erased the stale record, and "unknown" forces the next
+    // session's recover() to run a REAL read (the cart's H-F02 reasoning).
+    const state = store.useStore.getState();
+    expect(state.record).toBeNull();
+    expect(state.recordLoaded).toBe(false);
+    expect(state.phase).toBe("idle");
+    expect(state.persistence).toBe("unknown");
+    // The remove could not be proven — the stale record stays on disk.
+    expect(readPersistedRecord(store.raw).status).toBe("unresolved");
+  });
+
+  it("queues its remove strictly BEHIND an in-flight recover read: no disk resurrection, memory wiped after (R2-01b)", async () => {
+    // The recover-read window: sign-out lands while recovery's durable read
+    // is in flight. The wipe is chain-enqueued, so it runs AFTER the read —
+    // whatever the read loaded from disk is covered by the remove + reset
+    // (the residual is memory-only DURING teardown, harmless); the next
+    // session reads clean disk. The old raw remove ran off the chain and
+    // left the loaded record resurrected in memory after the reset.
+    const events: string[] = [];
+    const raw = createMemoryStore();
+    seedRecord(raw, unresolvedRecord());
+    const baseGetItem = raw.getItem;
+    const baseRemoveItem = raw.removeItem;
+    let releaseRead: () => void = () => {};
+    let signalRead: () => void = () => {};
+    const readStarted = new Promise<void>((resolve) => {
+      signalRead = resolve;
+    });
+    raw.getItem = async (key: string) => {
+      if (key === KEY) {
+        events.push("read");
+        signalRead();
+        await new Promise<void>((resolve) => {
+          releaseRead = resolve;
+        });
+      }
+      return baseGetItem(key);
+    };
+    raw.removeItem = async (key: string) => {
+      if (key === KEY) events.push("remove");
+      return baseRemoveItem(key);
+    };
+    const store = createStore({ raw });
+
+    const recovering = store.useStore.getState().recover(OWNER_A);
+    await readStarted; // the read is in flight
+
+    // Sign-out mid-read: the wipe is requested while the read is in flight.
+    const clearing = store.useStore.getState().clearForSignOut();
+    expect(events).toEqual(["read"]); // the remove has NOT interleaved the read
+
+    releaseRead();
+    const outcome = await recovering;
+    const removed = await clearing;
+
+    // The read itself was untouched and honest; the remove ran strictly after.
+    expect(outcome).toBe("unresolved");
+    expect(removed).toEqual({ status: "persisted" });
+    expect(events).toEqual(["read", "remove"]);
+    // Final state: disk clean AND memory clean — the record the read loaded
+    // did not survive the wipe (the old raw remove left it in memory).
+    expect(store.raw.map.has(KEY)).toBe(false);
+    const state = store.useStore.getState();
+    expect(state.record).toBeNull();
+    expect(state.recordLoaded).toBe(false);
+    expect(state.phase).toBe("idle");
+    expect(state.persistence).toBe("persisted");
   });
 });
