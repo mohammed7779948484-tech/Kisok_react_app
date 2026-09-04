@@ -17,9 +17,9 @@ is the first thing the next agent reads.
 ```
 Current round     : 4
 Current task      : — (round complete)
-Current stage     : ROUND 4 GATE PASS — final verification phase
-Last gate         : ROUND 4 GATE PASS
-Next legal action : FINAL full code review → remediation → quality audit → FEATURE GATE
+Current stage     : FEATURE GATE PASS — HUMAN_HANDOFF
+Last gate         : FEATURE GATE PASS
+Next legal action : HUMAN_HANDOFF — review Draft PR #13; a human decides the merge into develop
 Blocked by        : —
 ```
 
@@ -316,21 +316,21 @@ Every line is a box, and `pnpm verify` alone is not the authority — several
 of these depend on an environment only CI has. See `review.md` for the review and
 audit findings this checklist points at.
 
-- [ ] Every Task Gate PASS
-- [ ] Every Round Gate PASS
-- [ ] Every AC verified
-- [ ] `pnpm verify` PASS after the final local change
-- [ ] required fast GitHub CI PASS on the final HEAD
-- [ ] required runtime evidence recorded
-- [ ] required native tier(s) PASS, N/A, or explicitly unverified
-- [ ] Reviewer findings dispositioned
-- [ ] blocking/major fixes re-reviewed
-- [ ] Quality Audit clean
-- [ ] anything not verified explicitly recorded
-- [ ] shared/core changes justified
-- [ ] PR evidence matches the worklog
+- [x] Every Task Gate PASS — T01–T15, each with a fresh independent reviewer
+- [x] Every Round Gate PASS — Rounds 1–4, each with a fresh round reviewer
+- [x] Every AC verified — AC-01..AC-16 (the quality auditor's not-delivered category: CLEAN)
+- [x] `pnpm verify` PASS after the final local change — exit 0, 69 suites / 864 tests at the final HEAD 6721600
+- [x] required fast GitHub CI PASS on the final HEAD — the CI workflow SUCCESS on 6721600 (run 33880375499: Verify incl. the REAL db:verify, Web bundle, Expo Doctor all green; Android/Maestro label-gated — skipped)
+- [x] required runtime evidence recorded — the hosted-TEST journey: a REAL order SL329M, the live auto-reset, all three sizes, zero console errors (worklog's Round 4 runtime section)
+- [x] required native tier(s): explicitly UNVERIFIED — no device/emulator in this environment (review.md dispositions)
+- [x] Reviewer findings dispositioned — every task/round/final finding fixed or accepted with rationale (review.md)
+- [x] blocking/major fixes re-reviewed — R2-01/F-06-01/F-06-02/F-T11-01 remediations verified by fresh reviewers / reviewer-verified evidence; the final full review found 0 blocking/major
+- [x] Quality Audit clean — CLEAN-WITH-OBSERVATIONS, all observations dispositioned at audit time
+- [x] anything not verified explicitly recorded — review.md's dispositions (live conflict/ambiguity/replay, web back, stack growth, text scaling)
+- [x] shared/core changes justified — plan.md's external-changes list (reconciled incl. core/testing/query.tsx)
+- [x] PR evidence matches the worklog — PR #13's body updated to the final state with the CI link
 
-FEATURE GATE: PENDING
+FEATURE GATE: **PASS**
 
 ## Blocked
 
