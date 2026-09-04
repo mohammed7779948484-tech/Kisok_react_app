@@ -12,15 +12,18 @@ defeats its only purpose.
 ## Current checkpoint
 
 ```
-Current round     : 3 (complete)
+Current round     : REMEDIATION (post-gate independent review)
 Current task      : —
-Current stage     : FEATURE GATE PASSED — PR #9 updated, HUMAN_HANDOFF
-Last gate         : FEATURE GATE: PASS (quality audit PASS; final review + fresh re-review converged; all CI green on the final HEAD incl. the native compile tier)
-Next legal action : HUMAN — review Draft PR #9 (base develop) and decide whether to merge. Never merged by an agent.
+Current stage     : FEATURE GATE REOPENED by independent remediation review (IR-01..IR-09). Seven read-only current-documentation researchers pending (batches 3+2+2); NO implementation before all seven packets return and the Plan is READY again.
+Last gate         : (historical) FEATURE GATE: PASS @ b71c828 — REOPENED 2026-09-04, not current approval
+Next legal action : Lead: launch research BATCH A (R1 Android policy / R2 Expo-RN routing / R3 MDM Files API), then B (R4, R5), then C (R6, R7); synthesize IR verdicts; Plan DRAFT → Lead Planning Review → READY; only then remediation tasks.
 
-FINAL CODE HEAD: ae1a982 (code) → b149f16 (closing records) → the FEATURE GATE commit (docs-only; CI re-verified on b149f16: fast tier run 33830212176 + Android build run 33830212185, both SUCCESS)
+REMEDIATION_START_FEATURE_SHA=b71c8285c6e26fb6fd1463c4b0a81cd8ae1afe31
+REMEDIATION_START_DEVELOP_SHA=3a25640b602a685c690a4b467b6e900625484c89 (develop advanced past the earlier integration point 6161a4c — PR #12 cart hardening; re-integration required before final verification)
 
-Blocked by        : — (push credentials provided by the user; branch pushed and Draft PR #9 open — see Blocked below for what stays external)
+FINAL CODE HEAD: ae1a982 (code) → b149f16 (closing records) → the FEATURE GATE commit (docs-only; CI re-verified on b149f16: fast tier run 33830212176 + Android build run 33830212185, both SUCCESS) — all HISTORICAL evidence; invalid for the reopened gate on any new HEAD
+
+Blocked by        : — (push credentials verified; workflow scope present; PR #9 open/draft/base=develop at b71c828)
 ```
 
 ## Rules
@@ -259,7 +262,21 @@ audit findings this checklist points at.
 - [x] shared/core changes justified (the plan's "Files expected to change" list; core/** and components/** untouched)
 - [x] PR evidence matches the worklog — Draft PR #9 (base develop) head = ae1a982 = the final HEAD; every gate commit pushed and verified on the PR
 
-FEATURE GATE: PASS
+FEATURE GATE: PASS — **historical; REOPENED 2026-09-04 by an independent
+post-gate review (IR-01..IR-09; see review.md "Post-gate independent
+remediation review"). The checklist above describes the evidence that earned
+the PRIOR pass, not a current approval. A NEW gate must be earned on the
+remediated HEAD after: seven current-documentation research packets,
+remediation task gates, current-develop re-integration, fresh final review,
+fresh quality audit.**
+
+## Remediation (post-gate review)
+
+The prior pass is reopened. New bounded remediation tasks (stable new IDs,
+appended after T13, never renumbering T01–T13) will be defined in `plan.md`
+AFTER the seven read-only researchers return and the Lead synthesis produces
+the IR-01..IR-09 verdict matrix. No remediation implementation may start while
+`plan.md` is DRAFT.
 
 ## Blocked
 
