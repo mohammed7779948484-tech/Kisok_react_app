@@ -467,3 +467,104 @@ Scope note: use-cart.test.tsx is the colocated surface-pin suite whose
 "existing test files" allowance covers it; recorded per F-T05-03.
 
 GATE: PASS
+
+### T06 — Checkout attempt store
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-04, AC-06, AC-09, AC-10, AC-11
+
+SCAFFOLD (Lead, before delegating)
+$ pnpm generate store checkout attempt
+created : features/checkout/state/attempt-store.ts
+features/checkout/state/attempt-store.test.ts
+skipped : —
+replaced : —
+manual : —
+note : neutral persistence-honest store skeleton (hydrate/clear/persist
+pattern, injectable backend factory) — the task replaces the
+placeholder shape with the attempt lifecycle state machine.
+
+### Draft PR opened (Lead)
+
+D14 (no-push-credentials) RESOLVED: credentials provided by the human
+mid-session. Pushed `feature/checkout` (657018d at push time) and opened
+Draft PR #13 targeting `develop`:
+https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/13
+The PR template carries PENDING gates; evidence will be synchronized with
+this worklog as tasks/rounds pass. Remote CI now runs on every push.
+
+RED (behavior)
+$ npx jest features/checkout/state/attempt-store.test.ts
+Tests: 37 failed, 37 total
+Right failure: the module loads (imports resolve) but every lifecycle
+action is missing — "prepareAttempt is not a function",
+"classifySubmitOutcome is not a function". Missing behavior, not a typo.
+
+IMPLEMENT
+state/attempt-store.ts — full replacement of the skeleton shape (factory +
+singleton, injectable backend AND deps {idFactory, clearCart, hydrateCart,
+lockCart, unlockCart, submit} — defaults bind the real cart seam + api):
+six-phase machine; prepareAttempt (persist-before-submit; write failure →
+persist-failed + no lock + no submit; same-fingerprint retry reuses the id
+with NO new write; changed fingerprint → unresolved-attempt-exists;
+confirmed-present refuse; recovery-pending refuse while the first durable
+read has not completed); resolveSuccess (D4: durable-confirm → hydrate →
+clear → track; write-failure keeps disk unresolved → idempotent
+re-confirmation on restart; clear-failure keeps phase confirmed with
+cartClear failed); resolveStockConflict/resolveDefiniteFailure (definite
+no-order: plain-remove discard documented, unlock, payload to state);
+resolveUnknown (record stays durable-unresolved, cart stays locked);
+classifySubmitOutcome (the ONE exported D3 boundary — response wins;
+AppError definite unless network|unknown; non-AppError → unknown
+fail-safe); replayAttempt (submits the STORED id/items, routes through the
+classifier); recover (miss/corrupt-discard/foreign-discard-without-replay/
+unresolved-lock/confirmed-cleanup tracking; idempotent; preserves a live
+in-flight submitting phase); retryCleanup (hydrate → clear → track);
+resetForNextCustomer (gated confirmed+done+phase confirmed; honest remove
+result); enterReview (only from definite outcomes). Serialized durable-op
+chain (cart-store gold standard). expo-crypto randomUUID stubbed undefined
+under jest → lazy namespace reference in the default deps factory.
+state/attempt-store.test.ts — 47 behavior tests.
+
+GREEN
+$ npx jest features/checkout/state/attempt-store.test.ts → 47/47
+$ npx jest features/checkout → 7 suites / 214 tests
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean
+$ npx eslint --max-warnings=0 <both files> → exit 0
+$ npx prettier --check <both files> → clean
+
+TASK REVIEW (fresh code-reviewer, agent-8365eaa3)
+Verified clean: D4 ordering pinned with teeth (event sequence
+write→hydrate→clear→write asserted); AC-06 prepare semantics; the single
+D3 classifier (grep-verified no drift); serialized chain; lock
+orchestration incl. the in-session vs restart asymmetry (load-bearing);
+reset gating; plain-remove discard semantics (fallback would destroy a
+replayable identity — documented); boundaries (cart public seam only, no
+Supabase in state/); claims verified incl. the expo-crypto stub and the
+lucide jest.mock precedent. Full suite 61/764 green at head.
+Findings: F-06-01 MAJOR (recovery clears ignored the hydration-settled
+MUST — no hydrate seam, no guard, no test), F-06-02 MAJOR (prepare could
+mint a new identity over a durable unresolved record before recover() —
+recordLoaded never consulted), F-06-03 minor (recover clobbered a live
+submitting phase), F-06-04 minor (AttemptFailure.kind typed string),
+F-06-05 minor (coverage gaps: removeItem failure, reuse-path lock,
+defensive guards).
+Remediation (same-implementer resume, with RED evidence for the majors —
+6 tests failed for the right reasons before the fix): hydrateCart added
+to deps and awaited before every recovery-path clear (event-order tests
+pin write→hydrate→clear→write); recovery-pending gate refuses prepare
+until the first durable read completes (seeded-record test: refused +
+key byte-identical, then recover → same-fingerprint prepare REUSES the
+seeded id); recover preserves an in-flight submitting phase (no
+double-lock); AttemptFailure.kind → AppErrorKind; removeItem-failure
+discard test (clearFailed honest, record kept in memory); reuse-path lock
+count asserted; 5 defensive-guard tests. 37 → 47 tests.
+
+DIFF
+features/checkout/state/attempt-store.ts (new)
+features/checkout/state/attempt-store.test.ts (new)
+Nothing outside the task's allowed scope.
+
+GATE: PASS
