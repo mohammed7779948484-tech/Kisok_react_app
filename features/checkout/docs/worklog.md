@@ -391,3 +391,79 @@ displayNumber regex mutation in the shared module now fails BOTH suites
 R1-03 fixed in todo by the Lead.
 
 ROUND 1 GATE: PASS
+
+### T05 — Cart public clearCartDurable() extension
+
+MODE: behavior
+ACCEPTANCE: Supporting AC-07, AC-11
+
+SCAFFOLD (Lead — N/A for this task)
+owning-feature edit inside features/cart (plan D5, external-changes list);
+no generator capability applies to editing an existing feature's public
+index and delegates.
+
+RED (behavior)
+$ npx jest features/cart/state/cart-store.test.ts features/cart/state/use-cart.test.tsx
+Tests: 5 failed, 59 passed — the 4 new clearCartDurable cases failed with
+"clearCartDurable is not a function" and the public-surface pin failed on
+the missing export. All 59 pre-existing tests stayed green: missing
+behavior, not a regression. (Reviewer independently reproduced the exact
+5/59 split in a sandbox replica.)
+
+IMPLEMENT
+features/cart/state/use-cart.ts — ONE new plain-action delegate
+clearCartDurable(): Promise<StorageWriteResult> → useCartStore.getState().
+clear(). Deliberately NOT gated on hydration (documented: pure pass-through
+of the ungated internal clear(); pre-owner remove-failure fails closed via
+rawDiscard; a gate would silently skip or fabricate). Caller requirement
+for recovery flows documented (mid-hydrate interleaving: disk stays honest,
+memory can resurrect — await hydration first).
+features/cart/index.ts — clearCartDurable exported with the plain actions;
+doc list updated with the precise uniqueness claim (only one resolving a
+durable-write StorageWriteResult; hydrateCart is awaitable for completion).
+features/cart/state/cart-store.test.ts — new describe, 4 tests: real-
+singleton end-to-end (persisted, memory empty, disk miss, owner kept, lock
+holds); removeItem-failure fallback (resolves the overwrite's persisted,
+disk = explicit empty envelope — the store's REAL semantics); both-fail
+(honest rejected + clearFailed); pre-hydrate stale-key removal.
+features/cart/state/use-cart.test.tsx — exact-surface pin widened 13 → 14
+names (full key-equality retained — teeth intact; necessary for the
+planned export).
+
+GREEN
+$ npx jest features/cart → 11 suites / 187 tests
+$ pnpm test (full) → 60 suites / 727 tests
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean
+$ npx eslint <4 files> → zero issues
+$ npx prettier --check <4 files> → clean
+
+TASK REVIEW (fresh code-reviewer, agent-cb153307)
+Verified: seam minimality per D5 (one-line pass-through; all rejected
+alternatives still rejected; no checkout consumer yet — additive); gating
+decision traced through cart-store (fail-closed pre-owner pinned by an
+existing store test); lock semantics correct (test asserts locked holds);
+splice hygiene sound; surface pin teeth retained; additivity verified
+line-by-line; RED reproduced exactly.
+Findings: F-T05-01 minor (index doc "alone is awaitable" factually wrong),
+F-T05-02 minor (mid-hydrate interleaving can resurrect memory lines while
+disk stays honest — PRE-EXISTING store behavior, also exists for
+clearCartForSignOut, unreachable in the primary post-success path, but
+relevant to T12 recovery composition), F-T05-03 minor (todo glob did not
+literally cover the .tsx pin file — honest flag, sound interpretation).
+Remediation: F-T05-01 + F-T05-02(a) closed by same-implementer resume
+(doc-only: precise uniqueness claim; recovery caller requirement
+sentences). F-T05-02(b): the hydration-before-clear sequencing requirement
+is carried into the T06/T12 task notes in todo.md (this update).
+F-T05-03: recorded here; todo glob amended to \*.test.ts(x).
+
+DIFF
+features/cart/state/use-cart.ts, features/cart/index.ts,
+features/cart/state/cart-store.test.ts,
+features/cart/state/use-cart.test.tsx
+Scope note: use-cart.test.tsx is the colocated surface-pin suite whose
+13-name equality necessarily breaks when the planned export lands — the
+"existing test files" allowance covers it; recorded per F-T05-03.
+
+GATE: PASS

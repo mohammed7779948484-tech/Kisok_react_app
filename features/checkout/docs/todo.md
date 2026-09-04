@@ -17,9 +17,9 @@ is the first thing the next agent reads.
 ```
 Current round     : 1
 Current task      : — (round complete)
-Current stage     : ROUND 1 GATE PASS — Round 2 starting
-Last gate         : ROUND 1 GATE PASS
-Next legal action : delegate T05 (cart clearCartDurable extension — owning-feature edit)
+Current stage     : T05 GATE PASS — next T06 (attempt store)
+Last gate         : T05 GATE PASS
+Next legal action : Lead scaffold T06 (store attempt), then delegate
 Blocked by        : —
 ```
 
@@ -46,7 +46,7 @@ Scan this first. Detail is below.
 | T02  | behavior | Acceptance: AC-05                     | normalized-request pure rules                              | —                       | done        | PASS    |
 | T03  | behavior | Supporting AC-06, AC-07               | checkout-attempt record schema                             | T02                     | done        | PASS    |
 | T04  | behavior | Supporting AC-07–AC-10                | submit-order api + mutation hook                           | T01                     | done        | PASS    |
-| T05  | behavior | Supporting AC-07, AC-11               | Cart `clearCartDurable()` extension                        | —                       | not started | PENDING |
+| T05  | behavior | Supporting AC-07, AC-11               | Cart `clearCartDurable()` extension                        | —                       | done        | PASS    |
 | T06  | behavior | Acceptance: AC-04, AC-06, AC-09–AC-11 | Checkout attempt store (state machine + durable lifecycle) | T02, T03, T04, T05      | not started | PENDING |
 | T07  | behavior | Acceptance: AC-12                     | Sign-out guard + cleanup registration                      | T06                     | not started | PENDING |
 | T08  | behavior | Acceptance: AC-02, AC-03              | Order Review screen + order-line-row                       | —                       | not started | PENDING |
@@ -134,7 +134,7 @@ it — two summaries disagree the moment one is updated and the other is not.
   the cart feature's existing test files
 - **Scaffold status**: `N/A — owning-feature edit, planned in plan.md`
 - **Allowed file scope**: `features/cart/state/use-cart.ts`,
-  `features/cart/index.ts`, `features/cart/state/*.test.ts`
+  `features/cart/index.ts`, `features/cart/state/*.test.ts(x)`
 
 ### T06 — Checkout attempt store
 
@@ -148,6 +148,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Allowed manual files**: —
 - **Scaffold status**: `READY` (ran by the Lead; SCAFFOLD block in worklog)
 - **Allowed file scope**: `features/checkout/state/attempt-store*`
+- **Note (from T05 review F-T05-02)**: recovery flows that retry the durable cart clear MUST await `hydrateCart(owner)` (or confirm hydration settled) BEFORE `clearCartDurable()` — a clear awaited mid-restore resolves honest-on-disk but the restore apply can resurrect memory lines.
 
 ### T07 — Sign-out guard + cleanup registration
 
