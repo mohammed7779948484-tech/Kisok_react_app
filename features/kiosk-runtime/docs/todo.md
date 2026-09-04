@@ -12,11 +12,11 @@ defeats its only purpose.
 ## Current checkpoint
 
 ```
-Current round     : REMEDIATION (post-gate independent review)
-Current task      : —
-Current stage     : FEATURE GATE REOPENED by independent remediation review (IR-01..IR-09). Seven read-only current-documentation researchers pending (batches 3+2+2); NO implementation before all seven packets return and the Plan is READY again.
-Last gate         : (historical) FEATURE GATE: PASS @ b71c828 — REOPENED 2026-09-04, not current approval
-Next legal action : Lead: launch research BATCH A (R1 Android policy / R2 Expo-RN routing / R3 MDM Files API), then B (R4, R5), then C (R6, R7); synthesize IR verdicts; Plan DRAFT → Lead Planning Review → READY; only then remediation tasks.
+Current round     : 4 — post-review remediation (T14–T20)
+Current task      : T14 (next to start)
+Current stage     : RESEARCH GATE COMPLETE (7/7 packets, Lead spot-checked; IR verdict matrix in review.md); Plan remediation amendment READY after Lead Planning Review. First remediation task T14 not yet started.
+Last gate         : (historical) FEATURE GATE: PASS @ b71c828 — REOPENED 2026-09-04; no remediation task gate yet
+Next legal action : Lead: scaffold check (N/A — no generator capability for T14), delegate T14 (policy readiness + routing guard, IR-01) to a fresh feature-implementer with the R1/R2 evidence packet pointers.
 
 REMEDIATION_START_FEATURE_SHA=b71c8285c6e26fb6fd1463c4b0a81cd8ae1afe31
 REMEDIATION_START_DEVELOP_SHA=3a25640b602a685c690a4b467b6e900625484c89 (develop advanced past the earlier integration point 6161a4c — PR #12 cart hardening; re-integration required before final verification)
@@ -239,6 +239,25 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Scaffold status**: `N/A — documentation`
 - **Allowed file scope**: `features/kiosk-runtime/docs/mdm-operations.md`
 - **Focused verification**: `pnpm verify` green (check:docs); content review against the research packets (enrollment, kiosk profile, app config, silent install, updates/rollback, recovery, beta path, activation prerequisites, unverified list); MUST also cover the android-release dispatch contract per T10-F02 — who may dispatch, that the human must create the four ANDROID*KEYSTORE*\* repository Actions secrets first (naming names, never values), that `workflow_dispatch` only lists/needs the workflow file on the default branch before the first dispatch, and that the MDM upload workflow downloads the `kisok-release-apk` artifact by name + run id within its 30-day retention window
+
+## Round 4 — Post-review remediation (IR-01…IR-09)
+
+| Task | Mode            | Acceptance               | Objective                                                                                                                                                                 | Deps     | Stage       | Gate |
+| ---- | --------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------- | ---- |
+| T14  | behavior-change | Acceptance: AC-03, AC-04 | policy readiness verdict + resolver startup hold + LOCKED corroboration (IR-01)                                                                                           | —        | not started | —    |
+| T15  | bug             | Acceptance: AC-09        | MDM read-path contract: pagination + pre-mutation group validation + expected-group-name + truthful dry-run + Beta label reuse (IR-03/04/05) + workflow group-name wiring | —        | not started | —    |
+| T16  | bug             | Supporting: AC-09        | MDM auth/error contract: ca/cn hosts + numeric error_code + token error_description (R5 drifts)                                                                           | T15      | not started | —    |
+| T17  | behavior-change | Acceptance: AC-08        | verifier certificate SHA-256 pinning + both workflows' verify steps + vars wiring (IR-06)                                                                                 | —        | not started | —    |
+| T18  | config          | Supporting: AC-08        | explicit android.versionCode: 1 + fail-closed derivation steps (IR-08)                                                                                                    | T17      | not started | —    |
+| T19  | config          | Supporting: AC-07, AC-09 | actions full-SHA pinning + environment references (IR-07)                                                                                                                 | T17, T18 | not started | —    |
+| T20  | config          | Supporting: AC-10        | mdm-operations.md remediation alignment (new dispatch contract, label reuse, env migration, live-tenant unknowns)                                                         | T15–T19  | not started | —    |
+
+Every task: fresh feature-implementer → Lead verification → fresh code-reviewer
+→ Task Gate → commit → IMMEDIATE push → verify PR #9 HEAD advanced → inspect
+CI → next task. Round 4 gate after T20 (fresh round reviewer over the
+accumulated remediation diff). Then: develop integration (IR-09) → final
+verification on the integrated HEAD → fresh final review → fresh quality
+audit → NEW Feature Gate → PR #9 update → HUMAN_HANDOFF.
 
 Round gates: Round 1 `PASS` · Round 2 `PASS` · Round 3 `PASS` (recovered; fresh round review, agent-95fd66ea; R3-1/R3-2/R3-3 fixed)
 
