@@ -17,9 +17,9 @@ is the first thing the next agent reads.
 ```
 Current round     : 1
 Current task      : T01
-Current stage     : T01 GATE PASS — next T02 (normalized-request rules)
-Last gate         : T01 GATE PASS
-Next legal action : delegate T02 (manual model artifact — no scaffold needed)
+Current stage     : T02 GATE PASS — next T03 (checkout-attempt schema)
+Last gate         : T02 GATE PASS
+Next legal action : Lead scaffold T03 (schema checkout-attempt), then delegate
 Blocked by        : —
 ```
 
@@ -43,7 +43,7 @@ Scan this first. Detail is below.
 | Task | Mode     | Acceptance                            | Objective                                                  | Deps                    | Stage       | Gate    |
 | ---- | -------- | ------------------------------------- | ---------------------------------------------------------- | ----------------------- | ----------- | ------- |
 | T01  | behavior | Supporting AC-07, AC-08               | create-order-response schema                               | —                       | done        | PASS    |
-| T02  | behavior | Acceptance: AC-05                     | normalized-request pure rules                              | —                       | not started | PENDING |
+| T02  | behavior | Acceptance: AC-05                     | normalized-request pure rules                              | —                       | done        | PASS    |
 | T03  | behavior | Supporting AC-06, AC-07               | checkout-attempt record schema                             | T02                     | not started | PENDING |
 | T04  | behavior | Supporting AC-07–AC-10                | submit-order api + mutation hook                           | T01                     | not started | PENDING |
 | T05  | behavior | Supporting AC-07, AC-11               | Cart `clearCartDurable()` extension                        | —                       | not started | PENDING |

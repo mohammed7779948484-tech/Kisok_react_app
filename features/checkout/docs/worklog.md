@@ -140,3 +140,65 @@ features/checkout/model/create-order-response.schema.test.ts (new)
 Nothing outside the task's allowed scope (git status: only Lead's docs).
 
 GATE: PASS
+
+### T02 — normalized-request pure rules
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-05
+
+SCAFFOLD (Lead — N/A for this task)
+manual artifact, planned in plan.md's Allowed manual files:
+features/checkout/model/normalized-request.ts (+ colocated test)
+
+RED (behavior)
+$ npx jest features/checkout/model/normalized-request.test.ts
+Test suite failed to run — Cannot find module './normalized-request'
+Intended failure for a planned MANUAL artifact: the module does not exist
+yet, so the required merged-one-item behavior is missing. The @/features/cart
+type import resolved and Jest located the test file — not a typo or path
+error.
+
+IMPLEMENT
+model/normalized-request.ts — normalizeCartLines(readonly CartLine[]):
+groups by lowercased variantId (same variant + different selections/casing
+→ ONE summed item), items EXACTLY {variant_id, quantity} sorted by
+code-unit order of canonical uuid text, deterministic byte-identical output;
+fingerprint mirrors the server's canonical form (kiosk.checkout.lean.v1
+header + sorted id:qty rows, migration 07:107–114) and never travels to the
+server; throws on empty lines / >100 distinct variants (MAX_NORMALIZED_ITEMS)
+/ non-integer or out-of-1..2147483647 sums. Sole import: type-only CartLine
+from @/features/cart (public API).
+model/normalized-request.test.ts — 15 cases → 16 after remediation.
+
+GREEN
+$ npx jest features/checkout/model/normalized-request.test.ts
+Tests: 16 passed, 16 total
+$ npx jest features/checkout → 2 suites / 59 tests passed
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean (exit 0)
+$ npx eslint <both files> → zero issues
+$ npx prettier --check <both files> → clean
+$ pnpm test (full suite, reviewer-rerun) → 56 suites / 614 tests green
+
+TASK REVIEW (fresh code-reviewer, agent-e99603c1)
+Independently verified: fingerprint byte-form fidelity vs migration
+107–114; sort-order equivalence (0 mismatches over 200,000 random uuid
+pairs); cap interpretation (distinct variants post-merge, both boundaries
+tested); canonicalization; type-only public import; purity; no server-logic
+reimplementation. No blocking findings.
+Findings: R-T02-01 major (non-mutation assertion vacuous — the guarded array
+was never an argument), R-T02-02 major (worklog evidence unrecorded — Lead
+action, resolved by this entry), R-T02-03 minor (changed-cart → different
+fingerprint untested), R-T02-04 minor (docblock 9900 arithmetic wrong).
+Remediation: same-implementer resume — guarded array now the actual input
+(guard-teeth proven: an injected in-place-sort probe FAILS the guard, then
+fully reverted); added the D2 binding inequality test (16 total); docblock
+and test-comment arithmetic reworded to the real reasoning.
+
+DIFF
+features/checkout/model/normalized-request.ts (new)
+features/checkout/model/normalized-request.test.ts (new)
+Nothing outside the task's allowed scope.
+
+GATE: PASS
