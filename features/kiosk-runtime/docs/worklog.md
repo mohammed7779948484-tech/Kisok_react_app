@@ -2766,3 +2766,36 @@ supabase/\*\*, the Kotlin module, and android-release.yml UNTOUCHED);
 Next: develop re-fetch/integration (R5-13) → final verification on the
 integrated HEAD → fresh full final code review → fresh quality audit →
 NEW Feature Gate → PR #9 update → HUMAN_HANDOFF.
+
+## ROUND 5 FINAL VERIFICATION — on the exact final HEAD (2026-09-04)
+
+- **develop freshness (R5-13)**: re-fetched; origin/develop = 3a25640
+  (UNCHANGED since the Round 4 integration db3a50d — behind-by 0). No new
+  integration required; the Round 4 merge already integrated this exact
+  develop state. origin/feature/kiosk-runtime still 527a7e6 (pushes
+  credential-blocked — every gate commit attempted push; see the
+  prerequisite note).
+- **pnpm verify** on 771933d: exit 0 — 69 suites / **980 tests** (reopen
+  baseline 894; +86 rows across the policy/MDM surfaces).
+- **Runtime browser regression (agent-browser, static web export, SPA
+  clean-URL server)**: signed-out root → /sign-in IMMEDIATELY (web
+  module-absent resolves instantly through the T21 discriminator — the
+  T22 gate renders NO error surface on web; no hang); customer journey
+  (committed disposable account): Demo Store + nav + brands render, ZERO
+  console errors, ZERO page errors; preparation journey: the preparation
+  experience renders (Sign out control) immediately — AC-04 through the
+  readiness changes; `/kiosk-mismatch` unauthenticated → FAIL-CLOSED to
+  sign-in, NO mismatch content leaks; no kiosk surfaces (no maintenance
+  affordance) anywhere on the standard path; tablet landscape 1280×800
+  AND portrait 800×1280.
+- **CNG prebuild (partial native tier)**: `npx expo prebuild --platform
+android --no-install --clean` exit 0 on the final HEAD; the generated
+  manifest carries `android.content.APP_RESTRICTIONS` meta-data +
+  `android:lockTaskMode="if_whitelisted"`; kiosk_restrictions.xml intact;
+  package.json restored after the run (the documented T08/T10 mitigation);
+  the tracked tree is clean. NOTE: the Kotlin module and
+  android-release.yml are UNTOUCHED by Round 5 (round-reviewer-verified),
+  so the label-gated Android build on the Round 4 code base (run
+  33857102920 SUCCESS) remains the native evidence; the label-gated build
+  on the EXACT Round 5 HEAD could not run (push blocked) — recorded
+  honestly as UNVERIFIED pending the human's push + dispatch.
