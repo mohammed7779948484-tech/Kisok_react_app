@@ -1224,3 +1224,48 @@ features/cart`).
 - RED TEETH (Lead-run, the sanctioned revert technique): with the PRE-H-T01 schema checked out from 6161a4c, the new test FAILS at the first assertion — expect(lines).toEqual([]) receives the restored malformed line (deep-equality +23 diff): the exact pre-hardening behavior where a semantically malformed lineId restores instead of clearing. Schema restored from HEAD; tree byte-identical; suite green again.
 - The pin: semantically malformed lineId on disk → restore treats it as corrupt → durable key cleared → cart starts empty (shared-kiosk safety: the corrupt blob is removed, not left for the next cold start).
 - TASK GATE: PASS.
+
+## LIVE CUSTOMER CART JOURNEY — POST-HARDENING (2026-09-03, production static export at 054dc17, real TEST project)
+
+The full merged Catalog → Local Cart path, as the documented Customer
+(Customer@gmail.com) against the hosted TEST Supabase, exercising every
+hardened behavior:
+
+- **Authentication**: hosted sign-in; gate holds; zero Preparation/Admin exposure.
+- **Add available variant** (Perks → "24mg 10tabs bottle"): QuickCartSheet
+  opened with the exact product/caption/quantity; **ZERO console output — the
+  H-F03 Radix DialogContent advisory is GONE** (pre-fix it fired exactly
+  here), and the new screen-reader description "Review the items in your
+  cart, or continue shopping." renders under the Title.
+- **Same-selection merge**: re-adding the same variant → "Your Cart · 2",
+  ONE line, quantity 2 — the canonical identity merge (H-T01) live.
+- **Distinct selection** (Grape 125mg 4tabs): "Your Cart · 3", 2 distinct
+  lines with correct captions.
+- **QuickCart interactions**: totals tracked every mutation; View Full Cart
+  navigated to /cart; quantity + worked in the Full Cart (2→3); the sheet
+  reopened from the affordance repeatedly with zero warnings each time.
+- **Unavailable variant** (Mello Pro 50k → "Clear, Out of stock"): Add
+  renders disabled (is-enabled false); the cart state was untouched.
+- **Reload persistence**: full page reload at /cart restored both lines —
+  "4 items · 2 lines" (3 + 1) — durable envelope matched memory exactly;
+  returning to the catalog kept the badge "Open cart, 4 items" through
+  catalog refetches.
+- **Sign-out safety (the real app pipeline)**: with the customer session's
+  cart populated (4 items, durable key present), the session was handed to
+  the preparation account (staff takeover — the app's own supabase session
+  storage + boot), then the REAL Sign out control ran the full pipeline
+  (guards → session removal → runSignOutCleanup → cart cleanup →
+  finishSignOutHandoff): durable cart key CLEARED, handoff marker CLEAN,
+  signed-out gate shown.
+- **Re-auth non-resurrection**: the SAME customer signed back in → cart
+  EMPTY ("Your Cart · 0", honest empty state), durable key ABSENT, affordance
+  without badge, ZERO cart-related network calls (network log filtered:
+  count 0 — the cart never talks to the server), console clean.
+- **Responsive**: 1280×800 — zero horizontal overflow, affordance 48×48;
+  800×1180 — zero overflow, compact bottom-sheet presentation (x=0, w=800),
+  description renders, zero warnings; 480×900 — zero overflow, affordance
+  48×48 with badge "2 items", same-variant re-add merged (1→2) in the sheet,
+  end-of-scroll Add/affordance clearance 24px (no overlap; the static
+  clearance holds with browser insets=0).
+- **Console across the whole journey**: ZERO warnings, ZERO errors (the
+  only console events were the intentional clears).
