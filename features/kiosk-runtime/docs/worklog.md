@@ -2296,3 +2296,37 @@ reviewer.
   human may supply a token at any time to un-block remote durability.
 - Next: SEVEN read-only researchers (batches A=3, B=2, C=2 — concurrency ≤ 3),
   then Lead synthesis + R5 verdict matrix + Lead Planning Review, then T21+.
+
+## ROUND 5 RESEARCH GATE — complete (2026-09-04)
+
+### Seven read-only Evidence Packets (batches A=3, B=2, C=2; concurrency ≤ 3)
+
+- Batch A: R5-A1 `agent-fae96c2e…` (Android policy boundary), R5-A2
+  `agent-ef8a0443…` (Expo/RN state machine), R5-A3 `agent-fad0415e…`
+  (ManageEngine Files/status).
+- Batch B: R5-B1 `agent-5421d4be…` (mutation schemas), R5-B2
+  `agent-695fd6e9…` (group-target safety).
+- Batch C: R5-C1 `agent-87f8ae5a…` (retry/idempotency cross-audit),
+  R5-C2 `agent-0ba18835…` (GitHub provenance).
+- Full synthesis, verdict matrix R5-01…R5-13, contradictions, and
+  live-tenant residuals: review.md "Round 5 research synthesis". The Lead
+  personally re-opened every load-bearing first-party page (ManageEngine
+  cloud help tree ×7 pages; Android Intent/Context refs; Zoho token-limits;
+  GitHub secure-use/environments; action pins via git ls-remote) and
+  confirmed the quoted contracts.
+- **IR-02 contradiction RESOLVED**: the Round 4 "no polling endpoint"
+  conclusion swept the edition-general `/api/` tree; the cloud help tree
+  (KISOK's actual deployment) documents POST /emsapi/fileupload/status —
+  verdict overturned; R5-03 CONFIRMED.
+
+### Plan amendment + Lead Planning Review
+
+- plan.md: "Round 5 remediation amendment" appended — design decisions
+  RD5-01…RD5-10, tasks T21–T29 (see todo.md status board), file scopes,
+  skills, test strategy, risks, verification, DRAFT→READY checklist, and the
+  Lead Planning Review PASS (2026-09-04).
+- brief.md: AC-03 minimally amended (module-absent-on-Android and
+  event-invalidation windows — evidence-cited; stable AC IDs preserved).
+- todo.md: Round 5 status board + refreshed checkpoint.
+- Plan is READY for T21. No implementation started before this point
+  (research-before-code rule honored).

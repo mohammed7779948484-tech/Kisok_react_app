@@ -12,24 +12,47 @@ defeats its only purpose.
 ## Current checkpoint
 
 ```
-Current round     : 5 — post-review remediation (NEW independent review; R5-01…R5-13)
-Current task      : — (research gate first; no implementation may start)
-Current stage     : FEATURE GATE REOPENED — ROUND 5 INDEPENDENT REVIEW; seven read-only researchers pending (batches 3+2+2); plan returned to DRAFT for Round 5 amendment
-Last gate         : FEATURE GATE: PASS (Round 4, 2026-09-04 — HISTORICAL ONLY, reopened by the Round 5 independent review; see review.md)
-Next legal action : Lead launches research Batch A (R5-A1/R5-A2/R5-A3 in parallel), then B (2), then C (2); synthesis; verdict matrix; Plan DRAFT→READY; then remediation tasks T21+
+Current round     : 5 — post-review remediation (R5-01…R5-13)
+Current task      : T21 (next to start — plan READY, research gate complete)
+Current stage     : PLAN READY (Round 5 amendment + Lead Planning Review PASS 2026-09-04) → remediation task loop T21–T29
+Last gate         : FEATURE GATE REOPENED (Round 5) — the Round 4 PASS at 527a7e6 is historical; see review.md Round 5 sections
+Next legal action : launch the T21 fresh feature-implementer (bounded packet per plan Round 5 tasks)
 
 REMEDIATION (Round 5) START SHAs (workspace restored from GitHub 2026-09-04; prior sandbox lost):
   origin/feature/kiosk-runtime = 527a7e6d3d07781c5cb125b1e205912f8daa1025 (the Round 4 gate commit; code-identical to 7d6702d)
   origin/develop               = 3a25640b602a685c690a4b467b6e900625484c89 (unchanged since the Round 4 integration)
-  local HEAD                   = 527a7e6 (clean tree; PR #9 open/Draft/base develop/head 527a7e6, mergeable_state clean)
+  local HEAD                   = reopening commit ca8531e (docs-only; remote still 527a7e6)
 Baseline at reopen: pnpm verify exit 0 — 68 suites / 894 tests (workspace re-verified 2026-09-04)
+Research gate: SEVEN read-only packets complete (batches 3+2+2; review.md "Round 5 research synthesis"); verdict matrix R5-01…R5-13; IR-02 contradiction resolved (cloud help tree supersedes the /api/ tree)
 Round 4 history (preserved): b71c828 (gate REOPENED R1) -> 8604a51 (plan) -> T14 1a30a5a / T15 68f9cbb / T16 307f05f / T17 24d662d / T18 7fbd5f2 / T19 2174f15 / T20 8354b5a / R4 gate 6b66b48 / develop merge db3a50d -> final verification + reviews + audit -> NEW gate PASS (7d6702d code / cfc7a10 docs / 527a7e6 gate commit) -> REOPENED by Round 5 review
 
 GitHub push credentials: NOT present in this restored sandbox (verified by dry-run). Read access OK.
-Local commits will be preserved; push requires the human to provide a token — recorded as an external prerequisite at the first push point.
+Local commits are preserved; push requires the human to provide a token — recorded as an external prerequisite; every Task Gate attempts push.
 
-Blocked by        : — (external/human-only remain: live ManageEngine MDM dry-run, first real workflow dispatches incl. the ANDROID_UPLOAD_CERT_SHA256 variable + environment migration setup, physical-kiosk verification — all documented in mdm-operations.md §7/§9; push token for durability)
+Blocked by        : — (external/human-only remain: live ManageEngine MDM dry-run, first real workflow dispatches incl. the ANDROID_UPLOAD_CERT_SHA256 variable + environment migration setup + the three new MDM_BETA_* / MDM_PRODUCTION_GROUP_ID environment variables, physical-kiosk verification, GitHub push token — all documented in mdm-operations.md §7/§9 and the plan's Round 5 risks)
 ```
+
+## Status board
+
+Scan this first. Detail is below.
+
+| Task    | Mode            | Acceptance                 | Objective (findings)                                                                        | Deps    | Stage        | Gate |
+| ------- | --------------- | -------------------------- | ------------------------------------------------------------------------------------------- | ------- | ------------ | ---- |
+| T01–T20 | —               | (see Round 1–4 rows below) | historical — all PASS, preserved as history                                                 | —       | done (hist.) | PASS |
+| T21     | behavior-change | Acceptance: AC-03, AC-04   | platform-discriminated module absence + event-driven invalidation (R5-01, R5-02)            | —       | not started  | —    |
+| T22     | behavior-change | Acceptance: AC-03          | policy readError + error surface with manual retry in the startup hold (R5-08)              | T21     | not started  | —    |
+| T23     | behavior-change | Acceptance: AC-05          | restrictionsSettled gates tryUnlock + sheet settling state + sheetOpen reset (R5-10, R5-11) | T22     | not started  | —    |
+| T24     | bug             | Acceptance: AC-09          | file-upload two-phase lifecycle + documented headers (R5-03, R5-05)                         | —       | not started  | —    |
+| T25     | bug             | Acceptance: AC-09          | Update App body mandatory fields (R5-04)                                                    | T24     | not started  | —    |
+| T26     | behavior-change | Acceptance: AC-09          | retry policy split by call class (R5-06)                                                    | T25     | not started  | —    |
+| T27     | behavior-change | Supporting: AC-09          | Beta target allowlist (vars) + group_type 6 (R5-07)                                         | T26     | not started  | —    |
+| T28     | config          | Supporting: AC-09          | run provenance validation before artifact download (R5-12)                                  | T27     | not started  | —    |
+| T29     | config          | Acceptance: AC-10          | mdm-operations.md Round 5 alignment                                                         | T24–T28 | not started  | —    |
+
+Round 5 gate after T29 (fresh round reviewer over the accumulated Round 5
+diff). Then: develop re-fetch/integration (R5-13) → final verification on the
+integrated HEAD → fresh final review → fresh quality audit → NEW Feature
+Gate → PR #9 update → HUMAN_HANDOFF.
 
 ## Rules
 
@@ -40,7 +63,7 @@ Blocked by        : — (external/human-only remain: live ManageEngine MDM dry-r
   `test-driven-development` skill. The mode decides the entry evidence:
   `behavior` / `bug` / `behavior-change` need a failing test, `refactor` needs a
   named green baseline, `config` needs the command that exercises the artifact.
-- **No task starts while `plan.md` is `DRAFT`.** (It is `DRAFT` — Round 5 amendment in progress; returns to READY only after the seven research packets, the Lead synthesis, and a fresh Lead Planning Review.)
+- **No task starts while `plan.md` is `DRAFT`.** (The Round 5 amendment is `READY` — Lead Planning Review PASS 2026-09-04; T21 may start.)
 - **The Lead runs the scaffold**, immediately before delegating the task. The
   implementer starts only once `Scaffold status` is `READY`.
 

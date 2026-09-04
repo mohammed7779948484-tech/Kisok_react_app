@@ -6,16 +6,13 @@ research, and before generating anything beyond this workspace.
 Status: `DRAFT` (Round 5 amendment, 2026-09-04 — a NEW independent review reopened
 the Round 4 gate with findings R5-01…R5-13; see review.md. The plan below — the
 original plan and the Round 4 remediation amendment — is preserved as history
-and remains accurate for T01–T20. The Round 5 amendment will append the
-research-backed remediation tasks T21+ after the SEVEN fresh read-only research
-packets return and the Lead synthesis produces the R5 verdict matrix.)
+and remains accurate for T01–T20. The Round 5 amendment (appended at the end)
+carries the research-backed remediation tasks T21–T29; its own status line and
+Lead Planning Review govern the current implementation-readiness state.)
 
-`DRAFT` — NO implementation task may start. The Round 5 amendment returns to
-`READY` only after: all seven research Evidence Packets return (batches
-3+2+2); the Lead spot-checks every load-bearing primary source; R5-01…R5-13
-all carry verdicts; every confirmed finding maps to an owned new Task (T21+)
-or an explicit non-code disposition; no external contract is guessed; and a
-fresh Lead Planning Review is re-run in full.
+`DRAFT` — no NEW Round 5 implementation task may start before the Round 5
+amendment's own checklist and Lead Planning Review are complete (they are —
+see the Round 5 amendment's Status line: `READY` for T21–T29).
 
 `READY` (HISTORICAL — Round 4 remediation, 2026-09-04) — superseded by the
 Round 5 reopening: the seven research packets were synthesized in `review.md`,
@@ -888,3 +885,374 @@ Status: `READY` (remediation) — the Lead Planning Review was re-run on this
 amendment in full (requirements vs. research, external contracts, shape,
 safety semantics, task graph, test strategy, integration plan, document
 consistency; see review.md synthesis). Implementation of T14 may begin.
+
+## Round 5 remediation amendment (2026-09-04) — post-gate review R5-01…R5-13
+
+The Round 4 Feature Gate (527a7e6) was reopened by a NEW independent review.
+SEVEN fresh read-only researchers (batches A=3, B=2, C=2 — concurrency never
+exceeded 3) returned Evidence Packets on 2026-09-04; the Lead personally
+re-opened every load-bearing first-party page (ManageEngine cloud help tree:
+API Index, /emsapi/files, /emsapi/fileupload/status, Update App, Group
+Details/List, group association; Android Intent/Context/broadcasts refs;
+Expo SDK-54 ref + installed expo-modules-core source; Zoho token-limits;
+GitHub secure-use/environments/workflow-runs REST; action pins via
+git ls-remote) and resolved all researcher contradictions. The verdict matrix
+and per-finding evidence live in `review.md` ("Round 5 research synthesis").
+T01–T20 above are immutable history. This amendment derives the Round 5 task
+graph from that research.
+
+### Round 5 design decisions
+
+RD5-01. **Module absence is platform-discriminated (R5-01).** The
+`policy-source` seam becomes the discriminator owner:
+`Platform.OS !== "android"` + module-null ⇒ `markModuleAbsent()` (web/jest/
+non-Android — the standard default IS the platform verdict, no hang);
+`Platform.OS === "android"` + module-null ⇒ the read is UNRESOLVED: readiness
+stays `pending` and the store records `readError: {reason: "module-absent"}`
+(fail-closed startup hold — Preparation can never mount on an Android build
+whose policy module is unexpectedly missing). Expo's installed
+`requireOptionalNativeModule` returns the SAME silent null for
+"not linked into this build", "lookup threw", and "Expo Go" — no reason code
+exists — so Platform.OS is the only sanctioned discriminator. The null-path
+test names pin the platform dimension.
+
+RD5-02. **A restrictions-change event invalidates a permissive verdict
+synchronously (R5-02).** `ACTION_APPLICATION_RESTRICTIONS_CHANGED` is sent
+AFTER the new restrictions are persisted (documented; AOSP write-then-broadcast
+order corroborated) — the OLD policy is evidence about a superseded world.
+On event receipt, BEFORE dispatching the async re-read, the sync hook: (a) if
+`readiness === "resolved" && policy.role === "standard"` → readiness becomes
+`pending` (the failed post-event re-read then leaves the fail-closed hold,
+never a stale permissive verdict); (b) ALWAYS `clearMaintenance()` (the event
+invalidates the credential basis regardless of read outcome); (c) NEVER
+reverts a `customer-kiosk` role (kiosk/mismatch rows are not
+readiness-gated — reverting buys no protection for the protected action and
+costs availability; the privileged-session hazard is closed by (b)). The
+store's "a failed read can neither create nor destroy a verdict" doctrine
+stays coherent: the EVENT, not the failed read, destroys the stale verdict.
+Schema-rejected snapshots, provisional snapshots, and cold-start pending
+semantics are unchanged (RD-01/RD-02 hold).
+
+RD5-03. **Policy-read failures surface a bounded manual retry, never an
+authorization (R5-08).** The store gains `readError: {reason:
+"module-absent" | "read-failed"} | null` at the ROOT (UI-only field, like
+`maintenance`; the resolver NEVER consumes it — error ≡ pending ⇒ startup
+hold, fail-closed by construction; `PolicyReadiness` stays binary so the
+resolver table and its pinned rows are untouched). It is set ONLY while no
+verdict exists (first-read failures; the R5-01 Android module-absent case)
+and cleared by any successful read/markModuleAbsent/retry dispatch. The
+kiosk-runtime feature owns a policy error surface rendered in `app/index.tsx`'s
+`startup` case (StartupScreen belongs to features/auth and must not learn
+about policy): `ErrorState` + a visible manual Retry control wired to a
+feature-exposed retry that re-invokes the SAME single-flight refresh seam.
+Retry is MANUAL ONLY (no automatic exponential loop — automatic retries
+hammer disk I/O on a broken device for no safety gain; resolution is always
+fail-closed). The retryable error carries a generic userMessage; the native
+rejection reason never reaches technicalMessage (AC-05 discipline).
+
+RD5-04. **The maintenance credential requires SETTLED restrictions; the sheet
+resets on role exit (R5-11, R5-10).** `DevicePolicy` gains
+`restrictionsSettled: boolean` (= `!isProvisionalSnapshot` — one derivation,
+shared with the store's readiness logic, drift included). Routing is
+UNCHANGED (LOCKED still derives kiosk immediately — mismatch screen without a
+hold; the R5-A2 evidence: LOCKED is live OS corroboration for routing, but a
+provisional bundle is NOT final enforced credential material —
+KEY_RESTRICTIONS_PENDING: "restrictions may be applied in the near future but
+are not available yet"). `tryUnlock` returns false while
+`restrictionsSettled === false` (mirroring the existing "standard devices
+expose no credential at all" gate); the sheet renders a settling state
+(disabled unlock + a "Managed settings are updating…" note — a genuinely
+reachable state). This DELIBERATELY SUPERSEDES the RD-02 credential corollary
+("provisional+locked → code derived") — an explicit behavior change with
+amended test rows, not a regression. `KioskMaintenanceOverlay` resets
+`sheetOpen` to false via an effect when the role leaves `customer-kiosk`
+(React state-preservation contract: returning null does not unmount).
+
+RD5-05. **File uploads follow the documented two-phase lifecycle (R5-03).**
+`uploadApkFile` keeps the fast path (`fileStatus 2` → proceed, no poll);
+`fileStatus 3` → immediate fail (documented FAILED); `fileStatus 1`
+(documented PENDING — "queued for processing") → poll `POST
+{mdmBase}/emsapi/fileupload/status` with headers {Authorization,
+Content-Type: application/json, Accept: application/json} and body
+`{"fileIDs":[String(fileID)]}`; response `response[]` entries carry
+`file_id` + `file_availability_status` (2 = ready) + `remarks`; the entry for
+OUR file_id is authoritative (missing entry / non-array / malformed JSON →
+fail closed). Poll cadence ~3s with a bounded attempt count (~20 ≈ 60s, well
+under the documented 500/min threshold and expiryDate) — ENGINEERING choices
+(the docs give no interval/timeout), labeled as such in code; each poll rides
+the read-safe retry class (RD5-07). Bound exhaustion / non-2 that is not
+documented-pending → fail closed with nonzero exit naming the last status.
+The stale "no polling endpoint" comments/tests are corrected (the IR-02
+contradiction resolution: Round 4 swept the /api/ tree; the cloud help tree
+authoritative for KISOK documents the endpoint — review.md).
+
+RD5-06. **Every used MDM endpoint carries its documented headers and body
+(R5-04, R5-05).** `Accept: application/json` is added to all MDM calls
+(documented-Mandatory on POST /emsapi/files, GET /api/v1/mdm/groups/{id},
+POST /api/v1/mdm/groups/{id}/apps, and the new POST /emsapi/fileupload/status;
+sample-consistent and harmless on the labels/apps/update pages — engineering
+uniformity). The PUT /api/v1/mdm/apps/{app_id}/labels/{release_label_id}
+body gains the documented-Mandatory fields: `app_name` (the plain app name —
+the same value the tool already resolves for the list match/create path) and
+`app_type: 2` (Enterprise — same enum as create); `app_file` +
+`force_update_in_label: true` retained (Optional, required by our path);
+release_label_id stays a PATH parameter. `Module: MDM_APP_MGMT` and the
+multipart key `file` were already correct (verified). `group_type` is
+validated per RD5-08. Header/body contract tests pin every used call.
+
+RD5-07. **Retry policy is split by call class (R5-06).** No MDM mutation
+documents idempotency/duplicate/re-association behavior, and the documented
+rate-limit lock is 5 minutes (1s/2s backoff cannot clear it). New classes:
+(a) READ-SAFE (GET /api/v1/mdm/apps pages, GET groups/{id}, the status poll,
+the Zoho token exchange): keep the current 429/COM0002/5xx retry (3 attempts,
+1s/2s); (b) MUTATION (POST labels, POST /emsapi/files, POST apps, PUT
+apps/labels, POST groups/{id}/apps): retry ONLY 429/COM0002 (pre-execution
+rejections, per the product-level error table's semantics) and FAIL CLOSED on
+5xx with a "state may have changed — re-run performs the read-walk
+reconciliation" diagnostic (a 5xx after the server may have mutated is an
+ambiguous outcome; the run-start app-list walk + label reuse + monotonic
+check is the documented reconciliation path). Transport-level errors already
+fail closed immediately (correct ambiguous posture, retained). A final
+429/COM0002 failure names the documented 5-minute lock in its message. The
+429/COM0002-only rule for mutations is an ENGINEERING judgment (whether such
+rejections are always pre-execution is undocumented) — conservative in the
+fail-closed direction.
+
+RD5-08. **The Beta target is an admin-controlled allowlist (R5-07).**
+`group-id`, `group-name`, and `production-group-id` are REMOVED from the
+mdm-beta-upload workflow_dispatch inputs. The triple is sourced from the
+`mdm-upload` environment's VARIABLES (admin-controlled; documented mechanism):
+`vars.MDM_BETA_GROUP_ID`, `vars.MDM_BETA_GROUP_NAME`,
+`vars.MDM_PRODUCTION_GROUP_ID` — all three REQUIRED, with fail-closed
+presence checks naming the variable and the configuration procedure (empty
+string is the documented unset-secret/variable rendering). A dispatcher can
+no longer aim the upload at ANY group: dispatch keeps only run-id, dry-run,
+app-name, data-centre, app-category-id, redirect-uri. The TOOL keeps its CLI
+flags (standalone/testable); the workflow passes the values from vars.
+Pre-mutation validation ADDS the documented `group_type` check: the group
+details response's `group_type` must be 6 (Device Group — documented enum
+{6,7,11}; number-or-string tolerated per the docs' own dual shapes;
+undocumented values fail closed). The production-group-id equality refusal is
+retained as belt-and-braces (now admin-supplied and non-omittable). The
+documented group GET threshold is 120/min (not 60) — recorded. This is the
+strongest positive identification the documented contract supports: no group
+field distinguishes production from test (R5-B2 field inventory).
+
+RD5-09. **Run provenance is validated before cross-run artifact download
+(R5-12 — defense-in-depth).** Before `actions/download-artifact`, the
+mdm-beta-upload workflow validates the run via the REST API (gh api / curl
+with `github.token`; `actions: read` already granted — the documented minimal
+permission for both the download and the run lookup): the run's workflow
+identity must be the Android release workflow (name "Android release" / path
+`.github/workflows/android-release.yml`), `conclusion` must be `success`, and
+`head_branch` must be in the allowlist {main, develop} (documented engineering
+choice: the release-source branches post-merge; closes the same-version
+branch-swap hole that content re-verification cannot). Rejected as
+impractical: pinning an exact head_sha (a human picks "the run I just
+reviewed"). Existing full-SHA action pins re-verified (checkout v7.0.1,
+download-artifact v8.0.1, upload-artifact v7.0.1, setup-java v5.7.0,
+setup-node v7.0.0, pnpm/action-setup v6.0.10 — all resolve exactly on the
+official repos) — T19 hardening stands; no change.
+
+RD5-10. **R5-09 is REJECTED — no receiver change (R5-09).**
+`RECEIVER_NOT_EXPORTED` for `ACTION_APPLICATION_RESTRICTIONS_CHANGED` is the
+documented-correct pattern: the action is a protected intent only the system
+can send (Intent ref), and ContextCompat documents NOT_EXPORTED for
+"broadcasts … from the system UID"; the Android 14 flag requirement exempts
+system-broadcast-only receivers; the dynamic-only registration (manifest
+receivers are documented as unsupported for this action) is already correct.
+Evidence recorded in review.md + mdm-operations.md; no code change.
+
+### Feature shape (Round 5) — unchanged
+
+No new capability. The policy error surface is a Feature-local component
+(manual artifact — no generator capability covers a root-held error state;
+the same justification as the Round 2 maintenance components). No generator
+command; scaffold N/A for every Round 5 task.
+
+### Round 5 tasks (post-review remediation)
+
+| Task | Mode            | Acceptance               | Objective (findings)                                                                                                                                                                                                                                                | Depends on | Entry evidence (RED/baseline/config)                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---- | --------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T21  | behavior-change | Acceptance: AC-03, AC-04 | Platform-discriminated module absence + event-driven synchronous invalidation (R5-01, R5-02)                                                                                                                                                                        | —          | RED: android+null module ⇒ markModuleAbsent NOT called, readiness pending, target startup (fails today: resolved); RED: web/ios+jest null ⇒ resolved; RED: event on standard+resolved ⇒ pending + maintenance cleared BEFORE re-read resolves; RED: event + failed re-read ⇒ stays pending; kiosk role rows unchanged (never reverted)                                                                                        |
+| T22  | behavior-change | Acceptance: AC-03        | Policy readError state + kiosk-runtime-owned error surface with manual retry in the startup hold (R5-08)                                                                                                                                                            | T21        | RED: first read fails with auth ready+preparation ⇒ readError set + retry control visible + retry re-dispatches the read (fails today: silent StartupScreen); RED: retry success ⇒ error cleared, resolved; retry repeated failure ⇒ still startup, never preparation; web rows byte-identical (module absent ⇒ resolved, no error surface)                                                                                   |
+| T23  | behavior-change | Acceptance: AC-05        | restrictionsSettled gates tryUnlock; sheet settling state; sheetOpen reset on role exit (R5-10, R5-11)                                                                                                                                                              | T22        | RED: provisional+LOCKED ⇒ role kiosk (mismatch) BUT tryUnlock(bundle code) false + sheet settling state (fails today: unlock succeeds); RED: settled re-read ⇒ tryUnlock succeeds; RED: sheet open + role kiosk→standard→kiosk ⇒ sheet NOT open (fails today: reopens); existing settled rows unchanged                                                                                                                       |
+| T24  | bug             | Acceptance: AC-09        | File-upload two-phase lifecycle (initial 1 → bounded status poll → 2) + documented headers on every used call (R5-03, R5-05)                                                                                                                                        | —          | RED: initial fileStatus 1 → at least one POST /emsapi/fileupload/status with {"fileIDs":[String(id)]} + Accept+Content-Type → 2 ⇒ success (fails today: terminal failure); RED: 3 ⇒ immediate fail, no poll; RED: repeated non-2 ⇒ bounded exhaustion, nonzero exit; RED: malformed/missing response entry ⇒ fail closed; RED: Accept header asserted on files/groups/associate calls; fast path (initial 2) ⇒ NO status call |
+| T25  | bug             | Acceptance: AC-09        | Update App body carries documented-Mandatory app_name + app_type (R5-04)                                                                                                                                                                                            | T24        | RED: PUT body must include {app_name, app_type: 2, app_file, force_update_in_label: true} (fails today: two fields missing) — both pinned call expectations amended                                                                                                                                                                                                                                                           |
+| T26  | behavior-change | Acceptance: AC-09        | Retry policy split by call class + documented lock guidance (R5-06)                                                                                                                                                                                                 | T25        | RED: mutation (labels/files/apps/PUT/associate) on 5xx ⇒ exactly ONE attempt, fail closed with reconciliation guidance (fails today: retries); RED: mutation 429/COM0002 ⇒ retries; reads/token/status-poll 5xx ⇒ retries (unchanged); RED: transport exception ⇒ zero retries, "could not be performed" (unpinned today); RED: final 429 names the 5-minute lock                                                             |
+| T27  | behavior-change | Supporting: AC-09        | Beta target allowlist: workflow inputs removed, vars-sourced triple with fail-closed checks, group_type==6 validation (R5-07)                                                                                                                                       | T26        | RED: group_type 7/11/1/missing/undocumented ⇒ refuse BEFORE any mutation (fails today: only name checked); RED: group_type 6 number AND "6" string ⇒ pass; workflow config: no group inputs in YAML; vars presence-check step; production equality retained; dispatch cannot supply any group value                                                                                                                           |
+| T28  | config          | Supporting: AC-09        | Run provenance validation before artifact download (R5-12)                                                                                                                                                                                                          | T27        | config: YAML parses; check:ci-scripts green; the validation step asserts workflow identity + conclusion success + head_branch ∈ {main, develop} before download-artifact; failure paths exit 1 with named errors                                                                                                                                                                                                              |
+| T29  | config          | Acceptance: AC-10        | mdm-operations.md Round 5 alignment: two-phase upload lifecycle, Update App body, Accept headers, retry classes, allowlist config (new env vars + exact human steps), provenance check, group_type 6, IR-02 correction, R5-09 no-change evidence, 120/min group GET | T24–T28    | config: `pnpm verify` green (check:docs); content cross-checked against the review.md synthesis                                                                                                                                                                                                                                                                                                                               |
+
+Round 5 gate: fresh round reviewer over the accumulated Round 5 diff after
+T29. Execution stays sequential (repository convention). Push discipline:
+every Task Gate PASS → commit → push → verify remote/PR #9 advanced →
+inspect CI → next task (push credentials currently absent from the restored
+sandbox — recorded as an external prerequisite; local commits preserved).
+
+### Files expected to change (Round 5 additions)
+
+- `features/kiosk-runtime/native/policy-source.ts` (+test) — platform
+  discriminator (RD5-01).
+- `features/kiosk-runtime/native/use-device-policy-sync.ts` (+test) — event
+  invalidation, readError wiring, retry seam exposure (RD5-02/03).
+- `features/kiosk-runtime/state/device-policy-store.ts` (+test) — readError,
+  invalidation transition, restrictionsSettled consumption in tryUnlock.
+- `features/kiosk-runtime/model/derive-device-policy.ts` (+test) —
+  restrictionsSettled (RD5-04); the provisional+locked credential row amended.
+- `features/kiosk-runtime/model/root-guard.ts` — NO change (readiness binary,
+  resolver table untouched — RD5-03).
+- `features/kiosk-runtime/components/kiosk-maintenance-overlay.tsx` (+test) —
+  sheetOpen reset (RD5-04).
+- `features/kiosk-runtime/components/maintenance-sheet.tsx` (+test) — settling
+  state (RD5-04).
+- `features/kiosk-runtime/components/policy-error-surface.tsx` + test — the
+  Round 5 manual artifact (RD5-03).
+- `features/kiosk-runtime/index.ts` — export widening for the retry hook /
+  error surface (app/\*\* may not import the store).
+- `app/index.tsx` — the startup case renders the policy error surface when
+  readError is set (RD5-03; comment update).
+- `tools/mdm/upload-beta.ts` (+test) — RD5-05/06/07/08 (status poll, Accept
+  headers, PUT body, retry classes, group_type validation, inputs unchanged
+  CLI-wise).
+- `.github/workflows/mdm-beta-upload.yml` — inputs removed, vars-sourced
+  config with fail-closed checks, provenance validation step (RD5-08/09).
+- `features/kiosk-runtime/docs/mdm-operations.md` — T29 alignment.
+- NOT changed: `core/**`, `components/**` (shared), other features,
+  `supabase/**`, `app/_layout.tsx`, the Kotlin module (R5-09 rejected),
+  `android-release.yml` (pins verified; no change), CI-tier workflows.
+
+### Required skills (Round 5)
+
+- `test-driven-development` — every task.
+- `kisok-react-native-rules` — T21–T23 (timer/event discipline in the sync
+  hook and overlay tests).
+- `kisok-design-system` — T22/T23 (ErrorState reuse, settling-state copy,
+  a11y).
+- `expo-router` — T22 (root-guard/startup-target semantics; vendored skill
+  covers SDK-56+ material that is N/A on SDK 54).
+
+### Test strategy additions (Round 5)
+
+- **Platform matrix (R5-01)** — null module × {web, ios, jest-default,
+  android}: only android holds pending; the others resolve. The null-path
+  test names pin the platform dimension; jest platform mocking discipline
+  documented per R5-A2 unknown #2.
+- **Event invalidation (R5-02)** — standard+resolved + event ⇒ pending +
+  maintenance cleared synchronously (before the re-read resolves); event +
+  failed re-read ⇒ pending; event + valid snapshot ⇒ resolved with new
+  policy; kiosk role never reverted; the Round 4 "failure-after-success keeps
+  readiness" test is SPLIT: event-triggered failure invalidates;
+  AppState-triggered failure keeps last-known (both rows pinned).
+- **Error/retry UX (R5-08)** — readError set on first-read failure with auth
+  ready+preparation; retry re-dispatches; success clears; repeated failure
+  stays at startup; retryable AppError semantics; web rows byte-identical.
+- **Settled credential (R5-11)** — provisional+LOCKED: role kiosk, mismatch
+  target, tryUnlock false, sheet settling state; settled: tryUnlock true; the
+  pinned Round 4 row (provisional+locked → code derived) is superseded and
+  amended — behavior-change discipline.
+- **Sheet lifecycle (R5-10)** — kiosk→standard→kiosk with the sheet open ⇒
+  closed on return.
+- **Upload lifecycle (R5-03)** — initial 2 ⇒ no status call; initial 1 ⇒
+  poll(s) ⇒ 2 ⇒ success; initial 3 ⇒ immediate fail; repeated pending ⇒
+  bounded nonzero exit; malformed/missing entry ⇒ fail closed; status request
+  body/headers pinned exactly (`fileIDs` casing, string values, Accept).
+- **Contract headers (R5-05)** — Accept asserted on every used MDM call;
+  `Module: MDM_APP_MGMT` and multipart `file` retained.
+- **Update App body (R5-04)** — PUT body pinned to the 4-field shape; both
+  existing pinned expectations amended.
+- **Retry classes (R5-06)** — per-class rows: mutation 5xx one-attempt
+  fail-closed; mutation 429/COM0002 retries; read/token/status 5xx retries;
+  transport no-retry; final-429 message names the 5-minute lock.
+- **Allowlist (R5-07)** — group_type 6 (number + string) passes; 7/11/1/
+  missing/undocumented refuses pre-mutation; dry-run truthful on refusal;
+  production equality retained; workflow YAML has no group inputs; vars
+  presence-check step exists.
+- **Provenance (R5-12)** — the validation step's assertions reviewed against
+  the workflow file (config-mode verification).
+
+### Risks (Round 5 additions)
+
+| Risk                                                                                                            | Likelihood         | Mitigation                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| jest Platform.OS mocking discipline (R5-A2 unknown #2)                                                          | medium             | The seam tests mock the platform via jest-expo's platform mechanism or react-native mock; the implementer documents the chosen mechanism; both ios-default and android-mocked variants pinned |
+| The event-invalidation splits the Round 4 last-known-good test — an intentional behavior change                 | certain            | Both new rows pinned (event-triggered invalidates; AppState-triggered keeps); review.md records the doctrine shift ("the EVENT, not the failed read, destroys the stale verdict")             |
+| Live server may not enforce documented-Mandatory fields (Accept, app_name/app_type, group_type)                 | medium             | We comply with the documented contract regardless (fail-closed direction); live-tenant verification remains a documented human follow-up                                                      |
+| The 429/COM0002-only mutation retry rests on an engineering judgment (pre-execution assumption undocumented)    | medium             | Conservative direction: fewer automatic replays; ambiguous 5xx fails closed with reconciliation guidance; recorded as ENGINEERING RECOMMENDATION in code comments                             |
+| The allowlist design requires the human to configure 3 new environment variables before the first real dispatch | certain (external) | Fail-closed presence checks name the variables and the exact configuration steps; mdm-operations.md documents the migration (T29)                                                             |
+| Branch allowlist {main, develop} might need adjustment for the tenant's release process                         | low                | Documented as an engineering choice in the workflow + mdm-operations.md; a future change is one reviewed line                                                                                 |
+
+### Verification (Round 5)
+
+- `pnpm verify` after every task; focused suites per task.
+- The cold-start ordering regression (Round 4) extended with the
+  platform-matrix + event-invalidation + error/retry rows.
+- Workflow static checks: YAML parse, `pnpm check:ci-scripts`, the vars
+  presence-check + provenance-step structural review.
+- Runtime browser regression on the final Round 5 HEAD: standard path
+  unchanged, web module-absent resolves instantly (no error surface on web),
+  zero console errors, tablet landscape + portrait.
+- Android native tier: label-gated android-build on the final HEAD.
+- Live MDM dry-run: human action (external, unchanged) — records the actual
+  group_type shape and whether initial fileStatus 1 ever occurs.
+- develop integration check (R5-13) after T29: re-fetch; integrate if
+  advanced; re-run affected verification on the integrated HEAD.
+- Final sequence: fresh full code review → remediation/re-review if needed →
+  fresh quality audit → NEW Feature Gate → PR #9 update → HUMAN_HANDOFF.
+
+### Round 5 `DRAFT` → `READY` checklist
+
+- [x] All seven research packets complete; synthesis + R5 verdict matrix in
+      review.md; Lead spot-checked every load-bearing primary source
+      personally (including the IR-02 contradiction resolution)
+- [x] Every R5-01…R5-13 finding has a verdict; R5-09 documented REJECTED with
+      primary evidence (no needless change)
+- [x] Every CONFIRMED / CONFIRMED-WITH-MODIFICATION finding maps to an owned
+      Task (T21–T29) or an explicit non-code disposition (R5-09; R5-13 =
+      integration step)
+- [x] Stable AC IDs preserved; AC-03 amended minimally with evidence citation
+      (module-absent-on-Android + event-invalidation windows); no unrelated
+      product scope entered
+- [x] No external contract guessed: every task's contract is pinned to
+      research-packet sources (RD5-01…RD5-10 cite them)
+- [x] No new capability/shape; no generator command (scaffold N/A justified)
+- [x] Task graph dependency-coherent; file scopes explicit; skills explicit
+- [x] Tests target failure modes (the fail-open rows, the contract drifts,
+      the ambiguous-replay class), not implementation trivia
+- [x] latest develop integration scheduled before final verification (R5-13)
+- [x] skipped/hardware/live-tenant evidence cannot be mislabeled PASS
+      (unverified lists retained and extended)
+- [x] Worklog/review/todo preserve T01–T20 history while recording the
+      reopened gate truth
+
+Status: `READY` (Round 5 remediation) — the Lead Planning Review was re-run on
+this amendment in full on 2026-09-04 (requirements vs. research, external
+contracts, shape, safety semantics, task graph, test strategy, integration
+plan, document consistency — see the Lead Planning Review note below).
+Implementation of T21 may begin.
+
+### Lead Planning Review (Round 5, 2026-09-04) — PASS
+
+Requirements: original Feature request intact; stable AC IDs preserved
+(AC-03 minimally amended, evidence-cited); no unrelated scope entered.
+External contracts: every Android/Expo/ManageEngine/Zoho/GitHub claim in
+RD5-01…RD5-10 is backed by first-party evidence the Lead opened personally;
+all seven packets complete; R5-01…R5-13 each carry a verdict; no endpoint,
+header, field, status value, group type, retry rule, action pin, or
+certificate rule is guessed; the one open engineering judgment (mutation
+retry class) is explicitly conservative/fail-closed. Shape/routes: no new
+capability; the policy error surface cannot transiently expose a prohibited
+experience (error ≡ pending ⇒ startup hold); standard employee-device
+behavior unchanged once verified-standard (web rows byte-identical);
+CNG/native boundaries minimal (Kotlin untouched — R5-09 rejected). MDM
+delivery safety: read-only validations precede every mutation; dry-run
+truthful; Beta targeting is admin-allowlisted with the strongest documented
+positive identification (id + exact name + type 6); production rollout
+remains non-automated. Release/supply chain: T19 pins re-verified; provenance
+hardening classified defense-in-depth and task-scoped; secrets never exposed.
+Task graph: every confirmed finding owned; tasks independently verifiable and
+dependency-correct; tests target failure modes; no giant cross-domain task.
+Integration/evidence: develop re-fetch scheduled before final verification;
+Android native build on the exact final HEAD; skipped E2E/hardware/live-MDM
+cannot be mislabeled PASS; control docs preserve history while recording the
+reopened truth. No material issue remains.
