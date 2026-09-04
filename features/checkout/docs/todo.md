@@ -17,9 +17,9 @@ is the first thing the next agent reads.
 ```
 Current round     : 3
 Current task      : — (round complete)
-Current stage     : T13 GATE PASS — next T14 (cart Review Order CTA)
-Last gate         : T13 GATE PASS
-Next legal action : delegate T14 (Full Cart Review Order CTA — owning-feature edit)
+Current stage     : T14 GATE PASS — next T15 (journey test)
+Last gate         : T14 GATE PASS
+Next legal action : delegate T15 (customer journey integration test)
 Blocked by        : —
 ```
 
@@ -54,8 +54,8 @@ Scan this first. Detail is below.
 | T10  | behavior | Supporting AC-14                      | Catalog settings seam                                      | —                       | done        | PASS    |
 | T11  | behavior | Acceptance: AC-07, AC-14, AC-15       | Order Success screen + countdown                           | T06, T08, T10           | done        | PASS    |
 | T12  | behavior | Acceptance: AC-13                     | recovery-gate + layout mounting                            | T06, T07                | done        | PASS    |
-| T13  | config   | N/A — routing                         | Routes: /checkout, /checkout-success                       | T08, T11                | not started | PENDING |
-| T14  | behavior | Acceptance: AC-01                     | Full Cart Review Order CTA                                 | T13                     | not started | PENDING |
+| T13  | config   | N/A — routing                         | Routes + hardware-back guard (R3-02)                       | T08, T11                | done        | PASS    |
+| T14  | behavior | Acceptance: AC-01                     | Full Cart Review Order CTA                                 | T13                     | done        | PASS    |
 | T15  | behavior | Acceptance: AC-16                     | Customer journey integration test                          | T09, T11, T12, T13, T14 | not started | PENDING |
 
 Stage is one of: `not started` · `scaffolding` · `red/baseline` ·

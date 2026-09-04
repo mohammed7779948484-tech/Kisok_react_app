@@ -1220,3 +1220,61 @@ features/checkout/screens/order-review/{order-review-screen.tsx,test}
 features/checkout/screens/order-success/{order-success-screen.tsx,test}
 
 GATE: PASS
+
+### T14 — Full Cart Review Order CTA
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-01
+
+SCAFFOLD (Lead — N/A for this task)
+owning-feature edit inside features/cart (the brief's planned
+cross-feature seam; plan external-changes list).
+
+RED (behavior)
+$ npx jest features/cart/screens/full-cart
+3 failed / 16 passed — every failure "Unable to find an element with
+role: button, name: Review Order" (the CTA missing); the reviewer
+independently reproduced the exact RED by running the current test file
+against the pre-T14 screen in a throwaway config.
+
+IMPLEMENT
+features/cart/screens/full-cart/full-cart-screen.tsx — the Review Order
+CTA: primary, large, block, rendered above Clear Cart (the kiosk reading
+order: way forward first); onPress → router.push("/checkout"); disabled
+unless hydrated && lines>0 && !locked (AC-01's exact rule, mirroring the
+T08 review screen's canSubmit so the surfaces can never disagree — the
+cart deliberately does NOT encode the phase term: cross-feature
+boundary). Clear Cart becomes the secondary row (still large, drops
+block → self-start); its ConfirmDialog flow untouched. Doc comments
+extended (the AC-01 entry seam).
+features/cart/screens/full-cart/full-cart-screen.test.tsx — 5 new tests:
+populated CTA enabled; press pushes /checkout; locked → disabled; empty
+→ absent; restore-pending → footer absent (the parked-cart-read spy
+pattern). All 14 pre-existing tests unmodified.
+
+GREEN
+$ npx jest features/cart → 11 suites / 192 tests
+$ npx jest features/catalog-cart-integration (reviewer) → 46 tests
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean
+$ npx eslint <both files> --max-warnings=0 → exit 0
+$ npx prettier --check → clean
+
+TASK REVIEW (fresh code-reviewer, agent-d25d9ac9)
+Verified: AC-01 complete (enablement in the strong direction — the
+locked/empty/restore-pending presentations); the prominence split sound
+(the review footer's own primary-block/secondary-large convention);
+the destructive guard byte-unchanged; the cross-surface mirror verified
+against the attempt store's phase→lock/clear semantics (no reachable
+disagreement); the parked-read spy sound; the RED independently
+reproduced. All suites re-run green.
+Findings: F-T14-01 minor (the prominence split unpinned). Remediation
+(Lead): the reading-order pin added to the enabled test — getAllByRole
+resolves in tree order, Review Order's index precedes Clear Cart's.
+
+DIFF
+features/cart/screens/full-cart/full-cart-screen.tsx (edit)
+features/cart/screens/full-cart/full-cart-screen.test.tsx (edit)
+
+GATE: PASS
