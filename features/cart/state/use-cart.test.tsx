@@ -110,7 +110,11 @@ const waterInput: AddToCartInput = {
   quantity: 1,
 };
 
-/** The thirteen runtime exports the plan's public API allows — no more, no less. */
+/**
+ * The runtime surface is EXACTLY the fourteen planned names — thirteen from
+ * this feature's plan decision 11 plus `clearCartDurable`, the awaitable
+ * durable-clear seam the Checkout plan's decision D5 adds.
+ */
 const PUBLIC_RUNTIME_EXPORTS = [
   "CartItemRow",
   "FullCartScreen",
@@ -118,6 +122,7 @@ const PUBLIC_RUNTIME_EXPORTS = [
   "QuickCartSheet",
   "addItem",
   "clearCart",
+  "clearCartDurable",
   "getCartSnapshot",
   "hydrateCart",
   "lockCart",
@@ -279,8 +284,12 @@ describe("cart public API (AC-13)", () => {
     expect(typeof cartApi.unlockCart).toBe("function");
     expect(typeof cartApi.hydrateCart).toBe("function");
     expect(typeof cartApi.getCartSnapshot).toBe("function");
+    // The awaitable durable clear — the narrow Checkout seam (that feature's
+    // plan decision D5): the fire-and-forget clearCart() with its honest
+    // StorageWriteResult resolved instead of dropped.
+    expect(typeof cartApi.clearCartDurable).toBe("function");
 
-    // The runtime surface is EXACTLY the thirteen planned names. FULL key
+    // The runtime surface is EXACTLY the fourteen planned names. FULL key
     // equality — not a function-valued filter — so a future accidental export
     // of ANY kind (a stray `export const CART_KEY = …` is the reviewer's
     // R-T10-03 example) fails right here; type re-exports are erased at
@@ -291,7 +300,7 @@ describe("cart public API (AC-13)", () => {
     // the test-only sign-out cleanup must never be public. Checked by NAME —
     // a direct property access would be a compile error precisely because the
     // exports are (correctly) absent, and the exact-surface assertion above
-    // already fails if any export beyond the thirteen ever appears.
+    // already fails if any export beyond the fourteen ever appears.
     expect("useCartStore" in cartApi).toBe(false);
     expect("createCartStore" in cartApi).toBe(false);
     expect("clearCartForSignOut" in cartApi).toBe(false);

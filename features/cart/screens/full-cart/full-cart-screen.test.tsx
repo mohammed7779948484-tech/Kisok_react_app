@@ -512,6 +512,106 @@ describe("FullCartScreen", () => {
     expect(screen.queryByText("Saved in memory only")).toBeNull();
   });
 
+  it("offers Review Order as the footer's primary way forward, enabled on a hydrated, populated, unlocked cart (AC-01)", async () => {
+    mockAuthHolder.current = installMockAuth();
+    seedCart([cappuccinoLine]);
+    await renderScreen();
+
+    // The checkout entry seam (checkout brief AC-01, cart-owned): present by
+    // role+name in the populated presentation, and ENABLED — the cart is
+    // hydrated, populated, and not locked.
+    const reviewOrder = await screen.findByRole("button", { name: "Review Order" });
+    expect(reviewOrder).toBeOnTheScreen();
+    expect(reviewOrder).not.toBeDisabled();
+    // Clear Cart stays beside it, equally available — the entry changes
+    // nothing about the destructive affordance's own availability.
+    expect(screen.getByRole("button", { name: "Clear Cart" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Clear Cart" })).not.toBeDisabled();
+    // The footer's READING ORDER is behaviour, not styling (F-T14-01): the
+    // way forward comes first, the destructive second. getAllByRole resolves
+    // in tree order, so Review Order's index precedes Clear Cart's.
+    const footerButtons = screen.getAllByRole("button");
+    expect(footerButtons.indexOf(reviewOrder)).toBeGreaterThan(-1);
+    expect(footerButtons.indexOf(reviewOrder)).toBeLessThan(
+      footerButtons.indexOf(screen.getByRole("button", { name: "Clear Cart" })),
+    );
+  });
+
+  it("navigates to the checkout review route when Review Order is pressed (AC-01)", async () => {
+    mockAuthHolder.current = installMockAuth();
+    seedCart([cappuccinoLine, waterLine]);
+    const user = userEvent.setup();
+    await renderScreen();
+
+    await user.press(await screen.findByRole("button", { name: "Review Order" }));
+    expect(mockRouterPush).toHaveBeenCalledTimes(1);
+    expect(mockRouterPush).toHaveBeenCalledWith("/checkout");
+  });
+
+  it("disables Review Order while the cart is locked — the lock blocks submission entry, not just edits (AC-01)", async () => {
+    mockAuthHolder.current = installMockAuth();
+    seedCart([cappuccinoLine], { locked: true });
+    await renderScreen();
+
+    // The entry renders in the locked presentation but is disabled, exactly
+    // like the sibling controls — mid-lock the way INTO checkout is closed.
+    expect(await screen.findByRole("button", { name: "Review Order" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Clear Cart" })).toBeDisabled();
+  });
+
+  it("renders no Review Order CTA in the empty presentation — the empty cart's escape stays Browse Products (AC-01)", async () => {
+    mockAuthHolder.current = installMockAuth();
+    seedCart([]);
+    await renderScreen();
+
+    await screen.findByText("Your cart is empty");
+    // The footer (and with it the entry) exists only with lines; the empty
+    // cart's way forward is unchanged.
+    expect(screen.queryByRole("button", { name: "Review Order" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Browse Products" })).toBeOnTheScreen();
+  });
+
+  it("renders no Review Order CTA while the cart's durable read is in flight — the footer needs restored lines (AC-01)", async () => {
+    // The order-review suite's parked-read pattern (its R-T11-01): this
+    // suite's render drains the mock-auth + AsyncStorage microtask chains
+    // inside its own await, so the transient `!hydrated` frame is only
+    // observable when the durable read is PARKED on a test-controlled
+    // deferred — deterministic, whatever the scheduler does. Scoped to the
+    // cart key only (the sign-out-cleanup spy precedent): parking the auth
+    // chain's reads would land their resolution outside every act window.
+    let releaseCartRead!: () => void;
+    const cartReadGate = new Promise<void>((resolve) => {
+      releaseCartRead = resolve;
+    });
+    const realRead = storage.read;
+    const readSpy = jest.spyOn(storage, "read").mockImplementation(async (key, parse) => {
+      if (key !== KEY) return realRead(key, parse);
+      await cartReadGate;
+      return realRead(key, parse);
+    });
+
+    try {
+      mockAuthHolder.current = installMockAuth();
+      await renderScreen();
+
+      // Restore genuinely in flight: the skeleton owns the tree, and the
+      // footer — the Review Order entry AND Clear Cart — does not exist.
+      expect(screen.getByLabelText("Loading content")).toBeOnTheScreen();
+      expect(screen.queryByRole("button", { name: "Review Order" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Clear Cart" })).toBeNull();
+
+      // Release inside act: nothing is on disk (beforeEach removed the
+      // key), so the screen lands on its empty state — still no entry.
+      await act(async () => {
+        releaseCartRead();
+      });
+      await screen.findByText("Your cart is empty");
+      expect(screen.queryByRole("button", { name: "Review Order" })).toBeNull();
+    } finally {
+      readSpy.mockRestore();
+    }
+  });
+
   it("renders the same cart content at the compact portrait frame (480×900)", async () => {
     mockAuthHolder.current = installMockAuth();
     seedCart([waterLine]);
