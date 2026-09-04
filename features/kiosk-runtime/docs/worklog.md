@@ -1677,3 +1677,90 @@ ROUND CHECKS (after remediation)
 $ pnpm verify → exit 0 (31 suites / 391 tests unchanged)
 
 ROUND GATE: PASS
+
+## FINAL REVIEW + REMEDIATION (RECOVERY — fresh evidence)
+
+FINAL HEAD CANDIDATE: d468afc (Round 3 gate + develop integration merge:
+origin/develop 6161a4c merged non-destructively; zero file overlap with the
+feature diff; post-merge pnpm verify green — 68 suites / 796 tests; pushed;
+fast CI green: Verify / Web bundle / Expo doctor SUCCESS).
+
+DEVELOP INTEGRATION CHECK (Lead): origin/develop advanced 62f3634 → 6161a4c
+(catalog-cart-integration PR #11). Merged with --no-edit; no conflicts (zero
+overlap); stale final evidence invalidated and re-collected at the
+integrated HEAD (verify, CI, runtime — below).
+
+FINAL VERIFICATION (Lead, at d468afc):
+$ pnpm verify → exit 0 (68 suites / 796 tests, integrated)
+$ GitHub CI on d468afc → Verify / Web bundle / Expo doctor all SUCCESS
+Runtime (browser, agent-browser at tablet sizes, from the CI-equivalent
+static export `pnpm export:web` + a local static server with clean-URL
+fallback): / → /sign-in at BOTH 1280×800 landscape and 800×1280 portrait;
+sign-in renders (Email/Password/Sign in); ZERO console/page errors; no
+kiosk overlay, no maintenance affordance (standard path);
+/kiosk-mismatch registered + exported and the root guard redirects
+standard-path visitors to /sign-in (fail-closed — the mismatch screen
+renders only for preparation-on-kiosk per its tests). Screenshots captured.
+Native tier: prebuild local PASS (this session, twice); the label-gated
+android-build job triggered on the PR by the Lead adding the `android-build`
+label (the plan's documented native compile gate — previously
+pending-credentials).
+
+FINAL CODE REVIEW (fresh code-reviewer, agent-5a082a39 — full feature,
+fresh context, did not watch any implementation)
+Verdict: NOT ready for the Feature Gate — one blocking, one minor.
+FR-01 BLOCKING: the label-gated Android build run 33825189511 on d468afc
+FAILED. The Lead fetched the run log (GitHub API): :app:
+processDebugResources → AAPT error — the generated res/xml/
+kiosk*restrictions.xml's android:description carried a LITERAL string,
+incompatible with the attribute's reference-only format. Root cause: T01's
+plugin wrote literal display strings; T01's config-mode gate ran prebuild +
+inspection only (no gradle/AAPT — no local Android SDK exists here), and
+the label-gated compile job had never run before (the previous session had
+no push credentials). This is exactly the plan's documented risk
+("android-build CI compiles it once PR CI runs; failure = fix-in-task
+loop") activating. The reviewer's own read-only diagnostics found no other
+static cause (autolinking resolves the module; Kotlin DSL matches the
+installed expo-modules-core; only native-touching change since the last
+passing build).
+→ FIXED (fix-in-task loop; fresh implementer agent-5974f4f2, T01 scope):
+the plugin's dangerous mod now ALSO writes res/values/
+kiosk_policy_strings.xml (four kiosk_policy*\*-prefixed strings, values
+byte-equal to the old literals) and the restrictions XML references them
+(@string/kiosk_policy_role_title / role_description / unlock_code_title /
+unlock_timeout_title; keys/types/comments byte-identical; no literal
+display string remains — the official managed-configurations pattern).
+Config-mode verification: prebuild regenerates both files; python3
+ElementTree parse + cross-link check (referenced set == defined set);
+APP_RESTRICTIONS meta-data + lockTaskMode intact; no tracked file changed
+after the documented package.json restore; typecheck/lint/format/test:ci
+green (68/796); eslint --max-warnings=0 modules/ clean. Lead re-verified
+the diff + generated files + checks. Compile re-gate: the fix commit's
+synchronize push re-triggers the android-build job (label present) —
+outcome recorded below.
+FR-02 minor: the sheet's blocked/failed outcome Alert rendered only in
+the unlocked branch; a mid-flight session clear (expiry/background/
+snapshot) flipped the sheet to the locked form and swallowed the outcome
+(T06-R2/R2-1 fixed the close-path variants; the ephemeral-clear paths were
+missed).
+→ FIXED (fresh implementer agent-6019068c, T06 scope): RED first — two
+failing tests (blocked + failed settles landing while the sheet shows the
+locked code form; pre-settle assertions prove the in-flight × cleared
+intersection is genuinely exercised) — then the outcome Alert extracted
+and rendered in BOTH branches (settle effect, in-flight dismissal gates,
+and success path byte-identical); +2 regression tests; 14/14 sheet tests;
+68 suites / 798 tests total; zero console output; typecheck/lint/format
+green. Lead re-ran the suites + checks.
+Axes the final reviewer examined and found clean: complete AC-01…AC-10
+coverage (with on-hardware rows honestly unverified), architecture/
+boundaries (diff exactly the plan's expected-change list; routes thin;
+barrel minimal; no core→feature import; no Supabase sneaked in), all
+safety invariants (fail-closed derivation auth-independent by type; no
+startLockTask call sites repo-wide; session ephemerality with idempotent
+clear paths; code never rendered/logged/persisted — negative assertions;
+sign-out reuse structural), RN runtime (listener registration/cleanup,
+re-entrancy guard, timer re-arm with Math.max(0,·)), accessibility (labels,
+announced failures, live regions, 48dp), UI states (only reachable ones),
+test quality (behavior-named, real pipeline, captured sinks), release/MDM
+chain sanity, control-document coherence (brief↔plan↔diff; worklog counts
+reproduce; review.md honest).

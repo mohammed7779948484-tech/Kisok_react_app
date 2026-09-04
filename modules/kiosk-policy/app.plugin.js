@@ -10,7 +10,14 @@
  *     declares the managed-configurations schema so an Android Enterprise
  *     MDM (ManageEngine) can push app restrictions to this app.
  *  2. `android/app/src/main/res/xml/kiosk_restrictions.xml` — the schema
- *     itself (three restrictions; see the XML below).
+ *     itself (three restrictions; see the XML below), whose android:title and
+ *     android:description are `@string/` references into the companion
+ *     `res/values/kiosk_policy_strings.xml` written by the same mod: the
+ *     display strings live in res/values so AAPT links them
+ *     (`android:description` accepts a string resource reference ONLY — a
+ *     literal fails `:app:processDebugResources` — and the official pattern
+ *     uses `@string/` for title too, so no literal display string remains in
+ *     the restrictions XML).
  *  3. `android:lockTaskMode="if_whitelisted"` on the main activity — the
  *     one-APK dual-role mechanism: the system locks the app into real lock
  *     task mode only when a DPC has allowlisted this package (store kiosk
@@ -33,22 +40,36 @@ const RESTRICTIONS_XML = `<?xml version="1.0" encoding="utf-8"?>
     <restriction
         android:key="kiosk_device_role"
         android:restrictionType="string"
-        android:title="Kiosk device role"
-        android:description="Set by the MDM. Use customer_kiosk on store Customer tablets; anything else behaves as a normal device." />
+        android:title="@string/kiosk_policy_role_title"
+        android:description="@string/kiosk_policy_role_description" />
 
     <!-- Store-staff maintenance unlock credential, delivered by the MDM.
          Never a Supabase credential; never logged or persisted by the app. -->
     <restriction
         android:key="maintenance_unlock_code"
         android:restrictionType="string"
-        android:title="Maintenance unlock code" />
+        android:title="@string/kiosk_policy_unlock_code_title" />
 
     <!-- Optional unlock lifetime in seconds; the app clamps 15..600. -->
     <restriction
         android:key="maintenance_unlock_timeout_seconds"
         android:restrictionType="integer"
-        android:title="Maintenance unlock timeout (seconds)" />
+        android:title="@string/kiosk_policy_unlock_timeout_title" />
 </restrictions>
+`;
+
+/**
+ * String resources referenced by RESTRICTIONS_XML. Deterministic, written in
+ * the same mod; names prefixed kiosk_policy_ to avoid any collision with the
+ * Expo template's strings.
+ */
+const STRINGS_XML = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="kiosk_policy_role_title">Kiosk device role</string>
+    <string name="kiosk_policy_role_description">Set by the MDM. Use customer_kiosk on store Customer tablets; anything else behaves as a normal device.</string>
+    <string name="kiosk_policy_unlock_code_title">Maintenance unlock code</string>
+    <string name="kiosk_policy_unlock_timeout_title">Maintenance unlock timeout (seconds)</string>
+</resources>
 `;
 
 const META_DATA_NAME = "android.content.APP_RESTRICTIONS";
@@ -81,15 +102,18 @@ function withAppRestrictionsMetaData(config) {
   });
 }
 
-/** Write res/xml/kiosk_restrictions.xml into the generated android project. */
+/** Write res/xml/kiosk_restrictions.xml and its res/values strings file. */
 function withRestrictionsXmlResource(config) {
   return withDangerousMod(config, [
     "android",
     (config) => {
       const resDir = `${config.modRequest.platformProjectRoot}/app/src/main/res/xml`;
+      const valuesDir = `${config.modRequest.platformProjectRoot}/app/src/main/res/values`;
       const fs = require("node:fs");
       fs.mkdirSync(resDir, { recursive: true });
       fs.writeFileSync(`${resDir}/kiosk_restrictions.xml`, RESTRICTIONS_XML);
+      fs.mkdirSync(valuesDir, { recursive: true });
+      fs.writeFileSync(`${valuesDir}/kiosk_policy_strings.xml`, STRINGS_XML);
       return config;
     },
   ]);
