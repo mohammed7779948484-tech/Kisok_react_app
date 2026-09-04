@@ -1764,3 +1764,28 @@ announced failures, live regions, 48dp), UI states (only reachable ones),
 test quality (behavior-named, real pipeline, captured sinks), release/MDM
 chain sanity, control-document coherence (brief↔plan↔diff; worklog counts
 reproduce; review.md honest).
+
+### FR-01 compile re-gate + FINAL_HEAD evidence (recovery session)
+
+Android build re-run on ae1a982 (synchronize-triggered, label present):
+**SUCCESS** — the fix-in-task loop is complete (failure diagnosed from the
+run log → @string resource remediation → compile re-gated green). Full
+check-run state on ae1a982: Verify SUCCESS · Web bundle SUCCESS · Expo
+doctor SUCCESS · Android prebuild check SUCCESS (the native compile tier,
+now GREEN with the kiosk-policy module compiled) · Maestro flows skipped
+(no e2e label — per the plan's Verification, Maestro is N/A for this
+feature: no new normal-device user journey; kiosk journeys cannot run on
+an unmanaged emulator).
+
+FINAL HEAD: ae1a982 (= d468afc + FR-01 fix b7b6529 + FR-02 fix ae1a982).
+
+Final evidence re-collected at the FINAL HEAD (the FR-02 fix touched
+kiosk-only UI; the standard-path runtime was re-verified):
+$ pnpm verify → exit 0 (68 suites / 798 tests, incl. the two FR-02
+regression tests)
+$ pnpm export:web → exit 0 (CI-equivalent static export)
+Runtime (browser, agent-browser, 1280×800 landscape + 800×1280 portrait):
+/ → /sign-in; sign-in renders; zero console/page errors; no kiosk overlay
+or maintenance affordance (standard path); screenshot captured.
+GitHub CI on ae1a982: all five checks as above (the fast tier + the
+native compile tier).

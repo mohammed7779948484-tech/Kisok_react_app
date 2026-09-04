@@ -14,9 +14,11 @@ defeats its only purpose.
 ```
 Current round     : 3 (complete)
 Current task      : —
-Current stage     : develop integration check
-Last gate         : ROUND 3 GATE: PASS
-Next legal action : git fetch origin; compare against current origin/develop (integrate if advanced); final verification (pnpm verify + runtime + CI on final HEAD); fresh full code review; quality audit; Feature Gate
+Current stage     : quality audit (final review + re-review complete)
+Last gate         : final re-review converged (0 blocking / 0 major; FRR-01 records landed)
+Next legal action : fresh quality-auditor, then the Feature Gate checklist, then update PR #9 and HUMAN_HANDOFF
+
+FINAL HEAD: ae1a9826848cb2e44c52d23a1ca201150be4c4a8
 
 Blocked by        : — (push credentials provided by the user; branch pushed and Draft PR #9 open — see Blocked below for what stays external)
 ```
@@ -243,21 +245,21 @@ Every line is a box, and `pnpm verify` alone is not the authority — several of
 these depend on an environment only CI has. See `review.md` for the review and
 audit findings this checklist points at.
 
-- [ ] Every Task Gate PASS
-- [ ] Every Round Gate PASS
-- [ ] Every AC verified
-- [ ] `pnpm verify` PASS after the final local change
-- [ ] required fast GitHub CI PASS on the final HEAD — **push now available (user-provided token): Draft PR #9 open, CI observed running on the PR; final-HEAD run still pending because rounds 2–3 continue**
-- [ ] required runtime evidence recorded (web standard-path regression at tablet sizes)
-- [ ] required native tier(s) PASS, N/A, or explicitly unverified (prebuild local PASS; Kotlin compile = CI label-gated, pending PR; physical kiosk = explicitly unverified)
-- [ ] Reviewer findings dispositioned
-- [ ] blocking/major fixes re-reviewed
-- [ ] Quality Audit clean
-- [ ] anything not verified explicitly recorded
-- [ ] shared/core changes justified
-- [ ] PR evidence matches the worklog — **Draft PR #9 (base develop) open at feature/kiosk-runtime; every Lead gate-commit is pushed to it; final HEAD match still pending**
+- [x] Every Task Gate PASS (T01–T09 durable pre-recovery, re-baselined green at the recovery checkpoint; T10–T13 recovered with fresh evidence, each with a fresh task review)
+- [x] Every Round Gate PASS (Round 1/2 durable; Round 3 recovered — fresh round review agent-95fd66ea, R3-1/2/3 fixed)
+- [x] Every AC verified (AC-01…AC-10 — see the worklog's final review entry; on-hardware rows explicitly unverified, never claimed)
+- [x] `pnpm verify` PASS after the final local change (68 suites / 798 tests at ae1a982, integrated with current develop)
+- [x] required fast GitHub CI PASS on the final HEAD — Verify / Web bundle / Expo doctor all SUCCESS on ae1a982
+- [x] required runtime evidence recorded (browser standard-path at tablet landscape + portrait from the CI-equivalent static export; zero errors; no kiosk surfaces; /kiosk-mismatch fail-closed — re-collected at the final HEAD after the FR-02 fix)
+- [x] required native tier(s) PASS, N/A, or explicitly unverified — prebuild local PASS; **Kotlin/native compile: Android build job PASS on ae1a982** (label-gated run; the FR-01 failure was diagnosed and fixed in the fix-in-task loop); physical kiosk = explicitly unverified
+- [x] Reviewer findings dispositioned (T01…T13, R2/R3, FR-01/FR-02, FRR-01 — every row in review.md dispositioned)
+- [x] blocking/major fixes re-reviewed (FR-01 blocking → fresh re-review agent-c73d726b verified the fix AND the compile re-gate; FR-02 → same re-review, RED empirically re-verified)
+- [ ] Quality Audit clean — **next: fresh quality-auditor**
+- [x] anything not verified explicitly recorded (the brief's Evidence section + mdm-operations.md §9: physical kiosk behavior, live MDM dry-run, first real upload, hardware/live-tenant items — first-class unverified lists)
+- [x] shared/core changes justified (the plan's "Files expected to change" list; core/** and components/** untouched)
+- [x] PR evidence matches the worklog — Draft PR #9 (base develop) head = ae1a982 = the final HEAD; every gate commit pushed and verified on the PR
 
-FEATURE GATE: PENDING
+FEATURE GATE: PENDING (quality audit is the last open item)
 
 ## Blocked
 

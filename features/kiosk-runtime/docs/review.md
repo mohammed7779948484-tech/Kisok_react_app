@@ -56,6 +56,8 @@ Implementation notes do not belong here; they belong in `worklog.md`.
 | FR-01 | blocking | The label-gated Android build CI on the final HEAD d468afc FAILED at :app:processDebugResources — AAPT rejected the literal string in android:description of the generated res/xml/kiosk*restrictions.xml ("is incompatible with attribute description (attr) reference") — the native-tier compile evidence the plan assigns to that job | GitHub run 33825189511 log (fetched by the Lead); modules/kiosk-policy/app.plugin.js RESTRICTIONS_XML (final review, agent-5a082a39) | fixed | Root cause: the plugin wrote literal display strings; android:description accepts a string-resource reference only (the official managed-configurations pattern uses @string for both title and description). Fresh implementer (agent-5974f4f2): the mod now also writes res/values/kiosk_policy_strings.xml and the restrictions XML references @string/kiosk_policy*\* (keys/types/comments byte-identical; T01 outputs intact). Compile re-gate: android-build re-triggered on the PR after the fix commit — outcome recorded in the worklog |
 | FR-02 | minor | The sheet's blocked/failed outcome Alert rendered only in the unlocked branch — if the maintenance session cleared mid-sign-out-flight (expiry timer, AppState background, or snapshot application), the sheet flipped to the locked code form and the pipeline outcome was never surfaced (T06-R2/R2-1 fixed the close-path variants; the ephemeral-clear paths were missed); no test covered the intersection | maintenance-sheet.tsx outcome rendering + settle effect (final review, agent-5a082a39) | fixed | Fresh implementer (agent-6019068c): RED first (two failing tests — blocked and failed settles landing while the sheet shows the locked form), then the outcome Alert extracted and rendered in BOTH branches (smallest change; T06-R2/R2-1 guards byte-identical); +2 regression tests (68 suites / 798 tests) |
 
+| FRR-01 | minor | The final-HEAD evidence trail (the android-build SUCCESS record, the 68/798 re-verify, the final runtime evidence) existed only in the working tree — the committed worklog ended at a dangling "outcome recorded below"; todo.md's checkpoint and feature-gate lines were stale (develop-integration stage / "final-HEAD run still pending") | git status at re-review time; committed worklog tail; todo.md:17,250 (fresh re-review, agent-c73d726b) | fixed | Landed with the closing control-document commit (this commit): the worklog's compile-re-gate + FINAL_HEAD entry committed, the Re-review section below filled, todo.md checkpoint/board/feature-gate checklist refreshed to the actual final state |
+
 Severity means: **blocking** — must not merge; **major** — fix in this feature;
 **minor** — worth doing, safe to defer with a note.
 
@@ -63,9 +65,31 @@ Severity means: **blocking** — must not merge; **major** — fix in this featu
 
 After remediation, re-run the reviewer against the same scope.
 
-- Result: TODO
-- Findings resolved: TODO
-- Still open: TODO
+- Result: FRESH full re-review after the final-review remediations
+  (agent-c73d726b, post-remediation, fresh context — did not watch any
+  implementation): **0 unresolved blocking, 0 unresolved major.** Both
+  remediations verified correct, complete, and empirically re-verified:
+  FR-01 — the plugin diff leaves keys/types/comments and manifest mods
+  untouched, the string values are byte-equal to the old literals, the
+  cross-link check (referenced set == defined set) and byte-identical
+  idempotent re-run were independently executed by the reviewer in a
+  scratch tree, and the android-build SUCCESS on ae1a982 was confirmed
+  through the public GitHub check-runs (the same check failed on d468afc
+  under the exact run cited in the FR-01 row — the re-gate is real, not
+  asserted). FR-02 — the outcome Alert renders in both branches with the
+  settle effect, in-flight dismissal gate, and Close-disabled guards
+  byte-identical (T06-R2/R2-1 hold); the RED was re-verified empirically
+  (pre-fix component + post-fix tests → 2 failed for exactly the intended
+  reason); sheet suite 14/14; full verify 68 suites / 798 tests; the
+  linger semantics of signOut.message were examined and accepted
+  (identical lifecycle to the unlocked branch since T06, deliberate,
+  staff-facing, no secret content; clearing on close would reintroduce the
+  swallowed-outcome hazard class). No new findings beyond FRR-01 (the
+  uncommitted-evidence record, fixed by the closing commit).
+- Findings resolved: FR-01 (blocking → fixed + compile re-gated GREEN),
+  FR-02 (minor → fixed with regression tests)
+- Still open: none blocking/major; FRR-01 resolved by the closing
+  control-document commit
 
 ## Accepted risks
 
