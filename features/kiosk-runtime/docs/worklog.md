@@ -2263,3 +2263,36 @@ reviewer.
   historical/reopened context in review.md. PR #9 stays DRAFT for the
   human review; the agent never merges.
 - **Terminal state: HUMAN_HANDOFF.**
+
+## ROUND 5 REOPENING — kiosk-runtime (2026-09-04)
+
+### Workspace restoration (prior Super Z sandbox lost)
+
+- Prior sandbox gone: no repos/, no worklog, no scripts. Cloned
+  `mohammed7779948484-tech/Kisok_react_app` ONCE into
+  `/home/z/my-project/repos/Kisok_react_app`; `git fetch origin --prune`;
+  checked out EXISTING `feature/kiosk-runtime` (tracking origin). Clean tree,
+  no uncommitted/unpushed work to preserve.
+- Durable checkpoint verified vs GitHub: PR #9 open/Draft/base develop/head
+  527a7e6d3d07781c5cb125b1e205912f8daa1025/mergeable clean/49 files/39 commits;
+  origin/develop = 3a25640b602a685c690a4b467b6e900625484c89; ahead 39 / behind 0
+  — exactly the reviewer's checkpoint. Current GitHub wins; no reset performed.
+- Skills re-synced (cp -rL) from `.claude/skills/` into the Super Z live
+  registry; KISOK skills visible (12 present).
+- Fresh baseline on the restored HEAD: `pnpm install --frozen-lockfile` OK;
+  **`pnpm verify` EXIT 0 — 68 suites / 894 tests** (reproduces the Round 4
+  final record exactly).
+
+### GATE REOPENED
+
+- **FEATURE GATE REOPENED — ROUND 5 INDEPENDENT REVIEW** (R5-01…R5-13; see
+  review.md's Round 5 reopening section). The Round 4 PASS at 527a7e6 is
+  historical evidence only. Plan status returned to `DRAFT` for the Round 5
+  amendment; todo checkpoint updated; NO backfilled PASS results.
+- Control docs updated at the local reopening commit. GitHub push credentials
+  are absent from this restored sandbox (dry-run push failed with no
+  credentials); local commits are preserved and the push prerequisite is
+  recorded — first push attempt happens at the research-synthesis commit; the
+  human may supply a token at any time to un-block remote durability.
+- Next: SEVEN read-only researchers (batches A=3, B=2, C=2 — concurrency ≤ 3),
+  then Lead synthesis + R5 verdict matrix + Lead Planning Review, then T21+.

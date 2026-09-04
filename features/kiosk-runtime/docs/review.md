@@ -5,6 +5,41 @@ only — the reviewer reports, it does not quietly fix.
 
 Implementation notes do not belong here; they belong in `worklog.md`.
 
+## Round 5 reopening (2026-09-04) — INDEPENDENT post-gate review
+
+A NEW independent review (fresh context, after the Round 4 gate PASS at 527a7e6)
+reopened the Feature Gate with thirteen findings, R5-01…R5-13. Summary of the
+hypotheses as delivered by the reviewer (verdicts pending the Round 5 seven-
+researcher gate — DO NOT treat as confirmed):
+
+| ID    | Finding (hypothesis to validate)                                                                                             |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------- |
+| R5-01 | Android native-module absence resolves permissive standard (null sentinel shared web/Android)                                |
+| R5-02 | Explicit restrictions-change event does not invalidate a previously permissive verdict before re-read                        |
+| R5-03 | Official file-status API exists (`POST /emsapi/fileupload/status`); current client treats initial fileStatus ≠ 2 as terminal |
+| R5-04 | Update App body missing documented-Mandatory `app_type` / `app_name`                                                         |
+| R5-05 | Endpoint headers/request schemas need full mutation contract audit (`Accept: application/json` on some MDM calls)            |
+| R5-06 | Generic automatic retry can replay non-idempotent mutations (429/COM0002/5xx shared by reads and mutations)                  |
+| R5-07 | Beta target is dispatcher-controlled id+name pair, not an admin allowlist                                                    |
+| R5-08 | Policy-read failure holds Preparation at startup with no policy-specific error/retry UX                                      |
+| R5-09 | Receiver export semantics (`RECEIVER_NOT_EXPORTED` vs current Android guidance + protected-intent status)                    |
+| R5-10 | Maintenance sheet local open state survives kiosk→standard→kiosk role transitions                                            |
+| R5-11 | Provisional restrictions + LOCKED can expose the maintenance credential while restrictions are unsettled                     |
+| R5-12 | Cross-run artifact provenance (run identity) not validated before download                                                   |
+| R5-13 | develop freshness must be re-verified before the final gate                                                                  |
+
+Known contradiction to resolve explicitly: the Round 4 research recorded IR-02
+REJECTED ("no file-upload status endpoint in current docs"); the Round 5
+reviewer observed current first-party pages (API Index +
+/emsapi/files + /emsapi/fileupload/status) that DO document
+`POST /emsapi/fileupload/status`, `fileStatus` 1/2/3, and
+`file_availability_status` where 2 = ready. Round 5 research must determine
+whether the Round 4 conclusion was stale/incomplete or a product/edition
+distinction explains it, and record the evidence either way.
+
+The Round 4 gate PASS (527a7e6) is preserved below as HISTORY. It is not
+current. No PASS result was backfilled or altered.
+
 ## Findings
 
 | ID      | Severity | Finding                                                                                                                                                            | Evidence                                                    | Disposition                    | Remediation                                                                                                                                                                                                                                  |

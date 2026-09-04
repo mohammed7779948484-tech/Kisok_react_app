@@ -12,17 +12,23 @@ defeats its only purpose.
 ## Current checkpoint
 
 ```
-Current round     : 4 (complete) — post-review remediation
-Current task      : —
-Current stage     : NEW FEATURE GATE: PASS — PR #9 body updated for human review, HUMAN_HANDOFF
-Last gate         : FEATURE GATE: PASS (the NEW gate, earned 2026-09-04 on the remediated + integrated HEAD; quality audit fresh-PASS "the delivery is sound"; final review + fresh re-review converged 0 blocking / 0 major)
-Next legal action : HUMAN — review Draft PR #9 (base develop) and decide whether to merge. Never merged by an agent.
+Current round     : 5 — post-review remediation (NEW independent review; R5-01…R5-13)
+Current task      : — (research gate first; no implementation may start)
+Current stage     : FEATURE GATE REOPENED — ROUND 5 INDEPENDENT REVIEW; seven read-only researchers pending (batches 3+2+2); plan returned to DRAFT for Round 5 amendment
+Last gate         : FEATURE GATE: PASS (Round 4, 2026-09-04 — HISTORICAL ONLY, reopened by the Round 5 independent review; see review.md)
+Next legal action : Lead launches research Batch A (R5-A1/R5-A2/R5-A3 in parallel), then B (2), then C (2); synthesis; verdict matrix; Plan DRAFT→READY; then remediation tasks T21+
 
-FINAL REMEDIATED HEAD (code): 7d6702d (verify 68/894) -> docs-only closing commits -> the FEATURE GATE commit (this commit; code-identical to 7d6702d)
-CI on the exact audited code state: 7d6702d — CI run 33857102917 SUCCESS + Android build run 33857102920 SUCCESS; cfc7a10 (docs-only) — CI run 33858954820 SUCCESS + Android build run 33858954741 SUCCESS; Maestro/E2E skipped (N/A per plan, never claimed)
-Remediation start: b71c828 (gate REOPENED) -> 8604a51 (plan) -> T14 1a30a5a / T15 68f9cbb / T16 307f05f / T17 24d662d / T18 7fbd5f2 / T19 2174f15 / T20 8354b5a / R4 gate 6b66b48 / develop merge db3a50d (zero conflicts; origin/develop 3a25640 integrated) -> final verification + reviews + audit
+REMEDIATION (Round 5) START SHAs (workspace restored from GitHub 2026-09-04; prior sandbox lost):
+  origin/feature/kiosk-runtime = 527a7e6d3d07781c5cb125b1e205912f8daa1025 (the Round 4 gate commit; code-identical to 7d6702d)
+  origin/develop               = 3a25640b602a685c690a4b467b6e900625484c89 (unchanged since the Round 4 integration)
+  local HEAD                   = 527a7e6 (clean tree; PR #9 open/Draft/base develop/head 527a7e6, mergeable_state clean)
+Baseline at reopen: pnpm verify exit 0 — 68 suites / 894 tests (workspace re-verified 2026-09-04)
+Round 4 history (preserved): b71c828 (gate REOPENED R1) -> 8604a51 (plan) -> T14 1a30a5a / T15 68f9cbb / T16 307f05f / T17 24d662d / T18 7fbd5f2 / T19 2174f15 / T20 8354b5a / R4 gate 6b66b48 / develop merge db3a50d -> final verification + reviews + audit -> NEW gate PASS (7d6702d code / cfc7a10 docs / 527a7e6 gate commit) -> REOPENED by Round 5 review
 
-Blocked by        : — (external/human-only remain: live ManageEngine MDM dry-run, first real workflow dispatches incl. the ANDROID_UPLOAD_CERT_SHA256 variable + environment migration setup, physical-kiosk verification — all documented in mdm-operations.md §7/§9)
+GitHub push credentials: NOT present in this restored sandbox (verified by dry-run). Read access OK.
+Local commits will be preserved; push requires the human to provide a token — recorded as an external prerequisite at the first push point.
+
+Blocked by        : — (external/human-only remain: live ManageEngine MDM dry-run, first real workflow dispatches incl. the ANDROID_UPLOAD_CERT_SHA256 variable + environment migration setup, physical-kiosk verification — all documented in mdm-operations.md §7/§9; push token for durability)
 ```
 
 ## Rules
@@ -34,7 +40,7 @@ Blocked by        : — (external/human-only remain: live ManageEngine MDM dry-r
   `test-driven-development` skill. The mode decides the entry evidence:
   `behavior` / `bug` / `behavior-change` need a failing test, `refactor` needs a
   named green baseline, `config` needs the command that exercises the artifact.
-- **No task starts while `plan.md` is `DRAFT`.** (It is `READY`.)
+- **No task starts while `plan.md` is `DRAFT`.** (It is `DRAFT` — Round 5 amendment in progress; returns to READY only after the seven research packets, the Lead synthesis, and a fresh Lead Planning Review.)
 - **The Lead runs the scaffold**, immediately before delegating the task. The
   implementer starts only once `Scaffold status` is `READY`.
 

@@ -3,19 +3,27 @@
 **HOW the brief gets built.** Written with the `kisok-feature-plan` skill after
 research, and before generating anything beyond this workspace.
 
-Status: `READY` (remediation amendment 2026-09-04 — see "Remediation amendment" at
-the end; the original plan below is preserved as history and remains accurate
-for T01–T13)
+Status: `DRAFT` (Round 5 amendment, 2026-09-04 — a NEW independent review reopened
+the Round 4 gate with findings R5-01…R5-13; see review.md. The plan below — the
+original plan and the Round 4 remediation amendment — is preserved as history
+and remains accurate for T01–T20. The Round 5 amendment will append the
+research-backed remediation tasks T21+ after the SEVEN fresh read-only research
+packets return and the Lead synthesis produces the R5 verdict matrix.)
 
-`READY` — the remediation amendment's Lead Planning Review is complete: the
-seven research packets are synthesized in `review.md`, every load-bearing
-primary source was Lead-spot-checked, IR-01…IR-09 all carry verdicts, every
-confirmed finding maps to an owned task (T14–T20) or an explicit non-code
-disposition, no external contract is guessed, and current-develop integration
-is scheduled before final verification. Remediation implementation may begin
-with T14.
+`DRAFT` — NO implementation task may start. The Round 5 amendment returns to
+`READY` only after: all seven research Evidence Packets return (batches
+3+2+2); the Lead spot-checks every load-bearing primary source; R5-01…R5-13
+all carry verdicts; every confirmed finding maps to an owned new Task (T21+)
+or an explicit non-code disposition; no external contract is guessed; and a
+fresh Lead Planning Review is re-run in full.
 
-`READY` (historical, for T01–T13) — the Lead Planning Review pass is complete
+`READY` (HISTORICAL — Round 4 remediation, 2026-09-04) — superseded by the
+Round 5 reopening: the seven research packets were synthesized in `review.md`,
+IR-01…IR-09 carried verdicts, and every confirmed finding mapped to T14–T20
+or an explicit non-code disposition. That gate's PASS (commit 527a7e6) is
+preserved as history in review.md/worklog.md and is NOT current.
+
+`READY` (HISTORICAL, for T01–T13) — the Lead Planning Review pass is complete
 (requirements, AC mapping, shape, task graph, skills, test/runtime strategy,
 document consistency, and integration plan were re-checked; AC-01's task
 mapping was the one gap found and fixed). Implementation may begin.
