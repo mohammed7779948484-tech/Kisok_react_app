@@ -1789,3 +1789,80 @@ Runtime (browser, agent-browser, 1280×800 landscape + 800×1280 portrait):
 or maintenance affordance (standard path); screenshot captured.
 GitHub CI on ae1a982: all five checks as above (the fast tier + the
 native compile tier).
+
+## QUALITY AUDIT + FEATURE GATE (RECOVERY — closing)
+
+QUALITY AUDIT (fresh quality-auditor, agent-a4f4d55f — full delivery-truth
+audit; did not watch any implementation)
+Verdict: **the delivery is sound.** No "not delivered", no "not planned",
+zero scope drift. Every AC-01…AC-10 delivered (the audit re-verified the
+observables: package unchanged, the repo-wide lock-task grep, the
+storage/log negative assertions, both workflows' fail-closed first steps,
+the 90-test MDM client with zero production operations, the 551-line
+operational contract); all 13 task gates + 3 round gates real (every
+worklog entry carries mode, scaffold paths that all exist, honest RED,
+GREEN, affected checks, fresh-reviewer findings; the test-count chain
+17/138 → 68/798 reproduces); feature shape matches the plan exactly (all
+7 generator commands map to existing files; no unplanned capability; no
+api/queries/realtime — all NO in the matrix); all 49 diff files map 1:1 to
+the plan's generated outputs, allowed-manual list, or expected shared
+changes (core/ and components/ untouched); review findings fully
+dispositioned; DoD met with the honest exceptions the record carries.
+The audit RE-RAN: pnpm verify (PASS), test:ci (68/798), both tools'
+no-input fail-closed smokes (messages reproduced byte-for-byte), the
+lock-task grep, the FINAL_HEAD chain (d468afc merge → b7b6529 FR-01 fix →
+ae1a982 FR-02 fix → b149f16 docs-only), and the suppression scan (no
+@ts-expect-error / eslint-disable / any).
+Not-evidenced items (settled by the Lead): the ae1a982 CI run ids are
+now recorded — fast tier CI run 33827690769 (Verify job 100883777382,
+Expo doctor job 100883777285, Web bundle job 100883777099), Android
+build run 33827690789 (job 100883771787 — the native compile PASS), all
+SUCCESS, verified through the GitHub API; PR #9 verified open/Draft/base
+develop/head = the branch HEAD. The never-dispatched workflows remain the
+documented human follow-ups (mdm-operations.md §7a/§7e/§9; todo Blocked).
+Stale-record items: the one-behind FINAL HEAD label (inherent to closing
+commits) and two process observations (AC-06's terse task-table column;
+the plan-amendment DRAFT-cycle letter) — recorded in review.md's audit
+table with no code change.
+
+CI ON THE CLOSING DOCS COMMIT b149f16 (verified through the API):
+Verify / Web bundle / Expo doctor all SUCCESS (CI run 33830212176) AND
+the Android prebuild check SUCCESS (run 33830212185 — the synchronize +
+label re-trigger re-compiled the native tier on the final HEAD).
+Maestro flows: skipped (N/A per the plan's Verification — no new
+normal-device user journey; kiosk journeys cannot run on an unmanaged
+emulator).
+
+FEATURE GATE (the checklist in todo.md, every item evidence-backed):
+
+- Every Task Gate PASS: T01–T09 durable + re-baselined green at the
+  recovery checkpoint; T10–T13 recovered with fresh evidence + fresh task
+  reviews (T11-F01 major fixed + fresh re-review; all minors fixed or
+  dispositioned).
+- Every Round Gate PASS: Round 1/2 durable; Round 3 recovered (fresh
+  round review; R3-1/2/3 fixed).
+- Every AC verified: AC-01…AC-10 (the audit's independent re-verification
+  above; on-hardware rows explicitly unverified, never claimed).
+- pnpm verify PASS after the final local change: exit 0 at the final HEAD
+  (68 suites / 798 tests, integrated with current develop).
+- Required fast GitHub CI PASS on the final HEAD: Verify / Web bundle /
+  Expo doctor SUCCESS on b149f16.
+- Required runtime evidence: browser standard-path at tablet landscape +
+  portrait from the CI-equivalent static export, zero errors, no kiosk
+  surfaces, /kiosk-mismatch fail-closed (re-collected at the final code
+  HEAD after the FR-02 fix).
+- Required native tiers: prebuild local PASS; Android build (Kotlin
+  compile) PASS on ae1a982 AND re-run PASS on b149f16; physical kiosk
+  explicitly unverified.
+- Reviewer findings dispositioned: every row in review.md (T01…T13, R2/R3,
+  FR-01/FR-02, FRR-01) dispositioned; blocking/major fixes re-reviewed by
+  a fresh reviewer with the compile re-gate confirmed.
+- Quality Audit: PASS (recorded in review.md; delivery sound).
+- Anything not verified explicitly recorded: the brief's Evidence section
+  - mdm-operations.md §9 (hardware, live tenant, first dispatch/live
+    dry-run — first-class unverified lists).
+- Shared/core changes justified: the plan's expected-change list only.
+- PR evidence matches the worklog: PR #9 (base develop, Draft) head = the
+  branch HEAD; every gate commit pushed and verified on the PR.
+
+FEATURE GATE: PASS

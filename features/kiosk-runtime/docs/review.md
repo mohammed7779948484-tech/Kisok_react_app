@@ -130,14 +130,36 @@ completed, and is the evidence real?" — comparing `brief.md`, `plan.md`,
 Run by `quality-auditor` with fresh context, after review findings are
 dispositioned. It returns findings; the Lead records them here.
 
-| Category                                                   | Finding | Evidence                                        | Resolution |
-| ---------------------------------------------------------- | ------- | ----------------------------------------------- | ---------- |
-| not delivered / not evidenced / not planned / stale record | TODO    | which document said what vs what the diff shows | TODO       |
+| Category      | Finding                                                                                                                                                                                                                                                                                                                                                                                 | Evidence                                 | Resolution |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| not evidenced | GitHub CI on ae1a982 (all four checks SUCCESS) was recorded only by check-run names + sha — no run ids/links in the worklog final entry; PR #9's object state and the runtime browser screenshots were taken on record rather than independently re-checkable from the audit sandbox; the two new workflows have never been dispatched (secrets do not exist) — recorded, never claimed | audit re-run limits (agent-a4f4d55f)     | resolved   | The Lead added the ae1a982 run ids + job URLs to the worklog final entry (CI run 33827690769; Android build run 33827690789) and verified PR #9's state head = the final HEAD through the API; the never-dispatched items remain the documented human follow-ups (mdm-operations.md §7a/§7e/§9)                       |
+| stale record  | The "FINAL HEAD" label in todo.md (ae1a982) predated the closing docs commit — the actual head was b149f16 (docs-only; code identical); inherent for a closing commit, but no CI run was then recorded on b149f16 either                                                                                                                                                                | todo.md checkpoint vs git status (audit) | resolved   | The Feature Gate commit updates the FINAL HEAD to the actual gate-commit state and records the CI state on it; the audit's two observations (AC-06's terse task-table column; the plan-amendment process letter) are noted here with no code change — the intent of the plan rules was met and recorded transparently |
 
-- Acceptance criteria in `brief.md` all implemented: TODO
-- Every task gate `PASS`, every round gate `PASS`: TODO
-- Worklog carries real command output per task: TODO
-- Shared files touched beyond this feature: TODO (expect none)
-- Definition of Done (`AGENTS.md`) met: TODO
+- Acceptance criteria in `brief.md` all implemented: YES (AC-01…AC-10 —
+  the audit re-verified the observables: package unchanged, lock-task
+  grep clean, storage/log negative assertions, both workflows'
+  fail-closed first steps, the 90-test MDM client with zero production
+  operations, the 551-line operational contract)
+- Every task gate `PASS`, every round gate `PASS`: YES (T01–T13 + Rounds
+  1/2/3; every worklog entry carries mode, scaffold paths (all exist),
+  honest RED, GREEN, affected checks, fresh-reviewer findings;
+  test-count arithmetic chains 17/138 → 68/798 and reproduces)
+- Worklog carries real command output per task: YES (the audit re-ran
+  `pnpm verify` (PASS), `pnpm test:ci` (68/798), both tools' no-input
+  fail-closed smokes — messages reproduced byte-for-byte)
+- Shared files touched beyond this feature: NONE beyond the plan's
+  expected-change list (core/ and components/ untouched — audit-verified
+  file-by-file)
+- Definition of Done (`AGENTS.md`) met: YES with the two honest
+  exceptions the record already carries (Android-physical and
+  live-tenant items explicitly unverified; "quality audit done" discharged
+  by this report)
 
-Audit result: `PENDING`
+Audit verdict: **the delivery is sound.** No "not delivered", no "not
+planned", zero scope drift. Strongest evidence seen: the independently
+re-run 68/798 green verify at the final HEAD plus the fail-closed tool
+smokes reproducing the recorded messages; and the FR-01 chain — a failed
+CI run cited by id (33825189511), root-caused from the fetched log, fixed
+in-task (b7b6529), and compile-re-gated green.
+
+Audit result: `PASS`
