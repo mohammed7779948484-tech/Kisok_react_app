@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : 4 — post-review remediation (T14–T20)
-Current task      : — (T14–T18 gated PASS; T19 next)
-Current stage     : RESEARCH GATE COMPLETE (7/7 packets, Lead spot-checked; IR verdict matrix in review.md); Plan remediation amendment READY after Lead Planning Review. T14 PASS (IR-01); T15 PASS (IR-03/04/05); T16 PASS (R5 drifts); T17 PASS (IR-06); T18 PASS (IR-08: explicit versionCode + fail-closed derivation).
+Current task      : — (T14–T19 gated PASS; T20 next — the last remediation task)
+Current stage     : RESEARCH GATE COMPLETE (7/7 packets, Lead spot-checked; IR verdict matrix in review.md); Plan remediation amendment READY after Lead Planning Review. T14 PASS (IR-01); T15 PASS (IR-03/04/05); T16 PASS (R5 drifts); T14–T19 PASS (IR-01/03/04/05/06/08 + R5 drifts + IR-07 hardening).
 Last gate         : (historical) FEATURE GATE: PASS @ b71c828 — REOPENED 2026-09-04; no remediation task gate yet
-Next legal action : Lead: verify T18 push (this commit) + CI, then delegate T19 (actions full-SHA pinning + environment references, IR-07).
+Next legal action : Lead: verify T19 push (this commit) + CI, then delegate T20 (mdm-operations.md remediation alignment incl. T16-R2/R3 + T18-R1 + cert variable + env migration) to a fresh feature-implementer.
 
 REMEDIATION_START_FEATURE_SHA=b71c8285c6e26fb6fd1463c4b0a81cd8ae1afe31
 REMEDIATION_START_DEVELOP_SHA=3a25640b602a685c690a4b467b6e900625484c89 (develop advanced past the earlier integration point 6161a4c — PR #12 cart hardening; re-integration required before final verification)
@@ -249,7 +249,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 | T16  | bug             | Supporting: AC-09        | MDM auth/error contract: ca/cn hosts + numeric error_code + token error_description (R5 drifts)                                                                           | T15      | done        | PASS |
 | T17  | behavior-change | Acceptance: AC-08        | verifier certificate SHA-256 pinning + both workflows' verify steps + vars wiring (IR-06)                                                                                 | —        | done        | PASS |
 | T18  | config          | Supporting: AC-08        | explicit android.versionCode: 1 + fail-closed derivation steps (IR-08)                                                                                                    | T17      | done        | PASS |
-| T19  | config          | Supporting: AC-07, AC-09 | actions full-SHA pinning + environment references (IR-07)                                                                                                                 | T17, T18 | not started | —    |
+| T19  | config          | Supporting: AC-07, AC-09 | actions full-SHA pinning + environment references (IR-07)                                                                                                                 | T17, T18 | done        | PASS |
 | T20  | config          | Supporting: AC-10        | mdm-operations.md remediation alignment (new dispatch contract, label reuse, env migration, live-tenant unknowns)                                                         | T15–T19  | not started | —    |
 
 Every task: fresh feature-implementer → Lead verification → fresh code-reviewer

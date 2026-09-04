@@ -2077,3 +2077,44 @@ maxSdkVersion=…)`, `Source Stamp Signer`) → parse by line SUFFIX. Android
   byte-consistency of both steps, and re-ran prebuild (byte-identical
   output).
 - **GATE: PASS** — the bump contract can no longer be silently skipped.
+
+---
+
+## T19 — actions SHA pinning + environment references (remediation Round 4, IR-07)
+
+**Mode**: config · **Acceptance**: Supporting AC-07, AC-09 · **Deps**: T17,
+T18 (PASS) · **Scaffold**: N/A (workflow config)
+
+- **Research basis**: packet R7 — "Pin actions to a full-length commit SHA …
+  currently the only way to use an action as an immutable release"
+  (documented good practice, not required absent an org policy);
+  environments available on public repos; required reviewers; typo/auto
+  -creation is fail-safe here (empty env → repo-scope secrets still
+  resolve → existing fail-closed checks guard).
+- **IMPLEMENT** (fresh implementer agent-a792f5df; 2 files, exactly in
+  scope): all 10 `uses:` lines across the two SECRET-BEARING workflows
+  pinned to full 40-char commit SHAs with `# vX.Y.Z` comments (6 distinct
+  actions); `environment: android-signing` (release job) / `environment:
+mdm-upload` (upload job) with the human-migration follow-up comments.
+  The three CI workflows (no secrets) keep tag pins per the Lead scope
+  decision.
+- **Pin resolution proof (implementation time, git ls-remote)**:
+  actions/checkout v7.0.1 → 3d3c42e5aac5ba805825da76410c181273ba90b1
+  (lightweight); pnpm/action-setup v6.0.10 → tag object ff378ebe… peels to
+  COMMIT 0977fd99725f1db4007ccb2928dbb4e90d06cc86 (annotated — the executed
+  commit is pinned, not the tag object); actions/setup-node v7.0.0 →
+  820762786026740c76f36085b0efc47a31fe5020; actions/setup-java v5.7.0 →
+  b6effb05e454b25005698d916606bdc6ffcbf961; actions/upload-artifact
+  v7.0.1 → 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a;
+  actions/download-artifact v8.0.1 →
+  3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c. Structural before/after diff
+  clean (only uses values + environment keys); `pnpm verify` exit 0
+  (check:ci-scripts scans both edited workflows); prettier clean.
+- **Fresh review** (agent-07bb0f62): **0 blocking / 0 major / 0 minor —
+  clean.** All six pins independently re-resolved (annotated-tag peel
+  verified); 10/10 uses pinned; structural byte-identity confirmed via
+  parsed-YAML comparison; CI workflows untouched; only these two workflows
+  consume secrets (rg `secrets.` across all five).
+- **GATE: PASS** — the documented supply-chain hardening for the two
+  secret-bearing workflows, with the environment migration recorded as the
+  human follow-up (T20 documents the procedure).
