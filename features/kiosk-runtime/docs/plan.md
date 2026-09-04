@@ -1106,8 +1106,11 @@ sandbox — recorded as an external prerequisite; local commits preserved).
   sheetOpen reset (RD5-04).
 - `features/kiosk-runtime/components/maintenance-sheet.tsx` (+test) — settling
   state (RD5-04).
-- `features/kiosk-runtime/components/policy-error-surface.tsx` + test — the
-  Round 5 manual artifact (RD5-03).
+- `features/kiosk-runtime/components/policy-startup-gate.tsx` + test — the
+  Round 5 manual artifact (RD5-03; Lead naming amendment at T22 delivery:
+  the component is a gate that composes StartupScreen for the no-error case
+  and owns the ErrorState+Retry surface — the plan's earlier
+  "policy-error-surface" name is superseded).
 - `features/kiosk-runtime/index.ts` — export widening for the retry hook /
   error surface (app/\*\* may not import the store).
 - `app/index.tsx` — the startup case renders the policy error surface when

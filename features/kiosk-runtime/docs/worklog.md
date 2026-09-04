@@ -2395,3 +2395,49 @@ GATE: PASS (R5-01/R5-01 remediation closed with independently verified RED,
 fresh review, bounded remediation, and a fresh re-review converging 0
 blocking / 0 major). Commit + push attempt follows (push requires the
 human's GitHub token in this restored sandbox — recorded prerequisite).
+
+### T22 — policy readError + PolicyStartupGate with manual retry (Round 5)
+
+RED (fresh feature-implementer, agent-7ea74aa5, behavior-change): store
+suite 8 failed/27 passed (`readError` undefined; `setReadError is not a
+function`); sync suite 7 failed/18 passed (readError wiring rows Received
+null; `requestDevicePolicyRead is not a function`); gate suite 5 failed
+(alert/button/label not found — behavior-less stub mounted first). All T21
+rows green through RED. 16 new rows total.
+
+IMPLEMENT: store gains root `readError: {reason: "module-absent" |
+"read-failed"} | null` (UI-only; `setReadError` enforces the
+pending-only invariant AT THE STORE; cleared by applySnapshot-success,
+markModuleAbsent, retry dispatch; schema-rejected path deliberately leaves
+it — see review.md accepted boundaries); the sync hook wires android+null →
+module-absent, epoch-guarded current rejections while pending →
+read-failed, and exports `requestDevicePolicyRead(): boolean`
+(module-scoped callback; clears readError then re-invokes the SAME
+single-flight refresh; false when unmounted); NEW manual artifact
+`components/policy-startup-gate.tsx` (no-error → composes StartupScreen
+from @/features/auth; error → Screen + ErrorState with static module-level
+retryable AppErrors — kind server, generic copy, no native-reason leakage);
+`index.ts` widened; `app/index.tsx` startup case renders the gate (comment
+updated). Plan's artifact name reconciled (policy-error-surface →
+policy-startup-gate; Lead amendment, same commit).
+
+REVIEW (fresh code-reviewer, agent-e4f929bb): **0 blocking / 0 major / 2
+minor** — T22-R1 comment-gloss tightening (folded into T23, which touches
+the store file); T22-R2 gate-time bookkeeping (this entry). Contract
+verified point-by-point: fail-closed by construction (readError ⇒ pending ⇒
+the one reachable row is the startup hold), pending-only store enforcement,
+epoch-guarded non-supersession, single-flight manual retry with unmount
+safety + double-tap collapse, static leak-free AppError construction
+(technicalMessage grep clean), web rows byte-identical, scope exact
+(root-guard/use-root-target untouched, no T23 leakage). Reviewer verdicts:
+schema-rejected boundary ACCEPTED (recorded in review.md);
+onRestrictionsChanged-not-touching-readError CORRECT; naming deviation
+RECONCILED. a11y alert-role workaround verified against RNTL v14 source
+(View without `accessible` is unmatchable by role queries; in-repo
+precedent; retry button properly queried by role+name).
+
+GREEN: 3 suites 65/65; `pnpm test:ci` **69 suites / 927 tests** (911+16);
+typecheck/lint/format all clean (Lead re-run).
+
+GATE: PASS (R5-08 remediation closed). Commit + push attempt follows (push
+still requires the human's GitHub token — recorded prerequisite).

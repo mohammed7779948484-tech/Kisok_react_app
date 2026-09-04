@@ -335,6 +335,80 @@ describe("readiness verdict (RD-01)", () => {
   });
 });
 
+describe("readError (RD5-03 — the UI-only pending-failure surface)", () => {
+  it("starts null — no read has failed yet", () => {
+    const useStore = createDevicePolicyStore();
+
+    expect(useStore.getState().readError).toBeNull();
+  });
+
+  it("setReadError records the reason while readiness is pending — first-read failures and the android module-absent case", () => {
+    const useStore = createDevicePolicyStore();
+
+    useStore.getState().setReadError("read-failed");
+    expect(useStore.getState().readError).toEqual({ reason: "read-failed" });
+
+    useStore.getState().setReadError("module-absent");
+    expect(useStore.getState().readError).toEqual({ reason: "module-absent" });
+  });
+
+  it("setReadError is a NO-OP while a verdict is resolved — the error exists only while a user is actually held at startup", () => {
+    const useStore = createDevicePolicyStore();
+    useStore.getState().applySnapshot(standardSnapshot());
+    expect(useStore.getState().readiness).toBe("resolved");
+
+    // An AppState-triggered re-read failure lands here with readiness
+    // resolved: last-known-good stands, nobody is held, so no surface.
+    // The invariant "set ONLY while pending" is enforced by the store, not
+    // just by the caller.
+    useStore.getState().setReadError("read-failed");
+
+    expect(useStore.getState().readError).toBeNull();
+    expect(useStore.getState().readiness).toBe("resolved");
+  });
+
+  it("a successful read clears readError (applySnapshot)", () => {
+    const useStore = createDevicePolicyStore();
+    useStore.getState().setReadError("read-failed");
+
+    useStore.getState().applySnapshot(standardSnapshot());
+
+    expect(useStore.getState().readError).toBeNull();
+    expect(useStore.getState().readiness).toBe("resolved");
+  });
+
+  it("a schema-REJECTED application neither clears nor sets readError — it is not a successful read, and not a rejection either", () => {
+    const useStore = createDevicePolicyStore();
+    useStore.getState().setReadError("read-failed");
+
+    useStore.getState().applySnapshot(invalidSnapshot());
+
+    // The malformed read leaves the fail-closed hold exactly as a pending
+    // verdict with the error still offered: retry → loading → error-again.
+    expect(useStore.getState().readError).toEqual({ reason: "read-failed" });
+    expect(useStore.getState().readiness).toBe("pending");
+  });
+
+  it("markModuleAbsent clears readError alongside resolving readiness", () => {
+    const useStore = createDevicePolicyStore();
+    useStore.getState().setReadError("module-absent");
+
+    useStore.getState().markModuleAbsent();
+
+    expect(useStore.getState().readError).toBeNull();
+    expect(useStore.getState().readiness).toBe("resolved");
+  });
+
+  it("clearReadError clears it — the retry dispatch (retry → loading → error-again-or-resolved)", () => {
+    const useStore = createDevicePolicyStore();
+    useStore.getState().setReadError("read-failed");
+
+    useStore.getState().clearReadError();
+
+    expect(useStore.getState().readError).toBeNull();
+  });
+});
+
 describe("onRestrictionsChanged — event-driven invalidation (RD5-02)", () => {
   it("invalidates a resolved STANDARD verdict to pending — the event means the restrictions changed under it", () => {
     const useStore = createDevicePolicyStore();
@@ -542,6 +616,9 @@ describe("no persistence (AC-05)", () => {
     useStore.getState().applySnapshot(invalidSnapshot());
     useStore.getState().applySnapshot(provisionalSnapshot());
     useStore.getState().markModuleAbsent();
+    useStore.getState().setReadError("read-failed");
+    useStore.getState().setReadError("module-absent");
+    useStore.getState().clearReadError();
     useStore.getState().tryUnlock(KIOSK_CODE);
     useStore.getState().tryUnlock(WRONG_CODE);
     useStore.getState().tryUnlock("");

@@ -9,7 +9,7 @@ import {
   readDevicePolicySnapshot,
   subscribeToRestrictionsChanges,
 } from "./policy-source";
-import { useDevicePolicySync } from "./use-device-policy-sync";
+import { requestDevicePolicyRead, useDevicePolicySync } from "./use-device-policy-sync";
 
 /**
  * AC-02 / AC-05 — the sync hook that binds the policy source to the store.
@@ -33,6 +33,12 @@ import { useDevicePolicySync } from "./use-device-policy-sync";
  * window, checked end-to-end without mounting routing. T21-R1 rows pin the
  * epoch guard: a read superseded mid-flight by a restrictions event is
  * discarded so it can never resurrect the verdict the event destroyed.
+ *
+ * RD5-03 rows: the same composition pins the readError wiring — set ONLY
+ * while no verdict exists (first-read rejections; the android module-absent
+ * hold), never while resolved, never for a superseded rejection — and the
+ * manual retry trigger (`requestDevicePolicyRead`) re-invokes the SAME
+ * single-flight refresh seam, clearing readError at dispatch.
  *
  * The hook logs one error when a read rejects, by design, so the suite
  * installs a capturing (and therefore silent) log sink — zero console
@@ -123,12 +129,14 @@ beforeEach(() => {
   });
 
   // REAL store, reset between tests so no policy leaks across cases.
-  // Readiness is part of that reset: a test must never inherit a verdict a
-  // previous test resolved (the cold-start default is "pending").
+  // Readiness AND the UI-only readError are part of that reset: a test must
+  // never inherit a verdict or a pending-failure error a previous test left
+  // behind (the cold-start defaults are "pending" and null).
   useDevicePolicyStore.setState({
     policy: { role: "standard", maintenance: { code: null, timeoutSeconds: 90 } },
     maintenance: LOCKED_SESSION,
     readiness: "pending",
+    readError: null,
   });
   applySnapshotSpy = jest.spyOn(useDevicePolicyStore.getState(), "applySnapshot");
   clearMaintenanceSpy = jest.spyOn(useDevicePolicyStore.getState(), "clearMaintenance");
@@ -245,6 +253,9 @@ describe("mount", () => {
     expect(JSON.stringify(logRecords)).not.toContain(KIOSK_CODE);
     expect(JSON.stringify(logRecords)).not.toContain("customer_kiosk");
     expect(JSON.stringify(logRecords)).not.toContain("native read failed");
+    // RD5-03: a rejection while a verdict is RESOLVED sets no readError —
+    // last-known-good stands and nobody is held, so there is no surface.
+    expect(useDevicePolicyStore.getState().readError).toBeNull();
   });
 });
 
@@ -323,6 +334,19 @@ describe("restrictions-change event invalidation (RD5-02)", () => {
     // logging contract, unchanged).
     const errors = logRecords.filter((record) => record.level === "error");
     expect(errors).toHaveLength(1);
+    // RD5-03: the EVENT destroyed the verdict, so this failed re-read holds
+    // a user at the startup target — the failure is surfaced (retry offered
+    // while held) and the hold stands: fail-closed, never a stale permissive
+    // verdict, never Preparation on failure.
+    expect(useDevicePolicyStore.getState().readError).toEqual({ reason: "read-failed" });
+    expect(
+      resolveRootTarget(
+        "ready",
+        "preparation",
+        useDevicePolicyStore.getState().policy.role,
+        useDevicePolicyStore.getState().readiness,
+      ),
+    ).toBe("startup");
   });
 
   it("resolves with the NEW policy when the post-event re-read lands a valid snapshot", async () => {
@@ -492,6 +516,10 @@ describe("event supersession of an in-flight read (T21-R1 — the epoch guard)",
     expect(readMock).toHaveBeenCalledTimes(3);
     const errors = logRecords.filter((record) => record.level === "error");
     expect(errors).toHaveLength(0);
+    // RD5-03: a superseded rejection is discarded ENTIRELY — not logged, and
+    // no readError either. The queued post-event re-run is the authoritative
+    // retry; the superseded outcome must not surface anything.
+    expect(useDevicePolicyStore.getState().readError).toBeNull();
     expect(applySnapshotSpy).toHaveBeenCalledTimes(2);
     expect(applySnapshotSpy).toHaveBeenNthCalledWith(1, standardSnapshot());
     expect(applySnapshotSpy).toHaveBeenNthCalledWith(2, kioskSnapshot());
@@ -586,6 +614,9 @@ describe("readiness transitions (RD-01)", () => {
       role: "standard",
       maintenance: { code: null, timeoutSeconds: 90 },
     });
+    // AC-04 (byte-identical web rows): expected module absence is the
+    // platform verdict, NOT a failure — no error surface is ever set.
+    expect(useDevicePolicyStore.getState().readError).toBeNull();
     // AC-04, pinned from the store state the hook produced: a resolved
     // standard verdict routes a ready preparation session exactly as today.
     expect(
@@ -625,6 +656,9 @@ describe("readiness transitions (RD-01)", () => {
         useDevicePolicyStore.getState().readiness,
       ),
     ).toBe("startup");
+    // RD5-03: T21 held SILENTLY here; the hold now has a name — the surface
+    // the startup gate renders (module-absent) while readiness stays pending.
+    expect(useDevicePolicyStore.getState().readError).toEqual({ reason: "module-absent" });
 
     // The hold is stable, not one-shot: a foreground return re-reads, the
     // module is STILL absent, and the device still must not resolve.
@@ -634,6 +668,7 @@ describe("readiness transitions (RD-01)", () => {
     expect(readMock).toHaveBeenCalledTimes(2);
     expect(markModuleAbsentSpy).not.toHaveBeenCalled();
     expect(useDevicePolicyStore.getState().readiness).toBe("pending");
+    expect(useDevicePolicyStore.getState().readError).toEqual({ reason: "module-absent" });
     expect(
       resolveRootTarget(
         "ready",
@@ -677,6 +712,20 @@ describe("readiness transitions (RD-01)", () => {
       role: "standard",
       maintenance: { code: null, timeoutSeconds: 90 },
     });
+    // RD5-03 / R5-08: the silent hold now names itself — the failure is
+    // recorded so the startup gate can surface a MANUAL retry (the only
+    // retry there is: automatic retries would hammer disk I/O on a broken
+    // device).
+    expect(useDevicePolicyStore.getState().readError).toEqual({ reason: "read-failed" });
+    // The hold is fail-closed: error ≡ pending ⇒ startup, never preparation.
+    expect(
+      resolveRootTarget(
+        "ready",
+        "preparation",
+        useDevicePolicyStore.getState().policy.role,
+        useDevicePolicyStore.getState().readiness,
+      ),
+    ).toBe("startup");
   });
 
   it("leaves readiness unchanged when an AppState-ACTIVE re-read fails after a snapshot resolved it — last-known-good includes the verdict (the NON-event trigger; RD5-02 split)", async () => {
@@ -701,6 +750,9 @@ describe("readiness transitions (RD-01)", () => {
     expect(useDevicePolicyStore.getState().policy.role).toBe("standard");
     const errors = logRecords.filter((record) => record.level === "error");
     expect(errors).toHaveLength(1);
+    // RD5-03: no readError — a working device keeps last-known-good with no
+    // error surface (the user is not held; only an actual hold gets one).
+    expect(useDevicePolicyStore.getState().readError).toBeNull();
   });
 });
 
@@ -763,5 +815,118 @@ describe("concurrent reads", () => {
     expect(applySnapshotSpy).toHaveBeenCalledTimes(1);
     expect(applySnapshotSpy).toHaveBeenCalledWith(kioskSnapshot());
     expect(useDevicePolicyStore.getState().policy.role).toBe("customer-kiosk");
+  });
+});
+
+describe("manual retry (RD5-03)", () => {
+  it("requestDevicePolicyRead is wired only while the hook is mounted — false before mount and after unmount, and a live trigger really dispatches a read", async () => {
+    expect(requestDevicePolicyRead()).toBe(false);
+
+    const view = await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+
+    // The trigger is live: it reports true AND actually dispatched one
+    // re-read beyond the cold start (the same refresh seam).
+    expect(requestDevicePolicyRead()).toBe(true);
+    expect(readMock).toHaveBeenCalledTimes(2);
+
+    await view.unmount();
+    expect(requestDevicePolicyRead()).toBe(false);
+  });
+
+  it("a retry re-dispatches the SAME refresh seam and clears readError AT DISPATCH — retry → loading, observable before the re-read resolves", async () => {
+    readMock.mockRejectedValueOnce(new Error("native read failed"));
+    await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+    expect(useDevicePolicyStore.getState().readError).toEqual({ reason: "read-failed" });
+
+    // The re-read stays pending, so the dispatch-time transitions are
+    // observable before any outcome lands.
+    const retryRead = pendingRead();
+    readMock.mockReturnValue(retryRead.promise);
+
+    expect(requestDevicePolicyRead()).toBe(true);
+
+    // Dispatch-time, synchronous with the trigger call: the read was
+    // re-dispatched and the error surface is gone (the gate is back to its
+    // loading face). readError is cleared at DISPATCH, not at outcome.
+    expect(readMock).toHaveBeenCalledTimes(2);
+    expect(useDevicePolicyStore.getState().readError).toBeNull();
+
+    // A successful re-read resolves the verdict — the retry CAN authorize,
+    // only evidence does.
+    retryRead.resolve(standardSnapshot());
+    await flushRefresh();
+    await flushRefresh();
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+    expect(useDevicePolicyStore.getState().readError).toBeNull();
+    expect(
+      resolveRootTarget(
+        "ready",
+        "preparation",
+        useDevicePolicyStore.getState().policy.role,
+        useDevicePolicyStore.getState().readiness,
+      ),
+    ).toBe("preparation");
+  });
+
+  it("a retry whose re-read fails again re-sets readError and keeps the fail-closed startup hold — failure never authorizes Preparation", async () => {
+    readMock.mockRejectedValue(new Error("native read failed"));
+    await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+    expect(useDevicePolicyStore.getState().readError).toEqual({ reason: "read-failed" });
+
+    expect(requestDevicePolicyRead()).toBe(true);
+    await flushRefresh();
+    await flushRefresh();
+
+    // Retry → loading → error-again: the re-read rejected, so the surface is
+    // back and the hold stands (error ≡ pending ⇒ startup).
+    expect(readMock).toHaveBeenCalledTimes(2);
+    expect(useDevicePolicyStore.getState().readError).toEqual({ reason: "read-failed" });
+    expect(useDevicePolicyStore.getState().readiness).toBe("pending");
+    expect(
+      resolveRootTarget(
+        "ready",
+        "preparation",
+        useDevicePolicyStore.getState().policy.role,
+        useDevicePolicyStore.getState().readiness,
+      ),
+    ).toBe("startup");
+  });
+
+  it("a retry pressed while a read is in flight collapses into the queued re-run — a double-tap cannot interleave reads", async () => {
+    readMock.mockRejectedValueOnce(new Error("native read failed"));
+    await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+    expect(useDevicePolicyStore.getState().readError).toEqual({ reason: "read-failed" });
+
+    // A foreground return starts read #2 and holds it pending.
+    const inFlightRead = pendingRead();
+    readMock.mockReturnValue(inFlightRead.promise);
+    fireAppStateChange("active");
+    expect(readMock).toHaveBeenCalledTimes(2);
+
+    // Retry pressed while read #2 is in flight: the error still clears at
+    // dispatch (loading face), NO third read starts, and exactly one
+    // re-run is queued behind the in-flight read.
+    expect(requestDevicePolicyRead()).toBe(true);
+    expect(readMock).toHaveBeenCalledTimes(2);
+    expect(useDevicePolicyStore.getState().readError).toBeNull();
+
+    // The in-flight read lands the PRE-retry snapshot (kiosk); the queued
+    // re-run then lands the POST-retry state (standard) — proving the re-run
+    // ran and its apply is the last word.
+    readMock.mockResolvedValueOnce(standardSnapshot());
+    inFlightRead.resolve(kioskSnapshot());
+    await flushRefresh();
+    await flushRefresh();
+
+    expect(readMock).toHaveBeenCalledTimes(3);
+    expect(applySnapshotSpy).toHaveBeenCalledTimes(2);
+    expect(applySnapshotSpy).toHaveBeenNthCalledWith(1, kioskSnapshot());
+    expect(applySnapshotSpy).toHaveBeenNthCalledWith(2, standardSnapshot());
+    expect(useDevicePolicyStore.getState().policy.role).toBe("standard");
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
   });
 });

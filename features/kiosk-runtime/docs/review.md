@@ -99,6 +99,19 @@ T29 so the operational contract no longer carries the stale claim.
 4. ManageEngine's own /api/ tree vs cloud help tree (the IR-02 root cause):
    the cloud tree is authoritative for KISOK's deployment.
 
+### Round 5 task-review accepted boundaries (recorded so no future round re-litigates)
+
+- **Schema-REJECTED first reads stay a silent pending hold (no readError
+  surface) — T22 review verdict (a), ACCEPTED.** A malformed bridge payload
+  is deterministic per build: a manual retry would be a tap that cannot
+  succeed (the design system forbids retry on deterministic failures), and
+  the hold is not permanent (AppState-active + restrictions events still
+  re-read). R5-08's finding was about transport rejections with no
+  completion guarantee. Pinned deliberately in the T22 store tests.
+- **`onRestrictionsChanged` does not touch readError — T22 review verdict
+  (b), CORRECT.** The event is a world-change signal, not a read outcome;
+  the post-event re-read's outcome decides the surface.
+
 ### Live-tenant / hardware items that remain unverifiable from this sandbox
 
 Live MDM dry-run; whether the server enforces Accept/app*name/app_type/

@@ -2,7 +2,7 @@ import { Redirect } from "expo-router";
 
 import { useAuth } from "@/core/auth";
 import { StartupScreen } from "@/features/auth";
-import { useRootTarget } from "@/features/kiosk-runtime";
+import { PolicyStartupGate, useRootTarget } from "@/features/kiosk-runtime";
 
 /**
  * Entry point. Sends the session to the one experience it may use — the
@@ -29,11 +29,14 @@ export default function IndexRoute() {
       return <Redirect href="/kiosk-mismatch" />;
     case "startup":
       // Reachable two ways: auth `resolving`/`error` (the early return above)
-      // and policy-readiness `pending` with a standard policy — the first
-      // native device-policy read has not produced a verdict yet, so the
-      // resolver holds here instead of mounting Preparation (RD-01/IR-01:
-      // the read may take several seconds, with no ordering guarantee
-      // against auth).
-      return <StartupScreen />;
+      // and policy-readiness `pending` with a standard policy — either the
+      // first native device-policy read has not produced a verdict yet
+      // (RD-01/IR-01: the read may take several seconds, with no ordering
+      // guarantee against auth), or it FAILED while no verdict exists
+      // (RD5-03/R5-08: the gate surfaces the failure with a manual retry).
+      // Error ≡ pending ⇒ this hold is fail-closed either way: the gate owns
+      // both faces (loading via StartupScreen, or the kiosk-runtime error
+      // surface), and Preparation never mounts on a failure.
+      return <PolicyStartupGate />;
   }
 }

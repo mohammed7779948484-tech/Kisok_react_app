@@ -13,6 +13,37 @@ import {
 const log = createLogger("kiosk-runtime.devicePolicySync");
 
 /**
+ * The manual-retry trigger the startup gate presses (RD5-03 / R5-08).
+ *
+ * Module-scoped on purpose: `app/**` may not import the store, and the gate
+ * (feature-internal) needs a way to say "read the policy again" without
+ * owning any of the read machinery. The hook registers the real callback
+ * on mount (and clears it on cleanup) — it is contractually mounted exactly
+ * once at the app root, so exactly one trigger is live.
+ *
+ * The callback clears `readError` FIRST (retry → loading → error-again-or-
+ * resolved) and then re-invokes the SAME single-flight `refresh` the mount,
+ * events, and AppState transitions all use — so a retry can never interleave
+ * applies: pressed while a read is in flight, the re-entrant guard collapses
+ * it into the one queued re-run. Retry is MANUAL ONLY by design: the read is
+ * disk I/O with no completion guarantee, and an automatic backoff loop would
+ * hammer it on a broken device for no safety gain — resolution is always
+ * fail-closed.
+ *
+ * Returns whether a trigger was live: `false` means the hook is not mounted
+ * and nothing was dispatched (the caller stays on whatever surface it had —
+ * fail-closed, never an invented read).
+ */
+let manualRetry: (() => void) | null = null;
+
+/** Press the policy read's manual retry. See `manualRetry` above. */
+export function requestDevicePolicyRead(): boolean {
+  if (manualRetry === null) return false;
+  manualRetry();
+  return true;
+}
+
+/**
  * Binds the native device policy to the app-wide store (plan Design decision
  * 3, remediation RD-01): read on mount, re-read on restrictions changes and
  * when the app returns to the foreground, and clear the maintenance session
@@ -39,6 +70,15 @@ const log = createLogger("kiosk-runtime.devicePolicySync");
  * state. AppState re-reads are refresh points, not invalidation signals,
  * and do NOT bump the epoch: a failure that no event superseded still keeps
  * last-known-good (RD5-02's non-event rule).
+ *
+ * RD5-03 (the error surface): this hook is also what WIRES `readError` —
+ * the store owns the field and its transitions, but only the hook knows
+ * read outcomes. A CURRENT (non-superseded) read rejection while readiness
+ * is pending sets `{ reason: "read-failed" }` (the startup gate then
+ * surfaces a manual retry); the same rejection while a verdict is resolved
+ * sets NOTHING (last-known-good stands, nobody is held); the Android
+ * null-module branch sets `{ reason: "module-absent" }` — T21's deliberate
+ * hold, now named. The retry lives in `requestDevicePolicyRead` above.
  *
  * Mounted exactly once at the app root (wired into `app/_layout.tsx` in
  * T07). Everything flows through the `policy-source` seam; the store owns
@@ -94,12 +134,15 @@ export function useDevicePolicySync(): void {
           // hold at the startup target. Absence is synchronous and is not an
           // error.
           useDevicePolicyStore.getState().markModuleAbsent();
+        } else {
+          // null + android: the module is UNEXPECTEDLY absent (RD5-01) — NOT
+          // a verdict. Readiness stays "pending" and the device holds at the
+          // fail-closed startup target. T21 held SILENTLY here; RD5-03 gives
+          // the hold a name: the UI-only readError lets the startup gate
+          // surface the problem with a manual retry while error ≡ pending
+          // keeps the hold fail-closed by construction.
+          useDevicePolicyStore.getState().setReadError("module-absent");
         }
-        // null + android: the module is UNEXPECTEDLY absent (RD5-01) — NOT a
-        // verdict. Readiness stays "pending" and the device holds at the
-        // fail-closed startup target. Deliberately nothing else happens
-        // here: absence is not a snapshot application, not a policy change,
-        // and not a failure to log.
       } catch {
         // One error, no payload — the maintenance code travels inside the
         // restrictions, so nothing from a failed read may reach a log. A
@@ -119,6 +162,14 @@ export function useDevicePolicySync(): void {
           log.error(
             "Failed to read the device-policy snapshot; keeping the last-known-good policy",
           );
+          // RD5-03: a CURRENT failure surfaces only when it actually HOLDS
+          // somebody — readiness pending, no verdict. While a verdict is
+          // resolved the last-known-good stands and there is no error surface
+          // (an AppState re-read failure on a working device is invisible).
+          // The store enforces the same invariant in setReadError.
+          if (useDevicePolicyStore.getState().readiness === "pending") {
+            useDevicePolicyStore.getState().setReadError("read-failed");
+          }
         }
       } finally {
         refreshInFlight = false;
@@ -152,6 +203,16 @@ export function useDevicePolicySync(): void {
       void refresh();
     });
 
+    // RD5-03: the manual retry the startup gate offers (see
+    // `requestDevicePolicyRead` above). Registered BEFORE the cold-start
+    // read is dispatched so a retry can never arrive ahead of its seam, and
+    // cleared in the cleanup below — the trigger is live exactly while the
+    // hook is mounted.
+    manualRetry = () => {
+      useDevicePolicyStore.getState().clearReadError();
+      void refresh();
+    };
+
     // Cold start: read once, only after the listeners above exist.
     void refresh();
 
@@ -169,6 +230,7 @@ export function useDevicePolicySync(): void {
     );
 
     return () => {
+      manualRetry = null;
       unsubscribeRestrictions();
       appStateSubscription.remove();
     };

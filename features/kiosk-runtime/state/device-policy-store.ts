@@ -15,7 +15,7 @@ const log = createLogger("kiosk-runtime.devicePolicy");
 /**
  * The app-wide, EPHEMERAL device-policy store (AC-02, AC-05).
  *
- * Three things live here, and none may ever leave memory:
+ * Four things live here, and none may ever leave memory:
  *
  * - `policy` — the derived device policy, applied from a validated native
  *   snapshot. It starts at the fail-closed standard default: until something
@@ -38,6 +38,17 @@ const log = createLogger("kiosk-runtime.devicePolicy");
  *   ROOT, not nested inside `policy`: it is evidence about the READ, not a
  *   property of the derived policy, and `useRootTarget` consumes it as a
  *   second resolver input.
+ * - `readError` — UI-ONLY (RD5-03/R5-08): WHY the policy read is failing
+ *   while NO verdict exists. The resolver NEVER consumes it — error ≡
+ *   pending, so the startup hold is fail-closed by construction — only the
+ *   kiosk-runtime startup gate reads it, to surface a MANUAL retry. It is
+ *   set ONLY while `readiness` is `"pending"` (a first-read rejection; the
+ *   R5-01 unexpected Android module absence), cleared by any successful
+ *   read (`applySnapshot`), `markModuleAbsent`, and the retry dispatch
+ *   (`clearReadError`). A failed re-read while a verdict is resolved never
+ *   sets it: last-known-good stands and nobody is held. Like `maintenance`,
+ *   a UI-owned field the policy machinery ignores — `PolicyReadiness` stays
+ *   binary and the resolver table stays untouched.
  * - `maintenance` — the maintenance unlock session. The MDM-managed code and
  *   the unlock state exist in memory only: never persisted, never logged as
  *   values, cleared on timeout, background, and any snapshot application.
@@ -60,6 +71,17 @@ export type MaintenanceSession = {
   expiresAt: number | null;
 };
 
+/**
+ * WHY a pending policy read is failing (RD5-03 / R5-08). A UI-facing reason
+ * CODE, never a message: the gate owns the copy, and nothing here carries
+ * native detail (the maintenance code travels inside the restrictions —
+ * AC-05 — so a rejection's actual reason must not travel anywhere).
+ */
+export type PolicyReadErrorReason = "module-absent" | "read-failed";
+
+/** The UI-only pending-failure record. `{ reason }` and nothing else. */
+export type PolicyReadError = { reason: PolicyReadErrorReason };
+
 export type DevicePolicyState = {
   /** The app-wide device policy (AC-02). */
   policy: DevicePolicy;
@@ -69,6 +91,12 @@ export type DevicePolicyState = {
    * Consumed by `useRootTarget` as the resolver's readiness input.
    */
   readiness: PolicyReadiness;
+  /**
+   * UI-only (RD5-03): why the read is failing while NO verdict exists — see
+   * the store doc comment. Never consumed by the resolver or any policy
+   * transition; the startup gate is its only reader. Memory only.
+   */
+  readError: PolicyReadError | null;
   /** The ephemeral maintenance session (AC-05). */
   maintenance: MaintenanceSession;
   /**
@@ -112,6 +140,22 @@ export type DevicePolicyState = {
    * Idempotent, and safe at every readiness/role combination.
    */
   onRestrictionsChanged(): void;
+  /**
+   * Record WHY the policy read is failing while NO verdict exists (RD5-03).
+   * Called by the sync hook on a current (non-superseded) read rejection and
+   * on Android's unexpected module absence. A NO-OP while a verdict is
+   * resolved — "readError is set ONLY while pending" is a store invariant,
+   * not a caller promise, so no future caller can surface a retry to a user
+   * who is not actually held. Never logged: the reason is a code, but the
+   * discipline (AC-05) is that nothing from a failed read travels anywhere.
+   */
+  setReadError(reason: PolicyReadErrorReason): void;
+  /**
+   * Clear readError. The retry dispatch does this — retry → loading →
+   * error-again-or-resolved — so the gate drops the error surface the moment
+   * a new read is on its way, not when the read completes.
+   */
+  clearReadError(): void;
   /**
    * Attempt a maintenance unlock. Returns true ONLY when the current policy
    * is a customer kiosk, the derived code is non-null, and `code` equals it.
@@ -171,6 +215,7 @@ export function createDevicePolicyStore() {
   return create<DevicePolicyState>((set, get) => ({
     policy: FAIL_CLOSED_POLICY,
     readiness: "pending",
+    readError: null,
     maintenance: LOCKED_MAINTENANCE,
 
     applySnapshot(snapshot: unknown) {
@@ -181,6 +226,11 @@ export function createDevicePolicyStore() {
           policy: deriveDevicePolicy(result.data),
           maintenance: LOCKED_MAINTENANCE,
           readiness: isProvisionalSnapshot(result.data) ? "pending" : "resolved",
+          // A successful read is evidence the machinery works: whatever
+          // pending-failure was surfaced is gone (RD5-03). The provisional
+          // row keeps readiness pending — and readError null: a COMPLETED
+          // provisional read is not a failure, it is an undetermined verdict.
+          readError: null,
         });
         return;
       }
@@ -188,11 +238,20 @@ export function createDevicePolicyStore() {
       // No payload in this warn, ever: the maintenance code travels inside
       // the restrictions, so snapshot values must not reach the log (AC-05).
       log.warn("Device-policy snapshot failed schema validation; failing closed to standard");
+      // readError is deliberately UNTOUCHED here: a schema-rejected read is
+      // neither a successful read (nothing to clear) nor a rejection (nothing
+      // to set). If a failure was already surfaced, it stays surfaced — the
+      // malformed outcome simply fails closed into the same pending hold.
       set({ policy: FAIL_CLOSED_POLICY, maintenance: LOCKED_MAINTENANCE, readiness: "pending" });
     },
 
     markModuleAbsent() {
-      set({ readiness: "resolved" });
+      set({
+        readiness: "resolved",
+        // Absence is the platform verdict, not a failure — whatever error a
+        // previous state surfaced is gone (RD5-03 clear-list).
+        readError: null,
+      });
     },
 
     onRestrictionsChanged() {
@@ -211,6 +270,25 @@ export function createDevicePolicyStore() {
         ...(invalidateVerdict ? { readiness: "pending" } : {}),
         maintenance: LOCKED_MAINTENANCE,
       });
+      // readError is deliberately untouched here: the event dispatches an
+      // async re-read, and whether THAT fails decides what is surfaced —
+      // the event itself is not a read outcome (RD5-03).
+    },
+
+    setReadError(reason: PolicyReadErrorReason) {
+      // The store owns the invariant: the error surface may exist ONLY
+      // while a verdict is missing, i.e. only while somebody is actually
+      // held at the startup target. While a verdict is resolved the
+      // last-known-good stands and no user is held — nothing to surface.
+      if (get().readiness !== "pending") {
+        return;
+      }
+
+      set({ readError: { reason } });
+    },
+
+    clearReadError() {
+      set({ readError: null });
     },
 
     tryUnlock(code: string) {
