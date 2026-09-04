@@ -911,3 +911,96 @@ features/catalog/queries/use-customer-settings.test.tsx (new)
 features/catalog/index.ts (additive export)
 
 GATE: PASS
+
+### T11 — Order Success screen + success-countdown
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-07, AC-14, AC-15
+
+SCAFFOLD (Lead, before delegating)
+$ pnpm generate screen checkout order-success
+$ pnpm generate component checkout success-countdown --screen=order-success
+created : features/checkout/screens/order-success/order-success-screen.tsx
+(+ test), features/checkout/screens/order-success/components/
+success-countdown.tsx
+note : the component template emits no test file — the colocated
+test is the implementer's (planned).
+
+RED (behavior)
+The implementer context was killed by a Super Z harness deadline AFTER
+completing the work; its report (and RED capture) was lost. The fresh
+reviewer independently re-derived the RED by scaffold inspection: the
+generated placeholders render only "OrderSuccess"/"TODO: build this
+screen" and "TODO: build SuccessCountdown" — none of the 18 original
+tests' content (confirmed heading, escape copy, countdown label) exists
+on the placeholder tree, so every test fails against it for the
+intended reasons.
+
+IMPLEMENT
+screens/order-success/components/success-countdown.tsx — the D10
+deadline-based countdown: deadline in a ref (never state), every tick
+recomputes from Date.now() (never accumulates), clamps at 0, AppState
+active re-check fires an expired deadline immediately, single expiry
+(ref guard), interaction restart, interval torn down on unmount.
+Displays Progress (required accessibilityLabel with remaining seconds)
+
+- the same words as visible Text. Publishes `restart` via an optional
+  reArmRef (F-T11-01) for the screen-level listener.
+  screens/order-success/order-success-screen.tsx — the valid-confirmed
+  gate (record.status === confirmed && phase === confirmed; everything
+  else → the AC-15 escape: warning + Back to Browse → "/", never the cart,
+  never success content); the confirmed content (success Alert, mono
+  LARGE display number with an accessible name, lineSnapshots through
+  T08's OrderLineRow, derived summary); settings via the T10 seam
+  (customerSuccessResetSeconds ?? 25; pending → skeleton; error →
+  fallback); the gated reset (Next Customer + countdown expiry →
+  resetForNextCustomer → push "/"; refusal + cleanup-failed surfaced
+  honestly with retryCleanup; unsafe → NO reset affordance); the
+  content-root pass-through onTouchStart (F-T11-01) re-arming the
+  countdown for ANY interaction (the reading customer).
+  Tests: 21 total (18 original + 3 for the F-T11-01 re-arm: the mailbox
+  mechanism, the unmount clearing, the content-touch re-arm at the
+  screen level).
+
+GREEN
+$ npx jest features/checkout/screens/order-success → 2 suites / 21 tests
+$ npx jest features/checkout → 12 suites / 273 tests
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean
+$ npx eslint <order-success files> --max-warnings=0 → exit 0
+$ npx prettier --check → clean
+
+TASK REVIEW (fresh code-reviewer, agent-995145af)
+Verified: the valid-confirmed gate mirrors the store's reset gate; the
+countdown's deadline math, resume recompute, single expiry, leak-free
+interval (all reproduced); settings usage + fallback both ways; gated
+reset + cleanup honesty (no reset affordance while unsafe, retry path
+through the real cart seam); snapshots through the shared row; full
+accessibility; RED re-derived by scaffold inspection; all suites
+re-run green.
+Findings: F-T11-01 MAJOR (interaction-restart delivered only inside the
+countdown block — a READING customer was auto-reset mid-read),
+F-T11-02 minor (the responder doc self-contradiction + unpinned
+contract), F-T11-03 minor (this entry), F-T11-04 minor (reset
+navigation uses push; the catalog convention for top-level is replace —
+deferred to T13/T14 disposition: back-landing is already covered by the
+escape state).
+Remediation (Lead, directly — the implementer context was lost to a
+second harness deadline; same documented precedent as T09): the
+countdown publishes restart via reArmRef; the screen's content root
+adds a pass-through onTouchStart calling it (a plain bubbling touch
+event — never responder negotiation; scroll and presses unaffected);
+the doc contradiction resolved (claiming within the block is
+deliberate and safe — children non-interactive, actions are siblings);
+3 new tests. One honest mistake during the Lead fix (a useRef placed
+after the presentation early-returns → hooks-order violations) was
+caught by the suite immediately and corrected — the tests had teeth.
+
+DIFF
+features/checkout/screens/order-success/order-success-screen.tsx (new)
+features/checkout/screens/order-success/order-success-screen.test.tsx (new)
+features/checkout/screens/order-success/components/success-countdown.tsx (new)
+features/checkout/screens/order-success/components/success-countdown.test.tsx (new)
+
+GATE: PASS

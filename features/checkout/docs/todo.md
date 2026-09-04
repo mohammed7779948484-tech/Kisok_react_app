@@ -17,9 +17,9 @@ is the first thing the next agent reads.
 ```
 Current round     : 2
 Current task      : — (round complete)
-Current stage     : T10 GATE PASS — next T11 (Order Success screen)
-Last gate         : T10 GATE PASS
-Next legal action : Lead scaffold T11 (screen + countdown component), then delegate
+Current stage     : T11 GATE PASS — next T12 (recovery-gate)
+Last gate         : T11 GATE PASS
+Next legal action : Lead scaffold T12 (component recovery-gate), then delegate
 Blocked by        : —
 ```
 
@@ -52,7 +52,7 @@ Scan this first. Detail is below.
 | T08  | behavior | Acceptance: AC-02, AC-03              | Order Review screen + order-line-row                       | —                       | not started | PENDING |
 | T09  | behavior | Acceptance: AC-04, AC-08–AC-10        | Review submission flow + outcome panels                    | T04, T06, T08           | done        | PASS    |
 | T10  | behavior | Supporting AC-14                      | Catalog settings seam                                      | —                       | done        | PASS    |
-| T11  | behavior | Acceptance: AC-07, AC-14, AC-15       | Order Success screen + countdown                           | T06, T08, T10           | not started | PENDING |
+| T11  | behavior | Acceptance: AC-07, AC-14, AC-15       | Order Success screen + countdown                           | T06, T08, T10           | done        | PASS    |
 | T12  | behavior | Acceptance: AC-13                     | recovery-gate + layout mounting                            | T06, T07                | not started | PENDING |
 | T13  | config   | N/A — routing                         | Routes: /checkout, /checkout-success                       | T08, T11                | not started | PENDING |
 | T14  | behavior | Acceptance: AC-01                     | Full Cart Review Order CTA                                 | T13                     | not started | PENDING |
@@ -247,6 +247,14 @@ it — two summaries disagree the moment one is updated and the other is not.
 ## Round 4 — routes, entry & journey
 
 ### T13 — routes
+
+- **Note (from T11 review F-T11-04, disposition deferred here)**: decide the
+  reset navigation semantics when the routes land — the success reset
+  currently pushes "/"; the catalog convention for top-level destinations is
+  replace (a growing back stack across a shift on a long-lived kiosk).
+  Back-landing is already covered by the escape state, so this is polish,
+  not a safety gap — but prefer `router.replace` for the Next Customer/expiry
+  reset if it composes cleanly.
 
 - **Mode**: config
 - **Acceptance**: `N/A — routing`
