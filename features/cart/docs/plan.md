@@ -396,7 +396,9 @@ Set the status at the top to `READY` only when every line here is true.
 
 # POST-MERGE PRE-CHECKOUT HARDENING (2026-09-03, post-PR-#11 merge)
 
-Amendment status: `DRAFT`
+Amendment status: `READY` (was `DRAFT` until the Lead Planning Review
+at the end of this section flipped it — the checklist there is the
+DRAFT→READY record)
 
 This is a post-merge remediation amendment to the completed Cart feature
 (original plan above stays `READY` and historical). It exists because the
@@ -525,7 +527,7 @@ asChild` + muted body Text), export it from `components/ui/index.ts`, and
 | ------ | ------------------------ | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------- |
 | H-T01  | bug                      | Supporting AC-03/AC-02 | Canonical identity: UUID-cased `deriveLineId` + persisted semantic refine                                                                                  | —          | test-driven-development                                                |
 | H-T02  | bug                      | Supporting AC-07       | Sign-out failure → same-owner re-auth coherence                                                                                                            | —          | test-driven-development                                                |
-| H-T03  | bug                      | Supporting AC-06       | QuickCart opens with no DialogContent advisory; description linked                                                                                         | —          | test-driven-development, kisok-design-system, kisok-react-native-rules |
+| H-T03  | bug                      | Supporting AC-10/AC-12 | QuickCart opens with no DialogContent advisory; description linked                                                                                         | —          | test-driven-development, kisok-design-system, kisok-react-native-rules |
 | H-T03b | behavior (test-only pin) | Supporting AC-02       | Store-level composed-path pin: semantically malformed lineId on disk → restore treats it as corrupt → durable clear + start empty (Round 1 reviewer R1-02) | H-T01      | test-driven-development                                                |
 
 Rounds: Round 1 = H-T01 + H-T02 (domain/session safety). Round 2 = H-T03

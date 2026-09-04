@@ -1252,8 +1252,11 @@ hardened behavior:
   catalog refetches.
 - **Sign-out safety (the real app pipeline)**: with the customer session's
   cart populated (4 items, durable key present), the session was handed to
-  the preparation account (staff takeover — the app's own supabase session
-  storage + boot), then the REAL Sign out control ran the full pipeline
+  the preparation account (staff takeover — the preparation session was
+  written into the app's own supabase session storage and the page reloaded,
+  booting the app into the preparation experience while the customer's
+  cart-module state from the earlier same-runtime customer browsing stayed
+  live), then the REAL Sign out control ran the full pipeline
   (guards → session removal → runSignOutCleanup → cart cleanup →
   finishSignOutHandoff): durable cart key CLEARED, handoff marker CLEAN,
   signed-out gate shown.

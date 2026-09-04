@@ -471,3 +471,32 @@ success; Android prebuild + Maestro skipped (native tier — no device in this
 environment, per policy).**
 
 **FINAL REVIEW CONVERGED: SHIP-READY.**
+
+## QUALITY AUDIT (fresh quality-auditor, 2026-09-03, final HEAD 09a2b13)
+
+Verdict: **CLEAN-WITH-OBSERVATIONS.**
+
+The auditor re-ran every command fresh on the exact final HEAD (54 suites /
+556 tests digit-for-digit; typecheck/lint/format/verify all 0) and verified
+delivery truth: PR #11 genuinely merged (merge-base = 6161a4c; develop tip
+6161a4c with parents 62f3634+1c6eb70); the hardening branch starts from
+exactly that state (first hardening commit's parent = 6161a4c; no stale
+main; feature/cart untouched at 600882a); all three findings genuinely fixed
+RED-first (the pre-fix schema at 6161a4c verifiably lacks the refine; the
+exported dist bundle built from fixed code at 23:55 — the journey ran fixed
+code); 4/4 task gates and 2/2 round gates real with fresh reviewers; zero
+checkout/server-cart/suppression artifacts; all four control docs
+append-only (numstat 271/0, 150/0, 22/0, 94/0); the docs-only commits after
+the reviewed head changed nothing code-side; PR #12 open against develop
+unmerged (refs/pull/12/merge parents = 6161a4c + 09a2b13).
+
+| ID  | Category      | Observation                                                                                                                                         | Disposition                                                                                                             |
+| --- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| 1   | not-delivered | PR #9's external advance (23a4222→1f446ed→70a0a01) was observed but unrecorded in control docs                                                      | RESOLVED — recorded in todo.md's hardening section + the PR body (this delivery cycle)                                  |
+| 2   | not-evidenced | PR #12 draft=True + exact-head CI green rest on Lead-credentialed API evidence (the auditor's sandbox is rate-limited)                              | RESOLVED — Lead re-fetch evidence: PR #12 draft=True/open/base=develop; CI on 05c6779 all-success; refreshed at handoff |
+| 3   | micro         | The journey's staff-takeover prose did not state the JS runtime persisted                                                                           | RESOLVED — the worklog journey record now states the reload + same-runtime continuity explicitly                        |
+| 4   | stale-record  | todo.md's top "Current checkpoint" still pointed at the PR #8 merge (two deliveries stale)                                                          | RESOLVED — checkpoint refreshed to the PR #12 human decision                                                            |
+| 5   | micro         | H-T03 row said "Round 2 review pending"; plan.md carried dual DRAFT/READY status lines; the H-T03 task-graph row cited AC-06 instead of AC-10/AC-12 | RESOLVED — all three refreshed                                                                                          |
+| 6   | observation   | The orchestration worklog tail (FR-H dispositions, 09a2b13 push, handoff) lived only in repo commit records                                         | RESOLVED — the Super Z worklog final entries are appended at handoff                                                    |
+
+**All observations closed. QUALITY AUDIT: CLEAN-WITH-OBSERVATIONS (closed).**
