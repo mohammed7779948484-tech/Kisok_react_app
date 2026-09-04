@@ -15,10 +15,10 @@ The single answer to "where are we?". Update it whenever any of it changes; it
 is the first thing the next agent reads.
 
 ```
-Current round     : done (staged-integration re-delivery complete)
+Current round     : done (post-merge pre-Checkout hardening complete — HARDENING GATE: PASS)
 Current task      : —
-Last gate         : re-delivery gates complete — develop integration (ce48674), T01 UUID remediation re-gated, B-REVIEW-UUID 0/0/0, B-FULL-REVIEW 0/0/2 dispositioned, live re-verification recorded, B-AUDIT CLEAN-WITH-OBSERVATIONS (B-AUD-01/02/03 closed by this commit)
-Next legal action : human-authorized merge of PR #8 (this assignment is authorized to execute it after exact-final-head CI is green on this commit)
+Last gate         : HARDENING GATE: PASS at final HEAD eb5a0d7 — PR #11 merged (6161a4c); branch from exact post-merge develop; 4/4 task gates; 2/2 round gates; 0 unresolved blocking/major; full pnpm verify 0 (54/556); export:web 0; live hosted journey PASS (zero DialogContent warnings, sign-out/re-auth non-resurrection); fresh final review SHIP-READY (0/0/3 dispositioned); quality audit CLEAN-WITH-OBSERVATIONS (all closed); exact-final-head CI green; protected PRs untouched by this assignment; PR #12 DRAFT/unmerged targeting develop; ZERO Checkout implementation
+Next legal action : human review/merge decision on PR #12 (fix/cart-pre-checkout-hardening → develop, DRAFT, unmerged) — https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/12
 Blocked by        : —
 ```
 
@@ -340,3 +340,31 @@ FEATURE GATE: PASS (2026-09-02) — every task and round gate PASS, 13/13 ACs je
 What cannot proceed, and what it is waiting for. Empty is good.
 
 - — (nothing blocked: Draft PR #8 is complete and stays DRAFT, awaiting human review — https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/8)
+
+---
+
+## POST-MERGE PRE-CHECKOUT HARDENING — checkpoint (2026-09-03)
+
+Branch `fix/cart-pre-checkout-hardening` from post-PR-#11 develop
+`6161a4c9708875c5f811401c8e6bd1066a59ec39`. Amendment: plan.md
+"POST-MERGE PRE-CHECKOUT HARDENING" (status READY after Lead Planning Review).
+Findings: H-F01 VALID / H-F02 VALID / H-F03 VALID (reproduced live). No
+Checkout scope; no server Cart; PR stays DRAFT/unmerged.
+
+| Task   | Mode     | Status | Gate                                                                |
+| ------ | -------- | ------ | ------------------------------------------------------------------- |
+| H-T01  | bug      | DONE   | PASS (2096e5b) — fresh review 0 blk/0 maj/2 min, both dispositioned |
+| H-T02  | bug      | DONE   | PASS (5da1ae8) — fresh review 0 blk/0 maj/3 min dispositioned       |
+| H-T03  | bug      | DONE   | PASS (e651812) — Round 2 gate PASS incl. the R2-1 compact pin       |
+| H-T03b | behavior | DONE   | PASS (e651812) — RED teeth Lead-proven vs the pre-H-T01 schema      |
+
+| Round | Scope                                           | Gate                     |
+| ----- | ----------------------------------------------- | ------------------------ |
+| 1     | H-T01 + H-T02 (domain/session safety)           | PASS (0 blk/0 maj/2 min) |
+| 2     | H-T03 + H-T03b (runtime/a11y + convergence pin) | PASS (0 blk/0 maj/2 min) |
+
+Observed during the hardening (recorded per the protected-PR contract): an
+EXTERNAL actor advanced protected PR #9's branch (`feature/kiosk-runtime`:
+23a4222 → 1f446ed, later 70a0a01) while this assignment worked. Nothing was
+reverted and no command of this assignment wrote to it — the observation
+only.

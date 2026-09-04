@@ -1175,3 +1175,100 @@ features/cart`).
 - CART_FINAL_PR_HEAD=74f16fe8283b09c2e222dc4871590d92b3d5f587; this
   docs-only commit that records the evidence is the true final merge HEAD;
   its CI run is verified before the authorized merge executes.
+
+---
+
+## POST-MERGE PRE-CHECKOUT HARDENING (2026-09-03, branch fix/cart-pre-checkout-hardening from 6161a4c)
+
+### H-T01 — persisted semantic identity invariant — GATE PASS (2096e5b + docs 3c8ca1d)
+
+- CLASSIFY: bug (H-F01, triaged VALID from current code).
+- RED (fresh implementer, written first): `pnpm exec jest features/cart/model/persisted-cart.schema.test.ts features/cart/model/cart-rules.test.ts` → 6 failed / 38 passed, every failure the intended reason (malformed lineIds accepted ×3; raw-case join "Expected: 3a7f… / Received: 3A7F…"; cross-casing non-merge ×2). Baseline pre-edit: model 4/66 PASS; cart+integration 16/216 PASS.
+- IMPLEMENT (smallest fix, plan amendment decisions 1+2): `deriveLineId` lowercases variantId + each optionValueId BEFORE sort/join (canonical identity per PostgreSQL case-insensitive uuid semantics; postgresUuidSchema deliberately untouched; optionTypeId/productId untouched — not identity inputs); `persistedCartSchema` gains `.refine(lines.every(line => line.lineId === deriveLineId(line)))` importing the ONE domain helper (no second algorithm; no import cycle — schema → rules → line-schema).
+- GREEN: model folder 4 suites / 74 tests PASS. New tests: schema +5 (wrong lineId rejected; two semantic-identical fake ids rejected; canonical optioned+plain accepted; uppercase-joined derivation rejected; uppercase fields + canonical lineId accepted), rules +3 (one identity across hex case + order; cross-casing merge; cross-casing merge capped).
+- Blast radius (Lead scope addendum, plan.md "Allowed file scope" → H-T01): the invariant correctly REJECTED 5 pre-existing fixtures embedding the exact H-F01 malformed shape — cart-store.test.ts espressoLine, use-cart.test.tsx cappuccinoLine, full-cart-screen.test.tsx cappuccinoLine (the 12 failing tests), then cart-item-row.test.tsx + quick-cart-sheet.test.tsx cappuccinoLine (reviewer R-H01-2, same class). All corrected to the true derived identity `3a7f2c1d-…|1a2b3c4d-…|e5d3c8a1-…`; fixture lineId strings only — zero assertions changed. R-T07-03's anticipated fixture pass is now done.
+- AFFECTED CHECKS: cart 11 suites / 178 tests; integration 5 / 46; cart+integration+catalog 37 suites / 413 tests; `pnpm typecheck` exit 0; `pnpm lint` exit 0; prettier clean on all changed files (+ Lead formatted plan.md/todo.md per R-H01-1).
+- LEAD VERIFY: diff read file-by-file; independent runs matched every number; implementer stopped at the scope boundary and reported the out-of-scope blast radius instead of widening (correct conduct).
+- FRESH TASK REVIEW (0 blocking / 0 major / 2 minor — see review.md "H-T01 review"): RED reproduced empirically via stash; backward compatibility proven (only line-producing path is addItem → addLine → deriveLineId; PostgreSQL jsonb emits lowercase uuid text, so live data unaffected; theoretical uppercase-legacy payload falls into the designed corrupt-payload path). Both minors dispositioned and resolved.
+- TASK GATE: PASS.
+
+### H-T02 — sign-out failure / same-owner memory safety — GATE PASS (5da1ae8)
+
+- CLASSIFY: bug (H-F02, triaged VALID from current code).
+- RED (fresh implementer, test first): `pnpm exec jest features/cart/state/sign-out-cleanup.test.ts` → 1 failed / 5 passed; first failing assertion `expect(state.locked).toBe(false)` → Expected false / Received true — the stale session envelope surviving the full failure cycle (seed persisted+locked+hydrated → patched failing clear → runSignOutCleanup failures=["cart"] → finishSignOutHandoff emergency wipe "ok" → same-owner re-hydrate). Intended reason confirmed by the reviewer's independent stash reproduction.
+- IMPLEMENT (smallest fix, plan amendment decision 3): in sign-out-cleanup.ts, inside the rejected branch after clear() resolves and BEFORE the throw — `useCartStore.setState({ locked: false, ownerId: null, hydrated: false, persistence: "unknown" })`. Throw byte-identical; success path unchanged (keeps the honest "persisted"). Doc-comment rewritten to the new contract.
+- Evidence-backed deviation (Lead-accepted; plan decision 3 reconciled): a literally-unconditional reset would wipe the success path's honest `persisted` status and break the pre-existing success-path test; the scoped placement is the smallest correct fix and the success path is already coherent.
+- GREEN: suite 6/6 (new H-F02 lifecycle test: populated+locked cart, failed durable clear, emergency wipe, same-owner re-auth → empty, unlocked, coherent, mutations work, old cart does not resurrect — durable key contains exactly the new line).
+- AFFECTED CHECKS: cart 11 suites / 179 tests; integration 5 / 46; combined 16 / 225; core/auth 5 / 41; product-detail 3 / 32; typecheck 0; lint 0; prettier clean.
+- R-H02-4 follow-up (H-T02-FIX1): use-cart.ts comment refresh (success-path scoped, failure path documented); state suites identical 3/65 before and after.
+- LEAD VERIFY: diff read; independent runs matched; deviation verified sound.
+- FRESH TASK REVIEW: 0 blocking / 0 major / 3 minor — all dispositioned (see review.md "H-T02 review").
+- TASK GATE: PASS.
+
+### H-T03 — QuickCart DialogContent advisory warning — GATE PASS (e651812)
+
+- CLASSIFY: bug (H-F03, triaged VALID and REPRODUCED LIVE on 2026-09-03: every QuickCartSheet open emitted exactly the Radix `Warning: Missing \`Description\` or \`aria-describedby={undefined}\` for {DialogContent}.` — Add-to-cart open AND affordance reopen; dialog focus/Escape/close otherwise functional).
+- ROOT CAUSE: components/ui/adaptive-sheet.tsx exports no Description member while its sibling dialog.tsx exports DialogDescription; both consumers (QuickCartSheet, /ui-lab demo) rendered Title-only → the warning fires on the web variant.
+- RED (fresh implementer, tests first): 3 failed / 11 passed — typeof AdaptiveSheetDescription "function" vs "undefined"; text-query failures for the description; PLUS pnpm typecheck TS2305 (no exported member) — all intended reasons. jest-expo resolves the NATIVE dialog variant (the Radix warning never fires in jest), so the deterministic RED pins the missing accessibility contract per the plan's corrected RED strategy; the live browser journey owns the zero-warning evidence.
+- IMPLEMENT (decision 4): AdaptiveSheetDescription added to adaptive-sheet.tsx mirroring the sibling DialogDescription exactly (DialogPrimitive.Description asChild, Text variant="body" tone="muted", className passthrough); exported from components/ui/index.ts; QuickCartSheet renders "Review the items in your cart, or continue shopping." in the header (reworded once for react/no-unescaped-entities — H-T03-FIX1); the /ui-lab demo sheet (the other consumer) wired with "Side panel in landscape, bottom sheet otherwise.".
+- GREEN: quick-cart suite 14/14 (11 existing untouched + 3 new); cart 11/183; integration 5/46; components suites green; typecheck 0; lint 0; prettier clean.
+- Harness note: role="dialog" Views are invisible to ByRole under this RNTL build (T07 carry-forward) — test (c) locates the dialog content via the public test-renderer queryAll and scopes with within(); the mechanism was proven during RED.
+- LEAD VERIFY: full cart 11/183 + integration 5/46 + components re-run; diff read across all 6 files; both consumers confirmed wired.
+- FRESH TASK REVIEW: performed at the Round 2 gate (combined review).
+- TASK GATE: PASS.
+
+### H-T03b — store-level composed-path convergence pin — GATE PASS (e651812)
+
+- CLASSIFY: behavior (test-only pin; Round 1 reviewer R1-02).
+- The implementer wrote the test but exceeded its turn budget before reporting; the Lead completed verification directly: GREEN 51/51 in cart-store.test.ts; cart 11/183.
+- RED TEETH (Lead-run, the sanctioned revert technique): with the PRE-H-T01 schema checked out from 6161a4c, the new test FAILS at the first assertion — expect(lines).toEqual([]) receives the restored malformed line (deep-equality +23 diff): the exact pre-hardening behavior where a semantically malformed lineId restores instead of clearing. Schema restored from HEAD; tree byte-identical; suite green again.
+- The pin: semantically malformed lineId on disk → restore treats it as corrupt → durable key cleared → cart starts empty (shared-kiosk safety: the corrupt blob is removed, not left for the next cold start).
+- TASK GATE: PASS.
+
+## LIVE CUSTOMER CART JOURNEY — POST-HARDENING (2026-09-03, production static export at 054dc17, real TEST project)
+
+The full merged Catalog → Local Cart path, as the documented Customer
+(Customer@gmail.com) against the hosted TEST Supabase, exercising every
+hardened behavior:
+
+- **Authentication**: hosted sign-in; gate holds; zero Preparation/Admin exposure.
+- **Add available variant** (Perks → "24mg 10tabs bottle"): QuickCartSheet
+  opened with the exact product/caption/quantity; **ZERO console output — the
+  H-F03 Radix DialogContent advisory is GONE** (pre-fix it fired exactly
+  here), and the new screen-reader description "Review the items in your
+  cart, or continue shopping." renders under the Title.
+- **Same-selection merge**: re-adding the same variant → "Your Cart · 2",
+  ONE line, quantity 2 — the canonical identity merge (H-T01) live.
+- **Distinct selection** (Grape 125mg 4tabs): "Your Cart · 3", 2 distinct
+  lines with correct captions.
+- **QuickCart interactions**: totals tracked every mutation; View Full Cart
+  navigated to /cart; quantity + worked in the Full Cart (2→3); the sheet
+  reopened from the affordance repeatedly with zero warnings each time.
+- **Unavailable variant** (Mello Pro 50k → "Clear, Out of stock"): Add
+  renders disabled (is-enabled false); the cart state was untouched.
+- **Reload persistence**: full page reload at /cart restored both lines —
+  "4 items · 2 lines" (3 + 1) — durable envelope matched memory exactly;
+  returning to the catalog kept the badge "Open cart, 4 items" through
+  catalog refetches.
+- **Sign-out safety (the real app pipeline)**: with the customer session's
+  cart populated (4 items, durable key present), the session was handed to
+  the preparation account (staff takeover — the preparation session was
+  written into the app's own supabase session storage and the page reloaded,
+  booting the app into the preparation experience while the customer's
+  cart-module state from the earlier same-runtime customer browsing stayed
+  live), then the REAL Sign out control ran the full pipeline
+  (guards → session removal → runSignOutCleanup → cart cleanup →
+  finishSignOutHandoff): durable cart key CLEARED, handoff marker CLEAN,
+  signed-out gate shown.
+- **Re-auth non-resurrection**: the SAME customer signed back in → cart
+  EMPTY ("Your Cart · 0", honest empty state), durable key ABSENT, affordance
+  without badge, ZERO cart-related network calls (network log filtered:
+  count 0 — the cart never talks to the server), console clean.
+- **Responsive**: 1280×800 — zero horizontal overflow, affordance 48×48;
+  800×1180 — zero overflow, compact bottom-sheet presentation (x=0, w=800),
+  description renders, zero warnings; 480×900 — zero overflow, affordance
+  48×48 with badge "2 items", same-variant re-add merged (1→2) in the sheet,
+  end-of-scroll Add/affordance clearance 24px (no overlap; the static
+  clearance holds with browser insets=0).
+- **Console across the whole journey**: ZERO warnings, ZERO errors (the
+  only console events were the intentional clears).

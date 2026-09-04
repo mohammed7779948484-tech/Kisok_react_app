@@ -1,8 +1,10 @@
 import { runSignOutCleanup, runSignOutGuards } from "@/core/auth";
+import { finishSignOutHandoff } from "@/core/auth/sign-out";
 import { resetLogging, setLogSink } from "@/core/logging";
 import { storage, storageKey } from "@/core/storage";
 
-import type { CartLine } from "../model/cart-line.schema";
+import type { AddToCartInput, CartLine } from "../model/cart-line.schema";
+import { deriveLineId } from "../model/cart-rules";
 import { persistedCartSchema } from "../model/persisted-cart.schema";
 import { useCartStore } from "./cart-store";
 // The module under test. Its import IS the behaviour under test: the cart's
@@ -31,6 +33,11 @@ import { clearCartForSignOut } from "./sign-out-cleanup";
  *   remove paths (`persistNow` → `storage.write` → AsyncStorage; `clear` →
  *   `storage.remove`) and is verified by reading the key back through the
  *   app's own `storage.read` API, the way a cold start would.
+ * - The H-F02 lifecycle test drives the auth pipeline's full completion
+ *   shape, so it also calls `finishSignOutHandoff` — imported from the deep
+ *   `@/core/auth/sign-out` module, exactly as production's context.tsx does
+ *   (the public `@/core/auth` index deliberately does not re-export the
+ *   handoff internals).
  *
  * Registry hygiene: the sanctioned `beforeEach/afterEach(clearSignOutTasks)`
  * pattern from core/auth/__tests__/sign-out.test.ts is deliberately adapted
@@ -59,6 +66,23 @@ const seedLine: CartLine = {
   imageUri: null,
   quantity: 3,
 };
+
+/**
+ * The selection the re-authed customer adds — a DIFFERENT line from the seed,
+ * so a resurrected old cart can never pass as the new session's write.
+ */
+const coldBrewInput: AddToCartInput = {
+  variantId: "1b2a3f4e-5d6c-4b7a-9e8f-0a1b2c3d4e5f",
+  productId: "6c7d8e9f-0a1b-4c2d-8e3f-4a5b6c7d8e9f",
+  productDisplayName: "Cold Brew Coffee",
+  variantLabel: "330 ml Can",
+  optionSelections: [],
+  imageUri: null,
+  quantity: 2,
+};
+
+/** The id the rules derive for that selection — what the store must attach. */
+const coldBrewLineId = deriveLineId(coldBrewInput);
 
 /** The singleton's real clear action — restored after a test patches it. */
 const realClear = useCartStore.getState().clear;
@@ -134,6 +158,78 @@ describe("cart sign-out cleanup (AC-07)", () => {
     const result = await runSignOutCleanup();
 
     expect(result).toEqual({ failures: ["cart"] });
+  });
+
+  it("H-F02: after a failed durable clear and the emergency wipe, the SAME owner re-auths to an empty, unlocked, coherent, mutable cart", async () => {
+    // The full sign-out FAILURE cycle: the cart task throws, runSignOutCleanup
+    // records it, finishSignOutHandoff emergency-wipes the kisok:* namespace
+    // (disk ends clean) — and then the SAME customer signs in again. The
+    // stale in-memory session envelope (locked / clearFailed / ownerId /
+    // hydrated) must not survive that cycle to no-op the re-hydrate through
+    // restore()'s same-owner shortcut: the next session starts empty,
+    // unlocked, coherent, and mutable, and the old cart never resurrects.
+
+    // Seed honestly: a real line on disk through the store's own write path.
+    useCartStore.setState({
+      lines: [seedLine],
+      ownerId: OWNER,
+      hydrated: true,
+      locked: true,
+    });
+    await expect(useCartStore.getState().persistNow()).resolves.toEqual({ status: "persisted" });
+    // The seed really is on disk, or the post-cycle assertions prove nothing.
+    expect((await readPersistedCart()).status).toBe("hit");
+
+    // A durable clear that cannot be proven — the same patched-clear seam as
+    // the failure test above, modelling the REAL clear's in-memory semantics
+    // (lines emptied synchronously, the honest `clearFailed` report) so what
+    // can fail below is the session-ENVELOPE leak (H-F02), never an artifact
+    // of the patch. T03/T04 own the real remove→fallback semantics.
+    useCartStore.setState({
+      clear: async () => {
+        useCartStore.setState({ lines: [] });
+        useCartStore.setState({ persistence: "clearFailed" });
+        return { status: "rejected", error: new Error("disk full") };
+      },
+    });
+
+    // The auth pipeline, exactly as core/auth/context.tsx drives it: the cart
+    // task's throw is captured and reported as a failure.
+    const cleanup = await runSignOutCleanup();
+    expect(cleanup).toEqual({ failures: ["cart"] });
+
+    // ...and the handoff emergency-wipes the kisok:* namespace on the REAL
+    // storage — the auth policy completion of a failed cleanup. Disk provably
+    // ends clean; the invariant under test is what MEMORY does after it.
+    const handoff = await finishSignOutHandoff(cleanup.failures);
+    expect(handoff).toEqual({ status: "ok" });
+    expect((await readPersistedCart()).status).toBe("miss");
+
+    // The same customer signs in again.
+    await useCartStore.getState().hydrate(OWNER);
+
+    // The next session's invariant: empty, unlocked, coherent.
+    const state = useCartStore.getState();
+    expect(state.lines).toEqual([]);
+    expect(state.locked).toBe(false);
+    expect(state.hydrated).toBe(true);
+    expect(state.ownerId).toBe(OWNER);
+    expect(state.persistence).toBe("persisted");
+
+    // Mutations work — a stale lock must not silently no-op them — and the
+    // old cart does not resurrect: the first durable write of the new session
+    // lands exactly the new line, never the wiped seed line.
+    useCartStore.getState().addItem(coldBrewInput);
+    await expect(useCartStore.getState().persistNow()).resolves.toEqual({ status: "persisted" });
+    expect(useCartStore.getState().lines).toEqual([{ ...coldBrewInput, lineId: coldBrewLineId }]);
+    expect(await readPersistedCart()).toEqual({
+      status: "hit",
+      value: {
+        version: 1,
+        ownerId: OWNER,
+        lines: [{ ...coldBrewInput, lineId: coldBrewLineId }],
+      },
+    });
   });
 
   it("registers NO guard — even a populated, locked cart never blocks sign-out (future Checkout owns the guard)", async () => {

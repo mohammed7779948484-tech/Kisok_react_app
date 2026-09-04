@@ -18,7 +18,8 @@ const OWNER_A = "11111111-2222-4333-8444-555555555555";
 const OWNER_B = "aaaaaaa1-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 
 const espressoLine: CartLine = {
-  lineId: "3a7f2c1d-9b4e-4d6a-8f2c-7e1b5d9a4c3f|e5d3c8a1-6f2b-4c9d-8a7e-3b1f4d6c8a2b",
+  lineId:
+    "3a7f2c1d-9b4e-4d6a-8f2c-7e1b5d9a4c3f|1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d|e5d3c8a1-6f2b-4c9d-8a7e-3b1f4d6c8a2b",
   variantId: "3a7f2c1d-9b4e-4d6a-8f2c-7e1b5d9a4c3f",
   productId: "0f4a9d3e-2b1c-4f8a-9e7d-5c6b8a3f1d2e",
   productDisplayName: "Cappuccino",
@@ -285,6 +286,35 @@ describe("hydrate — owner-scoped restore (AC-01, AC-02)", () => {
 
     expect(useStore.getState().lines).toEqual([]);
     expect(useStore.getState().persistence).toBe("persisted");
+    expect(raw.map.has(KEY)).toBe(false);
+  });
+
+  it("treats a semantically malformed lineId as corrupt: clean start + durable clear (H-T03b)", async () => {
+    // R1-02 convergence pin. The two halves were each already proven: the
+    // schema rejects a line whose lineId is not its derived identity
+    // (persisted-cart.schema.test.ts), and restore() durably clears OTHER
+    // corrupt shapes (the JSON and version tests above). This pins the
+    // COMPOSED path end-to-end at the store: the schema's semantic refine
+    // firing inside backend.read is what routes this payload down the corrupt
+    // path. The line is otherwise fully valid — only the lineId is wrong
+    // (H-F01's exact malformed shape: non-empty, unique, but not the derived
+    // identity) — because a line that restores with a wrong id can never merge
+    // with a later add of the same selection.
+    const raw = createMemoryStore();
+    seedCart(raw, {
+      version: 1,
+      ownerId: OWNER_A,
+      lines: [{ ...espressoLine, lineId: "garbage-id" }],
+    });
+    const useStore = createCartStore(createJsonStorage(raw));
+
+    await useStore.getState().hydrate(OWNER_A);
+
+    expect(useStore.getState().lines).toEqual([]);
+    expect(useStore.getState().persistence).toBe("persisted");
+    expect(useStore.getState().hydrated).toBe(true);
+    // Shared-kiosk safety: the corrupt blob is removed, not left for the next
+    // cold start — it may be a previous customer's cart.
     expect(raw.map.has(KEY)).toBe(false);
   });
 

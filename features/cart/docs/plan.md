@@ -391,3 +391,276 @@ Set the status at the top to `READY` only when every line here is true.
 - [x] Route mappings known, target screen named
 - [x] Changes outside `features/cart/` listed and justified
 - [x] No unnecessary capability or folder planned
+
+---
+
+# POST-MERGE PRE-CHECKOUT HARDENING (2026-09-03, post-PR-#11 merge)
+
+Amendment status: `READY` (was `DRAFT` until the Lead Planning Review
+at the end of this section flipped it — the checklist there is the
+DRAFT→READY record)
+
+This is a post-merge remediation amendment to the completed Cart feature
+(original plan above stays `READY` and historical). It exists because the
+Catalog ↔ Cart integration (PR #11, merged at 6161a4c) surfaced three bounded
+candidate findings that must be closed BEFORE any future Checkout feature
+starts. No new Feature workspace; no Generator command (no structural
+capability applies — all three are fixes inside existing artifacts).
+
+## Base and provenance
+
+- Branch: `fix/cart-pre-checkout-hardening`, created from the exact post-merge
+  `origin/develop` = `6161a4c9708875c5f811401c8e6bd1066a59ec39` (merge commit
+  of PR #11; parents 62f3634 + 1c6eb70). Verified: post-merge `pnpm verify`
+  exit 0 (54 suites / 543 tests) on that exact tree.
+- PR target: `develop`. The hardening PR stays DRAFT/UNMERGED at handoff.
+- Scope guard: NO Checkout artifact of any kind (no route, no CTA, no
+  `create_order` wiring, no prices/money, no inventory reservation, no order
+  submission/idempotency, no `features/checkout`). NO server Cart (no tables,
+  RPCs, Realtime, sync). Cart stays LOCAL device state with ONE Zustand store.
+
+## Findings (triaged from current code, all three VALID)
+
+### H-F01 — persisted Cart semantic identity invariant — VALID
+
+Evidence: `persistedCartSchema` (model/persisted-cart.schema.ts) validates only
+that each `lineId` is a non-empty string and that lineIds are unique — it never
+proves `stored line.lineId === deriveLineId(line)` (model/cart-rules.ts).
+Consequence: a shape-valid but semantically malformed payload restores a line
+whose identity does not match its own fields; the next `addLine` for the same
+variant/options derives the canonical id, finds no match, and appends a SECOND
+line for the same selection. UUID sub-finding: `postgresUuidSchema` accepts
+case-insensitive hex (PostgreSQL semantics), but `deriveLineId` joins the raw
+strings — `ABCDEF…` and `abcdef…` (the SAME uuid to PostgreSQL) produce
+different identity strings, so two differently-cased copies of one selection
+are two lines and never merge. Real app flows always write lowercase
+(gen_random_uuid() hex), so no legitimate payload is affected by requiring
+canonical identity.
+
+### H-F02 — sign-out failure / same-owner in-memory safety — VALID
+
+Evidence: `clearCartForSignOut` (state/sign-out-cleanup.ts) awaits
+`store.clear()`, and on a rejected durable result THROWS before the final
+`useCartStore.setState({ locked: false })` line runs. The auth pipeline then
+emergency-wipes the `kisok:*` namespace (`finishSignOutHandoff` →
+`clearKisokStorage`) so DISK ends clean, but in MEMORY the store still holds
+`locked` (stale), `persistence: "clearFailed"` (stale — disk is actually
+empty), `ownerId`/`hydrated` (stale session). `restore()` (cart-store.ts:254)
+short-circuits when `hydrated === true && ownerId === same owner` — so when
+the SAME customer signs in again, `hydrate()` no-ops and the stale state
+survives: a stale lock silently no-ops the next session's mutations
+(exactly the R-T04-01 class the module itself documents), and the stale
+`clearFailed` renders a false destructive warning. Lines themselves do not
+resurrect (clear() empties them synchronously and disk is wiped) — the leak is
+the session-scoped envelope, which matters before Checkout because Checkout
+will hold the lock.
+
+### H-F03 — QuickCart DialogContent advisory warning — VALID, reproduced live
+
+Reproduced 2026-09-03 on the restored post-merge app (static export, hosted
+TEST, signed in as the documented Customer): every QuickCartSheet open emits
+exactly `Warning: Missing \`Description\` or \`aria-describedby={undefined}\`
+for {DialogContent}.`(Add-to-cart open AND affordance reopen; dialog
+focus/Escape/close otherwise functional). Path: quick-cart-sheet.tsx →
+components/ui/adaptive-sheet.tsx`AdaptiveSheetContent`→ @rn-primitives/dialog
+(web → @radix-ui/react-dialog`DescriptionWarning`). Root cause: the shared
+`AdaptiveSheet`primitive exports no`Description`member, while its sibling`components/ui/dialog.tsx`DOES export`DialogDescription` — an asymmetry. Both
+current consumers (QuickCartSheet, /ui-lab demo) render Title-only and hit the
+warning.
+
+## Decisions (with rejected alternatives)
+
+1. **Identity canonicalization boundary = `deriveLineId`.** Lowercase the
+   UUID components (variantId + each optionValueId) BEFORE sorting/joining.
+   PostgreSQL uuid comparison is case-insensitive, so identity must be too.
+   Rejected: tightening `postgresUuidSchema` to lowercase-only (would reject
+   contract-valid input at the parse boundary — the boundary deliberately
+   mirrors PostgreSQL's acceptance); a global shared UUID helper (no
+   evidence-backed architectural reason; forbidden by this assignment).
+2. **Semantic persisted validation reuses the one domain helper.**
+   `persistedCartSchema` gains a refine proving each
+   `line.lineId === deriveLineId(line)`, importing `deriveLineId` from
+   cart-rules (model-internal, no cycle: rules → line-schema;
+   persisted-schema → line-schema + rules). Rejected: duplicating a second
+   identity algorithm inside the schema (drift risk — explicitly forbidden).
+3. **Sign-out failure-path memory reset, ordered BEFORE the throw.**
+   `clearCartForSignOut` resets the full session envelope
+   (`locked: false, ownerId: null, hydrated: false, persistence: "unknown"`)
+   inside the rejected branch, after `clear()` resolves and BEFORE the
+   rejection throw. The next hydrate then sees `hydrated === false` and runs
+   the real restore against the (emergency-wiped) disk: empty, unlocked,
+   coherent. Rejected: changing the same-owner hydrate shortcut semantics (a
+   real re-read contract change touching every session, not just the failure
+   path); swallowing the throw (forbidden — failure visibility must be
+   preserved); a second sign-out path (forbidden).
+   - Reconciliation (2026-09-03, during H-T02): the original wording said
+     the reset was "unconditional". The implementer proved empirically that
+     a literally-unconditional reset (also on the SUCCESS path) would wipe
+     the honest `persistence: "persisted"` that `clear()` just proved, breaking
+     the existing success-path contract (its test pins `persisted`). The
+     success path needs no envelope reset at all — it is already coherent
+     (empty, unlocked, `persisted`, disk actually cleared; a different-owner
+     hydrate runs the owner-switch reset, and the same-owner shortcut then
+     operates on non-stale state). The scoped placement closes the exact
+     H-F02 failure path with the smallest change; the invariant is
+     unchanged.
+4. **H-F03 fix is a shared-primitive completion + consumer wiring.** Add
+   `AdaptiveSheetDescription` to `components/ui/adaptive-sheet.tsx` mirroring
+   the sibling `DialogDescription` pattern (`DialogPrimitive.Description
+asChild` + muted body Text), export it from `components/ui/index.ts`, and
+   render it in QuickCartSheet (a real, screen-reader-useful description) and
+   in the /ui-lab demo sheet (the other consumer, so the shared change leaves
+   no consumer in the warning state). Shared ownership justification: the
+   missing member is a primitive-level asymmetry vs its sibling dialog.tsx and
+   vs the @rn-primitives/radix contract; both consumers hit it; the fix
+   ADDS a member (no behavior change for any existing use). Rejected:
+   `aria-describedby={undefined}` pass-through (silences the warning but
+   deliberately ships a description-less dialog — worse a11y than the
+   sibling-primitive pattern); suppressing/hiding the warning (forbidden).
+5. **No server migration, no Catalog import, no checkout preparation.** All
+   fixes are Cart-local + the one shared UI member. The UUID sub-finding is
+   fixed at the Cart identity boundary only.
+
+## Task graph
+
+| Task   | Mode                     | Acceptance             | Objective                                                                                                                                                  | Depends on | Required Skills                                                        |
+| ------ | ------------------------ | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------- |
+| H-T01  | bug                      | Supporting AC-03/AC-02 | Canonical identity: UUID-cased `deriveLineId` + persisted semantic refine                                                                                  | —          | test-driven-development                                                |
+| H-T02  | bug                      | Supporting AC-07       | Sign-out failure → same-owner re-auth coherence                                                                                                            | —          | test-driven-development                                                |
+| H-T03  | bug                      | Supporting AC-10/AC-12 | QuickCart opens with no DialogContent advisory; description linked                                                                                         | —          | test-driven-development, kisok-design-system, kisok-react-native-rules |
+| H-T03b | behavior (test-only pin) | Supporting AC-02       | Store-level composed-path pin: semantically malformed lineId on disk → restore treats it as corrupt → durable clear + start empty (Round 1 reviewer R1-02) | H-T01      | test-driven-development                                                |
+
+Rounds: Round 1 = H-T01 + H-T02 (domain/session safety). Round 2 = H-T03
+(runtime/accessibility + convergence) + H-T03b (the R1-02 store-level
+composed-path convergence pin — test-only, cart-store.test.ts). H-T01 and H-T02 are independent (model
+vs state seams) but share the sign-out/hydrate intersection only through
+existing tests, so they may run sequentially in Round 1.
+
+## Allowed file scope
+
+- H-T01: `features/cart/model/cart-rules.ts`, `cart-rules.test.ts`,
+  `persisted-cart.schema.ts`, `persisted-cart.schema.test.ts`
+  - Lead scope addendum (2026-09-03, after H-T01's first pass): the new
+    semantic refine correctly REJECTS three pre-existing test fixtures that
+    embed exactly the H-F01 malformed shape (truncated hand-written lineIds
+    that never matched the real derivation) —
+    `features/cart/state/cart-store.test.ts` (espressoLine),
+    `features/cart/state/use-cart.test.tsx` (cappuccinoLine),
+    `features/cart/screens/full-cart/full-cart-screen.test.tsx` (same
+    truncated fixture), and — per the H-T01 task reviewer (R-H01-2), same
+    class — the two sibling RENDERING fixtures that never parse through the
+    schema but still embed the malformed literal:
+    `features/cart/components/cart-item-row.test.tsx`,
+    `features/cart/components/quick-cart-sheet.test.tsx`. The one-line fixture lineId corrections to the true
+    derived identities are part of H-T01's blast radius (the invariant
+    catching real malformed data is the finding proven, not a test to weaken);
+    R-T07-03 in the original review anticipated this exact fixture pass.
+- H-T02: `features/cart/state/sign-out-cleanup.ts`, `sign-out-cleanup.test.ts`
+  - Lead scope addendum (2026-09-03, Round 1 gate R1-01): the comment-only
+    accuracy refresh of the post-`clearCartForSignOut` window note in
+    `features/cart/state/use-cart.ts` (reviewer micro-note R-H02-4 —
+    comment text only, zero executable change) is part of H-T02's blast
+    radius; authorization mirrored here per the Round 1 reviewer.
+- H-T03: `components/ui/adaptive-sheet.tsx`, `components/ui/index.ts`,
+  `components/app/ui-lab.tsx` (the other consumer — 2-line demo update,
+  explicitly justified by decision 4),
+  `features/cart/components/quick-cart-sheet.tsx`,
+  `quick-cart-sheet.test.tsx`
+- H-T03b: `features/cart/state/cart-store.test.ts` (test-only composed-path
+  pin; authorized by the Round 1 gate R1-02 disposition and the task-graph
+  row — mirrored here per the final reviewer FR-H-1)
+- NOTHING else. No `docs/**` (control documents are the Lead's), no tests
+  outside the feature except none are needed (the primitive has no
+  `__tests__/adaptive-sheet` suite; quick-cart-sheet.test.tsx owns the
+  rendered net), no migrations, no other features.
+
+## RED strategy (all three: fail-for-the-intended-reason first)
+
+- H-T01: (a) valid line fields + wrong non-empty lineId → payload REJECTED;
+  (b) two semantically identical selections + different fake lineIds →
+  payload REJECTED; (c) canonical payload (incl. current real-world payload
+  shapes) still ACCEPTED; (d) `deriveLineId` treats differently-cased UUIDs
+  of one uuid as one identity; (e) store/rules-level: adding the same
+  selection with different UUID casing MERGES one line.
+- H-T02: the full assignment regression — same owner, populated + locked
+  cart, injected `failOn` durable clear, emergency storage reset succeeding,
+  sign-out completing per current auth policy, same owner signs in again →
+  cart EMPTY, UNLOCKED, hydrated, mutations work, old cart does not
+  resurrect. Driven through the real public seam (`runSignOutCleanup` /
+  `clearCartForSignOut` + store + storage fallback), preserving the throw's
+  visibility.
+- H-T03: jest (jest-expo) resolves the NATIVE `@rn-primitives/dialog`
+  variant, where the Radix `DescriptionWarning` never fires — the warning is
+  web-variant-only. So the deterministic RED is the missing accessibility
+  contract itself: (a) `components/ui` must export
+  `AdaptiveSheetDescription` (fails today — the member does not exist);
+  (b) QuickCartSheet must render a description element in the dialog's
+  accessibility tree (testing-library text query — fails today: no
+  description exists). GREEN: both pass. The authoritative
+  zero-DialogContent-warning evidence is the LIVE browser console (web
+  variant resolves there) on the final journey — never claimed from jest.
+
+## Checks and verification
+
+- Focused: the three task test files + cart feature suite (11 suites) +
+  integration feature suite (5 suites) + product-detail suites (regression
+  nets for the seam).
+- Full: `pnpm verify` (typecheck, lint, format, test:ci, check:docs,
+  check:commits, e2e-appid, ci-scripts, db:verify, generate:smoke),
+  `pnpm export:web`.
+- Runtime: hosted TEST journey per `docs/environment.md` (Customer@gmail.com)
+  — the full merged Catalog → Local Cart customer journey post-fix, including
+  repeated QuickCart open with ZERO advisory warnings, sign-out/re-auth
+  non-resurrection, reload persistence, 3 sizes (1280×800, 800×1180,
+  480×900), no server-cart network calls.
+- CI: exact-final-head GitHub Actions (Verify / Web bundle / Expo doctor).
+- Failure paths (H-F01 corrupt payloads, H-F02 injected durable failure) are
+  deterministic jest evidence, never "live" claims.
+
+## Risks
+
+- Over-strict semantic rejection could break a legitimate stored payload →
+  mitigated by decision 1's lowercase-canonical equivalence (real payloads
+  are lowercase-derived) + RED case (c).
+- The H-F02 reset changes post-sign-out `persistence` from a standing
+  `clearFailed` to `unknown` → intended (the emergency wipe makes the field
+  false); normal-path behavior is unchanged (verified by existing suites).
+- Shared primitive member addition could collide with parallel features →
+  additive-only, no existing member changed; reviewer challenges it.
+- H-F03's Radix warning is unreachable in jest (native variant) → the jest
+  RED pins the missing description contract, and the live browser journey
+  owns the authoritative console evidence (web variant resolves there).
+
+## `DRAFT` → `READY` for THIS amendment
+
+Lead Planning Review checklist (executed by the Lead, no Plan Reviewer agent):
+
+- [x] Only pre-Checkout Cart hardening included; no Checkout artifact; no
+      server Cart; no Preparation/kiosk-runtime work
+- [x] H-F01: canonical identity owner explicit (deriveLineId); persisted
+      validation reuses the domain helper (no second algorithm); valid
+      canonical payloads stay accepted; malformed semantic identity rejected;
+      UUID casing decision evidence-backed (PostgreSQL case-insensitivity vs
+      raw-string join)
+- [x] H-F02: ownership at the cart/auth seam (clearCartForSignOut — the
+      smallest correct owner; core/auth needs NO change); memory leak path
+      actually closed (reset before throw + hydrate re-runs); failures stay
+      observable (throw preserved, runSignOutCleanup records, emergency wipe
+      preserved); auth fallback preserved; no second sign-out flow
+- [x] H-F03: warning reproduced live FIRST (exact text + path recorded);
+      accessibility fix at the correct owner (shared primitive asymmetry +
+      consumer wiring); no console suppression; all current consumers
+      considered (QuickCartSheet + ui-lab)
+- [x] Architecture: Cart local-only; one Zustand store; integration
+      public-only; no Catalog deep import; no speculative shared abstraction
+      (the AdaptiveSheetDescription member completes an existing primitive's
+      documented surface)
+- [x] Tasks: every valid finding maps to RED→GREEN; write scopes narrow;
+      Required Skills real; no Generator misuse (no structural artifact)
+- [x] Runtime: merged Catalog→Cart journey re-tested post-fix; QuickCart
+      console checked live; sign-out normal path checked live;
+      failure-injection cases deterministic only
+- [x] Integration: branch starts from post-PR11 develop (6161a4c); latest
+      develop re-check before final verification; PR targets develop
+
+Amendment status: `READY`

@@ -11,9 +11,16 @@ export function deriveLineId(input: {
   variantId: string;
   optionSelections: { optionValueId: string }[];
 }): string {
-  // Sorted: the same set of option values is the same selection in any order (plan decision 3).
-  const optionValueIds = input.optionSelections.map((selection) => selection.optionValueId).sort();
-  return [input.variantId, ...optionValueIds].join("|");
+  // Canonicalized identity (H-F01, hardening decision 1): PostgreSQL compares
+  // uuid text case-insensitively, so the UUID components (variantId and each
+  // optionValueId) are lowercased BEFORE sorting and joining — two differently
+  // cased spellings of one uuid are ONE identity, and a later add of the same
+  // selection merges. The parse boundary (postgresUuidSchema) still mirrors
+  // PostgreSQL's case-insensitive acceptance; only the derived id is canonical.
+  const optionValueIds = input.optionSelections
+    .map((selection) => selection.optionValueId.toLowerCase())
+    .sort();
+  return [input.variantId.toLowerCase(), ...optionValueIds].join("|");
 }
 
 export function addLine(lines: CartLine[], input: AddToCartInput): CartLine[] {

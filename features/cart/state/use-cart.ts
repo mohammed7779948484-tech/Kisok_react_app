@@ -131,12 +131,17 @@ export function useCart(): CartView {
 // useCart() consumer must hydrate first (`hydrateCart`, or a mounted
 // `useCart()` elsewhere) — until the store hydrates, their mutations are
 // logged no-ops: the store gates on `hydrated` by design. One window the
-// gate does NOT cover: after `clearCartForSignOut`, `hydrated` stays true
-// with the previous ownerId until the next hydrate — unreachable in the
-// delivered app (every mutation source unmounts at the auth gate) and
-// covered by the owner-mismatch discard at the next different-owner hydrate
-// (B-FR-02 carry-forward; future programmatic integrators must re-hydrate
-// before driving mutations). Name mapping onto
+// gate does NOT cover: after `clearCartForSignOut` SUCCEEDS, `hydrated`
+// stays true with the previous ownerId until the next hydrate (the success
+// cleanup resets only the lock) — unreachable in the delivered app (every
+// mutation source unmounts at the auth gate) and covered by the
+// owner-mismatch discard at the next different-owner hydrate (B-FR-02
+// carry-forward; future programmatic integrators must re-hydrate before
+// driving mutations). When `clearCartForSignOut` FAILS a durable clear,
+// the H-F02 hardening instead resets the full session envelope
+// (`locked`/`ownerId`/`hydrated`/`persistence`) BEFORE the throw — see
+// sign-out-cleanup.ts — so `hydrated === false` forces the next hydrate to
+// run a real restore. Name mapping onto
 // the store's actions: public lockCart/unlockCart/hydrateCart →
 // store lock/unlock/hydrate.
 

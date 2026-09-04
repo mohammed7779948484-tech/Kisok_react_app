@@ -25,16 +25,27 @@ import { useCartStore } from "./cart-store";
  * `SignOutGuard` contract, and "Never combine guards and cleanup"). The cart
  * has nothing sign-out must wait for, so it must never be able to block one.
  *
- * The memory reset is deliberately minimal. `clear()` already empties
- * `lines` synchronously and reports `persistence` honestly — a failed clear
- * stays visible as `clearFailed` for the CART SURFACES to warn about (T08/T09
- * — the auth lifecycle consumes this task's throw, not the field) — and the
- * next session's `hydrate()` owns `ownerId`/`hydrated` through its
- * owner-switch reset. The one field neither covers is `locked`: a lock
- * belongs to ONE customer's critical operation and must never leak into the
- * next session (R-T04-01). On the failure path the throw comes first — the
- * auth emergency path owns recovery, and a hydrate for a different owner
- * resets the lock anyway.
+ * The session envelope reset PRECEDES the throw (H-F02). On a failed durable
+ * clear the reset is the COMPLETE session-scoped envelope —
+ * `locked: false, ownerId: null, hydrated: false, persistence: "unknown"` —
+ * applied after `clear()` resolves (lines are already `[]` from its
+ * synchronous set) and before the rejection propagates. The auth pipeline's
+ * emergency wipe (`finishSignOutHandoff` → `clearKisokStorage`) makes DISK
+ * clean, but nothing after the throw would ever reset MEMORY: without the
+ * pre-throw reset the stale envelope survives the whole cycle — a stale
+ * `locked` silently no-ops the next session's mutations (R-T04-01), a stale
+ * `clearFailed` warns about data the emergency wipe already removed, and a
+ * stale `ownerId`/`hydrated` lets `restore()`'s same-owner hydrate shortcut
+ * no-op, so the SAME customer's next sign-in inherits the stale state. With
+ * `hydrated === false` the shortcut is unreachable with stale state: the
+ * next hydrate runs a REAL restore against the emergency-wiped disk —
+ * empty, unlocked, coherent.
+ *
+ * On the success path the reset stays minimal (`locked` only): `clear()`
+ * proved the durable wipe, `persistence` keeps its honest `persisted` for
+ * the cart surfaces, and the next session's `hydrate()` owns the rest — a
+ * different owner through its owner-switch reset, the same owner through a
+ * shortcut that is now provably non-stale.
  */
 /**
  * Exported for its TEST ONLY (sign-out-cleanup.test.ts drives it directly to
@@ -46,6 +57,21 @@ export const clearCartForSignOut = async (): Promise<void> => {
   const store = useCartStore.getState();
   const result = await store.clear();
   if (result.status === "rejected") {
+    // The session envelope reset comes BEFORE the throw (H-F02): once the
+    // failure propagates, core/auth's emergency kisok:* namespace reset owns
+    // DISK, but nothing else would ever reset MEMORY. Without this, the
+    // stale envelope survives the whole cycle — a stale lock no-ops the next
+    // session's mutations (R-T04-01), a stale clearFailed warns about data
+    // that no longer exists, and a stale ownerId/hydrated lets restore()'s
+    // same-owner shortcut no-op the re-hydrate. Lines are already [] from
+    // clear()'s synchronous set; `hydrated === false` then forces the next
+    // hydrate to run a real restore against the emergency-wiped disk.
+    useCartStore.setState({
+      locked: false,
+      ownerId: null,
+      hydrated: false,
+      persistence: "unknown",
+    });
     // Propagate: runSignOutCleanup records the failure and core/auth's
     // emergency kisok:* namespace reset runs. Swallowing it here would leave
     // the previous customer's cart on disk with no one left to clear it.
@@ -53,7 +79,8 @@ export const clearCartForSignOut = async (): Promise<void> => {
       `Cart sign-out cleanup could not durably clear the cart: ${result.error.message}`,
     );
   }
-  // Full memory reset of what clear() does not cover — a stale lock must
+  // Success path: clear() proved the durable wipe and already reported the
+  // honest `persisted`, so only the lock needs resetting — a stale lock must
   // never silently no-op the next customer's mutations (R-T04-01).
   useCartStore.setState({ locked: false });
 };

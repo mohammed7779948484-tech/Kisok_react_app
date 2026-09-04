@@ -321,3 +321,182 @@ catalog regression, honest 13-AC test coverage). Reviewer re-ran: cart
 | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | B-FR-01 | minor    | RESOLVED — both Definition-of-Delivery boxes in brief.md ticked with pointers to the RUNTIME EVIDENCE section (sizes + measured targets; a11y assertions).                                                                                                                                                                                                                                                                                                                      |
 | B-FR-02 | minor    | ACCEPTED-CARRY-FORWARD — the post-sign-out `hydrated`-stale window is unreachable in the delivered app (all mutation sources unmount at the auth gate) and mitigated by the jest-proven owner-mismatch discard at the next different-owner hydrate; boundary comment in use-cart.ts extended to name the window for future programmatic integrators (the PHASE C integration re-hydrates via mounted useCart() consumers, which resets state through the profile-keyed effect). |
+
+---
+
+## POST-MERGE PRE-CHECKOUT HARDENING — task reviews
+
+### H-T01 review (fresh code-reviewer, 2026-09-03, uncommitted tree → 2096e5b)
+
+Verdict: **0 blocking / 0 major / 2 minor — H-T01 delivered as planned.**
+
+The reviewer independently reproduced the RED evidence empirically (stash
+technique with byte-identical tree restoration): 6 failing tests pre-fix for
+exactly the intended reasons (no canonicalization: "Expected: 3a7f… /
+Received: 3A7F…"; cross-casing non-merge ×2; malformed lineIds accepted ×3),
+and the new implementation against the OLD fixtures reproduced the exact
+12-failure rejection surface with the refine's exact ZodError message.
+Backward compatibility verified at the code level: the only line-producing
+path is addItem → addLine → deriveLineId; PostgreSQL jsonb emits lowercase
+uuid text, so pre-fix and post-fix derivations are byte-identical for every
+payload the real app has ever written; the theoretical uppercase-legacy
+payload falls into the designed corrupt-payload path (durable clear, start
+empty), never a crash. Lowercase-before-sort is the correct order
+(mixed-case hex would sort differently); `toLowerCase` is locale-independent;
+the separator stays unambiguous. No import cycle
+(persisted-cart.schema → cart-rules → cart-line.schema). Scope exact.
+
+| ID      | Severity | Finding                                                                                                                                                                                 | Disposition                                                                                                                                                                                              |
+| ------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R-H01-1 | minor    | Lead-owned plan.md/todo.md failed prettier (table padding/backtick spacing)                                                                                                             | RESOLVED — Lead ran prettier --write on both docs before the commit; format:check green                                                                                                                  |
+| R-H01-2 | minor    | 2 sibling rendering fixtures (cart-item-row, quick-cart-sheet tests) embedded the same malformed truncated lineId literal (never parsed through the schema; no assertion depends on it) | RESOLVED — same-class fixture pass authorized via the Lead's scope addendum and applied by the same implementer (H-T01-FIX2); the cappuccino fixture family now carries one canonical identity repo-wide |
+
+**H-T01 TASK GATE: PASS.**
+
+### H-T02 review (fresh code-reviewer, 2026-09-03, uncommitted tree → 5da1ae8)
+
+Verdict: **0 blocking / 0 major / 3 minor + 1 deferred micro-note — H-T02
+delivered as promised; the H-F02 failure path is fully closed.**
+
+The reviewer traced the complete production cycle
+(core/auth/context.tsx:273-283): clear() rejected → envelope reset → throw →
+runSignOutCleanup records ["cart"] → finishSignOutHandoff emergency-wipes
+kisok:\* (incl. the marker) → same-owner re-auth → restore() shortcut
+bypassed (hydrated === false) → owner-reset → real read against wiped disk →
+miss → coherent. The RED was empirically reproduced via the sanctioned stash
+round-trip (tree restored byte-identical, checksum-verified): 1 failed /
+5 passed with the first failing assertion `expect(state.locked).toBe(false)`
+→ Expected false / Received true — the stale envelope itself, not a patch
+artifact (the patched clear models the real clear's in-memory semantics).
+The throw block was verified byte-identical against HEAD. Every claimed
+check number re-verified identically (cart 11/179, integration 5/46, auth
+5/41, product-detail 3/32, typecheck 0, scoped eslint 0, prettier clean).
+The Lead-accepted deviation (scoped placement of the reset) was examined and
+confirmed sound; the reconciled plan wording matches the code exactly.
+
+| ID      | Severity                                            | Finding                                                                                                                                                                                                        | Disposition                                                                                                                                                                                                                                                                                                                            |
+| ------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R-H02-1 | minor (pre-existing, not introduced by this change) | Theoretical in-flight-restore interleave on the SUCCESS path: a restore whose post-read set lands after clear()'s synchronous set could resurrect lines in memory; the same-owner shortcut then preserves them | ACCEPTED-CARRY-FORWARD — unreachable in the delivered app (all hydrate call sites sit behind the auth gate; Phase 2 runs after the Supabase signOut round-trip); exists at merged HEAD; the H-F02 failure path now CONTAINS it (the reset forces a real restore whose owner-reset clears lines); out of this hardening's bounded scope |
+| R-H02-2 | minor (bookkeeping)                                 | The task brief said 2 changed files but the tree showed 3 — the third was the Lead's plan.md decision-3 reconciliation                                                                                         | RESOLVED — authorship made explicit: the plan.md hunk is the Lead's reconciliation edit, committed alongside the implementer's 2 files + the R-H02-4 comment refresh                                                                                                                                                                   |
+| R-H02-3 | minor (observation)                                 | sign-out-cleanup.test.ts deep-imports @/core/auth/sign-out (the repo's only feature→core deep import; mirrors context.tsx's own deep import)                                                                   | NOTED — test-only; no ESLint boundary rule covers that direction; the test documents why; recorded so it is not cited as precedent for production feature code                                                                                                                                                                         |
+| R-H02-4 | micro-note                                          | use-cart.ts post-clearCartForSignOut comment accurate only for the success path after the fix                                                                                                                  | RESOLVED — same-implementer comment accuracy refresh (H-T02-FIX1, 5da1ae8): success path scoped, failure path documented with the sign-out-cleanup.ts pointer, B-FR-02 carry-forward retained                                                                                                                                          |
+
+**H-T02 TASK GATE: PASS.**
+
+## Round 1 gate review (fresh code-reviewer, 2026-09-03, diff 6161a4c..a2d18db)
+
+Verdict: **0 blocking / 0 major / 2 minor — ROUND 1 GATE: PASS.**
+
+All Round 1 axes examined clean: one authoritative identity rule end-to-end
+(deriveLineId is the only lineId producer in source, grep-verified; the
+schema refine reuses it; addLine merges by it; addToCartInputSchema
+strip-drops supplied ids; restore validates on read); UUID equivalence
+everywhere incl. the integration seam (deriveLineId is in the convergence
+suite's forbidden-specifier list — the seam never reimplements identity);
+hydration/restore hit/miss/mismatch-discard/corrupt→durable-clear unchanged
+(the stricter schema routes malformed identities through the same
+shape-agnostic corrupt plumbing); the full sign-out failure machine leaks
+nothing into an authenticated session in either re-auth order; locking
+semantics unchanged and pinned; core/ untouched (zero diff); scope exact.
+Full suite 54/552 reproduced identically (543 baseline + 8 H-T01 + 1 H-T02).
+
+| ID    | Severity | Finding                                                                                                                                                                                                    | Disposition                                                                                                           |
+| ----- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| R1-01 | minor    | The comment-only use-cart.ts refresh (R-H02-4) sat outside plan.md's written H-T02 file scope; authorization existed only in review.md/worklog                                                             | RESOLVED — one-line scope addendum mirrored into plan.md (same pattern as H-T01's fixture addendum)                   |
+| R1-02 | minor    | No store-level test pins the composed path "semantically malformed lineId on disk → restore treats it as corrupt → durable clear + start empty" (both halves individually proven; plumbing shape-agnostic) | RESOLVED — scheduled as micro-task H-T03b in Round 2 (test-only pin in cart-store.test.ts; task graph + todo updated) |
+
+**ROUND 1 GATE: PASS.**
+
+### Round 2 gate review (fresh code-reviewer, 2026-09-03, commits e651812 + bc986bd + the R2-1 follow-up)
+
+Verdict: **0 blocking / 0 major / 2 minor + 1 micro-note — ROUND 2 GATE: PASS.**
+(This review also discharges the H-T03 task review — see the worklog note.)
+
+Examined clean: the new AdaptiveSheetDescription is byte-for-byte the a11y
+shape of the sibling DialogDescription (asChild → Text variant body tone
+muted, DescriptionProps typing, placed after the Title); the primitive chain
+genuinely wires aria-describedby on web (rn-primitives dialog.web → Radix
+Content :277 sets aria-describedby=descriptionId; Description :308 carries
+the id; DescriptionWarning :353-364 fires only when the element is missing)
+— the fix wires real aria-describedby, it does not merely silence. Only two
+production AdaptiveSheet consumers exist and both are wired; the barrel
+export is purely additive. The description is screen-reader-useful, inside
+the header under the Title, does not duplicate the count, renders in BOTH
+presentations (children unconditional). Console honesty verified (no console
+mock in setup; the Radix warning genuinely unreachable in jest; the tests
+honestly delegate the zero-warning browser evidence). H-T03b composes
+schema+store end-to-end with the real backend post-state assertion. RED
+teeth re-proven independently in a disposable copy (pre-H-T01 schema → the
+malformed line restores with the exact +23 diff; pre-Round-2 code → 3 failed
+
+- TS2305). Scope exact; no suppressions; no aria-describedby={undefined}
+  hack in code. All check numbers reproduced (54/556 full, 27/285 scoped).
+
+| ID   | Severity                                          | Finding                                                                                                                                     | Disposition                                                                                                              |
+| ---- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| R2-1 | minor                                             | No compact-presentation pin for the description (the 3 new tests ran in the LANDSCAPE default)                                              | RESOLVED — one assertion added to the existing compact/portrait test (H-T03-FIX2); the pin now covers both presentations |
+| R2-2 | minor (pre-existing, not introduced by this diff) | ConfirmDialog renders its Description conditionally — a future Title-only caller re-enters the warning class (all current callers pass one) | LEDGERED — recorded as a pattern note for future consumers; no change required in this hardening                         |
+| R2-3 | micro-note                                        | ui-lab demo body's first sentence near-duplicates the new description                                                                       | ACCEPTED — cosmetic only, dev-only surface; the demo's own body text predates the change                                 |
+
+**ROUND 2 GATE: PASS.**
+
+## FINAL REVIEW (fresh code-reviewer, 2026-09-03, complete diff 6161a4c..05c6779)
+
+Verdict: **SHIP-READY — 0 blocking / 0 major / 3 minor.**
+
+The reviewer re-ran every number fresh and matched them exactly (54 suites /
+556 tests full; 27/285 scoped; cart 11/183; integration 5/46; cart-store
+51/51; typecheck/lint/format 0). All 10 axes verified clean: all three
+findings genuinely closed (canonical identity end-to-end with the correct
+lowercase-before-sort order; the pre-throw envelope reset with the
+byte-identical throw and the fail-closed double-failure machinery untouched;
+the sibling-shaped Description member wired into both consumers with both
+presentations pinned); grep-verified ZERO console suppressions, zero
+eslint-disable/@ts-ignore, zero aria-hacks in the diff; core/ and the
+integration/catalog features zero-diff; zero Checkout artifacts; RED honest
+by construction (each new assertion contradicts the read pre-fix code); the
+uppercase-legacy edge consciously dispositioned as the designed
+corrupt→durable-clear path. db:verify SKIP in the reviewer's sandbox is
+environmental (zero DB surface in the diff; CI owns the real run — and CI's
+Verify job is green on the final head).
+
+| ID     | Severity | Finding                                                                                                                                  | Disposition                                                                                                                                                                     |
+| ------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-H-1 | minor    | plan.md's allowed-file-scope enumeration had no H-T03b bullet naming cart-store.test.ts (authorized only via the task graph/rounds text) | RESOLVED — the bullet is mirrored into the scope enumeration (this commit)                                                                                                      |
+| FR-H-2 | minor    | PR #12 body was not independently verifiable from the reviewer's sandbox (GitHub API rate-limited there)                                 | RESOLVED — the Lead re-fetched PR #12 with credentials: draft=True, open, base=develop, head=05c67794, mergeable=True, body 7665 chars with the final-evidence sections present |
+| FR-H-3 | micro    | The review invocation said "12 commits"; git rev-list counts 11 — an invocation-side discrepancy, no repository record claims 12         | NOTED — no repo action needed                                                                                                                                                   |
+
+**Exact-final-head CI (05c6779): Verify / Web bundle / Expo doctor all
+success; Android prebuild + Maestro skipped (native tier — no device in this
+environment, per policy).**
+
+**FINAL REVIEW CONVERGED: SHIP-READY.**
+
+## QUALITY AUDIT (fresh quality-auditor, 2026-09-03, final HEAD 09a2b13)
+
+Verdict: **CLEAN-WITH-OBSERVATIONS.**
+
+The auditor re-ran every command fresh on the exact final HEAD (54 suites /
+556 tests digit-for-digit; typecheck/lint/format/verify all 0) and verified
+delivery truth: PR #11 genuinely merged (merge-base = 6161a4c; develop tip
+6161a4c with parents 62f3634+1c6eb70); the hardening branch starts from
+exactly that state (first hardening commit's parent = 6161a4c; no stale
+main; feature/cart untouched at 600882a); all three findings genuinely fixed
+RED-first (the pre-fix schema at 6161a4c verifiably lacks the refine; the
+exported dist bundle built from fixed code at 23:55 — the journey ran fixed
+code); 4/4 task gates and 2/2 round gates real with fresh reviewers; zero
+checkout/server-cart/suppression artifacts; all four control docs
+append-only (numstat 271/0, 150/0, 22/0, 94/0); the docs-only commits after
+the reviewed head changed nothing code-side; PR #12 open against develop
+unmerged (refs/pull/12/merge parents = 6161a4c + 09a2b13).
+
+| ID  | Category      | Observation                                                                                                                                         | Disposition                                                                                                             |
+| --- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| 1   | not-delivered | PR #9's external advance (23a4222→1f446ed→70a0a01) was observed but unrecorded in control docs                                                      | RESOLVED — recorded in todo.md's hardening section + the PR body (this delivery cycle)                                  |
+| 2   | not-evidenced | PR #12 draft=True + exact-head CI green rest on Lead-credentialed API evidence (the auditor's sandbox is rate-limited)                              | RESOLVED — Lead re-fetch evidence: PR #12 draft=True/open/base=develop; CI on 05c6779 all-success; refreshed at handoff |
+| 3   | micro         | The journey's staff-takeover prose did not state the JS runtime persisted                                                                           | RESOLVED — the worklog journey record now states the reload + same-runtime continuity explicitly                        |
+| 4   | stale-record  | todo.md's top "Current checkpoint" still pointed at the PR #8 merge (two deliveries stale)                                                          | RESOLVED — checkpoint refreshed to the PR #12 human decision                                                            |
+| 5   | micro         | H-T03 row said "Round 2 review pending"; plan.md carried dual DRAFT/READY status lines; the H-T03 task-graph row cited AC-06 instead of AC-10/AC-12 | RESOLVED — all three refreshed                                                                                          |
+| 6   | observation   | The orchestration worklog tail (FR-H dispositions, 09a2b13 push, handoff) lived only in repo commit records                                         | RESOLVED — the Super Z worklog final entries are appended at handoff                                                    |
+
+**All observations closed. QUALITY AUDIT: CLEAN-WITH-OBSERVATIONS (closed).**
