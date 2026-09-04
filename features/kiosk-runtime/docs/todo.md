@@ -13,8 +13,8 @@ defeats its only purpose.
 
 ```
 Current round     : 5 — post-review remediation (R5-01…R5-13)
-Current task      : T29 (next) — T28 PASS (fresh review 0 blocking / 0 major; 1 comment-accuracy minor closed in-task)
-Current stage     : remediation task loop — T21–T28 done (980 tests green); T29 (docs) next
+Current task      : — (all Round 5 remediation tasks T21–T29 PASS; Round 5 round review next)
+Current stage     : ROUND 5 ROUND GATE — all tasks T21–T29 PASS (980 tests green); fresh round reviewer over the accumulated Round 5 diff next
 Last gate         : FEATURE GATE REOPENED (Round 5) — the Round 4 PASS at 527a7e6 is historical; see review.md Round 5 sections
 Next legal action : launch the T21 fresh feature-implementer (bounded packet per plan Round 5 tasks)
 
@@ -39,15 +39,15 @@ Scan this first. Detail is below.
 | Task    | Mode            | Acceptance                 | Objective (findings)                                                                        | Deps    | Stage        | Gate |
 | ------- | --------------- | -------------------------- | ------------------------------------------------------------------------------------------- | ------- | ------------ | ---- |
 | T01–T20 | —               | (see Round 1–4 rows below) | historical — all PASS, preserved as history                                                 | —       | done (hist.) | PASS |
-| T21     | behavior-change | Acceptance: AC-03, AC-04   | platform-discriminated module absence + event-driven invalidation (R5-01, R5-02)            | —       | not started  | —    |
-| T22     | behavior-change | Acceptance: AC-03          | policy readError + error surface with manual retry in the startup hold (R5-08)              | T21     | not started  | —    |
-| T23     | behavior-change | Acceptance: AC-05          | restrictionsSettled gates tryUnlock + sheet settling state + sheetOpen reset (R5-10, R5-11) | T22     | not started  | —    |
-| T24     | bug             | Acceptance: AC-09          | file-upload two-phase lifecycle + documented headers (R5-03, R5-05)                         | —       | not started  | —    |
-| T25     | bug             | Acceptance: AC-09          | Update App body mandatory fields (R5-04)                                                    | T24     | not started  | —    |
-| T26     | behavior-change | Acceptance: AC-09          | retry policy split by call class (R5-06)                                                    | T25     | not started  | —    |
-| T27     | behavior-change | Supporting: AC-09          | Beta target allowlist (vars) + group_type 6 (R5-07)                                         | T26     | not started  | —    |
-| T28     | config          | Supporting: AC-09          | run provenance validation before artifact download (R5-12)                                  | T27     | not started  | —    |
-| T29     | config          | Acceptance: AC-10          | mdm-operations.md Round 5 alignment                                                         | T24–T28 | not started  | —    |
+| T21     | behavior-change | Acceptance: AC-03, AC-04   | platform-discriminated module absence + event-driven invalidation (R5-01, R5-02)            | —       | done         | PASS |
+| T22     | behavior-change | Acceptance: AC-03          | policy readError + error surface with manual retry in the startup hold (R5-08)              | T21     | done         | PASS |
+| T23     | behavior-change | Acceptance: AC-05          | restrictionsSettled gates tryUnlock + sheet settling state + sheetOpen reset (R5-10, R5-11) | T22     | done         | PASS |
+| T24     | bug             | Acceptance: AC-09          | file-upload two-phase lifecycle + documented headers (R5-03, R5-05)                         | —       | done         | PASS |
+| T25     | bug             | Acceptance: AC-09          | Update App body mandatory fields (R5-04)                                                    | T24     | done         | PASS |
+| T26     | behavior-change | Acceptance: AC-09          | retry policy split by call class (R5-06)                                                    | T25     | done         | PASS |
+| T27     | behavior-change | Supporting: AC-09          | Beta target allowlist (vars) + group_type 6 (R5-07)                                         | T26     | done         | PASS |
+| T28     | config          | Supporting: AC-09          | run provenance validation before artifact download (R5-12)                                  | T27     | done         | PASS |
+| T29     | config          | Acceptance: AC-10          | mdm-operations.md Round 5 alignment                                                         | T24–T28 | done         | PASS |
 
 Round 5 gate after T29 (fresh round reviewer over the accumulated Round 5
 diff). Then: develop re-fetch/integration (R5-13) → final verification on the

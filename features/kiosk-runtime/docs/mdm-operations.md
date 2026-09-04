@@ -4,8 +4,10 @@
 automation and the ManageEngine MDM Cloud tenant.** Audience: the maintainer
 who dispatches the two release workflows, and the MDM administrator who owns
 the console. It is written from the feature's durable research evidence — the
-2026-09-02 research packets, the 2026-09-03 MDM API revalidation and the
-2026-09-04 remediation revalidation, recorded
+2026-09-02 research packets, the 2026-09-03 MDM API revalidation, the
+2026-09-04 remediation revalidation and the 2026-09-04 Round 5 research
+(seven Evidence Packets, every load-bearing page Lead-opened — the
+feature's `docs/review.md`), recorded
 in the feature's `docs/worklog.md` and synthesized in the feature's
 `docs/plan.md` — and from what the feature actually built: the restriction
 schema in `modules/kiosk-policy/app.plugin.js`, the release workflow
@@ -24,7 +26,8 @@ in this document — only secret NAMES.
 This document governs the GitHub-controlled release and MDM pipeline for the
 single KISOK Android package `com.kisok.kiosk`:
 
-- the one-time repository setup (Actions secrets, console ids) a human
+- the one-time repository setup (Actions secrets and variables, console
+  ids, the admin-configured Beta target environment variables) a human
   performs before anything can run;
 - the two manual-dispatch workflows: `.github/workflows/android-release.yml`
   (build, verify and publish the release-signed APK) and
@@ -120,21 +123,50 @@ Enterprise pages, last updated 2026-07/08]
   [manageengine.com/mobile-device-management/help/ — app-management and
   enterprise-app pages, last updated 2026-07/08]
 - The upload itself is automated by the Beta upload workflow (Section 7d).
-  The tool performs the two-phase `POST {mdm}/emsapi/files` upload (header
-  `Module: MDM_APP_MGMT`, multipart key `file`) and then either creates the
-  app (`app_type 2`, Enterprise) or adds a version on the Beta label.
-  Completion of the file upload is confirmed from THAT SAME response's
-  `fileStatus` value — the documented completed status, 2: the 2026-09-04
-  sweep of the current official ManageEngine API documentation found NO
-  polling endpoint (zero occurrences of a fileupload/status path in the
-  live doc set; `fileStatus` appears exactly once — the literal 2), so the
-  tool performs no polling and a response that does not report completion
-  fails closed. One recorded documentation discrepancy: the docs' prose
-  says multipart key `file` while their code examples say `fileName` — the
-  written prose contract is used, and the discrepancy is recorded here
-  rather than resolved by invention.
-  [manageengine.com/mobile-device-management/api/files/ + api/apps/,
-  revalidated 2026-09-03; no-polling-endpoint sweep 2026-09-04]
+  The tool performs the documented **two-phase** upload: `POST
+{mdm}/emsapi/files` (headers `Module: MDM_APP_MGMT` and
+  `Accept: application/json`, multipart key `file`) returns a `fileID` plus
+  a `fileStatus` — **1 = PENDING** ("file is queued for processing"),
+  **2 = COMPLETED**, **3 = FAILED**. `fileStatus` 2 proceeds immediately
+  with NO status call (the fast path); 3 is the documented terminal failure
+  (no poll); 1 polls the documented **Get File Upload Status** call — `POST
+{mdm}/emsapi/fileupload/status` with body `{"fileIDs":["<fileID>"]}` (an
+  array of STRINGS, the documented sample) — until the `response[]` entry
+  whose `file_id` matches OUR fileID reports `file_availability_status`
+  **2** ("the file has been uploaded and is ready for use"); the upload
+  page's own `fileID` field says "Use Get File Upload Status to verify the
+  file is ready for use." No poll interval or timeout is documented, so
+  the tool's cadence (3 s) and attempt bound (20 attempts ≈ 60 s —
+  comfortably under the endpoint's documented 500 requests/min limit) are
+  engineering choices; a malformed response, a missing entry for our
+  fileID, or bound exhaustion fails closed. Each upload mints a NEW
+  fileID (with an auto-deleting expiry), so the SAME fileID from the
+  upload response is the one verified and used. The tool then either
+  creates the app (`app_type 2`, Enterprise) or adds a version on the
+  Beta label — the add-version PUT body carries the documented-Mandatory
+  `app_name` and `app_type 2` (R5-04).
+  One recorded documentation discrepancy: the docs' prose says multipart
+  key `file` while their code examples say `fileName` — the written prose
+  contract is used, and the discrepancy is recorded here rather than
+  resolved by invention.
+  [manageengine.com/mobile-device-management/help/api/cloud/ —
+  files-upload-file-ems.html + files-get-file-upload-status.html,
+  Lead-opened 2026-09-04]
+- **Round 5 correction of this document's Round 4 record (IR-02).** The
+  Round 4 edition of this section claimed the tool "performs no polling"
+  because a 2026-09-04 sweep found no polling endpoint — that sweep
+  covered the edition-general `manageengine.com/mobile-device-management/
+api/` tree (MDM Plus, on-prem build markers), which genuinely lacks the
+  status endpoint today. The **cloud help tree**
+  (`mobile-device-management/help/api/cloud/`) — the tree that matches
+  KISOK's actual cloud hosts (`mdm.manageengine.<dc>`,
+  `accounts.zoho.<dc>`) — documents `POST /emsapi/fileupload/status` on
+  its own page, in its API Index Files section, and cross-referenced from
+  the upload page's `fileID` field. The Round 4 negative was an
+  incomplete-tree over-generalization and is overturned by current
+  first-party evidence (the feature's `docs/review.md`, "IR-02
+  contradiction — RESOLVED"); the cloud help tree is authoritative for
+  KISOK's cloud deployment wherever the two trees disagree.
 
 ### Managed app configuration for in-house apps
 
@@ -189,9 +221,20 @@ which appears because the APK declares the schema above. The values reach
 the app through the Android managed-configurations mechanism when MDM
 distributes the app: the app reads restrictions on cold start, on resume,
 and on the restrictions-changed broadcast, so a console edit reaches the
-running app without a reinstall. Delivery timing on a real tablet is on the
-unverified list (Section 9).
-[developer.android.com/work/managed-configurations, 2025-02-18]
+running app without a reinstall. That broadcast —
+`ACTION_APPLICATION_RESTRICTIONS_CHANGED`, a protected intent only the
+system can send — is received by a DYNAMIC receiver (manifest receivers
+are documented-unsupported for this action) registered with
+`ContextCompat.RECEIVER_NOT_EXPORTED`: the documented-correct pattern for
+this system-sent broadcast — ContextCompat's own guidance says to use the
+NOT_EXPORTED flag for broadcasts received "from the system UID", and
+Android 14's receiver-flag requirement exempts receivers of system
+broadcasts only. Round 5 (R5-09) reviewed this pattern and made no code
+change. Delivery timing on a real tablet is on the unverified list
+(Section 9).
+[developer.android.com/work/managed-configurations, 2025-02-18; the
+Intent reference, ContextCompat receiver-flag guidance and Android 14
+behavior changes, reviewed 2026-09-04]
 
 ## 5. Silent install prerequisites
 
@@ -205,12 +248,15 @@ has one platform prerequisite and two distribution prerequisites:
    silent-install pages, last updated 2026-07/08]
 2. **The app is associated with exactly one device group with
    `silent_install: true`.** This feature's automation associates exactly
-   the ONE configured non-production group — the upload tool refuses to run
-   without a group id AND its exact expected group name, refuses a group
-   that does not resolve to exactly that name (Section 7d), and refuses the
-   configured production group id.
-   [manageengine.com/mobile-device-management/api/groups/ —
-   associate-apps-to-a-group, revalidated 2026-09-03]
+   the ONE admin-configured non-production group — the upload tool refuses
+   to run without a group id AND its exact expected group name, refuses a
+   group that does not resolve to exactly that name, refuses a group whose
+   documented `group_type` is anything other than 6 — Device Group
+   (Section 7d), and refuses the configured production group id; since
+   Round 5 the group triple is an admin-controlled allowlist, not dispatch
+   input (Sections 7a and 7d).
+   [manageengine.com/mobile-device-management/help/api/cloud/ —
+   groups-create-apps-from-agroup.html, Lead-opened 2026-09-04]
 3. **The app version is on the "Beta" release label.** The automation
    REUSES the app's existing Beta label id from its documented
    `release_labels[]` (matching `release_label_name` "Beta") whenever
@@ -336,8 +382,11 @@ MDM OAuth — three secrets:
   official multi-dc accounts-host table: `ca` uses `accounts.zohocloud.ca`
   and `cn` uses `accounts.zoho.com.cn` (the naive `accounts.zoho.ca` /
   `accounts.zoho.cn` hosts do NOT resolve — verified against the live
-  serverinfo endpoints). The upload tool's `--data-centre` input selects
-  the correct host automatically.
+  serverinfo endpoints. Note that ManageEngine's own MDM "Endpoint
+  Domain" page still lists those DNS-dead hosts — a recorded documentation
+  discrepancy, R5-C1 — so the live-DNS table above is what the tool uses).
+  The upload tool's `--data-centre` input selects the correct host
+  automatically.
   [zoho.com/developer/oauth/, zoho.com/accounts/protocol/oauth/multi-dc.html
   and manageengine.com/mobile-device-management/api/oauth/, revalidated
   2026-09-03; ca/cn hosts verified 2026-09-04]
@@ -367,18 +416,29 @@ comment so the pinned version stays discoverable.
 [docs.github.com actions secure-use 2026-07-24 and manage-environments
 2026-07-16]
 
-Console ids to resolve (the human reads these in the ManageEngine console
-and supplies them as dispatch inputs):
+Console ids to resolve (the human reads these in the ManageEngine console):
 
-- the **App Repository category id** — the create path requires it
-  (`app-category-id`; needed only when the app does not exist yet);
-- the **non-production (Beta) device group id and its exact NAME** — the
-  pilot group the Beta distribution associates with. Both dispatch inputs
-  are REQUIRED: `group-id` selects the group, and `group-name` is the exact
-  NAME it must resolve to (the positive non-production verification,
-  Section 7d);
-- the **production device group id** — recommended: when supplied
-  (`production-group-id`), the upload refuses a `group-id` equal to it.
+- the **App Repository category id** — the create path requires it (the
+  `app-category-id` dispatch input; needed only when the app does not
+  exist yet);
+- the **non-production (Beta) device group id, its exact NAME, and the
+  production device group id** — the **Beta target allowlist** (Round 5,
+  R5-07). These three are NO LONGER dispatch inputs: they are environment
+  VARIABLES of the `mdm-upload` GitHub environment, so a dispatcher (write
+  access) can never aim the upload at any group — configuring an
+  environment variable requires repository ADMIN, a boundary above
+  dispatch's write access. The one-time human configuration, before the
+  FIRST dispatch of the MDM Beta upload workflow: repository **Settings →
+  Environments → `mdm-upload` → Environment variables**, one "Add
+  environment variable" per name — `MDM_BETA_GROUP_ID` (the numeric id of
+  the pilot device group), `MDM_BETA_GROUP_NAME` (the exact NAME the group
+  must resolve to — the positive non-production verification, Section 7d)
+  and `MDM_PRODUCTION_GROUP_ID` (the production group id; the upload
+  refuses a Beta group id equal to it — belt-and-braces on top of the name
+  and type-6 verification). The values are ids and one group name — not
+  secrets. An unset variable renders as an empty string, and the workflow's
+  first step fails closed, naming the missing variable and this
+  configuration procedure.
 
 One branch fact before the FIRST dispatch of either workflow: **the workflow
 file must be on the repository's default branch** — the Actions UI only
@@ -450,51 +510,88 @@ Android release workflow is the only builder.
   workflow spends the MDM OAuth secrets).
 - **Dispatch inputs and their semantics:**
 
-| Input                 | Required | Default | Semantics                                                                                                                                                            |
-| --------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run-id`              | yes      | —       | Numeric id of the prior Android release run whose `kisok-release-apk` artifact is uploaded; validated numeric immediately after checkout, before any toolchain work. |
-| `dry-run`             | no       | `true`  | Read-only dry-run (token exchange, read-only GETs, version pre-check). A real upload requires deliberately setting this to `false`.                                  |
-| `group-id`            | yes      | —       | The ONE non-production MDM device group id the app is associated with, with silent install. An empty value is rejected early.                                        |
-| `group-name`          | yes      | —       | The exact MDM group NAME the `group-id` must resolve to (positive non-production verification). An empty value is rejected early.                                    |
-| `production-group-id` | no       | —       | The production group id; the upload refuses a `group-id` equal to it (the fat-finger guard).                                                                         |
-| `app-category-id`     | no       | —       | The MDM App Repository category id — needed only when the app does not exist yet (the create path).                                                                  |
-| `app-name`            | no       | `KISOK` | The App Repository app name to match or create.                                                                                                                      |
-| `data-centre`         | no       | `us`    | The ManageEngine data centre code: `us`, `eu`, `in`, `au`, `jp`, `ca`, `cn`, `sa`, `uk`.                                                                             |
-| `redirect-uri`        | no       | —       | The OAuth redirect URI registered for the MDM API client; forwarded to the token exchange when set.                                                                  |
+| Input             | Required | Default | Semantics                                                                                                                                                            |
+| ----------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run-id`          | yes      | —       | Numeric id of the prior Android release run whose `kisok-release-apk` artifact is uploaded; validated numeric immediately after checkout, before any toolchain work. |
+| `dry-run`         | no       | `true`  | Read-only dry-run (token exchange, read-only GETs, version pre-check). A real upload requires deliberately setting this to `false`.                                  |
+| `app-category-id` | no       | —       | The MDM App Repository category id — needed only when the app does not exist yet (the create path).                                                                  |
+| `app-name`        | no       | `KISOK` | The App Repository app name to match or create.                                                                                                                      |
+| `data-centre`     | no       | `us`    | The ManageEngine data centre code: `us`, `eu`, `in`, `au`, `jp`, `ca`, `cn`, `sa`, `uk`.                                                                             |
+| `redirect-uri`    | no       | —       | The OAuth redirect URI registered for the MDM API client; forwarded to the token exchange when set.                                                                  |
+
+The **Beta target is NOT dispatch input** (Round 5, R5-07): the group id,
+the exact expected group name and the production group id are sourced from
+the `mdm-upload` environment's VARIABLES — `MDM_BETA_GROUP_ID`,
+`MDM_BETA_GROUP_NAME`, `MDM_PRODUCTION_GROUP_ID` (the admin-configured
+allowlist; the exact one-time configuration steps are in Section 7a). A
+dispatcher with write access cannot aim the upload at ANY group: the
+workflow checks all three variables are present (fail closed, naming the
+missing variable and its configuration procedure) immediately after
+checkout, and then forwards the values to the tool as flags — never through
+the tool's own `MDM_*` environment names.
 
 - **Flow:** validate the inputs (the `run-id` must be numeric, and the
-  required `group-id` and `group-name` must both be non-empty — all three
-  are rejected immediately after checkout, before any toolchain setup,
-  install, download or re-verification work) → fail-closed
-  presence check of the three MDM secrets → download `kisok-release-apk`
-  **by name from the given `run-id`** through the Actions API (the job
-  carries `actions: read` for exactly this; a digest mismatch or missing
-  artifact fails loudly) → **re-verify** the downloaded APK with the same
-  verification script against the same derived identity AND the same
-  pinned certificate SHA-256 (`ANDROID_UPLOAD_CERT_SHA256`, 7a), before
-  anything touches the MDM tenant → run `tools/mdm/upload-beta.ts`.
+  three Beta target environment variables must all be set — both checks
+  run immediately after checkout, before any toolchain setup, install,
+  download or re-verification work) → fail-closed presence check of the
+  three MDM secrets → **validate the release run's provenance (Round 5,
+  R5-12 — below)** → download `kisok-release-apk` **by name from the given
+  `run-id`** through the Actions API (the job carries `actions: read` for
+  exactly this; a digest mismatch or missing artifact fails loudly) →
+  **re-verify** the downloaded APK with the same verification script
+  against the same derived identity AND the same pinned certificate
+  SHA-256 (`ANDROID_UPLOAD_CERT_SHA256`, 7a), before anything touches the
+  MDM tenant → run `tools/mdm/upload-beta.ts` (dry-run unless the
+  dispatcher deliberately set `dry-run: false`).
+- **Run provenance validation (Round 5, R5-12 — defense-in-depth).**
+  Before the artifact is downloaded, the workflow asks the Actions REST
+  API — with the job's own `github.token` under `actions: read`, no new
+  permission — who the run IS, and fails closed unless it is a completed,
+  successful run of the Android release workflow: the run's workflow
+  identity (path `.github/workflows/android-release.yml` and display name
+  "Android release"), `status` completed, `conclusion` success, and
+  `head_branch` in the release-source allowlist **{main, develop}** — an
+  ENGINEERING choice: a same-version artifact built from any other branch
+  would pass every CONTENT check below (same package, same
+  versionCode/versionName, same pinned certificate, same embedded bundle),
+  so only the run's origin closes that branch-swap hole. Content
+  re-verification remains PRIMARY; this identity gate is the secondary
+  defense. The allowlist is one reviewed `case` line in the workflow file
+  — widening the release-source branches is a deliberate, reviewed change.
+  Only the five validated fields are ever echoed, never the full run JSON.
+  [docs.github.com — the Actions workflow-runs REST API]
 - **What the tool refuses (AC-09):** to run without a group id or without
   an expected group name; a group that does not resolve read-only, or that
-  resolves with any name other than the exact expected `group-name` — id
-  plus exact name is the strongest non-production identification the
-  documented contract supports (no documented group_type distinguishes
-  production); a group id equal to the configured production group id; any
-  label name other than exactly "Beta"; a non-increasing version. It
-  contains no call to `approve`, `distribute_update` or
-  `retire_old_version` at all. The incoming version is not a dispatch
-  input — the workflow feeds the tool the `versionName` it derived from
-  the app config and re-verified against the APK, so a dispatcher cannot
-  lie to the monotonic pre-check.
+  resolves with any name other than the exact expected group name; a group
+  whose documented `group_type` is not **6 — Device Group** (the documented
+  enum: 6 — Device Group, 7 — User Group, 11 — Tag Group, read as
+  number-or-string per the docs' own dual sample shapes; anything else —
+  missing, non-numeric or undocumented — fails closed) — id, exact name and
+  type 6 together are the strongest non-production identification the
+  documented contract supports (no group field distinguishes production); a
+  group id equal to the configured production group id; any label name other
+  than exactly "Beta"; a non-increasing version. It contains no call to
+  `approve`, `distribute_update` or `retire_old_version` at all. The incoming
+  version is not a dispatch input — the workflow feeds the tool the
+  `versionName` it derived from the app config and re-verified against the
+  APK, so a dispatcher cannot lie to the monotonic pre-check — and the Beta
+  target is not dispatch input either (the environment-variable allowlist
+  above).
 - **If an upload run fails mid-flight.** The mutations run in a fixed order:
   the Beta label step — `POST /api/v1/mdm/labels`, ONLY when the app has no
   existing Beta label; an existing app's Beta label id is REUSED from its
   documented `release_labels[]` (matching `release_label_name` "Beta") with
-  no POST at all → the two-phase file upload (`POST /emsapi/files`) →
-  add-version on the Beta label (or app create, first upload) → the group
-  association with `silent_install`. A run that fails between add-version
-  and the association leaves the new
+  no POST at all → the two-phase file upload (`POST /emsapi/files`, the
+  lifecycle of Section 4) → add-version on the Beta label (the
+  documented-Mandatory `app_name` + `app_type 2` body; or app create,
+  first upload) → the group association with `silent_install`. A mutation
+  that fails with 5xx is NOT retried (the retry classes below): the
+  outcome is ambiguous — the server may have applied it — so the run fails
+  closed with a message naming the re-run reconciliation path. A run that
+  fails between add-version and the association leaves the new
   version on the Beta label but not distributed to the group. Re-dispatching
-  with the same inputs is the SAFE move: the app-list read now sees the
+  is the SAFE move (the Beta target comes from the environment variables,
+  so a re-run aims at the same group): the app-list read now sees the
   version the failed run already added, and the monotonic pre-check refuses
   the same-version re-run BEFORE any new mutation (fail-closed, a named
   error, nothing new written). Complete the release one of two ways: finish
@@ -505,8 +602,9 @@ Android release workflow is the only builder.
 - **Dry-run is read-only:** the OAuth token exchange, the read-only GETs
   (the app-list walk and the group-details read) and the version pre-check.
   No mutation, no APK read, nothing written to the tenant — and it exits
-  NON-ZERO whenever the group is missing or its name does not match, the
-  state in which a real run could not proceed safely: a truthful dry-run.
+  NON-ZERO whenever the group is missing, its name does not match, or its
+  `group_type` is not 6 — Device Group, the states in which a real run
+  could not proceed safely: a truthful dry-run.
 - **The read-path API behavior.** The app-list walk follows the documented
   pagination envelope exactly: a non-empty `paging.next` (a FULL URL) is
   followed — only when its origin is the MDM API host's own origin, so a
@@ -518,16 +616,71 @@ Android release workflow is the only builder.
   fails closed (termination would be unknowable). The target group is
   validated read-only via `GET /api/v1/mdm/groups/{group_id}` — the
   documented single-group details call (fields `group_id`, `name`,
-  `group_type`, `domain`) — BEFORE any mutation, and its `name` must equal
-  the required `group-name` input exactly. The group-details response
-  shape (flat body vs a wrapped `group` object) is a live-tenant unknown
-  the tool tolerates (Section 9).
-  [manageengine.com/mobile-device-management/api/pagination/ and
-  api/groups/, revalidated 2026-09-04]
-- Hardening: `permissions: contents: read` + `actions: read`;
+  `group_type`, `domain`) — BEFORE any mutation: its `name` must equal the
+  required expected group name exactly, and its `group_type` must be 6 —
+  Device Group. The group-details response shape (flat body vs a wrapped
+  `group` object, and number-or-string `group_type`) is a live-tenant
+  unknown the tool tolerates (Section 9).
+  [manageengine.com/mobile-device-management/api/pagination/ (envelope,
+  revalidated 2026-09-04) and the cloud help tree's
+  groups-get-an-existing-group.html, Lead-opened 2026-09-04]
+- **The HTTP contract of every MDM call (Round 5, R5-05).** Every MDM
+  JSON call sends `Accept: application/json` — documented-Mandatory on
+  `POST /emsapi/files`, `GET /api/v1/mdm/groups/{group_id}`,
+  `POST /api/v1/mdm/groups/{group_id}/apps` and
+  `POST /emsapi/fileupload/status`; on the labels/apps/list pages Accept
+  is not documented but is sample-consistent, so it is sent uniformly
+  there too (an engineering recommendation, not a documented requirement
+  there). The file upload additionally carries `Module: MDM_APP_MGMT`;
+  the JSON calls carry `Content-Type: application/json`; the Zoho token
+  exchange keeps its own form-urlencoded header set (no bearer, no
+  Accept).
+- **Retry classes and the documented rate limits (Round 5, R5-06).** No
+  MDM mutation page documents idempotency, duplicate or re-association
+  behavior, so the tool's retry policy is split by call class. READ-SAFE
+  calls — the Zoho token exchange, the app-list GET pages, the group GET,
+  and the file-status poll (a POST in verb, a pure status read) — retry
+  HTTP 429, error code COM0002 ("API Limit Exceeded") and 5xx: 3
+  attempts, backoff 1 s then 2 s. MUTATIONS — the label POST, the file
+  upload, the app create, the add-version PUT and the group association —
+  retry ONLY 429/COM0002 (an engineering judgment: such rejections are
+  assumed pre-execution refusals; whether that is always so is
+  undocumented — the conservative direction), and a 5xx after a mutation
+  FAILS CLOSED after ONE attempt with a re-run reconciliation diagnostic:
+  the server may have applied the change, and replaying a mutation whose
+  duplicate behavior is undocumented could double-apply it. A re-run
+  performs the reconciliation (the run start re-reads the app list,
+  reuses the Beta label, and re-checks the monotonic version before any
+  mutation). Transport-level failures fail closed immediately in both
+  classes. A FINAL 429/COM0002 failure, either class, names the documented
+  5-minute lock — except a mutation 5xx carrying a rate-rejection envelope
+  (HTTP ≥500 with a COM0002 body), which keeps the ambiguity diagnostic
+  only: the ambiguity guidance is the safer message there, the recorded
+  T26-R1 precedence. The documented per-endpoint rate footers (every page's
+  "Wait time before consecutive API requests" is that 5-minute lock):
+
+| Endpoint                                         | Documented footer       |
+| ------------------------------------------------ | ----------------------- |
+| most mutation pages (labels, apps create/update) | 60 requests per minute  |
+| `GET /api/v1/mdm/groups/{group_id}`              | 120 requests per minute |
+| `POST /api/v1/mdm/groups/{group_id}/apps`        | 300 requests per minute |
+| `POST /emsapi/fileupload/status`                 | 500 requests per minute |
+| every used page (the consecutive-request lock)   | a 5-minute lock         |
+
+The tool's 1 s/2 s backoff deliberately does NOT wait out that lock
+(that would stall a run for minutes); a final rate rejection says so in
+its message instead. The poll cadence/attempt bound and the retry
+counts/backoff are engineering choices — only the limits above are
+documented.
+[manageengine.com/mobile-device-management/help/api/cloud/ — the
+per-page rate footers, Lead-opened 2026-09-04]
+
+- Hardening: the job runs in the `mdm-upload` GitHub environment (7a);
+  `permissions: contents: read` + `actions: read`;
   `persist-credentials: false`; release-scoped, serialized concurrency;
   timeout 30 minutes; the three MDM secrets reach the tool only as step
-  env; optional inputs are forwarded only when non-empty.
+  env — never as flags; optional inputs are forwarded only when non-empty;
+  the Beta target triple is forwarded from the environment variables.
 
 ### 7e. The live dry-run and the first real upload are human actions
 
@@ -633,12 +786,14 @@ These are recorded as unverified — never claimed as verified:
   envelope at all; what the live app-list response actually contains —
   `paging`, `metadata`, both or neither — is a live-tenant fact the first
   dry-run is expected to record.
-- **The actual `/emsapi/files` response values for a real APK.** The tool
-  requires the documented completed `fileStatus` (2) from the upload's own
-  response, and current docs document no other value and no polling
-  endpoint; what a real upload of a real APK returns — the file id shape,
-  any additional fields, any non-2 values on a live tenant — is
-  undocumented.
+- **The actual `/emsapi/files` and `/emsapi/fileupload/status` responses
+  for a real APK.** The tool implements the documented two-phase lifecycle
+  (fileStatus 1 = pending / 2 = completed / 3 = failed; poll on 1 until
+  `file_availability_status` 2), but whether a real upload of a real APK
+  ever returns the initial PENDING (1), what the status endpoint returns
+  for an unknown or expired fileID, and what additional fields the live
+  responses carry are live-tenant facts the first dry-run and upload are
+  expected to record.
 - **Whether ManageEngine sets `restrictions_pending`.** The app treats a
   provisional restrictions bundle (the Android
   `KEY_RESTRICTIONS_PENDING` marker) as "no evidence yet" and holds at
@@ -652,6 +807,32 @@ These are recorded as unverified — never claimed as verified:
   evidence included); whether the MDM always delivers the explicit
   `kiosk_device_role` value on Customer kiosks — rather than the device
   deriving kiosk from lock evidence alone — is unverified.
+- **Whether the live server enforces the documented-Mandatory request
+  fields (Round 5).** `Accept: application/json` (the files, group, associate
+  and file-status calls), the add-version body's `app_name` + `app_type`,
+  and the `group_type` 6 enumeration are documented on their pages; the
+  tool complies with the documented contract regardless (fail-closed
+  direction), but whether the live tenant actually rejects requests that
+  omit them is unverified.
+- **Duplicate / re-association behavior of the mutations (Round 5).**
+  Beyond the duplicate-label case above, no mutation page documents what
+  happens when `POST /api/v1/mdm/apps` collides with an existing app
+  name, when the add-version PUT re-adds a file, or when
+  `POST /api/v1/mdm/groups/{group_id}/apps` re-associates an
+  already-associated app — which is exactly why a mutation that fails with
+  5xx fails closed unretried (the server may have applied it). Live-tenant
+  behavior unverified.
+- **The Zoho token throttle's HTTP status (Round 5).** The documented
+  limit is at most 10 access tokens per refresh token per 10 minutes (the
+  tool performs one exchange per run); what status or error a throttled
+  exchange actually returns is undocumented.
+- **The GitHub environments and their variables are not yet configured
+  (human prerequisite, Round 5).** The `mdm-upload` environment's three
+  Beta-target VARIABLES (`MDM_BETA_GROUP_ID` / `MDM_BETA_GROUP_NAME` /
+  `MDM_PRODUCTION_GROUP_ID` — Section 7a's exact steps), the
+  environment-scoped secret migration, and optional protection
+  (`android-signing` too) are admin actions; until the variables exist,
+  the first dispatch fails closed at the presence check — by design.
 
 ## 10. Edition note
 
@@ -679,27 +860,53 @@ consolidated index:
   `android:lockTaskMode` (2026-07-06)
 - developer.android.com/work/managed-configurations — the restrictions
   schema and its delivery (2025-02-18)
+- developer.android.com — the Intent reference
+  (`ACTION_APPLICATION_RESTRICTIONS_CHANGED`: a protected, system-sent
+  broadcast), the ContextCompat receiver-flag guidance ("from the system
+  UID" ⇒ `RECEIVER_NOT_EXPORTED`), and the Android 14 behavior changes
+  (the receiver-flag requirement exempts system-broadcast-only receivers) —
+  reviewed 2026-09-04 (R5-09: no change needed)
 - manageengine.com/mobile-device-management/help/ — enrollment (QR template,
   Fully Managed), Single-App Kiosk and kiosk recovery, in-house (Enterprise)
   apps, managed app configuration, silent install, app updates and rollback
   (pages last updated 2026-07/08)
-- manageengine.com/mobile-device-management/api/ — api/apps/ (create,
-  add-version, approve, per-app `release_labels`), api/groups/
-  (associate-apps-to-a-group, GET /groups/{group_id} details),
-  api/files/ (two-phase upload, single-response `fileStatus`),
-  api/oauth/ (token exchange), api/devices/ and api/pagination/
-  (repository reads) — revalidated 2026-09-03; no-polling-endpoint
-  sweep 2026-09-04
+- manageengine.com/mobile-device-management/help/api/cloud/ — the CLOUD HELP
+  tree, authoritative for KISOK's cloud deployment, Lead-opened 2026-09-04:
+  api-index.html (the API Index, Files section), files-upload-file-ems.html
+  (`POST /emsapi/files` — `fileStatus` 1/2/3, the `Module: MDM_APP_MGMT`
+  header, multipart key `file`, `Accept` Mandatory),
+  files-get-file-upload-status.html (`POST /emsapi/fileupload/status` —
+  `fileIDs` array-of-strings, `file_availability_status`, 500/min),
+  app-management-update-app-details.html (the add-version request body —
+  Mandatory `app_name` + `app_type`, `release_label_id` a PATH parameter),
+  groups-get-an-existing-group.html (group details — `group_type` "6 —
+  Device Group", 120/min), groups-create-apps-from-agroup.html (the group
+  association, `silent_install`, 300/min), create-app-channel.html
+  (`POST /api/v1/mdm/labels`) and add-an-app.html (`POST /api/v1/mdm/apps`);
+  the rate footers: 60/min on most mutation pages and the 5-minute lock
+  ("Wait time before consecutive API requests") on every page
+- manageengine.com/mobile-device-management/api/ — the edition-general tree
+  (revalidated 2026-09-03/04): api/oauth/ (token exchange), api/pagination/
+  (the read envelope), api/apps/ (repository reads, per-app
+  `release_labels`), api/devices/ and the `approve` production-promotion
+  contract. This tree lacks the file-status endpoint — the incomplete sweep
+  behind the Round 4 IR-02 mistake (review.md) — and its "Endpoint Domain"
+  page lists the DNS-dead `accounts.zoho.ca` / `accounts.zoho.cn` hosts
+  (R5-C1); where the two trees disagree, the cloud help tree wins for
+  KISOK's cloud deployment
 - zoho.com/developer/oauth/ and
   zoho.com/accounts/protocol/oauth/multi-dc.html — Zoho OAuth
   refresh-token exchange, token lifetimes, the "Do not share this
-  credentials" guidance, and the multi-dc accounts-host table (the ca/cn
+  credentials" guidance, the token throttle (10 access tokens per refresh
+  token per 10 minutes), and the multi-dc accounts-host table (the ca/cn
   exceptions) (2026; hosts verified against the live serverinfo endpoints
   2026-09-04)
 - manageengine.com edition-comparison-matrix — edition capabilities
   (2025-04-03)
 - docs.github.com actions events documentation — the `workflow_dispatch`
   default-branch requirement (fetched 2026-09-02)
-- docs.github.com actions secure-use and manage-environments documentation —
-  full-length-SHA action pinning and deployment environments with required
-  reviewers (2026-07-16/24)
+- docs.github.com actions secure-use, manage-environments and
+  workflow-runs REST documentation — full-length-SHA action pinning,
+  deployment environments with required reviewers, and the workflow-run
+  fields (name/path/status/conclusion/head_branch) the provenance gate
+  validates (2026-07-16/24; workflow-runs reviewed 2026-09-04)

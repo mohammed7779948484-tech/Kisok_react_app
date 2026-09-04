@@ -2700,3 +2700,41 @@ green; structural assertions 10/10).
 GATE: PASS (R5-12 closed as defense-in-depth; content re-verification
 unchanged and still primary). Commit + push attempt follows (push still
 blocked — human token prerequisite recorded).
+
+### T29 — mdm-operations.md Round 5 alignment (Round 5, final task)
+
+CONFIG MODE (fresh feature-implementer, agent-80eb1221): one file,
+`features/kiosk-runtime/docs/mdm-operations.md` (+311/−104). Content
+derived from the ACTUAL current tool + workflow code and review.md's
+synthesis, not the plan's prose. §4 two-phase lifecycle + IR-02
+correction; §4 Update App mandatory body; the Accept-header contract; §7d
+retry classes + the documented rate table (60/120/300/500 + 5-min lock; no
+"soft assumption" language); §7a/§7d the Beta-target allowlist with the
+EXACT human configuration steps (three mdm-upload environment VARIABLES);
+the provenance gate section; the R5-09 receiver evidence paragraph; the
+accounts-host footnote; §9 Round 5 live-tenant unknowns + human
+prerequisites; the source index re-cited to the cloud help tree (dated
+2026-09-04). §2/§3/§6/§7b/§7c/§7e/§8/§10 byte-identical to HEAD
+(reviewer-verified by md5).
+
+REVIEW (fresh code-reviewer, agent-eddf29df): **0 blocking / 0 major / 2
+minor** — T29-R1 (the "either class" lock-naming sentence overstated the
+code: the accepted T26-R1 precedence gives the ambiguity diagnostic
+priority on mutation-5xx+COM0002) CLOSED by a same-implementer one-clause
+resume (the sentence now carries the caveat; pnpm verify green); T29-R2
+(the todo status board rows T21–T29 still read "not started" — a REAL
+bookkeeping defect: the Lead's per-task python replaces silently failed
+after prettier re-flowed the table padding; the checkpoint lines and
+commits were always accurate) — CLOSED by this commit (regex-based board
+fix, all nine rows now done/PASS; lesson recorded). The reviewer
+independently re-fetched the seven cited ManageEngine pages live (all
+HTTP 200) and re-verified the quoted contracts — including the fileStatus
+1/2/3 wording, the fileIDs sample, the Mandatory badges, and every rate
+footer — plus docs-vs-code cross-checks on all eleven verification axes.
+
+GREEN: `pnpm verify` exit 0 (check:docs 79 files; 69 suites / 980 tests
+unchanged — docs-only); prettier clean.
+
+GATE: PASS (R5-13 remains as the develop-freshness procedural step; AC-10
+re-aligned to the current contract). Commit + push attempt follows (push
+still blocked — human token prerequisite recorded).
