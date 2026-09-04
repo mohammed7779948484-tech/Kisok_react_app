@@ -1,7 +1,8 @@
 import { Dimensions } from "react-native";
 
+import { AdaptiveSheetDescription } from "@/components/ui";
 import { resetLogging, setLogSink } from "@/core/logging";
-import { act, renderWithProviders, screen, userEvent } from "@/core/testing";
+import { act, renderWithProviders, screen, userEvent, within } from "@/core/testing";
 
 import type { CartLine } from "../model/cart-line.schema";
 import { useCartStore, type PersistenceStatus } from "../state/cart-store";
@@ -46,7 +47,8 @@ const milkSelection = {
 
 /** A populated line with an image and two ordered option selections. */
 const cappuccinoLine: CartLine = {
-  lineId: "3a7f2c1d-9b4e-4d6a-8f2c-7e1b5d9a4c3f|e5d3c8a1|1a2b3c4d",
+  lineId:
+    "3a7f2c1d-9b4e-4d6a-8f2c-7e1b5d9a4c3f|1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d|e5d3c8a1-6f2b-4c9d-8a7e-3b1f4d6c8a2b",
   variantId: "3a7f2c1d-9b4e-4d6a-8f2c-7e1b5d9a4c3f",
   productId: "0f4a9d3e-2b1c-4f8a-9e7d-5c6b8a3f1d2e",
   productDisplayName: "Cappuccino",
@@ -67,6 +69,13 @@ const waterLine: CartLine = {
   imageUri: null,
   quantity: 1,
 };
+
+/**
+ * The sheet's dialog description (H-F03): the screen-reader-useful line that
+ * names what the surface is for. The Title already carries the live count, so
+ * the description deliberately does not duplicate it.
+ */
+const QUICK_CART_DESCRIPTION = "Review the items in your cart, or continue shopping.";
 
 /**
  * Which AdaptiveSheet presentation a test exercises is decided by
@@ -174,6 +183,43 @@ describe("QuickCartSheet", () => {
     // query it.
     expect(screen.queryByText("Saved in memory only")).toBeNull();
     expect(screen.queryByText("Couldn't clear the saved cart")).toBeNull();
+  });
+
+  it("exposes the AdaptiveSheetDescription member through the shared ui barrel (H-F03)", () => {
+    // The Radix DialogContent missing-Description warning fires on the web
+    // variant of the dialog primitive; the shared AdaptiveSheet must expose
+    // the same Description member its sibling dialog.tsx exports, so no
+    // consumer is forced into the warning state. jest-expo resolves the
+    // native variant (the warning never fires there), so the jest pin is this
+    // member contract plus the rendered description below — the live browser
+    // journey owns the zero-warning console evidence.
+    expect(typeof AdaptiveSheetDescription).toBe("function");
+  });
+
+  it("renders a screen-reader description of the sheet alongside the title", async () => {
+    seedCart([waterLine]);
+    await renderSheet({ open: true, onOpenChange: jest.fn(), onViewFullCart: jest.fn() });
+
+    expect(screen.getByText(QUICK_CART_DESCRIPTION)).toBeOnTheScreen();
+  });
+
+  it("renders the description inside the sheet's dialog content, with the header's title", async () => {
+    seedCart([waterLine]);
+    await renderSheet({ open: true, onOpenChange: jest.fn(), onViewFullCart: jest.fn() });
+
+    // role="dialog" Views are invisible to ByRole queries under this RNTL
+    // build (a View without `accessible` is not an accessibility element —
+    // the T07 carry-forward), so locate the sheet's dialog content through the
+    // public test-renderer queryAll, then scope the text query inside it: the
+    // description must be a descendant of the content the primitive hands to
+    // the dialog, where the description belongs (header, under the title).
+    const sheetDialogs = screen.root?.queryAll((node) => node.props.role === "dialog") ?? [];
+    expect(sheetDialogs).toHaveLength(1);
+    const sheetDialog = sheetDialogs[0];
+    if (!sheetDialog) {
+      throw new Error("Expected the sheet's dialog content to exist");
+    }
+    expect(within(sheetDialog).getByText(QUICK_CART_DESCRIPTION)).toBeOnTheScreen();
   });
 
   it("is stateful: a stepper press mutates the real store, and the row re-renders from it", async () => {
@@ -315,6 +361,7 @@ describe("QuickCartSheet", () => {
     await renderSheet({ open: true, onOpenChange: jest.fn(), onViewFullCart }, COMPACT);
 
     expect(screen.getByRole("heading", { name: "Your Cart · 1" })).toBeOnTheScreen();
+    expect(screen.getByText(QUICK_CART_DESCRIPTION)).toBeOnTheScreen();
     expect(screen.getByText("Sparkling Water")).toBeOnTheScreen();
     expect(screen.getByLabelText("Quantity: 1")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Continue Shopping" })).toBeOnTheScreen();
