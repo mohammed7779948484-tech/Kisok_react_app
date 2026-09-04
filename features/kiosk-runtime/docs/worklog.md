@@ -1517,3 +1517,95 @@ documented in-file (minimal sufficient). Dispatch-contract documentation
 pinned to T13 per the T10-F02 precedent.
 
 GATE: PASS
+
+### T13 — ManageEngine operational contract (RECOVERY — fresh workspace, fresh evidence)
+
+MODE: config
+ACCEPTANCE: AC-10
+
+SCAFFOLD (Lead — none: documentation is the planned manual artifact;
+`N/A — documentation`)
+
+IMPLEMENT (fresh feature-implementer, agent-c904abfa)
+features/kiosk-runtime/docs/mdm-operations.md (518+ lines) — the durable
+operational contract, grounded in the feature's research evidence and the
+actual artifacts: §1 purpose/scope (production deployment NOT automated;
+dispatch-only, no push triggers); §2 enrollment (QR template → Fully
+Managed/Device Owner; kiosk needs DO; employee tablets never enrolled
+this way); §3 Single-App Kiosk (MDM-owned lock task + DPC allowlist;
+if*whitelisted same-APK dual role; app never calls startLockTask/
+stopLockTask, read-only corroboration; offline stays locked; recovery =
+Pause Kiosk / recovery key / chat commands; relaunch-after-reboot may
+clear login sessions — plan for the sign-in screen); §4 in-house upload
+without Google Play + managed app configuration (the Configurations tab
+appears on upload; the three restriction keys from T01's app.plugin.js
+with types/semantics: kiosk_device_role string with fail-closed
+derivation and the allowlist-contradiction asymmetry,
+maintenance_unlock_code string visible-to-admins never-logged/persisted,
+maintenance_unlock_timeout_seconds integer clamped 15–600 default 90);
+§5 silent install prerequisites (DO; silent_install true to exactly ONE
+non-production group; Beta label); §6 update/rollback (Add new
+version/Upgrade silent on DO; strict versionCode with the T11 pre-check
+before upload and the server the authority; signature NEVER changes —
+the four ANDROID_KEYSTORE*_ / ANDROID*KEY*_ secrets; no downgrade —
+remove+re-distribute erases data; kiosk profile pins the app version);
+§7 the release path with BOTH dispatch contracts (7a one-time setup:
+four signing secret NAMES + three MDM secret NAMES, console ids, and the
+workflow_dispatch default-branch-before-first-dispatch fact — the
+T10-F02 requirement; 7b android-release: write-access boundary,
+identity derivation, T09 verify gate + success line, 30-day retention;
+7c the human artifact inspection; 7d mdm-beta-upload with all 8 dispatch
+inputs, dry-run DEFAULT true, re-verify before the tenant, refusal
+rules; 7e live dry-run/first upload as deliberate human actions);
+§8 activation prerequisites for any future automatic production
+deployment (approve + distribute_update documented but never called;
+five explicit prerequisites: physical verification, recorded human
+decision, secrets/environment review, accepted fix-forward-only reality,
+proven live Beta path); §9 the first-class unverified list (all five
+hardware items + live-tenant items + console field rendering — and, post
+T13-F01, the channels-endpoint duplicate-name behavior); §10 edition
+note (Free edition 25 devices/1 technician includes kiosk+AE+Enterprise
+Apps+REST APIs; not edition-blocked); Source index with every citation.
+Research unknowns handled honestly: numeric rate-limit figures and the
+create-response app_id omitted; the multipart file/fileName discrepancy
+recorded as recorded; no workflow-dispatched-on-GitHub claim.
+
+GREEN
+$ pnpm check:docs → 64 files checked, pass (the new doc is scanned)
+$ pnpm exec prettier --check <file> → clean
+$ pnpm verify → exit 0 (31 suites / 391 tests unchanged — no code
+touched)
+$ git status --porcelain → exactly `?? features/kiosk-runtime/docs/mdm-operations.md`
+
+AFFECTED CHECKS
+$ pnpm verify → PASS (Lead re-ran after remediation; exit 0).
+
+REVIEW (fresh code-reviewer, agent-05e7557d)
+No blocking, no major. Two minors:
+T13-F01 minor: §5's parenthetical "(creating the channel if it does not
+exist)" asserted idempotent semantics for POST /api/v1/mdm/labels that
+no research record supports — the tool POSTs unconditionally; if the API
+rejects a duplicate channel name, later uploads fail closed at that step
+→ FIXED (implementer resumed): reworded to the recorded contract
+("resolves the Beta release label id through the documented channels
+endpoint") AND the duplicate-channel behavior added to §9's unverified
+list (a human resolves it in the console on first encounter).
+T13-F02 minor: §6's "(the ANDROID*KEYSTORE*_ secrets, Section 7a)" glob
+reading omits the ANDROID*KEY*_ alias pair that identifies the key →
+FIXED (implementer resumed): the complete §7b formulation "the four
+ANDROID*KEYSTORE*_ / ANDROID*KEY*_ signing secrets".
+Lead re-verified both edits + re-ran check:docs/prettier/verify.
+Reviewer-verified clean: AC-10 coverage complete (all seven topics);
+T10-F02 fully covered (who may dispatch, four signing secret names,
+default-branch-before-first-dispatch, 30-day window + download by name
+and run id); the workflows-as-implemented match exact (inputs, defaults,
+step ordering, refusal rules, zero production operations — grep
+verified); restriction keys match app.plugin.js + the derivation tests
+(including the clamp and never-rendered pins); honesty clean (§9
+first-class, matches the brief's Evidence item-for-item + the justified
+console-rendering superset; no hardware/live-tenant claims; secret
+values absent); citations all traceable to the research with matching
+dates; style compliance (check:docs patterns, feature-local references);
+scope discipline.
+
+GATE: PASS

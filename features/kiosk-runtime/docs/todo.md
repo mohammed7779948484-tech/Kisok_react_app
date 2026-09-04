@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : 3
-Current task      : T13
-Current stage     : not started
-Last gate         : T12 GATE: PASS (recovered, fresh evidence; gate commit pushed)
-Next legal action : delegate T13 (features/kiosk-runtime/docs/mdm-operations.md — config mode), then Round 3 Gate
+Current task      : — (Round 3 Gate in progress)
+Current stage     : round checks
+Last gate         : T13 GATE: PASS (recovered, fresh evidence; gate commit pushed)
+Next legal action : Round 3 Gate (subsystem verification + accumulated-diff review with a fresh round code-reviewer), then develop integration check → final verification
 
 Blocked by        : — (push credentials provided by the user; branch pushed and Draft PR #9 open — see Blocked below for what stays external)
 ```
@@ -38,21 +38,21 @@ Blocked by        : — (push credentials provided by the user; branch pushed an
 
 Scan this first. Detail is below.
 
-| Task | Mode            | Acceptance                          | Objective                                                                    | Deps          | Stage       | Gate    |
-| ---- | --------------- | ----------------------------------- | ---------------------------------------------------------------------------- | ------------- | ----------- | ------- |
-| T01  | config          | Supporting AC-02, AC-01             | Expo local module + config plugin + app config wiring                        | —             | done        | PASS    |
-| T02  | behavior        | Acceptance: AC-02                   | model schema + fail-closed derivation                                        | T01           | done        | PASS    |
-| T03  | behavior        | Acceptance: AC-02                   | device-policy store (ephemeral maintenance session)                          | T02           | done        | PASS    |
-| T04  | behavior        | Supporting AC-02                    | native policy source + sync hook                                             | T03           | done        | PASS    |
-| T05  | behavior        | Acceptance: AC-03                   | kiosk mismatch screen + route                                                | T03           | done        | PASS    |
-| T06  | behavior        | Acceptance: AC-05                   | maintenance UI (entry, unlock sheet, panel)                                  | T03           | done        | PASS    |
-| T07  | behavior-change | Acceptance: AC-03, AC-04            | root guard resolver + app/\_layout.tsx integration + static lock-task search | T04, T05, T06 | done        | PASS    |
-| T08  | config          | Supporting AC-07                    | release-signing config plugin + .gitignore                                   | —             | done        | PASS    |
-| T09  | behavior        | Acceptance: AC-08, Supporting AC-01 | tools/release/verify-release-apk.ts + tests                                  | —             | done        | PASS    |
-| T10  | config          | Supporting AC-07                    | android-release.yml workflow                                                 | T08, T09      | done        | PASS    |
-| T11  | behavior        | Acceptance: AC-09                   | tools/mdm/upload-beta.ts + tests                                             | —             | done        | PASS    |
-| T12  | config          | Supporting AC-09                    | mdm-beta-upload.yml workflow                                                 | T09, T11      | done        | PASS    |
-| T13  | config          | Acceptance: AC-10                   | docs/mdm-operations.md operational contract                                  | T01–T12       | not started | PENDING |
+| Task | Mode            | Acceptance                          | Objective                                                                    | Deps          | Stage | Gate |
+| ---- | --------------- | ----------------------------------- | ---------------------------------------------------------------------------- | ------------- | ----- | ---- |
+| T01  | config          | Supporting AC-02, AC-01             | Expo local module + config plugin + app config wiring                        | —             | done  | PASS |
+| T02  | behavior        | Acceptance: AC-02                   | model schema + fail-closed derivation                                        | T01           | done  | PASS |
+| T03  | behavior        | Acceptance: AC-02                   | device-policy store (ephemeral maintenance session)                          | T02           | done  | PASS |
+| T04  | behavior        | Supporting AC-02                    | native policy source + sync hook                                             | T03           | done  | PASS |
+| T05  | behavior        | Acceptance: AC-03                   | kiosk mismatch screen + route                                                | T03           | done  | PASS |
+| T06  | behavior        | Acceptance: AC-05                   | maintenance UI (entry, unlock sheet, panel)                                  | T03           | done  | PASS |
+| T07  | behavior-change | Acceptance: AC-03, AC-04            | root guard resolver + app/\_layout.tsx integration + static lock-task search | T04, T05, T06 | done  | PASS |
+| T08  | config          | Supporting AC-07                    | release-signing config plugin + .gitignore                                   | —             | done  | PASS |
+| T09  | behavior        | Acceptance: AC-08, Supporting AC-01 | tools/release/verify-release-apk.ts + tests                                  | —             | done  | PASS |
+| T10  | config          | Supporting AC-07                    | android-release.yml workflow                                                 | T08, T09      | done  | PASS |
+| T11  | behavior        | Acceptance: AC-09                   | tools/mdm/upload-beta.ts + tests                                             | —             | done  | PASS |
+| T12  | config          | Supporting AC-09                    | mdm-beta-upload.yml workflow                                                 | T09, T11      | done  | PASS |
+| T13  | config          | Acceptance: AC-10                   | docs/mdm-operations.md operational contract                                  | T01–T12       | done  | PASS |
 
 Stage is one of: `not started` · `scaffolding` · `red/baseline` ·
 `implementing` · `green` · `checks` · `diff review` · `done`.
