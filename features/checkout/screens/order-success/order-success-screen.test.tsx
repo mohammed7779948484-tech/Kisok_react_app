@@ -1,4 +1,4 @@
-import { AppState, type AppStateStatus } from "react-native";
+import { AppState, type AppStateStatus, BackHandler } from "react-native";
 
 import { resetLogging, setLogSink } from "@/core/logging";
 import { storage, storageKey } from "@/core/storage";
@@ -65,8 +65,9 @@ jest.mock("lucide-react-native", () => {
 
 /** The review-suite precedent: a minimal router mock whose `push` is asserted. */
 const mockRouterPush = jest.fn();
+const mockRouterReplace = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockRouterPush }),
+  useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace }),
 }));
 
 /**
@@ -93,6 +94,68 @@ jest.mock("@/features/catalog", () => ({
  * `advanceTimers` option the repo's fake-timer suites use.
  */
 jest.useFakeTimers();
+
+/**
+ * R3-02's jest pattern for BackHandler — no precedent in the repo, so this
+ * block establishes it (the review suite's twin). There is nothing to lean
+ * on: RN's jest setup mocks AppState (which is why the countdown's listener
+ * is readable above) but NOT BackHandler, and jest-expo resolves
+ * `react-native` to the iOS platform (the preset's haste.defaultPlatform),
+ * whose `BackHandler.addEventListener` is a no-op stub that DROPS the
+ * handler and whose `remove` is unobservable. So the spy stands in for the
+ * ANDROID implementation's contract — the platform this guard exists for:
+ * every addEventListener("hardwareBackPress", …) registration lands in a
+ * test-visible list, the returned subscription's `remove` splices it back
+ * out (mirroring BackHandler.android.js), and `pressHardwareBack()`
+ * dispatches with the real dispatcher's semantics — reverse registration
+ * order, stop at the first handler returning true (the press is consumed;
+ * the default back behavior never runs). Installed in beforeEach;
+ * afterEach's restoreAllMocks returns the platform stub, like every other
+ * spy in this suite.
+ */
+type HardwareBackHandler = () => boolean | null | undefined;
+type HardwareBackSubscription = { handler: HardwareBackHandler; remove: jest.Mock };
+
+const backPressSubscriptions: HardwareBackSubscription[] = [];
+
+function installBackHandlerSpy() {
+  backPressSubscriptions.length = 0;
+  jest
+    .spyOn(BackHandler, "addEventListener")
+    .mockImplementation((_eventName, handler: HardwareBackHandler) => {
+      const subscription: HardwareBackSubscription = {
+        handler,
+        remove: jest.fn(() => {
+          const index = backPressSubscriptions.indexOf(subscription);
+          if (index !== -1) {
+            backPressSubscriptions.splice(index, 1);
+          }
+        }),
+      };
+      backPressSubscriptions.push(subscription);
+      return { remove: subscription.remove };
+    });
+}
+
+/** The recorded registrations — the AppState-mock reading precedent's cast. */
+function hardwareBackRegistrations() {
+  return (BackHandler.addEventListener as unknown as jest.Mock).mock.calls;
+}
+
+/**
+ * The real android dispatcher's walk: last registered first, and the first
+ * `true` consumes the press (the default back behavior never runs). The
+ * return value is what the native side would act on.
+ */
+function pressHardwareBack(): boolean {
+  for (let i = backPressSubscriptions.length - 1; i >= 0; i -= 1) {
+    const subscription = backPressSubscriptions[i];
+    if (subscription !== undefined && subscription.handler()) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /** The single durable key the attempt store owns (plan decision D1). */
 const ATTEMPT_KEY = storageKey("checkout", "attempt");
@@ -266,6 +329,10 @@ describe("OrderSuccessScreen", () => {
     // Store mutations and refusal paths log by design; keep the suite silent.
     setLogSink(() => {});
     mockRouterPush.mockClear();
+    mockRouterReplace.mockClear();
+    // R3-02: the BackHandler spy (its block above) — fresh registry per
+    // test, restored by afterEach's restoreAllMocks like the storage spies.
+    installBackHandlerSpy();
     // The per-test settings default: resolved with the migration's 25s.
     mockSettingsResult.current = {
       isPending: false,
@@ -373,8 +440,8 @@ describe("OrderSuccessScreen", () => {
     // The reset ran through the store's gate: the durable attempt record is
     // GONE (a cold start would find nothing), the machine is idle, and the
     // kiosk navigates to the customer home.
-    await flushAsyncWork(() => mockRouterPush.mock.calls.length > 0);
-    expect(mockRouterPush).toHaveBeenCalledWith("/");
+    await flushAsyncWork(() => mockRouterReplace.mock.calls.length > 0);
+    expect(mockRouterReplace).toHaveBeenCalledWith("/");
     expect(useAttemptStore.getState().record).toBeNull();
     expect(useAttemptStore.getState().phase).toBe("idle");
     expect((await readAttemptKeyOnDisk()).status).toBe("miss");
@@ -395,6 +462,7 @@ describe("OrderSuccessScreen", () => {
 
     // The reset did NOT fire while the window is fresh again.
     expect(mockRouterPush).not.toHaveBeenCalled();
+    expect(mockRouterReplace).not.toHaveBeenCalled();
     expect(useAttemptStore.getState().record).not.toBeNull();
   });
 
@@ -414,6 +482,7 @@ describe("OrderSuccessScreen", () => {
     // The old deadline passes without expiring; the re-armed one owns it.
     await advanceClock(5_000);
     expect(mockRouterPush).not.toHaveBeenCalled();
+    expect(mockRouterReplace).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Order resets in 20 seconds")).toBeOnTheScreen();
   });
 
@@ -428,12 +497,13 @@ describe("OrderSuccessScreen", () => {
     await emitAppState("background");
     jest.setSystemTime(Date.now() + 30_000);
     expect(mockRouterPush).not.toHaveBeenCalled();
+    expect(mockRouterReplace).not.toHaveBeenCalled();
 
     // Resume: the active transition re-checks the deadline and the gated
     // reset fires NOW — not on the next drifted tick.
     await emitAppState("active");
-    await flushAsyncWork(() => mockRouterPush.mock.calls.length > 0);
-    expect(mockRouterPush).toHaveBeenCalledWith("/");
+    await flushAsyncWork(() => mockRouterReplace.mock.calls.length > 0);
+    expect(mockRouterReplace).toHaveBeenCalledWith("/");
     expect(useAttemptStore.getState().record).toBeNull();
     expect(useAttemptStore.getState().phase).toBe("idle");
     expect((await readAttemptKeyOnDisk()).status).toBe("miss");
@@ -445,9 +515,9 @@ describe("OrderSuccessScreen", () => {
     await renderScreen();
     await user.press(await screen.findByRole("button", { name: "Next Customer" }));
 
-    await flushAsyncWork(() => mockRouterPush.mock.calls.length > 0);
-    expect(mockRouterPush).toHaveBeenCalledTimes(1);
-    expect(mockRouterPush).toHaveBeenCalledWith("/");
+    await flushAsyncWork(() => mockRouterReplace.mock.calls.length > 0);
+    expect(mockRouterReplace).toHaveBeenCalledTimes(1);
+    expect(mockRouterReplace).toHaveBeenCalledWith("/");
     expect(useAttemptStore.getState().record).toBeNull();
     expect(useAttemptStore.getState().phase).toBe("idle");
     expect((await readAttemptKeyOnDisk()).status).toBe("miss");
@@ -495,8 +565,8 @@ describe("OrderSuccessScreen", () => {
 
     // The one way forward: finish the clear, then the gated reset.
     await user.press(await screen.findByRole("button", { name: "Try Clearing Again" }));
-    await flushAsyncWork(() => mockRouterPush.mock.calls.length > 0);
-    expect(mockRouterPush).toHaveBeenCalledWith("/");
+    await flushAsyncWork(() => mockRouterReplace.mock.calls.length > 0);
+    expect(mockRouterReplace).toHaveBeenCalledWith("/");
     // The cart really was cleared through the Cart feature's public seam…
     expect(getCartSnapshot().lines.length).toBe(0);
     // …and the checkout-owned success data is gone with the machine idle.
@@ -520,6 +590,7 @@ describe("OrderSuccessScreen", () => {
     // Refused: no navigation, the record is still confirmed, and the honest
     // warning with its retry action replaces the reset affordances.
     expect(mockRouterPush).not.toHaveBeenCalled();
+    expect(mockRouterReplace).not.toHaveBeenCalled();
     await flushAsyncWork(
       () =>
         screen.queryByText("We couldn't finish clearing this tablet for the next customer") !==
@@ -534,8 +605,8 @@ describe("OrderSuccessScreen", () => {
     // the gated reset, and the kiosk lands on the customer home.
     removeSpy.mockRestore();
     await user.press(await screen.findByRole("button", { name: "Try Clearing Again" }));
-    await flushAsyncWork(() => mockRouterPush.mock.calls.length > 0);
-    expect(mockRouterPush).toHaveBeenCalledWith("/");
+    await flushAsyncWork(() => mockRouterReplace.mock.calls.length > 0);
+    expect(mockRouterReplace).toHaveBeenCalledWith("/");
     expect((await readAttemptKeyOnDisk()).status).toBe("miss");
     expect(useAttemptStore.getState().phase).toBe("idle");
   });
@@ -564,8 +635,8 @@ describe("OrderSuccessScreen", () => {
     const escape = screen.getByRole("button", { name: "Back to Browse" });
     expect(escape).not.toBeDisabled();
     await user.press(escape);
-    expect(mockRouterPush).toHaveBeenCalledTimes(1);
-    expect(mockRouterPush).toHaveBeenCalledWith("/");
+    expect(mockRouterReplace).toHaveBeenCalledTimes(1);
+    expect(mockRouterReplace).toHaveBeenCalledWith("/");
   });
 
   it("renders the escape for an UNRESOLVED record too — an ambiguous attempt is not a success (AC-15)", async () => {
@@ -576,5 +647,91 @@ describe("OrderSuccessScreen", () => {
     expect(screen.queryByText("Order Confirmed")).toBeNull();
     expect(screen.queryByRole("button", { name: "Next Customer" })).toBeNull();
     expect(screen.getByRole("button", { name: "Back to Browse" })).toBeOnTheScreen();
+  });
+
+  // R3-02 — the hardware/gesture-BACK guard (AC-14's countdown half): a back
+  // press that pops the confirmed presentation would kill the inactivity
+  // countdown that owns the auto-reset. The guard consumes the press while
+  // the VALID confirmed presentation is active (the settings-pending
+  // skeleton and the unsafe-cleanup presentation included — the confirmed
+  // record owns the session until the gated reset ends it); the ESCAPE
+  // deliberately keeps standard back semantics (its one affordance, Back
+  // to Browse, is the way forward, and hardware back from a dead-end-free
+  // surface is an equally valid exit — the documented call). Asserted
+  // through the BackHandler spy's registry and dispatcher above.
+  describe("hardware back guard (R3-02 / AC-14)", () => {
+    it("consumes the hardware back press while the confirmed presentation owns the session — the countdown keeps its auto-reset, and the guard leaves with the presentation (R3-02 / AC-14)", async () => {
+      await seedConfirmedAttempt("done");
+      await renderScreen();
+      await screen.findByLabelText("Order resets in 25 seconds");
+
+      // The guard is live: ONE registration, on the hardware event.
+      expect(backPressSubscriptions).toHaveLength(1);
+      expect(hardwareBackRegistrations()).toHaveLength(1);
+      expect(hardwareBackRegistrations()[0]?.[0]).toBe("hardwareBackPress");
+      // The press is CONSUMED (the dispatcher's true stops the default back
+      // behavior): no navigation fires and the countdown is still armed.
+      expect(pressHardwareBack()).toBe(true);
+      expect(mockRouterPush).not.toHaveBeenCalled();
+      expect(mockRouterReplace).not.toHaveBeenCalled();
+      expect(screen.getByLabelText("Order resets in 25 seconds")).toBeOnTheScreen();
+
+      // The proof the guard protects: the window still expires into the
+      // gated reset — a back press inside it cannot kill the auto-reset.
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(25_000);
+      });
+      await flushAsyncWork(() => mockRouterReplace.mock.calls.length > 0);
+      expect(mockRouterReplace).toHaveBeenCalledWith("/");
+      expect(useAttemptStore.getState().phase).toBe("idle");
+      // The reset ended the presentation; the guard left with it.
+      expect(backPressSubscriptions).toHaveLength(0);
+    });
+
+    it("removes the guard on unmount — no listener outlives the success screen (R3-02)", async () => {
+      await seedConfirmedAttempt("done");
+      const view = await renderScreen();
+      await screen.findByLabelText("Order resets in 25 seconds");
+      expect(backPressSubscriptions).toHaveLength(1);
+      await view.unmount();
+      expect(backPressSubscriptions).toHaveLength(0);
+    });
+
+    it("guards the whole valid presentation — the settings-pending skeleton too: the confirmed record already owns the session (R3-02 / AC-14)", async () => {
+      mockSettingsResult.current = { isPending: true, isError: false };
+      await seedConfirmedAttempt("done");
+      await renderScreen();
+
+      expect(await screen.findByLabelText("Loading content")).toBeOnTheScreen();
+      expect(backPressSubscriptions).toHaveLength(1);
+    });
+
+    it("guards the unsafe-cleanup presentation too — its retry is the only way through, a back pop would strand it (R3-02 / AC-11)", async () => {
+      await seedConfirmedAttempt("failed");
+      await renderScreen();
+
+      await screen.findByText("We couldn't finish clearing this tablet for the next customer");
+      expect(backPressSubscriptions).toHaveLength(1);
+    });
+
+    it("never subscribes in the escape presentation — a stale/direct route keeps standard back semantics (R3-02 / AC-15)", async () => {
+      // No record at all (recover found nothing — the stale-route shape).
+      const outcome = await useAttemptStore.getState().recover(TEST_PROFILE.id);
+      expect(outcome).toBe("none");
+      await renderScreen();
+      await screen.findByText("This order can't be shown here.");
+      expect(backPressSubscriptions).toHaveLength(0);
+    });
+
+    it("never subscribes in the unresolved-record escape either — a record that is not a success guards nothing (R3-02 / AC-15)", async () => {
+      // recover() is once-per-session (the store's idempotence), so the
+      // unresolved variant drives the seed's own recover from the cleared
+      // beforeEach machine — its own test, not a second act inside the one
+      // above.
+      await seedUnresolvedAttempt();
+      await renderScreen();
+      await screen.findByText("This order can't be shown here.");
+      expect(backPressSubscriptions).toHaveLength(0);
+    });
   });
 });

@@ -17,9 +17,9 @@ is the first thing the next agent reads.
 ```
 Current round     : 3
 Current task      : — (round complete)
-Current stage     : ROUND 3 GATE PASS — Round 4 starting
-Last gate         : ROUND 3 GATE PASS
-Next legal action : Lead scaffold T13 (routes), then delegate
+Current stage     : T13 GATE PASS — next T14 (cart Review Order CTA)
+Last gate         : T13 GATE PASS
+Next legal action : delegate T14 (Full Cart Review Order CTA — owning-feature edit)
 Blocked by        : —
 ```
 

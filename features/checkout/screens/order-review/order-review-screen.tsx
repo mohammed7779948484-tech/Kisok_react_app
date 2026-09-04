@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { ShoppingCart } from "lucide-react-native";
-import { ScrollView, View } from "react-native";
+import { BackHandler, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -72,6 +72,12 @@ const FOOTERLESS_EDGES = ["top", "bottom", "left", "right"] as const;
  * → navigate to `/checkout-success` (the route materializes in T13; the
  * push string is the contract).
  *
+ * R3-02 (AC-04's back-navigation half): while the phase is submitting or
+ * unknown, Android's hardware/gesture BACK is consumed — a pop mid-flight
+ * would strand a locked cart, and a pop during the unknown hold would
+ * strand the customer off the panel's Check Again (a dead end until a
+ * restart). Every other phase keeps standard back semantics.
+ *
  * Persistence honesty (AC-03, unchanged from T08): `memoryOnly` → warning
  * Alert, `clearFailed` → destructive Alert. Pre-submission REFUSALS
  * (normalization throw, a failed durable write, a defensive prepare
@@ -141,6 +147,26 @@ export function OrderReviewScreen() {
     }
     lastPhaseRef.current = phase;
   }, [phase, router]);
+
+  // R3-02 (AC-04's back-navigation half): the hardware-back guard. While a
+  // submission owns the session — the in-flight phase AND the unresolved
+  // hold — Android's back button/gesture must not pop this screen: a pop
+  // during "submitting" strands a locked cart mid-flight, and a pop during
+  // "unknown" strands the customer on a locked cart with NO Check Again
+  // (the panel is the only affordance in that phase) until a restart. The
+  // handler returns true — the press is consumed, the router's back never
+  // runs, and nothing is logged (the guard is silent by design). Keyed on
+  // the derived flag, not the phase: the submitting ↔ unknown replay loop
+  // never churns the subscription, and the teardown removes it the moment
+  // the phase leaves the guarded set — every other phase (idle, conflict,
+  // failed, confirmed) keeps standard back semantics, the footer's
+  // explicit escapes being the way back.
+  const backGuarded = phase === "submitting" || phase === "unknown";
+  useEffect(() => {
+    if (!backGuarded) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => true);
+    return () => subscription.remove();
+  }, [backGuarded]);
 
   /**
    * The submission orchestration (T09). One press = guard → normalize →

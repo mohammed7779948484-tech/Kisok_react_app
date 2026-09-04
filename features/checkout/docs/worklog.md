@@ -1143,3 +1143,80 @@ idempotency owns duplicate-safety, this is UX completeness for AC-04).
 R3-05 deferred (minor copy drift risk; recorded).
 
 ROUND 3 GATE: PASS
+
+### T13 — routes (/checkout, /checkout-success)
+
+MODE: config
+ACCEPTANCE: N/A — routing
+
+SCAFFOLD (Lead, before delegating)
+$ pnpm generate route checkout checkout --role=customer --screen=order-review
+$ pnpm generate route checkout checkout-success --role=customer --screen=order-success
+created : app/(customer)/checkout.tsx
+app/(customer)/checkout-success.tsx
+(+ index.ts export additions for both screens)
+
+VERIFICATION (config — the routes)
+The two generated route files verified: thin renders of the public
+screens (checkout.tsx → OrderReviewScreen; checkout-success.tsx →
+OrderSuccessScreen), byte-matching the cart.tsx precedent; index.ts
+exports both screens (the generator's append; the index doc comment now
+literally true). pnpm typecheck clean.
+
+RED (behavior — the BackHandler guard, R3-02)
+$ npx jest features/checkout/screens/order-review/order-review-screen.test.tsx -t "hardware back"
+2 failed — "Expected length: 1 / Received length: 0" for the unknown +
+submitting subscriptions (the guard missing; the drive itself reached
+the phases first). $ (success suite) -t "hardware back" → 4 failed on
+the same missing-subscription assertion. One RED run exposed a test bug
+(recover() is once-per-session — two escape variants can't share a
+test); split, re-RED clean.
+
+IMPLEMENT
+order-review-screen.tsx — the BackHandler guard keyed on a derived
+backGuarded flag (submitting || unknown): consume the press, clean
+removal; keyed on the flag so submitting↔unknown replay churns nothing.
+order-success-screen.tsx — the guard over the whole valid confirmed
+presentation (skeleton + unsafe-cleanup included; isValidSuccess lifted
+above the early returns — hooks order); the escape keeps standard back
+semantics (deliberate, documented). 9 new tests (3 review, 6 success),
+with the jest BackHandler pattern established (no RN/jest-expo mock
+exists — the spy-backed registry mirrors BackHandler.android.js incl.
+reverse-order first-true dispatch; verified by the reviewer against the
+real RN sources + the navigator's own subscription ordering +
+predictiveBackGestureEnabled:false).
+F-T11-04 DISPOSITION (required by the T13 reviewer): the success
+reset/retry/escape navigations became router.replace("/") (3 call
+sites + the test mock + re-pinned assertions) — the checkout feature's
+own session-ending convention (the recovery gate's), and push would
+retain each order's success screen in the stack across a shift.
+
+GREEN
+$ npx jest features/checkout → 13 suites / 291 tests (zero console)
+$ npx jest features/catalog features/checkout → 40 suites / 531 tests
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean
+$ npx eslint <7 files> --max-warnings=0 → exit 0
+$ npx prettier --check → clean (worklog formatted — F-T13-01)
+
+TASK REVIEW (fresh code-reviewer, agent-27d008a0)
+Verified: the routes byte-faithful + thin; the guards' phase mapping,
+hooks order, teardown, and no-churn (pinned); the BackHandler mock
+verified against the REAL RN sources (android dispatcher semantics,
+ios no-op, jest-preset platform) and the production composition
+(navigator subscription ordering, predictive back); the recovery gate
+needs no guard (layout-level overlay survives pops; re-recovers next
+launch). Full suite re-run: 68/856.
+Findings: F-T13-01 minor (worklog prettier — fixed), F-T13-02 minor
+(records: the R3-02 guard's file scope never recorded — this entry +
+the todo scope line widened in this update). F-T11-04 disposition:
+REQUIRE replace (landed above, with the reviewer's reasoning recorded).
+
+DIFF
+app/(customer)/checkout.tsx, app/(customer)/checkout-success.tsx (new)
+features/checkout/index.ts (screen exports, generator-appended)
+features/checkout/screens/order-review/{order-review-screen.tsx,test}
+features/checkout/screens/order-success/{order-success-screen.tsx,test}
+
+GATE: PASS

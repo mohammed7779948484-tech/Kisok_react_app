@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { Dimensions } from "react-native";
+import { BackHandler, Dimensions } from "react-native";
 
 import { useAuth } from "@/core/auth";
 import { AppError } from "@/core/errors";
@@ -101,6 +101,67 @@ jest.mock("../../api/submit-order", () => ({
   submitOrder: jest.fn(),
 }));
 const mockSubmitOrder = submitOrder as jest.MockedFunction<typeof submitOrder>;
+
+/**
+ * R3-02's jest pattern for BackHandler — no precedent in the repo, so this
+ * block establishes it. There is nothing to lean on: RN's jest setup mocks
+ * AppState, Clipboard, … but NOT BackHandler, and jest-expo resolves
+ * `react-native` to the iOS platform (the preset's haste.defaultPlatform),
+ * whose `BackHandler.addEventListener` is a no-op stub that DROPS the
+ * handler and whose `remove` is unobservable. So the spy stands in for the
+ * ANDROID implementation's contract — the platform this guard exists for:
+ * every addEventListener("hardwareBackPress", …) registration lands in a
+ * test-visible list, the returned subscription's `remove` splices it back
+ * out (mirroring BackHandler.android.js), and `pressHardwareBack()`
+ * dispatches with the real dispatcher's semantics — reverse registration
+ * order, stop at the first handler returning true (the press is consumed;
+ * the default back behavior never runs). Installed in beforeEach;
+ * afterEach's restoreAllMocks returns the platform stub, like every other
+ * spy in this suite.
+ */
+type HardwareBackHandler = () => boolean | null | undefined;
+type HardwareBackSubscription = { handler: HardwareBackHandler; remove: jest.Mock };
+
+const backPressSubscriptions: HardwareBackSubscription[] = [];
+
+function installBackHandlerSpy() {
+  backPressSubscriptions.length = 0;
+  jest
+    .spyOn(BackHandler, "addEventListener")
+    .mockImplementation((_eventName, handler: HardwareBackHandler) => {
+      const subscription: HardwareBackSubscription = {
+        handler,
+        remove: jest.fn(() => {
+          const index = backPressSubscriptions.indexOf(subscription);
+          if (index !== -1) {
+            backPressSubscriptions.splice(index, 1);
+          }
+        }),
+      };
+      backPressSubscriptions.push(subscription);
+      return { remove: subscription.remove };
+    });
+}
+
+/** The recorded registrations — the AppState-mock reading precedent's cast. */
+function hardwareBackRegistrations() {
+  return (BackHandler.addEventListener as unknown as jest.Mock).mock.calls;
+}
+
+/**
+ * The real android dispatcher's walk: last registered first, and the first
+ * `true` consumes the press (the default back behavior never runs). The
+ * return value is what the native side would act on.
+ */
+function pressHardwareBack(): boolean {
+  for (let i = backPressSubscriptions.length - 1; i >= 0; i -= 1) {
+    const subscription = backPressSubscriptions[i];
+    if (subscription !== undefined && subscription.handler()) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /** The single durable key the cart store's restore reads (cart plan decision 1). */
 const KEY = storageKey("cart", "lines");
@@ -330,6 +391,9 @@ describe("OrderReviewScreen", () => {
     // silent, per the repo convention.
     setLogSink(() => {});
     mockRouterPush.mockClear();
+    // R3-02: the BackHandler spy (its block above) — fresh registry per
+    // test, restored by afterEach's restoreAllMocks like the storage spies.
+    installBackHandlerSpy();
     // Disk hygiene (full-cart's pattern): the store's restore reads this key,
     // so a previous test's envelope must not leak into the next one's
     // restore. Through the app's own API.
@@ -971,6 +1035,128 @@ describe("OrderReviewScreen", () => {
       expect(
         screen.queryByText("Some items aren't available in the requested quantities"),
       ).toBeNull();
+    });
+  });
+
+  // R3-02 — the hardware/gesture-BACK guard (AC-04's back-navigation half).
+  // Android's back button must not pop this screen while a submission owns
+  // the session: during "submitting" a pop strands a locked cart mid-flight,
+  // and during "unknown" it strands the customer OFF the only Check Again
+  // affordance — a dead end until a restart. The guard consumes the press
+  // (the handler returns true); every other phase keeps standard back
+  // semantics (the footer's escapes are the explicit way back). Driven
+  // through the real flow (seed → recover → press → outcome), asserted
+  // through the BackHandler spy's registry and dispatcher above.
+  describe("hardware back guard (R3-02 / AC-04)", () => {
+    beforeEach(() => {
+      // The submission-flow suite's reset: deterministic first mint, and the
+      // api mock drops any previous test's implementations.
+      mockUuidCounter.current = 0;
+      mockSubmitOrder.mockReset();
+    });
+
+    it("consumes the hardware back press while the outcome is unknown — the panel's Check Again cannot be stranded off-screen, and unmount removes the guard (R3-02 / AC-04)", async () => {
+      await seedDurableEnvelope([cappuccinoLine, waterLine]);
+      await recoverAttemptStore();
+      mockAuthHolder.current = installMockAuth();
+      mockSubmitOrder.mockRejectedValueOnce(
+        new AppError({
+          kind: "network",
+          userMessage: "We couldn't reach the network. Check the connection and try again.",
+        }),
+      );
+      const user = userEvent.setup();
+      const view = await renderScreen();
+
+      await user.press(await screen.findByRole("button", { name: "Confirm Order" }));
+      await screen.findByText("We couldn't confirm whether your order went through");
+      // The unknown hold (the T09 pins): the cart is locked and the panel's
+      // action is the only way through — exactly the state a back pop must
+      // not strand the customer off of.
+      expect(getCartSnapshot().locked).toBe(true);
+
+      // The guard is live: ONE registration, on the hardware event.
+      expect(backPressSubscriptions).toHaveLength(1);
+      expect(hardwareBackRegistrations()).toHaveLength(1);
+      expect(hardwareBackRegistrations()[0]?.[0]).toBe("hardwareBackPress");
+      // The press is CONSUMED (the dispatcher's true stops the default back
+      // behavior): no navigation fires, and Check Again is still the
+      // customer's way through.
+      expect(pressHardwareBack()).toBe(true);
+      expect(mockRouterPush).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "Check Again" })).not.toBeDisabled();
+
+      // The leak rule: unmounting the screen removes the listener.
+      await view.unmount();
+      expect(backPressSubscriptions).toHaveLength(0);
+    });
+
+    it("consumes the hardware back press mid-flight, and the guard leaves when the phase does (R3-02 / AC-04)", async () => {
+      await seedDurableEnvelope([cappuccinoLine, waterLine]);
+      await recoverAttemptStore();
+      mockAuthHolder.current = installMockAuth();
+      // The flight stays open until THIS test resolves it, so the mid-flight
+      // guard is observed while the phase genuinely holds.
+      let resolveSubmit!: (value: CreateOrderResponse) => void;
+      mockSubmitOrder.mockImplementation(
+        () =>
+          new Promise<CreateOrderResponse>((resolve) => {
+            resolveSubmit = resolve;
+          }),
+      );
+      const user = userEvent.setup();
+      await renderScreen();
+
+      await user.press(await screen.findByRole("button", { name: "Confirm Order" }));
+      expect(useAttemptStore.getState().phase).toBe("submitting");
+
+      expect(backPressSubscriptions).toHaveLength(1);
+      expect(pressHardwareBack()).toBe(true);
+      expect(mockRouterPush).not.toHaveBeenCalled();
+
+      // The flight lands: the phase leaves the guarded set and the guard
+      // goes with it — back is the system's again the moment the submission
+      // stops owning the session (the success surface mounts its own).
+      await act(async () => {
+        resolveSubmit(SUCCESS_RESPONSE);
+      });
+      await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith("/checkout-success"));
+      expect(useAttemptStore.getState().phase).toBe("confirmed");
+      expect(backPressSubscriptions).toHaveLength(0);
+    });
+
+    it("subscribes in NO unguarded phase — idle, stock-conflict, and failed leave hardware back to the system (R3-02)", async () => {
+      await seedDurableEnvelope([cappuccinoLine, waterLine]);
+      await recoverAttemptStore();
+      mockAuthHolder.current = installMockAuth();
+      mockSubmitOrder.mockResolvedValue(CONFLICT_RESPONSE);
+      const user = userEvent.setup();
+      const firstMount = await renderScreen();
+
+      // Idle review: reading a review owns no session — the footer's Back to
+      // Cart is the explicit escape and hardware back stays standard.
+      await screen.findByRole("button", { name: "Confirm Order" });
+      expect(backPressSubscriptions).toHaveLength(0);
+
+      // The conflict phase: the store unlocked the cart and the panel's
+      // Return to Cart is the way forward — standard back semantics again.
+      await user.press(screen.getByRole("button", { name: "Confirm Order" }));
+      await screen.findByText("Some items aren't available in the requested quantities");
+      expect(backPressSubscriptions).toHaveLength(0);
+
+      // The failed panel, through the suite's re-entry pattern (the mount
+      // reset returns the machine to idle first).
+      await firstMount.unmount();
+      await renderScreen();
+      mockSubmitOrder.mockRejectedValueOnce(
+        new AppError({
+          kind: "server",
+          userMessage: "Something went wrong on our side. Please try again.",
+        }),
+      );
+      await user.press(await screen.findByRole("button", { name: "Confirm Order" }));
+      await screen.findByText("Something went wrong on our side. Please try again.");
+      expect(backPressSubscriptions).toHaveLength(0);
     });
   });
 });

@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { ScrollView, View } from "react-native";
+import { BackHandler, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -83,6 +83,13 @@ const FOOTERLESS_EDGES = ["top", "bottom", "left", "right"] as const;
  * attempt (a still-unsafe clear refuses and this presentation stays
  * standing, driven by the honest record/persistence selectors).
  *
+ * R3-02 (AC-14's back-navigation half): the whole VALID confirmed
+ * presentation guards Android's hardware/gesture BACK (the press is
+ * consumed — the countdown's auto-reset cannot be killed by a pop); the
+ * ESCAPE deliberately keeps standard back semantics (its one affordance,
+ * Back to Browse, is the way forward, and hardware back from a
+ * dead-end-free surface is an equally valid exit).
+ *
  * No Supabase anywhere near the screen: the settings arrive through the
  * Catalog feature's public seam (plan D6 — the same shared query the catalog
  * screens loaded, no second fetch), the store is the feature's own state,
@@ -126,6 +133,35 @@ export function OrderSuccessScreen() {
   // guard keeps the UX from firing the same flow twice).
   const resetInFlightRef = useRef(false);
 
+  // The valid-confirmed gate: the record IS the success payload (D1) and the
+  // machine is in the confirmed phase — the same conditions the store's
+  // reset gate checks, so the escape and the offered reset can never
+  // disagree with the machine. Computed HERE, above the presentation
+  // early-returns below, because the hardware-back guard's effect keys on it
+  // and hooks order is unconditional (this screen's own convention).
+  const confirmedRecord = record !== null && record.status === "confirmed" ? record : null;
+  const isValidSuccess = confirmedRecord !== null && phase === "confirmed";
+
+  // R3-02 (AC-14's back-navigation half): the hardware-back guard for the
+  // confirmed presentation. The countdown owns the session here — its expiry
+  // drives the AC-14 auto-reset — so a hardware back press that popped this
+  // screen would kill the reset the kiosk depends on. The handler returns
+  // true: the press is consumed, the router's back never runs, nothing is
+  // logged. The WHOLE valid presentation is guarded — the settings-pending
+  // skeleton and the unsafe-cleanup retry included — because the confirmed
+  // record owns the session from the moment the presentation is valid until
+  // the gated reset ends it; the ESCAPE deliberately keeps standard back
+  // semantics (a dead-end-free surface whose one affordance, Back to Browse,
+  // is the way forward — hardware back from it is an equally valid exit, the
+  // documented call). Keyed on the derived flag so the guard leaves exactly
+  // when the presentation does — the reset (phase idle) or unmount — with
+  // clean removal in the teardown.
+  useEffect(() => {
+    if (!isValidSuccess) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => true);
+    return () => subscription.remove();
+  }, [isValidSuccess]);
+
   /**
    * The gated Next-Customer reset (AC-14), shared by the button press and
    * the countdown's expiry: the store's own gate decides — only a CONFIRMED
@@ -140,7 +176,7 @@ export function OrderSuccessScreen() {
       const result = await useAttemptStore.getState().resetForNextCustomer();
       if (result.status === "persisted") {
         setNavigatingHome(true);
-        router.push("/");
+        router.replace("/");
         return;
       }
       log.warn("The Next Customer reset was refused; surfacing the unsafe-cleanup warning", {
@@ -166,7 +202,7 @@ export function OrderSuccessScreen() {
       const result = await useAttemptStore.getState().resetForNextCustomer();
       if (result.status === "persisted") {
         setNavigatingHome(true);
-        router.push("/");
+        router.replace("/");
         return;
       }
       log.warn("The retried cleanup reset was refused; keeping the unsafe-cleanup warning", {
@@ -183,13 +219,6 @@ export function OrderSuccessScreen() {
     return <Screen edges={FOOTERLESS_EDGES} />;
   }
 
-  // The valid-confirmed gate: the record IS the success payload (D1) and the
-  // machine is in the confirmed phase — the same conditions the store's
-  // reset gate checks, so the escape and the offered reset can never
-  // disagree with the machine.
-  const confirmedRecord = record !== null && record.status === "confirmed" ? record : null;
-  const isValidSuccess = confirmedRecord !== null && phase === "confirmed";
-
   // AC-15: the safe escape — a stale or direct route with no valid immutable
   // success payload. No success content, no cart, no countdown; the copy
   // explicitly does NOT encourage resubmitting an old cart.
@@ -203,7 +232,7 @@ export function OrderSuccessScreen() {
               title="This order can't be shown here."
               description="If you just placed an order, it's safe — don't submit it again. Let store staff know if you need help."
             />
-            <Button variant="primary" size="large" block onPress={() => router.push("/")}>
+            <Button variant="primary" size="large" block onPress={() => router.replace("/")}>
               <Text>Back to Browse</Text>
             </Button>
           </View>
