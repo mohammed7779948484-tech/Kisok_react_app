@@ -2001,3 +2001,46 @@ Access Denied — check MDM_CLIENT_ID…"`), numeric code fell to the raw
   characterization note).
 - **GATE: PASS** — documented DC hosts, both documented error-envelope
   shapes, token error descriptions surfaced; T15 surfaces byte-identical.
+
+---
+
+## T17 — release verifier certificate SHA-256 pinning (remediation Round 4, IR-06)
+
+**Mode**: behavior-change · **Acceptance**: AC-08 · **Deps**: — · **Scaffold**:
+N/A (repo tooling + workflows)
+
+- **Research basis**: packet R6 (agent-776a5ce2), Lead spot-checked against
+  AOSP ApkSignerTool.java — per signer: `<label> certificate DN:`,
+  `<label> certificate SHA-256 digest: <lowercase contiguous hex>`; label
+  shapes vary (`Signer #1`, rotated `Signer (minSdkVersion=…,
+maxSdkVersion=…)`, `Source Stamp Signer`) → parse by line SUFFIX. Android
+  enforces byte-level certificate equality on updates; DN is not identity.
+  The digest is PUBLIC (computable from the shipped APK) → Actions VARIABLE,
+  never a secret.
+- **RED** (fresh implementer agent-4a2a8884): 21 failed / 33 passed — the
+  IR-06 hole fails-to-fail (plausible non-debug DN + wrong digest PASSES
+  today, `Expected: false / Received: true`), absent-input unnamed,
+  `checkCertificateDigests` missing.
+- **IMPLEMENT** (4 files, exactly in scope): REQUIRED input
+  `--cert-sha256`/`EXPECTED_CERT_SHA256` (INPUT_SPECS); exported pure
+  `checkCertificateDigests` (suffix-anchored parse, hex normalization both
+  sides, DISTINCT-digest set = signer set — the same cert on two block
+  shapes is one signer; more than one distinct digest fails closed as
+  multi-signer; mismatch message quotes 12-char prefixes only); debug-DN
+  rejection retained (both failures now reported); both workflows pass
+  `vars.ANDROID_UPLOAD_CERT_SHA256` via env indirection with a fail-closed
+  presence check naming the variable + both documented computation
+  procedures (apksigner / keytool|sha256sum).
+- **GREEN**: 54 tests; test:ci 68/870; verify exit 0; real-CLI smoke (wrong
+  digest → named mismatch; keytool spelling → pass).
+- **Fresh review** (agent-3c5d09c6): **0 blocking / 0 major / 2 minor**
+  (T17-R1 no pin shape validation — a sha256sum paste (`<hex>  -`) produced
+  an IDENTICAL-prefix unactionable mismatch; T17-R2 three parse rows
+  unpinned). Implementer resumed: `^[0-9a-f]{64}$` shape check with a named
+  actionable failure (RED reproduced verbatim), +8 tests incl. source-stamp
+  block / actual-side-colon / SHA-1-ignored pins; one disclosed fixture
+  correction (a pre-existing key-digest fixture was 65-hex — now a real
+  64-hex, making the key-line test MORE discriminating). 65 tests; test:ci
+  68/881; verify exit 0.
+- **GATE: PASS** — the delivery gate now rejects any wrong non-debug key
+  (IR-06 closed); operators get actionable shape failures.

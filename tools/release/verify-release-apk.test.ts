@@ -8,10 +8,21 @@
  * Expectations are derived from an evaluated-config fixture — the shape the
  * workflow obtains by evaluating app.config.ts. The script itself never
  * imports expo/jiti, so the fixture stands in for that evaluation.
+ *
+ * The certificate-digest fixtures follow the AOSP ApkSignerTool output
+ * contract (research R6): every signer block prints "<label> certificate DN:
+ * <subjectDN>", "<label> certificate SHA-256 digest: <hex>" (lowercase
+ * contiguous hex over the DER certificate) and "<label> key SHA-256 digest:
+ * <hex>"; <label> is "Signer #1" (or the legacy multi-space spelling), a
+ * rotated-block "Signer (minSdkVersion=…, maxSdkVersion=…)" or "Source Stamp
+ * Signer" — so the pin parses on the line SUFFIX, never the label shape. The
+ * pinned value itself is PUBLIC (anyone holding the shipped APK can compute
+ * it); keytool prints the same digest UPPERCASE with colons.
  */
 
 import {
   checkBundleEntry,
+  checkCertificateDigests,
   checkSigningCertificates,
   compareBadging,
   main,
@@ -51,14 +62,72 @@ const badgingOutput = (packageName: string, versionCode: string, versionName: st
 
 const goodBadging = badgingOutput("com.kisok.kiosk", "7", "1.2.0");
 
-/** apksigner verify --print-certs output for a single signer. */
-const certsOutput = (dn: string) =>
-  `Signer      #1 certificate DN: ${dn}\n` +
-  "Signer      #1 certificate SHA-256 digest: 4c1f22cb1a9e33f0a3c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1\n" +
-  "Signer      #1 key SHA-256 digest: 9f2b0a1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0";
+/**
+ * The pinned upload-certificate SHA-256. PUBLIC by construction (research
+ * R6): it is the fingerprint anyone holding the shipped APK computes with
+ * `apksigner verify --print-certs`; keytool prints the same digest UPPERCASE
+ * with colons, and both spellings must verify.
+ */
+const pinnedCertSha256 = "4c1f22cb1a9e33f0a3c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1";
 
-const releaseCerts = certsOutput("CN=Kisok Upload, OU=Mobile, O=Kisok, C=DE");
-const debugCerts = certsOutput("CN=Android Debug, O=Android, C=US");
+/** keytool's spelling of the same digest: uppercase hex bytes joined with colons. */
+const pinnedCertSha256ColonHex = (pinnedCertSha256.toUpperCase().match(/../g) ?? []).join(":");
+
+/** A DIFFERENT, equally plausible release-certificate digest — the IR-06 hole. */
+const otherCertSha256 = "bb0705ef2c9d41a86e5f0c3b9d2a8e74c1f6b3d08a4e2f7c5b1d9a6ef3c07d84";
+
+/** The debug key's digest — a debug-signed APK never carries the upload key's digest. */
+const debugCertSha256 = "5f0a3c9d8e1b4a72d6c3f0951a7e2b84c0d9f3a648b1e5c72f8a0d936b4e7c15";
+
+const releaseDn = "CN=Kisok Upload, OU=Mobile, O=Kisok, C=DE";
+const debugDn = "CN=Android Debug, O=Android, C=US";
+
+/**
+ * One apksigner --print-certs signer block in the AOSP-documented shape
+ * (research R6): DN, certificate SHA-256 digest, certificate SHA-1 digest
+ * (T17-R2 — printed unconditionally, must never satisfy the SHA-256 pin) and
+ * the key SHA-256 digest line (also real output, also never a certificate
+ * digest).
+ */
+const SHA1_DIGEST = "3f9a1c8b2d7e6f5a4b0c9d8e7f6a5b4c3d2e1f0a";
+
+/** The signer's key digest — a real 64-hex SHA-256, but of the KEY, never the certificate. */
+const KEY_SHA256_DIGEST = "9f2b0a1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a";
+
+const signerCerts = (label: string, dn: string, certSha256: string) =>
+  `${label} certificate DN: ${dn}\n` +
+  `${label} certificate SHA-256 digest: ${certSha256}\n` +
+  `${label} certificate SHA-1 digest: ${SHA1_DIGEST}\n` +
+  `${label} key SHA-256 digest: ${KEY_SHA256_DIGEST}`;
+
+const releaseCerts = signerCerts("Signer      #1", releaseDn, pinnedCertSha256);
+const debugCerts = signerCerts("Signer      #1", debugDn, debugCertSha256);
+
+/** A plausible non-debug identity signed by a DIFFERENT key — the IR-06 hole: the DN alone cannot catch this. */
+const wrongKeyCerts = signerCerts("Signer      #1", releaseDn, otherCertSha256);
+
+/** A single signer reported with the v3.1 rotated-block label shape. */
+const rotatedLabelCerts = signerCerts(
+  "Signer (minSdkVersion=24, maxSdkVersion=34)",
+  releaseDn,
+  pinnedCertSha256,
+);
+
+/** A rotated lineage: TWO different certificate digests, the pinned one among them. */
+const rotatedLineageCerts =
+  signerCerts("Signer #1", releaseDn, pinnedCertSha256) +
+  "\n" +
+  signerCerts("Signer (minSdkVersion=24, maxSdkVersion=34)", releaseDn, otherCertSha256);
+
+/**
+ * sha256sum's WHOLE output line ("<hex>  -") — the paste the workflow's own
+ * documented `keytool -exportcert … | sha256sum` procedure invites (T17-R1).
+ */
+const sha256sumPaste = `${pinnedCertSha256}  -`;
+
+/** A source-stamp block appended to the signer output: a second certificate digest. */
+const stampCerts = (stampSha256: string) =>
+  `${releaseCerts}\nSource Stamp certificate SHA-256 digest: ${stampSha256}`;
 
 /** unzip -l output (Length / Date / Time / Name columns). */
 const apkListing = (withBundle: boolean) =>
@@ -111,6 +180,7 @@ const goodInputs = (): VerifyInputs => ({
   expectedPackageName: expected.packageName,
   expectedVersionCode: expected.versionCode,
   expectedVersionName: expected.versionName,
+  expectedCertSha256: pinnedCertSha256,
   aapt2: "aapt2",
   apksigner: "apksigner",
   unzip: "unzip",
@@ -121,6 +191,7 @@ const fullEnv = (): Record<string, string | undefined> => ({
   EXPECTED_PACKAGE_NAME: expected.packageName,
   EXPECTED_VERSION_CODE: expected.versionCode,
   EXPECTED_VERSION_NAME: expected.versionName,
+  EXPECTED_CERT_SHA256: pinnedCertSha256,
 });
 
 const argv = ["node", "tools/release/verify-release-apk.ts"];
@@ -139,6 +210,8 @@ describe("input validation fails closed", () => {
     ["EXPECTED_VERSION_CODE", { EXPECTED_VERSION_CODE: "" }],
     ["EXPECTED_VERSION_NAME", { EXPECTED_VERSION_NAME: undefined }],
     ["EXPECTED_VERSION_NAME", { EXPECTED_VERSION_NAME: "" }],
+    ["EXPECTED_CERT_SHA256", { EXPECTED_CERT_SHA256: undefined }],
+    ["EXPECTED_CERT_SHA256", { EXPECTED_CERT_SHA256: "" }],
   ];
 
   it.each(missingOrEmpty)(
@@ -280,6 +353,303 @@ describe("signing certificate verification", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Signing-certificate SHA-256 pinning (IR-06 — the DN is not identity)
+// ---------------------------------------------------------------------------
+
+describe("signing certificate SHA-256 pinning", () => {
+  it("the pinned digest on the legacy multi-space signer line passes", () => {
+    expect(checkCertificateDigests(releaseCerts, pinnedCertSha256)).toEqual([]);
+  });
+
+  it("the pinned digest on a single-space 'Signer #1' line passes", () => {
+    const singleSpace = signerCerts("Signer #1", releaseDn, pinnedCertSha256);
+
+    expect(checkCertificateDigests(singleSpace, pinnedCertSha256)).toEqual([]);
+  });
+
+  it("the pinned digest on a rotated-block label line passes (suffix-anchored parsing)", () => {
+    expect(checkCertificateDigests(rotatedLabelCerts, pinnedCertSha256)).toEqual([]);
+  });
+
+  it("a keytool-style pinned value (uppercase, colons) matches the lowercase contiguous output", () => {
+    expect(checkCertificateDigests(releaseCerts, pinnedCertSha256ColonHex)).toEqual([]);
+  });
+
+  it("the signer's KEY SHA-256 digest line is never parsed as the certificate digest", () => {
+    // The pin is a SHAPE-VALID 64-hex value equal to the key line's digest —
+    // so only the parse can discriminate: had the key line been parsed as a
+    // certificate digest, actual would equal the pin and pass. It must
+    // mismatch instead.
+    const failures = checkCertificateDigests(releaseCerts, KEY_SHA256_DIGEST);
+
+    expect(failures).toHaveLength(1);
+    for (const failure of failures) {
+      expect(failure).toContain("SHA-256 mismatch");
+    }
+  });
+
+  it("the same certificate printed on two block shapes is ONE signer, not multi-signer", () => {
+    const twice =
+      signerCerts("Signer #1", releaseDn, pinnedCertSha256) +
+      "\n" +
+      signerCerts("Signer (minSdkVersion=24, maxSdkVersion=34)", releaseDn, pinnedCertSha256);
+
+    expect(checkCertificateDigests(twice, pinnedCertSha256)).toEqual([]);
+  });
+
+  it("a different digest behind a plausible non-debug DN is the IR-06 mismatch, quoting both prefixes", () => {
+    const failures = checkCertificateDigests(wrongKeyCerts, pinnedCertSha256);
+
+    expect(failures).toHaveLength(1);
+    for (const failure of failures) {
+      expect(failure).toContain("SHA-256 mismatch");
+      expect(failure).toContain(pinnedCertSha256.slice(0, 12));
+      expect(failure).toContain(otherCertSha256.slice(0, 12));
+    }
+  });
+
+  it("two different digests — even with the pinned one present — fail closed as multi-signer", () => {
+    const failures = checkCertificateDigests(rotatedLineageCerts, pinnedCertSha256);
+
+    expect(failures).toHaveLength(1);
+    for (const failure of failures) {
+      expect(failure).toContain("more than one signing certificate");
+      expect(failure).toContain("single pinned upload key");
+    }
+  });
+
+  it.each([
+    ["empty apksigner output", ""],
+    [
+      "a DN line but no certificate SHA-256 digest line",
+      `Signer      #1 certificate DN: ${releaseDn}\n`,
+    ],
+  ])("%s fails closed — the digest was never checked", (_label, output) => {
+    const failures = checkCertificateDigests(output, pinnedCertSha256);
+
+    expect(failures).toHaveLength(1);
+    for (const failure of failures) {
+      expect(failure).toContain("no certificate SHA-256 digest");
+    }
+  });
+
+  it("the IR-06 hole: a plausible non-debug DN with a DIFFERENT digest fails the verification", async () => {
+    const { executor } = createFakeExecutor({
+      aapt2: success(goodBadging),
+      apksigner: success(wrongKeyCerts),
+      unzip: success(apkListing(true)),
+    });
+
+    const result = await verifyApk(goodInputs(), executor);
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures.join("\n")).toContain("SHA-256 mismatch");
+  });
+
+  it("a debug-signed APK fails on BOTH the debug DN and the digest pin", async () => {
+    const { executor } = createFakeExecutor({
+      aapt2: success(goodBadging),
+      apksigner: success(debugCerts),
+      unzip: success(apkListing(true)),
+    });
+
+    const result = await verifyApk(goodInputs(), executor);
+
+    expect(result.ok).toBe(false);
+    expect(result.failures).toHaveLength(2);
+    expect(result.failures.join("\n")).toContain("CN=Android Debug");
+    expect(result.failures.join("\n")).toContain("SHA-256 mismatch");
+  });
+
+  it("the pinned digest in a rotated-block label shape passes the full verification", async () => {
+    const { executor } = createFakeExecutor({
+      aapt2: success(goodBadging),
+      apksigner: success(rotatedLabelCerts),
+      unzip: success(apkListing(true)),
+    });
+
+    const result = await verifyApk(goodInputs(), executor);
+
+    expect(result).toEqual({ ok: true, failures: [] });
+  });
+
+  it("a keytool-style pinned value (uppercase, colons) verifies the lowercase output digest", async () => {
+    const { executor } = createFakeExecutor(greenResponses());
+    const inputs = { ...goodInputs(), expectedCertSha256: pinnedCertSha256ColonHex };
+
+    const result = await verifyApk(inputs, executor);
+
+    expect(result).toEqual({ ok: true, failures: [] });
+  });
+
+  it("multi-signer output fails closed even when the pinned digest is among the signers", async () => {
+    const { executor } = createFakeExecutor({
+      aapt2: success(goodBadging),
+      apksigner: success(rotatedLineageCerts),
+      unzip: success(apkListing(true)),
+    });
+
+    const result = await verifyApk(goodInputs(), executor);
+
+    expect(result.ok).toBe(false);
+    expect(result.failures.join("\n")).toContain("more than one signing certificate");
+  });
+
+  it("main: the IR-06 hole — a plausible non-debug identity with the WRONG digest exits non-zero", async () => {
+    const errors: string[] = [];
+    const { executor } = createFakeExecutor({
+      aapt2: success(goodBadging),
+      apksigner: success(wrongKeyCerts),
+      unzip: success(apkListing(true)),
+    });
+
+    const exitCode = await main(argv, fullEnv(), {
+      executor,
+      errorSink: (line) => errors.push(line),
+    });
+
+    expect(exitCode).not.toBe(0);
+    expect(errors.join("\n")).toContain("SHA-256 mismatch");
+    expect(errors.join("\n")).toContain(pinnedCertSha256.slice(0, 12));
+    expect(errors.join("\n")).toContain(otherCertSha256.slice(0, 12));
+  });
+
+  it("main: a keytool-style pinned value (uppercase, colons) exits 0", async () => {
+    const output: string[] = [];
+    const { executor } = createFakeExecutor(greenResponses());
+
+    const exitCode = await main(
+      argv,
+      { ...fullEnv(), EXPECTED_CERT_SHA256: pinnedCertSha256ColonHex },
+      {
+        executor,
+        errorSink: () => {},
+        outputSink: (line) => output.push(line),
+      },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(output.join("\n")).toContain("APK verification passed");
+  });
+
+  it("main: --cert-sha256 overrides the environment (a wrong flag value fails the pin)", async () => {
+    const errors: string[] = [];
+
+    const exitCode = await main([...argv, "--cert-sha256", otherCertSha256], fullEnv(), {
+      executor: createFakeExecutor(greenResponses()).executor,
+      errorSink: (line) => errors.push(line),
+    });
+
+    expect(exitCode).not.toBe(0);
+    expect(errors.join("\n")).toContain("SHA-256 mismatch");
+    expect(errors.join("\n")).toContain(otherCertSha256.slice(0, 12));
+  });
+
+  // -------------------------------------------------------------------------
+  // Pinned-value SHAPE (T17-R1): the workflow's documented computation
+  // procedure (`keytool -exportcert … | sha256sum`) invites pasting
+  // sha256sum's whole line — after normalization the trailing "-" survives
+  // and a raw comparison would surface as an unactionable mismatch whose
+  // two 12-char prefixes are IDENTICAL. A malformed pin gets its own named
+  // failure instead.
+  // -------------------------------------------------------------------------
+
+  it.each([
+    ["a sha256sum-style paste ('<hex>  -')", sha256sumPaste],
+    ["a 0x-prefixed pin", `0x${pinnedCertSha256}`],
+    ["an MD5-length (32-hex) pin", pinnedCertSha256.slice(0, 32)],
+  ])(
+    "%s is the named shape failure, not the unactionable identical-prefix mismatch",
+    (_label, pin) => {
+      const failures = checkCertificateDigests(releaseCerts, pin);
+
+      expect(failures).toHaveLength(1);
+      expect(failures.join("\n")).toContain("EXPECTED_CERT_SHA256 is not a 64-hex-digit");
+      // NOT the generic mismatch (which quotes byte-for-byte) — its prefixes
+      // would be identical and say nothing.
+      expect(failures.join("\n")).not.toContain("byte-for-byte");
+    },
+  );
+
+  it("the shape failure echoes the normalized value so the trailing '-' is visible", () => {
+    const failures = checkCertificateDigests(releaseCerts, sha256sumPaste);
+
+    expect(failures).toHaveLength(1);
+    expect(failures.join("\n")).toContain(`${pinnedCertSha256}-`);
+  });
+
+  it("main: a sha256sum-style paste in EXPECTED_CERT_SHA256 exits non-zero with the shape failure", async () => {
+    const errors: string[] = [];
+    const { executor } = createFakeExecutor(greenResponses());
+
+    const exitCode = await main(
+      argv,
+      { ...fullEnv(), EXPECTED_CERT_SHA256: sha256sumPaste },
+      {
+        executor,
+        errorSink: (line) => errors.push(line),
+      },
+    );
+
+    expect(exitCode).not.toBe(0);
+    expect(errors.join("\n")).toContain("EXPECTED_CERT_SHA256 is not a 64-hex-digit");
+    expect(errors.join("\n")).not.toContain("byte-for-byte");
+  });
+
+  // -------------------------------------------------------------------------
+  // Probed-safe parse rows (T17-R2): three more output shapes the AOSP
+  // contract documents. Each pins behaviour that must survive future edits
+  // of the parse.
+  // -------------------------------------------------------------------------
+
+  it("the signer's certificate SHA-1 digest line is ignored by the SHA-256 pin", () => {
+    // The standard signerCerts fixture (every test above) now carries the
+    // AOSP-documented SHA-1 digest line; the pin still verifies.
+    expect(checkCertificateDigests(releaseCerts, pinnedCertSha256)).toEqual([]);
+  });
+
+  it("output carrying only a SHA-1 digest line has no SHA-256 digest to check", () => {
+    const sha1Only =
+      `Signer      #1 certificate DN: ${releaseDn}\n` +
+      `Signer      #1 certificate SHA-1 digest: ${SHA1_DIGEST}\n`;
+    const failures = checkCertificateDigests(sha1Only, pinnedCertSha256);
+
+    expect(failures).toHaveLength(1);
+    expect(failures.join("\n")).toContain("no certificate SHA-256 digest");
+  });
+
+  it("an uppercase colon-separated digest on the ACTUAL side matches a lowercase contiguous pin", () => {
+    const colonHexActual = signerCerts("Signer      #1", releaseDn, pinnedCertSha256ColonHex);
+
+    expect(checkCertificateDigests(colonHexActual, pinnedCertSha256)).toEqual([]);
+  });
+
+  it("an uppercase colon-separated ACTUAL digest passes the full verification", async () => {
+    const { executor } = createFakeExecutor({
+      aapt2: success(goodBadging),
+      apksigner: success(signerCerts("Signer      #1", releaseDn, pinnedCertSha256ColonHex)),
+      unzip: success(apkListing(true)),
+    });
+
+    const result = await verifyApk(goodInputs(), executor);
+
+    expect(result).toEqual({ ok: true, failures: [] });
+  });
+
+  it("a source-stamp block with a DISTINCT digest fails closed as multi-signer", () => {
+    const failures = checkCertificateDigests(stampCerts(otherCertSha256), pinnedCertSha256);
+
+    expect(failures).toHaveLength(1);
+    expect(failures.join("\n")).toContain("more than one signing certificate");
+  });
+
+  it("a source-stamp block carrying the SAME digest is one certificate, not multi-signer", () => {
+    expect(checkCertificateDigests(stampCerts(pinnedCertSha256), pinnedCertSha256)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Embedded JS bundle presence
 // ---------------------------------------------------------------------------
 
@@ -406,7 +776,8 @@ describe("main (CLI exit-code contract)", () => {
     expect(summary).toContain("package com.kisok.kiosk");
     expect(summary).toContain("versionName 1.2.0");
     expect(summary).toContain("versionCode 7");
-    expect(summary).toContain("non-debug certificate");
+    expect(summary).toContain("pinned upload certificate");
+    expect(summary).toContain(`SHA-256 ${pinnedCertSha256.slice(0, 12)}`);
     expect(summary).toContain("JS bundle present");
   });
 
@@ -423,6 +794,7 @@ describe("main (CLI exit-code contract)", () => {
       "EXPECTED_PACKAGE_NAME",
       "EXPECTED_VERSION_CODE",
       "EXPECTED_VERSION_NAME",
+      "EXPECTED_CERT_SHA256",
     ]) {
       expect(output).toContain(`${name} is empty`);
     }
@@ -487,6 +859,7 @@ describe("main (CLI exit-code contract)", () => {
       "EXPECTED_PACKAGE_NAME",
       "EXPECTED_VERSION_CODE",
       "EXPECTED_VERSION_NAME",
+      "EXPECTED_CERT_SHA256",
       "AAPT2_PATH",
     ]) {
       expect(usage).toContain(name);

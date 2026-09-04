@@ -5,23 +5,34 @@
  *
  *     node tools/release/verify-release-apk.ts \
  *       --apk dist/app-release.apk \
- *       --package com.kisok.kiosk --version-code 7 --version-name 1.2.0
+ *       --package com.kisok.kiosk --version-code 7 --version-name 1.2.0 \
+ *       --cert-sha256 <upload-certificate-sha256-hex>
  *
  * …or with the same values from the environment: APK_PATH,
- * EXPECTED_PACKAGE_NAME, EXPECTED_VERSION_CODE, EXPECTED_VERSION_NAME (flags
- * override the environment). The expected package name, versionCode and
- * versionName come from the EVALUATED app config — the workflow evaluates
- * app.config.ts and passes the values in. This script deliberately does NOT
- * import expo/jiti, or anything else from the repository or npm: node-builtin
- * imports only, so it runs under Node 24 native type-stripping (the plan's
- * probed constraint: jest cannot import .mjs, so repo tools are TypeScript
- * executed with plain `node`).
+ * EXPECTED_PACKAGE_NAME, EXPECTED_VERSION_CODE, EXPECTED_VERSION_NAME and
+ * EXPECTED_CERT_SHA256 (flags override the environment). The expected package
+ * name, versionCode and versionName come from the EVALUATED app config — the
+ * workflow evaluates app.config.ts and passes the values in. The expected
+ * certificate SHA-256 is the pinned upload-key fingerprint (see below). This
+ * script deliberately does NOT import expo/jiti, or anything else from the
+ * repository or npm: node-builtin imports only, so it runs under Node 24
+ * native type-stripping (the plan's probed constraint: jest cannot import
+ * .mjs, so repo tools are TypeScript executed with plain `node`).
  *
  * Checks (AC-08): `aapt2 dump badging` → package/versionCode/versionName match
  * the expectations (package identity com.kisok.kiosk — AC-01);
- * `apksigner verify --print-certs` → a signing certificate is present and is
- * NOT the Android debug certificate; `unzip -l` → the APK embeds
- * assets/index.android.bundle.
+ * `apksigner verify --print-certs` → a signing certificate is present, is NOT
+ * the Android debug certificate, and its SHA-256 digest is exactly the pinned
+ * EXPECTED_CERT_SHA256 (IR-06). The pin is the identity check: Android
+ * compares signing certificates BYTE-FOR-BYTE when installing an update
+ * (research R6 — a different non-debug key fails at install exactly like the
+ * debug one), so the DN is reported for diagnosis but never trusted as
+ * identity; `unzip -l` → the APK embeds assets/index.android.bundle.
+ *
+ * The pinned digest is PUBLIC — anyone holding the shipped APK can compute it
+ * (`apksigner verify --print-certs`; keytool prints the same digest uppercase
+ * with colons) — so the workflows source it from an Actions VARIABLE, never a
+ * secret.
  *
  * Fail-closed (AC-07): every required input is checked for missing/empty
  * BEFORE any command runs, and a failure exits non-zero with a message NAMING
@@ -32,8 +43,8 @@
  * Exit status: 0 = every check passed; non-zero = any failure, with each
  * failure printed to stderr as it is found. There are no secrets in this
  * script, but the discipline holds anyway: env-sourced inputs are named, and
- * only their non-secret values (paths, package names, versions) are ever
- * printed.
+ * only their non-secret values (paths, package names, versions, digest
+ * prefixes) are ever printed.
  *
  * Structure: parsing, validation and comparison are pure exported functions;
  * command execution goes through the injectable CommandExecutor — the CLI
@@ -84,6 +95,7 @@ export interface VerifyInputs {
   expectedPackageName: string;
   expectedVersionCode: string;
   expectedVersionName: string;
+  expectedCertSha256: string;
   aapt2: string;
   apksigner: string;
   unzip: string;
@@ -170,6 +182,108 @@ export function checkSigningCertificates(apksignerOutput: string): string[] {
     return [
       `the APK is signed with the Android debug certificate (${DEBUG_CERTIFICATE_MARKER}) — ` +
         "the release build must be signed with the upload/release certificate, never the debug one",
+    ];
+  }
+  return [];
+}
+
+/**
+ * apksigner prints, per signer, "<label> certificate DN: …", "<label>
+ * certificate SHA-256 digest: <hex>" and "<label> key SHA-256 digest: <hex>",
+ * where <label> is "Signer #1" (or its legacy multi-space spelling), a
+ * rotated-block "Signer (minSdkVersion=…, maxSdkVersion=…)" or "Source Stamp
+ * Signer" (AOSP ApkSignerTool, research R6). The digest itself is lowercase
+ * contiguous hex over the DER certificate. The parse anchor is therefore the
+ * line suffix "certificate SHA-256 digest:" — never the label, whose shape
+ * varies by signing scheme.
+ */
+const CERT_SHA256_LINE_PATTERN = /certificate SHA-256 digest:\s*(.*)$/;
+
+/**
+ * Normalize a hex digest spelling: strip colons and whitespace, lowercase.
+ * apksigner prints lowercase contiguous hex; keytool prints the same digest
+ * uppercase with colons.
+ */
+function normalizeDigest(value: string): string {
+  return value.replace(/[\s:]/g, "").toLowerCase();
+}
+
+/** A normalized SHA-256 certificate digest: exactly 64 lowercase hex digits. */
+const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
+
+/**
+ * Quote a short digest prefix (12 hex chars + ellipsis) for diagnosability.
+ * Both digests are PUBLIC values — anyone holding the shipped APK can compute
+ * them — so this is diagnostic formatting, not secret masking.
+ */
+function digestPrefix(value: string): string {
+  return value.length > 12 ? `${value.slice(0, 12)}…` : value;
+}
+
+/**
+ * Echo a malformed pin back for diagnosis, bounded so a wildly wrong paste
+ * (a whole line, a blob) cannot flood the log. The value is public by
+ * design, so echoing it is safe.
+ */
+function echoValue(value: string): string {
+  return value.length > 100 ? `${value.slice(0, 100)}…` : value;
+}
+
+/**
+ * Check that the APK's signer certificate set is exactly the one pinned
+ * certificate (IR-06 / RD-07). Every "certificate SHA-256 digest:" line is
+ * parsed and normalized; the DISTINCT digests must be exactly the pinned
+ * value. More than one distinct digest is a multi-signer APK (a rotated
+ * lineage or a source stamp adds one) and fails closed — the delivery
+ * contract is a single pinned upload key. The same digest printed on two
+ * lines is ONE certificate (set semantics), which is what Android's
+ * byte-level update rule actually compares.
+ *
+ * The NORMALIZED pinned value is shape-validated FIRST (T17-R1): the
+ * workflow's documented computation procedure (`keytool -exportcert … |
+ * sha256sum`) invites pasting sha256sum's whole line, whose trailing "-"
+ * survives normalization — a raw comparison would then report an
+ * unactionable mismatch whose two prefixes are IDENTICAL. A malformed pin
+ * gets its own named failure instead.
+ */
+export function checkCertificateDigests(apksignerOutput: string, expectedSha256: string): string[] {
+  const pinned = normalizeDigest(expectedSha256);
+  if (!SHA256_HEX_PATTERN.test(pinned)) {
+    return [
+      "EXPECTED_CERT_SHA256 is not a 64-hex-digit SHA-256 value — copy just the hex string " +
+        `(sha256sum's trailing "  -" filename marker and a 0x prefix are not part of the ` +
+        `digest; colons and uppercase are fine), got '${echoValue(pinned)}'`,
+    ];
+  }
+  const digests = [
+    ...new Set(
+      apksignerOutput.split(/\r?\n/).flatMap((line) => {
+        const match = CERT_SHA256_LINE_PATTERN.exec(line);
+        const digest = match === null ? "" : normalizeDigest(match[1] ?? "");
+        return digest === "" ? [] : [digest];
+      }),
+    ),
+  ];
+  if (digests.length === 0) {
+    return [
+      "no certificate SHA-256 digest found in the apksigner output — the APK's signing " +
+        "certificate digest cannot be compared with the pinned EXPECTED_CERT_SHA256 value",
+    ];
+  }
+  if (digests.length > 1) {
+    return [
+      `the APK has more than one signing certificate (SHA-256 digests: ` +
+        `${digests.map(digestPrefix).join(", ")}) — the delivery contract is a single pinned ` +
+        "upload key, so a multi-signer APK fails closed",
+    ];
+  }
+  const [actual = ""] = digests;
+  if (actual !== pinned) {
+    return [
+      `signing certificate SHA-256 mismatch — pinned '${digestPrefix(pinned)}', actual ` +
+        `'${digestPrefix(actual)}' — Android compares signing certificates byte-for-byte ` +
+        "when installing an update and the certificate DN is not identity, so an APK signed " +
+        "with a different key cannot update the installed one",
     ];
   }
   return [];
@@ -263,6 +377,13 @@ const INPUT_SPECS: InputSpec[] = [
     valueHint: "<name>",
   },
   {
+    flag: "--cert-sha256",
+    envName: "EXPECTED_CERT_SHA256",
+    inputKey: "expectedCertSha256",
+    required: true,
+    valueHint: "<sha256-hex>",
+  },
+  {
     flag: "--aapt2",
     envName: "AAPT2_PATH",
     inputKey: "aapt2",
@@ -335,6 +456,7 @@ export function resolveInputs(
     expectedPackageName: "",
     expectedVersionCode: "",
     expectedVersionName: "",
+    expectedCertSha256: "",
     aapt2: "aapt2",
     apksigner: "apksigner",
     unzip: "unzip",
@@ -421,7 +543,8 @@ export async function verifyApk(
     }
   }
 
-  // 2. Signing certificate — present and NOT the debug certificate (AC-08).
+  // 2. Signing certificate — present, NOT the debug certificate, and exactly
+  // the pinned upload key (AC-08; the pin is IR-06).
   const certificates = await executor.run(inputs.apksigner, [
     "verify",
     "--print-certs",
@@ -439,6 +562,11 @@ export async function verifyApk(
     );
   } else {
     for (const failure of checkSigningCertificates(certificates.stdout)) {
+      record(failure);
+    }
+    // The identity check (IR-06): the DN presence/debug checks above are
+    // belt-and-braces; the pinned digest is what Android actually compares.
+    for (const failure of checkCertificateDigests(certificates.stdout, inputs.expectedCertSha256)) {
       record(failure);
     }
   }
@@ -475,8 +603,12 @@ Checks, in order:
                                  match the expectations (which come from the
                                  EVALUATED app config — this script never
                                  imports expo/jiti)
-  2. apksigner verify --print-certs  a signing certificate must be present and
-                                 must NOT be the Android debug certificate
+  2. apksigner verify --print-certs  a signing certificate must be present, must
+                                 NOT be the Android debug certificate, and its
+                                 SHA-256 digest must match the pinned
+                                 --cert-sha256 value exactly (Android compares
+                                 certificates byte-for-byte on update; the DN
+                                 is not identity)
   3. unzip -l                    assets/index.android.bundle must be embedded
 
 Required inputs (flag, or the environment variable; missing or empty is a
@@ -485,6 +617,13 @@ hard error naming the variable):
   --package <name>               EXPECTED_PACKAGE_NAME
   --version-code <code>          EXPECTED_VERSION_CODE
   --version-name <name>          EXPECTED_VERSION_NAME
+  --cert-sha256 <sha256-hex>     EXPECTED_CERT_SHA256 — the pinned upload
+                                 certificate fingerprint (PUBLIC: computable
+                                 from any shipped APK via
+                                 'apksigner verify --print-certs'; keytool
+                                 prints the same digest uppercase with colons).
+                                 Must be 64 hex digits — colons and uppercase
+                                 are fine, sha256sum's trailing "  -" is not
 
 Tool paths (optional; default: the bare command name, resolved via PATH — a
 binary that cannot be found is a named failure, never a guess):
@@ -528,8 +667,9 @@ export async function main(
       outputSink(
         `APK verification passed: package ${resolution.inputs.expectedPackageName}, ` +
           `versionName ${resolution.inputs.expectedVersionName}, ` +
-          `versionCode ${resolution.inputs.expectedVersionCode}, ` +
-          "signed with a non-debug certificate, JS bundle present.",
+          `versionCode ${resolution.inputs.expectedVersionCode}, signed with the pinned ` +
+          `upload certificate (SHA-256 ${digestPrefix(normalizeDigest(resolution.inputs.expectedCertSha256))}), ` +
+          "JS bundle present.",
       );
       return 0;
     }

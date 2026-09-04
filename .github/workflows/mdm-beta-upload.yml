@@ -252,21 +252,34 @@ jobs:
 
       # The delivery gate, re-run on the DOWNLOADED artifact BEFORE anything
       # touches the MDM tenant (plan decision 10): the same T09 script the
-      # build workflow ran, against the identity derived above. The script's
+      # build workflow ran, against the identity derived above plus the pinned
+      # signing-certificate SHA-256 (IR-06 — Android compares certificates
+      # byte-for-byte; a non-debug DN alone is not identity). The script's
       # exit code is the primary gate (shell: bash + set -o pipefail so it
       # propagates through tee); the success-line assertion below is
       # belt-and-braces (T09-F02) so a mis-invoked or renamed script cannot
       # pass the delivery gate silently.
       - name: Re-verify the downloaded release APK
         shell: bash
+        env:
+          # PUBLIC repository Actions VARIABLE, never a secret (IR-06): the
+          # upload-certificate fingerprint is computable by anyone holding the
+          # shipped APK. An unset variable renders as "" — the presence check
+          # inside the run block fails closed, naming the variable.
+          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_UPLOAD_CERT_SHA256 }}
         run: |
           set -o pipefail
+          if [ -z "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::ANDROID_UPLOAD_CERT_SHA256 is not set. Create it as a repository Actions VARIABLE (Settings → Secrets and variables → Actions → Variables — it is PUBLIC, not a secret: the certificate fingerprint is computable by anyone holding the shipped APK). Compute it with 'apksigner verify --print-certs <known-good.apk>' (the 'certificate SHA-256 digest' line) or 'keytool -exportcert -keystore <keystore> -alias <alias> | sha256sum'."
+            exit 1
+          fi
           log="$RUNNER_TEMP/verify-release-apk.log"
           node tools/release/verify-release-apk.ts \
             --apk downloaded-release-apk/app-release.apk \
             --package "$EXPECTED_PACKAGE_NAME" \
             --version-code "$EXPECTED_VERSION_CODE" \
             --version-name "$EXPECTED_VERSION_NAME" \
+            --cert-sha256 "$EXPECTED_CERT_SHA256" \
             --aapt2 "$AAPT2_PATH" \
             --apksigner "$APKSIGNER_PATH" \
             2>&1 | tee "$log"
