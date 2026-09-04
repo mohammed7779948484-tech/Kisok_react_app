@@ -1915,3 +1915,50 @@ function`), 3 sync transitions. All pre-existing rows green throughout.
   provisional / schema-rejected / first-read rejection / module-absent /
   failure-after-success); standard-device rows byte-identical; web/jest
   resolve immediately (never hang).
+
+---
+
+## T15 — MDM read-path contract remediation (remediation Round 4, IR-03/04/05)
+
+**Mode**: bug · **Acceptance**: AC-09 · **Deps**: — · **Scaffold**: N/A (repo
+tooling; no generator capability)
+
+- **Research basis**: packet R4 (agent-342d50a3), Lead spot-checked — pagination
+  = limit/offset + paging.next + metadata.total_record_count (50-default,
+  `?page=` documented nowhere); groups = `name` field + GET /groups/{id}
+  details; labels = per-app release_labels[] lookup, POST create-only,
+  duplicate behavior undocumented.
+- **RED** (fresh implementer agent-2a8ecf7f): 25 failed / 81 passed — group
+  missing still mutates (4 MDM mutations), dry-run exits 0 on missing group,
+  unconditional label POST, `?page=1/2` requests, `>50`-no-envelope walks to
+  the bound, `--expected-group-name` unknown. (Mismatch tests drive the name
+  via env — the unknown-flag rejection would mask the real failure; flag form
+  covered by resolveInputs tests.)
+- **IMPLEMENT** (3 files exactly in scope): `fetchAppPages` rewritten to the
+  documented precedence (paging.next verbatim → accumulated total → short
+  page → limit/offset stepping → >50-no-usable-envelope fail-closed; MAX
+  bound retained; `?page=` never sent); `fetchGroupDetails` +
+  `validateTargetGroup` (GET /api/v1/mdm/groups/{id}; documented `name`
+  field; flat OR wrapped body tolerated; non-200/unparseable = missing) with
+  NEW required input `--expected-group-name`/`MDM_EXPECTED_GROUP_NAME` —
+  validated read-only BEFORE any mutation in BOTH flows; dry-run exits
+  NON-ZERO on missing/mismatch; `fetchGroupList`/`group_name` parsing
+  deleted (drift); Beta-label reuse from `release_labels[]` (name === "Beta";
+  first entry) before POST — one POST per run at most, POST error fails
+  closed; workflow `group-name` required dispatch input + early validation +
+  unconditional flag forward (env-indirection).
+- **GREEN**: 1 suite / 106 tests → after review remediation 114 tests;
+  `pnpm test:ci` 68 suites / 846 tests; verify exit 0; typecheck/lint/prettier
+  clean; plain-Node smoke (Node 24) lists the new flag.
+- **Fresh review** (agent-70888e64): **0 blocking / 0 major / 3 minor**
+  (T15-R1 paging.next had no origin guard — bearer exfiltration hardening
+  gap; T15-R2 expected-group-name echo lacked a union-redaction pin;
+  T15-R3 four edge shapes unpinned). Implementer resumed: origin guard added
+  (RED → GREEN; pre-fix vulnerability quantified: 99 foreign requests each
+  carrying the Zoho-oauthtoken; post-fix zero), union-redaction pin +
+  expectMasked on the two omission sites, 4 characterization rows (wrapped
+  details, string/non-numeric total, two-Beta-entries first-match, empty/blank
+  next). 114 tests green.
+- **GATE: PASS** — documented read path (pagination/groups/labels), truthful
+  dry-run, pre-mutation group+name validation, label reuse; production-group
+  denylist + masking discipline retained.

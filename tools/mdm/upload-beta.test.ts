@@ -14,6 +14,15 @@
  * for the monotonic pre-check, and the `file` multipart key from the docs
  * prose (the code examples' `fileName` is the recorded discrepancy — asserted
  * NOT to be used).
+ *
+ * Plus the 2026-09-04 remediation read-path contract (RD-03/RD-04/RD-05, T15):
+ * documented list pagination (paging.next as a FULL URL, else the documented
+ * limit/offset query params — "page=" is documented NOWHERE and must never
+ * appear in a request URL), pre-mutation group validation via
+ * GET /api/v1/mdm/groups/{id} against a REQUIRED expected group name (the
+ * documented "name" field — "group_name" appears nowhere in current docs), a
+ * dry-run that exits NON-ZERO on a missing/mismatched group (truthful), and
+ * Beta-label reuse from the app's release_labels before POST /api/v1/mdm/labels.
  */
 
 import {
@@ -53,6 +62,7 @@ const fullEnv = (): Record<string, string | undefined> => ({
   MDM_APP_NAME: "KISOK",
   MDM_APP_VERSION: "1.2.0",
   MDM_GROUP_ID: "701",
+  MDM_EXPECTED_GROUP_NAME: "Beta Tablets",
   MDM_PRODUCTION_GROUP_ID: "900",
   MDM_APP_CATEGORY_ID: "11",
 });
@@ -68,15 +78,30 @@ const MDM_BASE = "https://mdm.manageengine.com";
 
 /** An App Repository entry as documented (string versions, per-label versions). */
 const existingAppFixture = (
-  options: { appId?: number; version?: string; betaVersion?: string } = {},
+  options: {
+    appId?: number;
+    version?: string;
+    betaVersion?: string;
+    labels?: { release_label_id: number; release_label_name: string; app_version?: string }[];
+  } = {},
 ) => ({
   app_id: options.appId ?? 101,
   app_name: "KISOK",
   ...(options.version === undefined ? {} : { version: options.version }),
   release_labels:
-    options.betaVersion === undefined
+    options.labels ??
+    (options.betaVersion === undefined
       ? []
-      : [{ release_label_id: 5, release_label_name: "Beta", app_version: options.betaVersion }],
+      : [{ release_label_id: 5, release_label_name: "Beta", app_version: options.betaVersion }]),
+});
+
+/** A group-details response as documented (group_id/name/group_type/domain). */
+const groupDetailsFixture = (name: string) => ({
+  group_id: 701,
+  name,
+  group_type: 2,
+  domain: "Zoho",
+  description: "KISOK beta test devices",
 });
 
 /** Unrelated apps used to fill paginated list pages. */
@@ -152,7 +177,24 @@ function binaryBodyText(request: RecordedRequest | undefined): string {
 }
 
 interface GreenRouteOptions {
-  appPages?: unknown[][];
+  /**
+   * Successive GET /api/v1/mdm/apps response BODIES, served in REQUEST ORDER
+   * whatever the query shape: each is the full JSON body — the bare
+   * {"apps": [...]} shape the docs' own example shows, or the documented
+   * envelope carrying metadata.total_record_count / paging.next.
+   */
+  appResponses?: unknown[];
+  /**
+   * The GET /api/v1/mdm/groups/701 details response (RD-04): an HTTP status
+   * (default 200), a group NAME to serve (default "Beta Tablets"), or a raw
+   * body.
+   */
+  group?: { status?: number; name?: string; body?: unknown };
+  /**
+   * The legacy GET /api/v1/mdm/groups LIST, served with the DOCUMENTED "name"
+   * field (the pre-RD-04 code read "group_name", which appears nowhere in
+   * current docs — that drift is one of the regressions under test).
+   */
   groups?: unknown[];
   fileStatus?: number;
   labelId?: unknown;
@@ -161,25 +203,40 @@ interface GreenRouteOptions {
 
 /**
  * The default scripted tenant: host-agnostic (matched by path, so the
- * data-centre tests can reuse it), one KISOK app with a Beta label version of
- * 1.1.0, group 701 present, label id 5, file upload completing with fileID 555.
+ * data-centre tests can reuse it), one KISOK app with a Beta label (id 5,
+ * version 1.1.0), group 701 resolvable by details with name "Beta Tablets",
+ * label id 5, file upload completing with fileID 555. The group LIST is also
+ * served (documented "name" field) so the pre-RD-04 code path stays walkable
+ * in RED runs.
  */
 function greenRoute(options: GreenRouteOptions = {}): RouteHandler {
-  const appPages = options.appPages ?? [
-    [existingAppFixture({ version: "1.0.0", betaVersion: "1.1.0" })],
+  const appResponses = options.appResponses ?? [
+    { apps: [existingAppFixture({ version: "1.0.0", betaVersion: "1.1.0" })] },
   ];
-  const groups = options.groups ?? [{ group_id: 701, group_name: "Beta Tablets" }];
+  const group = options.group ?? {};
+  const groupStatus = group.status ?? 200;
+  const groupBody =
+    group.body ??
+    (groupStatus === 200
+      ? groupDetailsFixture(group.name ?? "Beta Tablets")
+      : { error_code: "GD0001", error_description: "Group not found" });
+  const groups = options.groups ?? [{ group_id: 701, name: "Beta Tablets" }];
   const fileStatus = options.fileStatus ?? 2;
   const labelId = options.labelId ?? 5;
   const createAppId = options.createAppId ?? 202;
+  let appsCall = 0;
   return (request) => {
     const { url, method } = request;
     if (method === "POST" && url.endsWith("/oauth/v2/token")) {
       return json({ access_token: ACCESS_TOKEN, expires_in: 3600 });
     }
-    if (method === "GET" && /\/api\/v1\/mdm\/apps\?page=\d+$/.test(url)) {
-      const page = Number(url.split("page=")[1] ?? "1");
-      return json({ apps: appPages[page - 1] ?? [] });
+    if (method === "GET" && /\/api\/v1\/mdm\/apps(\?.*)?$/.test(url)) {
+      const body = appResponses[Math.min(appsCall, appResponses.length - 1)];
+      appsCall += 1;
+      return json(body);
+    }
+    if (method === "GET" && /\/api\/v1\/mdm\/groups\/\d+$/.test(url)) {
+      return json(groupBody, groupStatus);
     }
     if (method === "GET" && url.endsWith("/api/v1/mdm/groups")) {
       return json({ groups });
@@ -268,6 +325,13 @@ function expectMasked(result: { output: string[]; errors: string[] }): void {
   }
 }
 
+/** RD-03: the undocumented "?page=" parameter must never appear in any URL. */
+function expectNoPageParam(requests: RecordedRequest[]): void {
+  for (const request of requests) {
+    expect(request.url).not.toMatch(/[?&]page=/);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Fail-closed input validation (AC-09: before ANY network call)
 // ---------------------------------------------------------------------------
@@ -288,6 +352,8 @@ describe("input validation fails closed", () => {
     ["MDM_APP_VERSION", { MDM_APP_VERSION: "" }],
     ["APK_PATH", { APK_PATH: undefined }],
     ["APK_PATH", { APK_PATH: "" }],
+    ["MDM_EXPECTED_GROUP_NAME", { MDM_EXPECTED_GROUP_NAME: undefined }],
+    ["MDM_EXPECTED_GROUP_NAME", { MDM_EXPECTED_GROUP_NAME: "" }],
   ];
 
   it.each(missingOrEmpty)(
@@ -600,6 +666,7 @@ describe("input resolution", () => {
       expect(result.inputs.appName).toBe("KISOK");
       expect(result.inputs.appVersion).toBe("1.2.0");
       expect(result.inputs.groupId).toBe("701");
+      expect(result.inputs.expectedGroupName).toBe("Beta Tablets");
       expect(result.inputs.appCategoryId).toBe("11");
       expect(result.inputs.labelName).toBe("Beta");
       expect(result.inputs.dataCentre).toBe("us");
@@ -627,6 +694,49 @@ describe("input resolution", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.inputs.dryRun).toBe(true);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Expected group name input (RD-04)
+// ---------------------------------------------------------------------------
+
+describe("expected group name input (RD-04)", () => {
+  it("a missing MDM_EXPECTED_GROUP_NAME fails closed naming the variable and flag, before any network call", async () => {
+    const env: Record<string, string | undefined> = {
+      ...fullEnv(),
+      MDM_EXPECTED_GROUP_NAME: undefined,
+    };
+    const result = await runMain(env, { route: greenRoute() });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("MDM_EXPECTED_GROUP_NAME is empty");
+    expect(message).toContain("--expected-group-name");
+    expect(result.requests).toHaveLength(0);
+  });
+
+  it("resolveInputs requires MDM_EXPECTED_GROUP_NAME and accepts both flag forms", () => {
+    const missing = resolveInputs(ARGV, { ...fullEnv(), MDM_EXPECTED_GROUP_NAME: undefined });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(missing.failures.join("\n")).toContain("MDM_EXPECTED_GROUP_NAME is empty");
+    }
+
+    const fromFlag = resolveInputs(
+      [...ARGV, "--expected-group-name", "Beta Test Devices"],
+      fullEnv(),
+    );
+    expect(fromFlag.ok).toBe(true);
+    if (fromFlag.ok) {
+      expect(fromFlag.inputs.expectedGroupName).toBe("Beta Test Devices");
+    }
+
+    const equalsForm = resolveInputs([...ARGV, "--expected-group-name=Beta Tablets"], fullEnv());
+    expect(equalsForm.ok).toBe(true);
+    if (equalsForm.ok) {
+      expect(equalsForm.inputs.expectedGroupName).toBe("Beta Tablets");
     }
   });
 });
@@ -739,12 +849,18 @@ describe("token exchange", () => {
   });
 
   it("an access token echoed by an MDM API error is redacted before it reaches any sink", async () => {
-    const route = withIntercept(greenRoute(), (request) => {
-      if (request.method === "POST" && request.url.endsWith("/api/v1/mdm/labels")) {
-        return json({ error_code: "MDM0023", error_description: `bad token ${ACCESS_TOKEN}` }, 403);
-      }
-      return undefined;
-    });
+    const route = withIntercept(
+      greenRoute({ appResponses: [{ apps: [existingAppFixture({ version: "1.1.0" })] }] }),
+      (request) => {
+        if (request.method === "POST" && request.url.endsWith("/api/v1/mdm/labels")) {
+          return json(
+            { error_code: "MDM0023", error_description: `bad token ${ACCESS_TOKEN}` },
+            403,
+          );
+        }
+        return undefined;
+      },
+    );
     const result = await runMain(fullEnv(), { route });
 
     expect(result.exitCode).not.toBe(0);
@@ -767,8 +883,8 @@ describe("dry-run (no mutation)", () => {
     expect(result.errors).toEqual([]);
     expect(result.requests.map((r) => [r.method, r.url])).toEqual([
       ["POST", TOKEN_URL],
-      ["GET", `${MDM_BASE}/api/v1/mdm/apps?page=1`],
-      ["GET", `${MDM_BASE}/api/v1/mdm/groups`],
+      ["GET", `${MDM_BASE}/api/v1/mdm/apps`],
+      ["GET", `${MDM_BASE}/api/v1/mdm/groups/701`],
     ]);
     const mdmCalls = result.requests.filter((r) => r.url.startsWith(MDM_BASE));
     for (const call of mdmCalls) {
@@ -783,31 +899,12 @@ describe("dry-run (no mutation)", () => {
     expectMasked(result);
   });
 
-  it("follows app-list pagination when the repository has more than one page", async () => {
-    const result = await runMain(dryEnv(), {
-      route: greenRoute({
-        appPages: [
-          fillerApps(MDM_API_PAGE_SIZE, 0),
-          [...fillerApps(19, 50), existingAppFixture({ version: "1.0.0", betaVersion: "1.1.0" })],
-        ],
-      }),
-    });
-
-    expect(result.exitCode).toBe(0);
-    const pageUrls = result.requests
-      .filter((r) => r.url.includes("/api/v1/mdm/apps?page="))
-      .map((r) => r.url);
-    expect(pageUrls).toEqual([
-      `${MDM_BASE}/api/v1/mdm/apps?page=1`,
-      `${MDM_BASE}/api/v1/mdm/apps?page=2`,
-    ]);
-    expect(result.output.join("\n")).toContain('app "KISOK"');
-  });
-
   it("reports the create path when the app is absent, still exiting 0", async () => {
     const result = await runMain(dryEnv(), {
       route: greenRoute({
-        appPages: [[{ app_id: 9, app_name: "Other", version: "1.0.0", release_labels: [] }]],
+        appResponses: [
+          { apps: [{ app_id: 9, app_name: "Other", version: "1.0.0", release_labels: [] }] },
+        ],
       }),
     });
 
@@ -817,16 +914,11 @@ describe("dry-run (no mutation)", () => {
     expect(summary).toContain("MDM_APP_CATEGORY_ID");
   });
 
-  it("reports group absence in the summary, still exiting 0", async () => {
-    const result = await runMain(dryEnv(), { route: greenRoute({ groups: [] }) });
-
-    expect(result.exitCode).toBe(0);
-    expect(result.output.join("\n")).toContain("was NOT found in the MDM group list");
-  });
-
   it("refuses a non-increasing version even in dry-run, having performed only reads", async () => {
     const result = await runMain(dryEnv(), {
-      route: greenRoute({ appPages: [[existingAppFixture({ betaVersion: "1.2.0" })]] }),
+      route: greenRoute({
+        appResponses: [{ apps: [existingAppFixture({ betaVersion: "1.2.0" })] }],
+      }),
     });
 
     expect(result.exitCode).not.toBe(0);
@@ -835,6 +927,325 @@ describe("dry-run (no mutation)", () => {
       expect(call.method).toBe("GET");
     }
     expect(result.requests).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// App-list pagination follows the documented envelope (RD-03)
+// ---------------------------------------------------------------------------
+
+describe("app-list pagination follows the documented envelope (RD-03)", () => {
+  const appsUrls = (requests: RecordedRequest[]): string[] =>
+    requests
+      .filter((r) => r.method === "GET" && r.url.includes("/api/v1/mdm/apps"))
+      .map((r) => r.url);
+
+  it("follows paging.next as a FULL URL across pages and finds the target beyond page 1", async () => {
+    const nextPageUrl = `${MDM_BASE}/api/v1/mdm/apps?limit=50&offset=50&skiptoken=second-page`;
+    const result = await runMain(dryEnv(), {
+      route: greenRoute({
+        appResponses: [
+          {
+            apps: fillerApps(MDM_API_PAGE_SIZE, 0),
+            metadata: { total_record_count: 70 },
+            paging: { next: nextPageUrl },
+          },
+          {
+            apps: [
+              ...fillerApps(19, 50),
+              existingAppFixture({ version: "1.0.0", betaVersion: "1.1.0" }),
+            ],
+            metadata: { total_record_count: 70 },
+          },
+        ],
+      }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.errors).toEqual([]);
+    expect(appsUrls(result.requests)).toEqual([`${MDM_BASE}/api/v1/mdm/apps`, nextPageUrl]);
+    expect(result.requests.some((r) => r.url === nextPageUrl)).toBe(true);
+    expectNoPageParam(result.requests);
+    expect(result.output.join("\n")).toContain('app "KISOK"');
+  });
+
+  it("steps with the documented limit/offset query params when paging.next is absent (metadata envelope)", async () => {
+    const result = await runMain(dryEnv(), {
+      route: greenRoute({
+        appResponses: [
+          { apps: fillerApps(MDM_API_PAGE_SIZE, 0), metadata: { total_record_count: 70 } },
+          {
+            apps: [
+              ...fillerApps(19, 50),
+              existingAppFixture({ version: "1.0.0", betaVersion: "1.1.0" }),
+            ],
+            metadata: { total_record_count: 70 },
+          },
+        ],
+      }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(appsUrls(result.requests)).toEqual([
+      `${MDM_BASE}/api/v1/mdm/apps`,
+      `${MDM_BASE}/api/v1/mdm/apps?limit=${MDM_API_PAGE_SIZE}&offset=${MDM_API_PAGE_SIZE}`,
+    ]);
+    expectNoPageParam(result.requests);
+    expect(result.output.join("\n")).toContain('app "KISOK"');
+  });
+
+  it("steps with limit/offset on an envelope-less full page (the documented apps-example shape carries no envelope)", async () => {
+    const result = await runMain(dryEnv(), {
+      route: greenRoute({
+        appResponses: [
+          { apps: fillerApps(MDM_API_PAGE_SIZE, 0) },
+          {
+            apps: [
+              ...fillerApps(19, 50),
+              existingAppFixture({ version: "1.0.0", betaVersion: "1.1.0" }),
+            ],
+          },
+        ],
+      }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(appsUrls(result.requests)).toEqual([
+      `${MDM_BASE}/api/v1/mdm/apps`,
+      `${MDM_BASE}/api/v1/mdm/apps?limit=${MDM_API_PAGE_SIZE}&offset=${MDM_API_PAGE_SIZE}`,
+    ]);
+    expectNoPageParam(result.requests);
+  });
+
+  it("an envelope-less short page terminates the walk", async () => {
+    const result = await runMain(dryEnv(), {
+      route: greenRoute({ appResponses: [{ apps: fillerApps(20, 0) }] }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(appsUrls(result.requests)).toEqual([`${MDM_BASE}/api/v1/mdm/apps`]);
+    expectNoPageParam(result.requests);
+    expect(result.output.join("\n")).toContain("was NOT found");
+  });
+
+  it("a page with MORE than 50 rows and no usable envelope fails closed (termination unknowable)", async () => {
+    const result = await runMain(dryEnv(), {
+      route: greenRoute({ appResponses: [{ apps: fillerApps(MDM_API_PAGE_SIZE + 1, 0) }] }),
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain(`${MDM_API_PAGE_SIZE + 1} rows`);
+    expect(message).toContain("failing closed");
+    expect(appsUrls(result.requests)).toEqual([`${MDM_BASE}/api/v1/mdm/apps`]);
+    expectNoPageParam(result.requests);
+  });
+
+  it.each([
+    ["a string", "50"],
+    ["non-numeric", "many"],
+  ])(
+    "a %s metadata.total_record_count is not usable — the documented stepping rules apply (T15-R3)",
+    async (_label, badTotal) => {
+      // "50" is deliberately chosen to discriminate: a USABLE total of 50 with
+      // a full first page would terminate after ONE request; the pin asserts
+      // the walk STEPPED (string totals are ignored by design).
+      const result = await runMain(dryEnv(), {
+        route: greenRoute({
+          appResponses: [
+            { apps: fillerApps(MDM_API_PAGE_SIZE, 0), metadata: { total_record_count: badTotal } },
+            { apps: fillerApps(20, 50) },
+          ],
+        }),
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(appsUrls(result.requests)).toEqual([
+        `${MDM_BASE}/api/v1/mdm/apps`,
+        `${MDM_BASE}/api/v1/mdm/apps?limit=${MDM_API_PAGE_SIZE}&offset=${MDM_API_PAGE_SIZE}`,
+      ]);
+      expectNoPageParam(result.requests);
+      expect(result.output.join("\n")).toContain("was NOT found");
+    },
+  );
+
+  it.each([
+    ["an empty", ""],
+    ["a whitespace-only", "   "],
+  ])(
+    "%s paging.next value is treated as absent — the documented stepping rules apply (T15-R3)",
+    async (_label, emptyNext) => {
+      const result = await runMain(dryEnv(), {
+        route: greenRoute({
+          appResponses: [
+            { apps: fillerApps(MDM_API_PAGE_SIZE, 0), paging: { next: emptyNext } },
+            { apps: fillerApps(20, 50) },
+          ],
+        }),
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(appsUrls(result.requests)).toEqual([
+        `${MDM_BASE}/api/v1/mdm/apps`,
+        `${MDM_BASE}/api/v1/mdm/apps?limit=${MDM_API_PAGE_SIZE}&offset=${MDM_API_PAGE_SIZE}`,
+      ]);
+      expectNoPageParam(result.requests);
+    },
+  );
+
+  it("a paging.next pointing at a FOREIGN host is not followed — the access token never leaves the MDM API host (T15-R1)", async () => {
+    const result = await runMain(dryEnv(), {
+      route: greenRoute({
+        appResponses: [
+          {
+            apps: fillerApps(MDM_API_PAGE_SIZE, 0),
+            paging: { next: "https://evil.example.com/api/v1/mdm/apps?limit=50&offset=50" },
+          },
+        ],
+      }),
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("paging.next points outside the MDM API host");
+    expect(message).toContain("failing closed");
+    // The token-bearing request must NEVER reach the foreign origin: only the
+    // plain first-page GET happened.
+    expect(result.requests.some((r) => r.url.startsWith("https://evil.example.com"))).toBe(false);
+    expect(appsUrls(result.requests)).toEqual([`${MDM_BASE}/api/v1/mdm/apps`]);
+    expectNoPageParam(result.requests);
+    expectMasked(result);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pre-mutation group validation with the expected group name (RD-04)
+// ---------------------------------------------------------------------------
+
+describe("pre-mutation group validation with the expected group name (RD-04)", () => {
+  const mdmMutations = (requests: RecordedRequest[]): RecordedRequest[] =>
+    requests.filter((r) => r.url.startsWith(MDM_BASE) && r.method !== "GET");
+
+  it("a missing group (404 on the details GET) refuses the REAL run BEFORE any mutation", async () => {
+    const result = await runMain(fullEnv(), { route: greenRoute({ group: { status: 404 } }) });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("701");
+    expect(message).toContain("Beta Tablets");
+    expect(message).toContain("refusing");
+    // The only POST is the OAuth token exchange — ZERO MDM mutations.
+    expect(mdmMutations(result.requests)).toHaveLength(0);
+    expect(
+      result.requests.some(
+        (r) => r.method === "GET" && r.url === `${MDM_BASE}/api/v1/mdm/groups/701`,
+      ),
+    ).toBe(true);
+    expectMasked(result);
+  });
+
+  it("a resolved group name that does not match the expected name refuses the real run before any mutation", async () => {
+    const result = await runMain(
+      { ...fullEnv(), MDM_EXPECTED_GROUP_NAME: "Beta Test Devices" },
+      { route: greenRoute({ group: { name: "Production Devices" } }) },
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("701");
+    expect(message).toContain("Production Devices");
+    expect(message).toContain("Beta Test Devices");
+    expect(message).toContain("does not match");
+    expect(mdmMutations(result.requests)).toHaveLength(0);
+    expectMasked(result);
+  });
+
+  it("a 200 details response without a usable documented name field treats the group as missing", async () => {
+    const result = await runMain(fullEnv(), {
+      route: greenRoute({ group: { body: { group_id: 701, group_type: 2, domain: "Zoho" } } }),
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("701");
+    expect(message).toContain("Beta Tablets");
+    expect(mdmMutations(result.requests)).toHaveLength(0);
+    expectMasked(result);
+  });
+
+  it("the dry-run exits NON-ZERO when the group is missing — a truthful dry-run", async () => {
+    const result = await runMain(dryEnv(), { route: greenRoute({ group: { status: 404 } }) });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("MDM dry-run failed");
+    expect(message).toContain("701");
+    expect(message).toContain("Beta Tablets");
+    // Still strictly read-only: every MDM call is a GET.
+    for (const call of result.requests.filter((r) => r.url.startsWith(MDM_BASE))) {
+      expect(call.method).toBe("GET");
+    }
+    expect(
+      result.requests.some(
+        (r) => r.method === "GET" && r.url === `${MDM_BASE}/api/v1/mdm/groups/701`,
+      ),
+    ).toBe(true);
+    expectMasked(result);
+  });
+
+  it("the dry-run exits NON-ZERO on a group-name mismatch, naming both names", async () => {
+    const result = await runMain(
+      { ...dryEnv(), MDM_EXPECTED_GROUP_NAME: "Beta Test Devices" },
+      { route: greenRoute({ group: { name: "Production Devices" } }) },
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("MDM dry-run failed");
+    expect(message).toContain("Production Devices");
+    expect(message).toContain("Beta Test Devices");
+    expect(mdmMutations(result.requests)).toHaveLength(0);
+    expectMasked(result);
+  });
+
+  it("the dry-run summary reports the group NAME from the documented details field", async () => {
+    const result = await runMain(dryEnv(), { route: greenRoute() });
+
+    expect(result.exitCode).toBe(0);
+    const summary = result.output.join("\n");
+    expect(summary).toContain("group 701");
+    expect(summary).toContain('"Beta Tablets"');
+  });
+  it('a wrapped {"group":{...}} details body is validated as the same group (tolerated shape, T15-R3)', async () => {
+    const result = await runMain(dryEnv(), {
+      route: greenRoute({ group: { body: { group: groupDetailsFixture("Beta Tablets") } } }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    const summary = result.output.join("\n");
+    expect(summary).toContain("group 701");
+    expect(summary).toContain('"Beta Tablets"');
+  });
+
+  it("an expected-group-name value that equals a resolved credential renders [REDACTED] in the refusal (union redaction, T15-R2)", async () => {
+    // The expected-group-name echo is a free-form diagnostic: a value that
+    // happens to equal a credential must be scrubbed by the mechanical
+    // redaction union before it reaches any sink.
+    const env: Record<string, string | undefined> = {
+      ...fullEnv(),
+      MDM_EXPECTED_GROUP_NAME: undefined,
+    };
+    const result = await runMain(env, {
+      argv: [...ARGV, "--expected-group-name", CLIENT_SECRET],
+      route: greenRoute({ group: { name: "Production Devices" } }),
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("does not match");
+    expect(message).toContain("[REDACTED]");
+    expect(mdmMutations(result.requests)).toHaveLength(0);
+    expectMasked(result);
   });
 });
 
@@ -848,10 +1259,13 @@ describe("upload happy path (existing app → add version)", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.errors).toEqual([]);
+    // RD-05: the app already carries a Beta label (id 5) — it is REUSED, so
+    // there is no POST /api/v1/mdm/labels; RD-04 adds the read-only group
+    // details GET before the first mutation.
     expect(result.requests.map((r) => [r.method, r.url])).toEqual([
       ["POST", TOKEN_URL],
-      ["GET", `${MDM_BASE}/api/v1/mdm/apps?page=1`],
-      ["POST", `${MDM_BASE}/api/v1/mdm/labels`],
+      ["GET", `${MDM_BASE}/api/v1/mdm/apps`],
+      ["GET", `${MDM_BASE}/api/v1/mdm/groups/701`],
       ["POST", `${MDM_BASE}/emsapi/files`],
       ["PUT", `${MDM_BASE}/api/v1/mdm/apps/101/labels/5`],
       ["POST", `${MDM_BASE}/api/v1/mdm/groups/701/apps`],
@@ -865,6 +1279,7 @@ describe("upload happy path (existing app → add version)", () => {
     expect(summary).toContain("1.2.0");
     expect(summary).toContain("group 701");
     expect(summary).toContain("silent_install");
+    expect(summary).toContain("reused");
     expectMasked(result);
   });
 
@@ -883,7 +1298,11 @@ describe("upload happy path (existing app → add version)", () => {
     const result = await runMain(fullEnv(), { route: greenRoute() });
 
     expect(result.exitCode).toBe(0);
-    const groupCalls = result.requests.filter((r) => r.url.includes("/api/v1/mdm/groups/"));
+    // The read-only group-details GET shares this URL prefix — only the
+    // association POST counts.
+    const groupCalls = result.requests.filter(
+      (r) => r.method === "POST" && r.url.includes("/api/v1/mdm/groups/"),
+    );
     expect(groupCalls).toHaveLength(1);
     expect(groupCalls[0]?.url).toBe(`${MDM_BASE}/api/v1/mdm/groups/701/apps`);
     expect(groupCalls[0]?.method).toBe("POST");
@@ -963,15 +1382,19 @@ describe("app create path", () => {
   it("consumes the pagination, creates the Enterprise app with the documented Required fields", async () => {
     const result = await runMain(fullEnv(), {
       route: greenRoute({
-        appPages: [fillerApps(MDM_API_PAGE_SIZE, 0), fillerApps(20, 50)],
+        appResponses: [{ apps: fillerApps(MDM_API_PAGE_SIZE, 0) }, { apps: fillerApps(20, 50) }],
       }),
     });
 
     expect(result.exitCode).toBe(0);
+    // The create path still POSTs the label (RD-05): the app does not exist,
+    // so it cannot carry one. The walk steps with the documented limit/offset
+    // params (RD-03).
     expect(result.requests.map((r) => [r.method, r.url])).toEqual([
       ["POST", TOKEN_URL],
-      ["GET", `${MDM_BASE}/api/v1/mdm/apps?page=1`],
-      ["GET", `${MDM_BASE}/api/v1/mdm/apps?page=2`],
+      ["GET", `${MDM_BASE}/api/v1/mdm/apps`],
+      ["GET", `${MDM_BASE}/api/v1/mdm/apps?limit=${MDM_API_PAGE_SIZE}&offset=${MDM_API_PAGE_SIZE}`],
+      ["GET", `${MDM_BASE}/api/v1/mdm/groups/701`],
       ["POST", `${MDM_BASE}/api/v1/mdm/labels`],
       ["POST", `${MDM_BASE}/emsapi/files`],
       ["POST", `${MDM_BASE}/api/v1/mdm/apps`],
@@ -1000,7 +1423,9 @@ describe("app create path", () => {
     const env = { ...fullEnv(), MDM_APP_CATEGORY_ID: undefined };
     const result = await runMain(env, {
       route: greenRoute({
-        appPages: [[{ app_id: 9, app_name: "Other", version: "1.0.0", release_labels: [] }]],
+        appResponses: [
+          { apps: [{ app_id: 9, app_name: "Other", version: "1.0.0", release_labels: [] }] },
+        ],
       }),
     });
 
@@ -1011,14 +1436,16 @@ describe("app create path", () => {
     // Only the token exchange and the read-only list happened — no mutation at all.
     expect(result.requests.map((r) => [r.method, r.url])).toEqual([
       ["POST", TOKEN_URL],
-      ["GET", `${MDM_BASE}/api/v1/mdm/apps?page=1`],
+      ["GET", `${MDM_BASE}/api/v1/mdm/apps`],
     ]);
   });
 
   it("a create response without an app_id fails closed", async () => {
     const route = withIntercept(
       greenRoute({
-        appPages: [[{ app_id: 9, app_name: "Other", version: "1.0.0", release_labels: [] }]],
+        appResponses: [
+          { apps: [{ app_id: 9, app_name: "Other", version: "1.0.0", release_labels: [] }] },
+        ],
       }),
       (request) => {
         if (request.method === "POST" && request.url.endsWith("/api/v1/mdm/apps")) {
@@ -1039,8 +1466,10 @@ describe("app create path", () => {
 // ---------------------------------------------------------------------------
 
 describe("Beta label", () => {
-  it('POSTs the label with channel_name "Beta" and uses the returned id everywhere', async () => {
-    const result = await runMain(fullEnv(), { route: greenRoute() });
+  it('POSTs the label with channel_name "Beta" and uses the returned id everywhere (the app has no Beta label yet)', async () => {
+    const result = await runMain(fullEnv(), {
+      route: greenRoute({ appResponses: [{ apps: [existingAppFixture({ version: "1.1.0" })] }] }),
+    });
 
     expect(result.exitCode).toBe(0);
     const label = result.requests.find((r) => r.url.endsWith("/api/v1/mdm/labels"));
@@ -1053,19 +1482,134 @@ describe("Beta label", () => {
       app_details: [{ app_id: 101, release_label_id: 5 }],
       silent_install: true,
     });
+    expect(result.output.join("\n")).toContain("created");
   });
 
   it("a label response without a release_label_id fails closed", async () => {
-    const route = withIntercept(greenRoute(), (request) => {
-      if (request.method === "POST" && request.url.endsWith("/api/v1/mdm/labels")) {
-        return json({ ok: true });
-      }
-      return undefined;
-    });
+    const route = withIntercept(
+      greenRoute({ appResponses: [{ apps: [existingAppFixture({ version: "1.1.0" })] }] }),
+      (request) => {
+        if (request.method === "POST" && request.url.endsWith("/api/v1/mdm/labels")) {
+          return json({ ok: true });
+        }
+        return undefined;
+      },
+    );
     const result = await runMain(fullEnv(), { route });
 
     expect(result.exitCode).not.toBe(0);
     expect(result.errors.join("\n")).toContain("release_label_id");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Beta label reuse before create (RD-05)
+// ---------------------------------------------------------------------------
+
+describe("Beta label reuse before create (RD-05)", () => {
+  it("an existing app with a Beta label reuses its release_label_id — ZERO POST /api/v1/mdm/labels", async () => {
+    const result = await runMain(fullEnv(), { route: greenRoute() });
+
+    expect(result.exitCode).toBe(0);
+    const labelPosts = result.requests.filter(
+      (r) => r.method === "POST" && r.url.endsWith("/api/v1/mdm/labels"),
+    );
+    expect(labelPosts).toHaveLength(0);
+    const put = result.requests.find((r) => r.method === "PUT");
+    expect(put?.url).toBe(`${MDM_BASE}/api/v1/mdm/apps/101/labels/5`);
+    const associate = result.requests.find((r) => r.url.endsWith("/groups/701/apps"));
+    expect(bodyJson(associate)).toEqual({
+      app_details: [{ app_id: 101, release_label_id: 5 }],
+      silent_install: true,
+    });
+    expect(result.output.join("\n")).toContain("reused");
+    expectMasked(result);
+  });
+
+  it("an existing app with only a Stable label POSTs the label exactly once and uses the returned id", async () => {
+    const result = await runMain(fullEnv(), {
+      route: greenRoute({
+        appResponses: [
+          {
+            apps: [
+              existingAppFixture({
+                version: "1.1.0",
+                labels: [
+                  { release_label_id: 7, release_label_name: "Stable", app_version: "1.1.0" },
+                ],
+              }),
+            ],
+          },
+        ],
+      }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    const labelPosts = result.requests.filter(
+      (r) => r.method === "POST" && r.url.endsWith("/api/v1/mdm/labels"),
+    );
+    expect(labelPosts).toHaveLength(1);
+    expect(bodyJson(labelPosts[0])).toEqual({ channel_name: "Beta" });
+    const put = result.requests.find((r) => r.method === "PUT");
+    expect(put?.url).toBe(`${MDM_BASE}/api/v1/mdm/apps/101/labels/5`);
+    expect(result.output.join("\n")).toContain("created");
+  });
+
+  it("release_labels carrying TWO Beta entries: the FIRST id and the FIRST entry's app_version are used (T15-R3)", async () => {
+    // Incoming 1.2.0 is strictly greater than the FIRST entry's 1.1.0 but NOT
+    // greater than the second entry's 9.9.9 — a passing run proves both pins:
+    // the pre-check compared the first entry's app_version, and the reuse took
+    // the first entry's id (PUT targets labels/5, never labels/6).
+    const result = await runMain(fullEnv(), {
+      route: greenRoute({
+        appResponses: [
+          {
+            apps: [
+              existingAppFixture({
+                labels: [
+                  { release_label_id: 5, release_label_name: "Beta", app_version: "1.1.0" },
+                  { release_label_id: 6, release_label_name: "Beta", app_version: "9.9.9" },
+                ],
+              }),
+            ],
+          },
+        ],
+      }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    const put = result.requests.find((r) => r.method === "PUT");
+    expect(put?.url).toBe(`${MDM_BASE}/api/v1/mdm/apps/101/labels/5`);
+    const associate = result.requests.find((r) => r.url.endsWith("/groups/701/apps"));
+    expect(bodyJson(associate)).toEqual({
+      app_details: [{ app_id: 101, release_label_id: 5 }],
+      silent_install: true,
+    });
+    const labelPosts = result.requests.filter(
+      (r) => r.method === "POST" && r.url.endsWith("/api/v1/mdm/labels"),
+    );
+    expect(labelPosts).toHaveLength(0);
+  });
+
+  it("a failing label POST fails closed with the named error (duplicate-channel behavior is undocumented)", async () => {
+    const route = withIntercept(
+      greenRoute({ appResponses: [{ apps: [existingAppFixture({ version: "1.1.0" })] }] }),
+      (request) => {
+        if (request.method === "POST" && request.url.endsWith("/api/v1/mdm/labels")) {
+          return json({ error_code: "MDM0019", error_description: "channel conflict" }, 409);
+        }
+        return undefined;
+      },
+    );
+    const result = await runMain(fullEnv(), { route });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("MDM0019");
+    expect(message).toContain("HTTP 409");
+    // No upload happened after the failed label POST.
+    expect(result.requests.some((r) => r.url.endsWith("/emsapi/files"))).toBe(false);
+    expectMasked(result);
   });
 });
 
@@ -1133,20 +1677,22 @@ describe("version parsing and comparison (numeric per component)", () => {
 describe("monotonic pre-check refuses BEFORE any upload POST", () => {
   it("an equal version refuses with only the token exchange and list GET performed", async () => {
     const result = await runMain(fullEnv(), {
-      route: greenRoute({ appPages: [[existingAppFixture({ betaVersion: "1.2.0" })]] }),
+      route: greenRoute({
+        appResponses: [{ apps: [existingAppFixture({ betaVersion: "1.2.0" })] }],
+      }),
     });
 
     expect(result.exitCode).not.toBe(0);
     expect(result.errors.join("\n")).toContain("not strictly greater");
     expect(result.requests.map((r) => [r.method, r.url])).toEqual([
       ["POST", TOKEN_URL],
-      ["GET", `${MDM_BASE}/api/v1/mdm/apps?page=1`],
+      ["GET", `${MDM_BASE}/api/v1/mdm/apps`],
     ]);
   });
 
   it("an unparsable existing version fails closed (never guesses)", async () => {
     const result = await runMain(fullEnv(), {
-      route: greenRoute({ appPages: [[existingAppFixture({ version: "1.x" })]] }),
+      route: greenRoute({ appResponses: [{ apps: [existingAppFixture({ version: "1.x" })] }] }),
     });
 
     expect(result.exitCode).not.toBe(0);
@@ -1158,7 +1704,7 @@ describe("monotonic pre-check refuses BEFORE any upload POST", () => {
 
   it("an existing app with no version fields at all fails closed", async () => {
     const result = await runMain(fullEnv(), {
-      route: greenRoute({ appPages: [[existingAppFixture()]] }),
+      route: greenRoute({ appResponses: [{ apps: [existingAppFixture()] }] }),
     });
 
     expect(result.exitCode).not.toBe(0);
@@ -1172,7 +1718,9 @@ describe("monotonic pre-check refuses BEFORE any upload POST", () => {
       { ...fullEnv(), MDM_APP_VERSION: "1.1.0" },
       {
         route: greenRoute({
-          appPages: [[existingAppFixture({ version: "1.0.0", betaVersion: "2.0.0" })]],
+          appResponses: [
+            { apps: [existingAppFixture({ version: "1.0.0", betaVersion: "2.0.0" })] },
+          ],
         }),
       },
     );
@@ -1212,7 +1760,7 @@ describe("backoff and bounded retries", () => {
   it("retries an HTTP 429 once with the base backoff, then succeeds", async () => {
     let appsCalls = 0;
     const route = withIntercept(greenRoute(), (request) => {
-      if (request.method === "GET" && request.url.includes("/api/v1/mdm/apps?page=")) {
+      if (request.method === "GET" && request.url.includes("/api/v1/mdm/apps")) {
         appsCalls += 1;
         if (appsCalls === 1) return { status: 429, body: "" };
       }
@@ -1235,7 +1783,7 @@ describe("backoff and bounded retries", () => {
   it("retries a COM0002 error envelope, then succeeds", async () => {
     let appsCalls = 0;
     const route = withIntercept(greenRoute(), (request) => {
-      if (request.method === "GET" && request.url.includes("/api/v1/mdm/apps?page=")) {
+      if (request.method === "GET" && request.url.includes("/api/v1/mdm/apps")) {
         appsCalls += 1;
         if (appsCalls === 1) {
           return json({ error_code: "COM0002", error_description: "API Limit Exceeded" }, 400);
@@ -1283,7 +1831,7 @@ describe("backoff and bounded retries", () => {
   it("bounded retries: a persistent 5xx fails closed after three attempts with growing delays", async () => {
     let appsCalls = 0;
     const route = withIntercept(greenRoute(), (request) => {
-      if (request.method === "GET" && request.url.includes("/api/v1/mdm/apps?page=")) {
+      if (request.method === "GET" && request.url.includes("/api/v1/mdm/apps")) {
         appsCalls += 1;
         return { status: 500, body: "upstream error" };
       }
@@ -1310,7 +1858,7 @@ describe("backoff and bounded retries", () => {
   it("a non-retryable 4xx error envelope is NOT retried and fails immediately", async () => {
     let appsCalls = 0;
     const route = withIntercept(greenRoute(), (request) => {
-      if (request.method === "GET" && request.url.includes("/api/v1/mdm/apps?page=")) {
+      if (request.method === "GET" && request.url.includes("/api/v1/mdm/apps")) {
         appsCalls += 1;
         return json({ error_code: "MDM0001", error_description: "bad request" }, 400);
       }
@@ -1337,7 +1885,7 @@ describe("backoff and bounded retries", () => {
       let appsCalls = 0;
       const base = greenRoute();
       const route: RouteHandler = (request) => {
-        if (request.method === "GET" && request.url.includes("/api/v1/mdm/apps?page=")) {
+        if (request.method === "GET" && request.url.includes("/api/v1/mdm/apps")) {
           appsCalls += 1;
           if (appsCalls === 1) return { status: 429, body: "" };
         }
@@ -1362,7 +1910,9 @@ describe("backoff and bounded retries", () => {
 
       expect(exitCode).toBe(0);
       expect(appsCalls).toBe(2);
-      expect(requests.filter((r) => r.url.includes("/api/v1/mdm/apps?page="))).toHaveLength(2);
+      expect(
+        requests.filter((r) => r.method === "GET" && r.url.includes("/api/v1/mdm/apps")),
+      ).toHaveLength(2);
     } finally {
       jest.useRealTimers();
     }
@@ -1370,7 +1920,7 @@ describe("backoff and bounded retries", () => {
 
   it("the app-list pagination has a hard page bound and fails closed when it never terminates", async () => {
     const route: RouteHandler = (request) => {
-      if (request.method === "GET" && request.url.includes("/api/v1/mdm/apps?page=")) {
+      if (request.method === "GET" && request.url.includes("/api/v1/mdm/apps")) {
         return json({ apps: fillerApps(MDM_API_PAGE_SIZE, 0) });
       }
       return greenRoute()(request, 0);
@@ -1379,9 +1929,9 @@ describe("backoff and bounded retries", () => {
 
     expect(result.exitCode).not.toBe(0);
     expect(result.errors.join("\n")).toContain("pagination did not terminate");
-    expect(result.requests.filter((r) => r.url.includes("/api/v1/mdm/apps?page="))).toHaveLength(
-      MAX_LIST_PAGES,
-    );
+    expect(
+      result.requests.filter((r) => r.method === "GET" && r.url.includes("/api/v1/mdm/apps")),
+    ).toHaveLength(MAX_LIST_PAGES);
   });
 });
 
@@ -1391,19 +1941,22 @@ describe("backoff and bounded retries", () => {
 
 describe("error envelope", () => {
   it("a non-2xx with {error_code, error_description} surfaces both, never a raw dump", async () => {
-    const route = withIntercept(greenRoute(), (request) => {
-      if (request.method === "POST" && request.url.endsWith("/api/v1/mdm/labels")) {
-        return json(
-          {
-            error_code: "MDM0023",
-            error_description: "insufficient privileges",
-            localized_error_description: "Lokalisierte Meldung",
-          },
-          403,
-        );
-      }
-      return undefined;
-    });
+    const route = withIntercept(
+      greenRoute({ appResponses: [{ apps: [existingAppFixture({ version: "1.1.0" })] }] }),
+      (request) => {
+        if (request.method === "POST" && request.url.endsWith("/api/v1/mdm/labels")) {
+          return json(
+            {
+              error_code: "MDM0023",
+              error_description: "insufficient privileges",
+              localized_error_description: "Lokalisierte Meldung",
+            },
+            403,
+          );
+        }
+        return undefined;
+      },
+    );
     const result = await runMain(fullEnv(), { route });
 
     expect(result.exitCode).not.toBe(0);
@@ -1416,12 +1969,18 @@ describe("error envelope", () => {
   });
 
   it("a non-2xx with an unparseable body surfaces a truncated first line, not the whole body", async () => {
-    const route = withIntercept(greenRoute(), (request) => {
-      if (request.method === "POST" && request.url.endsWith("/api/v1/mdm/labels")) {
-        return { status: 502, body: "first line of a very long upstream proxy error\nsecond line" };
-      }
-      return undefined;
-    });
+    const route = withIntercept(
+      greenRoute({ appResponses: [{ apps: [existingAppFixture({ version: "1.1.0" })] }] }),
+      (request) => {
+        if (request.method === "POST" && request.url.endsWith("/api/v1/mdm/labels")) {
+          return {
+            status: 502,
+            body: "first line of a very long upstream proxy error\nsecond line",
+          };
+        }
+        return undefined;
+      },
+    );
     const result = await runMain(fullEnv(), { route });
 
     expect(result.exitCode).not.toBe(0);
@@ -1462,6 +2021,8 @@ describe("exit-code contract and --help", () => {
       "MDM_APP_CATEGORY_ID",
       "--group-id",
       "MDM_GROUP_ID",
+      "--expected-group-name",
+      "MDM_EXPECTED_GROUP_NAME",
       "--production-group-id",
       "MDM_PRODUCTION_GROUP_ID",
       "--label-name",

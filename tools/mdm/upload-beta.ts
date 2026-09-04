@@ -18,36 +18,59 @@
  *
  * WHAT IT DOES (upload mode):
  *   1. one Zoho OAuth refresh-token exchange (masked — see below);
- *   2. GET /api/v1/mdm/apps, paginated (50/page), matching our app by
- *      app_name;
+ *   2. GET /api/v1/mdm/apps, walked by the documented pagination envelope
+ *      (RD-03): 50 rows per page by default — a non-empty "paging.next" is a
+ *      FULL URL and is requested verbatim; otherwise the walk steps with the
+ *      documented limit/offset query params, terminating on a short page, on
+ *      accumulating metadata.total_record_count, or on matching our app by
+ *      app_name. The "?page=" parameter is documented NOWHERE and is never
+ *      sent; a page LONGER than 50 rows with no usable envelope fails closed
+ *      (termination would be unknowable);
  *   3. a read-only monotonic version pre-check — the incoming version must be
  *      strictly greater than the existing app's documented STRING version
  *      (the Beta label's app_version when present, else the top-level
  *      version). The server remains the authority on the Android
  *      versionCode increase. A non-increasing version refuses BEFORE any
  *      mutation;
- *   4. POST /api/v1/mdm/labels {"channel_name":"Beta"} → release_label_id;
- *   5. two-phase upload: POST {mdm}/emsapi/files with header
+ *   4. read-only group validation BEFORE ANY MUTATION (RD-04): GET
+ *      /api/v1/mdm/groups/{group_id} — the group must resolve and its
+ *      documented "name" field must equal the REQUIRED expected group name
+ *      (--expected-group-name / MDM_EXPECTED_GROUP_NAME). A missing,
+ *      unparseable or name-mismatched group refuses BOTH flows — id + exact
+ *      name is the strongest non-production identification the documented
+ *      contract supports (no group_type distinguishes production); the
+ *      optional production-group-id denylist is retained as belt-and-braces;
+ *   5. the Beta release label (RD-05): an existing app's Beta label
+ *      (release_labels[] with release_label_name "Beta") is REUSED — POST
+ *      /api/v1/mdm/labels {"channel_name":"Beta"} runs ONLY when the app
+ *      exists without a Beta label or does not exist yet (one POST per run at
+ *      most; duplicate-channel behavior is undocumented, so any POST error
+ *      fails closed);
+ *   6. two-phase upload: POST {mdm}/emsapi/files with header
  *      `Module: MDM_APP_MGMT` and multipart key `file` (the docs prose; the
  *      docs CODE EXAMPLES say `fileName` — recorded discrepancy, the written
  *      prose contract is used). Completion is confirmed from THIS response's
  *      `fileStatus` == 2 — current docs document no polling endpoint, so
  *      none is invented;
- *   6. POST /api/v1/mdm/apps (create; app_type 2 = Enterprise/in-house, with
+ *   7. POST /api/v1/mdm/apps (create; app_type 2 = Enterprise/in-house, with
  *      the documented Required app_category_id and Beta release_label_id) or
  *      PUT /api/v1/mdm/apps/{app_id}/labels/{label_id} (add version,
  *      force_update_in_label);
- *   7. POST /api/v1/mdm/groups/{group_id}/apps with silent_install true —
+ *   8. POST /api/v1/mdm/groups/{group_id}/apps with silent_install true —
  *      exactly ONE group, the configured one.
  *
- * It REFUSES to run without a group id, refuses the configured production
- * group id, refuses any label name other than exactly "Beta", and contains
- * NO call to approve / distribute_update / retire_old_version or any other
- * production-promotion operation (AC-09).
+ * It REFUSES to run without a group id, without an expected group name,
+ * refuses the configured production group id, refuses an unresolvable or
+ * name-mismatched group BEFORE any mutation, refuses any label name other
+ * than exactly "Beta", and contains NO call to approve / distribute_update /
+ * retire_old_version or any other production-promotion operation (AC-09).
  *
  * Dry-run (--dry-run or MDM_DRY_RUN=true): token exchange + read-only GETs
- * (app list with pagination, group list) + the version pre-check. No
- * mutation, no APK read. Exits 0 with a summary of what it found.
+ * (app list with pagination, group details with the name verification) + the
+ * version pre-check. No mutation, no APK read. Exits 0 with a summary of what
+ * it found — and NON-ZERO whenever the group is missing or its name does not
+ * match (a state in which a real run could not proceed safely): a truthful
+ * dry-run.
  *
  * MASKING (Zoho policy — logs count as credential exposure and trigger
  * revocation): the access token, client secret, refresh token and client id
@@ -61,9 +84,9 @@
  * Typed-validation failures of non-credential inputs (data centre, numeric
  * ids, MDM_DRY_RUN) never quote the received value either, so a mis-pasted
  * credential cannot leak even when it appears nowhere correct (T11-R1);
- * free-form values (app name, version, APK path, label name) are echoed
- * deliberately as diagnostics and are always redacted when they match a
- * known credential value.
+ * free-form values (app name, version, APK path, label name, expected group
+ * name) are echoed deliberately as diagnostics and are always redacted when
+ * they match a known credential value.
  *
  * Rate limits: HTTP 429, error code COM0002 ("API Limit Exceeded") and 5xx
  * are retried with bounded backoff (3 attempts, 1 s then 2 s). The numeric
@@ -133,6 +156,11 @@ export interface UploadInputs {
   appCategoryId: string;
   /** The ONE non-production group the app is associated with. */
   groupId: string;
+  /**
+   * The exact documented "name" the target group must resolve to (RD-04:
+   * positive group verification). Required — no default, like groupId.
+   */
+  expectedGroupName: string;
   /** "" when not provided; an equal group id is refused. */
   productionGroupId: string;
   /** Always "Beta" — anything else is refused at input resolution (AC-09). */
@@ -297,8 +325,8 @@ const CREDENTIAL_INPUTS: [flag: string, envName: string][] = [
  * class is closed structurally instead: typed-validation failures of
  * non-credential inputs (data centre, numeric ids, MDM_DRY_RUN) never quote
  * the received value. Free-form values (app name, version, APK path, label
- * name) ARE echoed deliberately as diagnostics and are redacted whenever
- * they match a value from this list.
+ * name, expected group name) ARE echoed deliberately as diagnostics and are
+ * redacted whenever they match a value from this list.
  */
 export function collectSecretValues(
   argv: readonly string[],
@@ -489,6 +517,7 @@ type StringInputKey =
   | "appVersion"
   | "appCategoryId"
   | "groupId"
+  | "expectedGroupName"
   | "productionGroupId"
   | "labelName"
   | "dataCentre";
@@ -558,6 +587,13 @@ const INPUT_SPECS: InputSpec[] = [
     inputKey: "groupId",
     required: true,
     valueHint: "<id>",
+  },
+  {
+    flag: "--expected-group-name",
+    envName: "MDM_EXPECTED_GROUP_NAME",
+    inputKey: "expectedGroupName",
+    required: true,
+    valueHint: "<name>",
   },
   {
     flag: "--production-group-id",
@@ -659,6 +695,7 @@ export function resolveInputs(
     appVersion: "",
     appCategoryId: "",
     groupId: "",
+    expectedGroupName: "",
     productionGroupId: "",
     labelName: BETA_LABEL_NAME,
     dataCentre: DEFAULT_DATA_CENTRE,
@@ -944,9 +981,19 @@ function parseListedApp(entry: Record<string, unknown>): ListedApp | undefined {
 type AppListResult = { ok: true; app?: ListedApp } | { ok: false; failure: string };
 
 /**
- * GET /api/v1/mdm/apps, paginated (50/page). Stops at the first short page or
- * when the target app is matched; a full page requests the next one, so a
- * >50-app repository still finds the target. Never calls anything else.
+ * GET /api/v1/mdm/apps, walked by the documented pagination envelope (RD-03).
+ * The undocumented "?page=" parameter is NEVER sent. Precedence per response:
+ * (1) a non-empty paging.next is a FULL URL — request it verbatim, and ONLY
+ * when its origin equals the MDM API host's origin (T15-R1: every request of
+ * this walk carries the MDM access token, so a foreign paging.next fails
+ * closed instead of sending the bearer to another host); (2) a
+ * usable metadata.total_record_count with the accumulated rows at or past
+ * the total terminates; (3) a short page (< 50 rows) terminates — the docs'
+ * own apps-list example carries no envelope at all; (4) an exactly full page
+ * steps with the documented limit/offset query params. A page with MORE than
+ * 50 rows and no usable envelope fails closed (termination would be
+ * unknowable). The walk terminates on matching the target app, and
+ * MAX_LIST_PAGES bounds it either way.
  */
 async function fetchAppPages(
   mdmBase: string,
@@ -954,11 +1001,12 @@ async function fetchAppPages(
   appName: string,
   deps: NetworkDeps,
 ): Promise<AppListResult> {
-  let matched: ListedApp | undefined;
-  let terminated = false;
+  let url = `${mdmBase}/api/v1/mdm/apps`;
+  let accumulatedRows = 0;
+  const mdmOrigin = new URL(mdmBase).origin;
   for (let page = 1; page <= MAX_LIST_PAGES; page += 1) {
     const outcome = await requestWithRetry(deps, {
-      url: `${mdmBase}/api/v1/mdm/apps?page=${page}`,
+      url,
       method: "GET",
       headers: authHeaders(token),
       failureContext: `MDM API GET /api/v1/mdm/apps (page ${page})`,
@@ -967,7 +1015,8 @@ async function fetchAppPages(
       return { ok: false, failure: outcome.failure };
     }
     const parsed = tryParseJson(outcome.body);
-    const rawApps = isRecord(parsed) ? parsed.apps : undefined;
+    const envelope = isRecord(parsed) ? parsed : undefined;
+    const rawApps = envelope?.apps;
     if (!Array.isArray(rawApps)) {
       return {
         ok: false,
@@ -987,64 +1036,160 @@ async function fetchAppPages(
         continue;
       }
       if (listed.appName === appName) {
-        matched = listed;
+        return { ok: true, app: listed };
       }
     }
-    if (matched !== undefined) {
-      terminated = true;
-      break;
+    accumulatedRows += rawApps.length;
+    const pagingRaw = envelope?.paging;
+    const paging = isRecord(pagingRaw) ? pagingRaw : undefined;
+    const nextUrl =
+      typeof paging?.next === "string" && paging.next.trim() !== "" ? paging.next : undefined;
+    if (nextUrl !== undefined) {
+      // T15-R1: a paging.next from the response body is untrusted input. Every
+      // request this walk makes carries the MDM access token, so the next URL
+      // is followed ONLY when its origin is the MDM API host's own origin —
+      // anything else (or an unparseable URL) fails closed instead of sending
+      // the bearer to a foreign host. The message names only the origins, never
+      // the raw next value.
+      let nextOrigin: string | undefined;
+      try {
+        nextOrigin = new URL(nextUrl).origin;
+      } catch {
+        nextOrigin = undefined;
+      }
+      if (nextOrigin === undefined) {
+        return {
+          ok: false,
+          failure:
+            "the app list paging.next is not a usable absolute URL — failing closed " +
+            "(the value is not quoted)",
+        };
+      }
+      if (nextOrigin !== mdmOrigin) {
+        return {
+          ok: false,
+          failure:
+            "the app list paging.next points outside the MDM API host (" +
+            nextOrigin +
+            ", expected " +
+            mdmOrigin +
+            ") — failing closed: the MDM access token is never sent to another origin",
+        };
+      }
+      url = nextUrl;
+      continue;
+    }
+    const metadataRaw = envelope?.metadata;
+    const metadata = isRecord(metadataRaw) ? metadataRaw : undefined;
+    const totalRecordCount = metadata?.total_record_count;
+    const total =
+      typeof totalRecordCount === "number" &&
+      Number.isFinite(totalRecordCount) &&
+      totalRecordCount >= 0
+        ? totalRecordCount
+        : undefined;
+    if (total !== undefined && accumulatedRows >= total) {
+      return { ok: true };
     }
     if (rawApps.length < MDM_API_PAGE_SIZE) {
-      terminated = true;
-      break;
+      return { ok: true };
     }
-  }
-  if (!terminated) {
+    if (rawApps.length === MDM_API_PAGE_SIZE) {
+      url = `${mdmBase}/api/v1/mdm/apps?limit=${MDM_API_PAGE_SIZE}&offset=${accumulatedRows}`;
+      continue;
+    }
     return {
       ok: false,
-      failure: `the app list pagination did not terminate after ${MAX_LIST_PAGES} pages — failing closed`,
+      failure:
+        `the app list response (page ${page}) returned ${rawApps.length} rows — more than the ` +
+        `documented ${MDM_API_PAGE_SIZE}-row page with no usable paging.next or ` +
+        "metadata.total_record_count, so termination is unknowable — failing closed",
     };
   }
-  return { ok: true, app: matched };
+  return {
+    ok: false,
+    failure: `the app list pagination did not terminate after ${MAX_LIST_PAGES} pages — failing closed`,
+  };
 }
 
-type GroupListResult =
-  | { ok: true; groups: { groupId: number | string; groupName?: string }[] }
-  | { ok: false; failure: string };
+type GroupDetailsResult = { ok: true; name: string } | { ok: false; failure: string };
 
-/** GET /api/v1/mdm/groups — the documented group list, used by the dry-run. */
-async function fetchGroupList(
+/**
+ * GET /api/v1/mdm/groups/{group_id} — the documented read-only single-group
+ * details call (fields group_id/name/group_type/domain; RD-03 replaces the
+ * unpaged full-list walk where a single group is needed). The field is the
+ * documented "name" — "group_name" appears nowhere in current docs. A
+ * non-200 outcome or an unparseable body is reported as a failure and the
+ * caller treats the group as missing (fail closed).
+ */
+async function fetchGroupDetails(
   mdmBase: string,
   token: string,
+  groupId: string,
   deps: NetworkDeps,
-): Promise<GroupListResult> {
+): Promise<GroupDetailsResult> {
   const outcome = await requestWithRetry(deps, {
-    url: `${mdmBase}/api/v1/mdm/groups`,
+    url: `${mdmBase}/api/v1/mdm/groups/${groupId}`,
     method: "GET",
     headers: authHeaders(token),
-    failureContext: "MDM API GET /api/v1/mdm/groups",
+    failureContext: `MDM API GET /api/v1/mdm/groups/${groupId}`,
   });
   if (!outcome.ok) {
     return { ok: false, failure: outcome.failure };
   }
   const parsed = tryParseJson(outcome.body);
-  const rawGroups = isRecord(parsed) ? parsed.groups : undefined;
-  if (!Array.isArray(rawGroups)) {
+  const body = isRecord(parsed) ? parsed : undefined;
+  const groupRaw = body?.group;
+  const groupRecord = isRecord(groupRaw) ? groupRaw : body;
+  const nameRaw = groupRecord?.name;
+  const name = typeof nameRaw === "string" && nameRaw.trim() !== "" ? nameRaw : undefined;
+  if (name === undefined) {
     return {
       ok: false,
-      failure: 'the group list response is malformed: expected a "groups" array — failing closed',
+      failure: 'the group details response did not include a usable "name" field',
     };
   }
-  const groups = rawGroups.flatMap((entry) => {
-    if (!isRecord(entry)) return [];
-    const idRaw = entry.group_id;
-    const groupId =
-      typeof idRaw === "number" || (typeof idRaw === "string" && idRaw !== "") ? idRaw : undefined;
-    if (groupId === undefined) return [];
-    const groupName = typeof entry.group_name === "string" ? entry.group_name : undefined;
-    return [{ groupId, groupName }];
-  });
-  return { ok: true, groups };
+  return { ok: true, name };
+}
+
+type GroupValidation = { ok: true; name: string } | { ok: false; failure: string };
+
+/**
+ * RD-04: pre-mutation group validation with positive name verification.
+ * Resolves the target group read-only and requires its documented "name" to
+ * equal the required expected group name — id + exact name is the strongest
+ * non-production identification the documented contract supports (no
+ * documented group_type distinguishes production). Missing, unparseable or
+ * mismatched → a refusal naming the group id and the expected name (group
+ * ids/names are not secrets; the line still passes the redaction union).
+ */
+async function validateTargetGroup(
+  mdmBase: string,
+  token: string,
+  inputs: UploadInputs,
+  deps: NetworkDeps,
+): Promise<GroupValidation> {
+  const details = await fetchGroupDetails(mdmBase, token, inputs.groupId, deps);
+  if (!details.ok) {
+    return {
+      ok: false,
+      failure:
+        `refusing: group ${inputs.groupId} could not be resolved read-only — ${details.failure}. ` +
+        "The group is treated as missing (GET /api/v1/mdm/groups/" +
+        `${inputs.groupId}); the expected group name is "${inputs.expectedGroupName}" ` +
+        "(MDM_EXPECTED_GROUP_NAME) — fail closed: a run cannot proceed safely without the group",
+    };
+  }
+  if (details.name !== inputs.expectedGroupName) {
+    return {
+      ok: false,
+      failure:
+        `refusing: group ${inputs.groupId} resolved with name "${details.name}", which does not ` +
+        `match the expected group name "${inputs.expectedGroupName}" (MDM_EXPECTED_GROUP_NAME) — ` +
+        "the positive group verification failed, fail closed: no mutation was attempted",
+    };
+  }
+  return { ok: true, name: details.name };
 }
 
 type LabelResult = { ok: true; releaseLabelId: number | string } | { ok: false; failure: string };
@@ -1302,20 +1447,21 @@ async function runDryRun(
       `version "${version ?? "(unknown)"}" — the incoming version ${inputs.appVersion} is strictly greater`;
   }
 
-  const groups = await fetchGroupList(centre.mdm, token.accessToken, deps);
-  if (!groups.ok) {
-    context.emit(groups.failure);
+  // RD-04: a truthful dry-run — exit NON-ZERO whenever the group is missing
+  // or its name does not match the expected name (a state in which a real run
+  // could not proceed safely).
+  const group = await validateTargetGroup(centre.mdm, token.accessToken, inputs, deps);
+  if (!group.ok) {
+    context.emit(`MDM dry-run failed — ${group.failure}`);
     return 1;
   }
-  const group = groups.groups.find((entry) => `${entry.groupId}` === inputs.groupId);
-  const groupLine =
-    group === undefined
-      ? `group ${inputs.groupId} was NOT found in the MDM group list — the association step would fail (check MDM_GROUP_ID)`
-      : `group ${inputs.groupId}${group.groupName === undefined ? "" : ` ("${group.groupName}")`} was found in the MDM group list`;
 
   context.report("MDM dry-run passed (read-only): no changes were made.");
   context.report(appLine);
-  context.report(groupLine);
+  context.report(
+    `group ${inputs.groupId} ("${group.name}") was verified read-only — the name matches ` +
+      "MDM_EXPECTED_GROUP_NAME, so the association step would target it.",
+  );
   return 0;
 }
 
@@ -1381,10 +1527,37 @@ async function runUpload(
     return 1;
   }
 
-  const label = await resolveBetaLabelId(centre.mdm, token.accessToken, inputs.labelName, deps);
-  if (!label.ok) {
-    context.emit(label.failure);
+  // RD-04: pre-mutation group validation — resolve the target group read-only
+  // (GET /api/v1/mdm/groups/{id}) and verify its documented "name" against the
+  // required expected group name BEFORE the first mutation (the label POST, the
+  // file upload, the app create). The production-group-id equality guard in
+  // resolveInputs is belt-and-braces on top of this positive verification.
+  const group = await validateTargetGroup(centre.mdm, token.accessToken, inputs, deps);
+  if (!group.ok) {
+    context.emit(group.failure);
     return 1;
+  }
+
+  // RD-05: Beta label reuse before create. POST /api/v1/mdm/labels only when
+  // the app has no Beta label (it does not exist, or exists without one) — one
+  // label POST per run at most; a POST error fails closed (duplicate-channel
+  // behavior is undocumented — never guess idempotency).
+  let releaseLabelId: number | string;
+  let labelOrigin: "reused" | "created";
+  const existingBetaLabel = list.app?.releaseLabels.find(
+    (label) => label.releaseLabelName === BETA_LABEL_NAME,
+  );
+  if (existingBetaLabel !== undefined) {
+    releaseLabelId = existingBetaLabel.releaseLabelId;
+    labelOrigin = "reused";
+  } else {
+    const label = await resolveBetaLabelId(centre.mdm, token.accessToken, inputs.labelName, deps);
+    if (!label.ok) {
+      context.emit(label.failure);
+      return 1;
+    }
+    releaseLabelId = label.releaseLabelId;
+    labelOrigin = "created";
   }
 
   const upload = await uploadApkFile(
@@ -1405,7 +1578,7 @@ async function runUpload(
       centre.mdm,
       token.accessToken,
       list.app.appId,
-      label.releaseLabelId,
+      releaseLabelId,
       upload.fileId,
       deps,
     );
@@ -1420,7 +1593,7 @@ async function runUpload(
       token.accessToken,
       inputs.appName,
       Number(inputs.appCategoryId),
-      label.releaseLabelId,
+      releaseLabelId,
       upload.fileId,
       deps,
     );
@@ -1436,7 +1609,7 @@ async function runUpload(
     token.accessToken,
     inputs.groupId,
     appId,
-    label.releaseLabelId,
+    releaseLabelId,
     deps,
   );
   if (!associate.ok) {
@@ -1446,8 +1619,11 @@ async function runUpload(
 
   context.report(
     `MDM Beta upload passed: app "${inputs.appName}" (app_id ${appId}) version ${inputs.appVersion} on the ` +
-      `${inputs.labelName} release label (id ${label.releaseLabelId}), associated with group ${inputs.groupId} ` +
-      "(silent_install enabled).",
+      `${inputs.labelName} release label (id ${releaseLabelId}, ${
+        labelOrigin === "reused"
+          ? "reused from the app's existing Beta label — no label POST was made"
+          : "created this run by POST /api/v1/mdm/labels"
+      }), associated with group ${inputs.groupId} ("${group.name}", silent_install enabled).`,
   );
   context.report(
     `file uploaded: fileID ${upload.fileId} (fileStatus ${FILE_COMPLETED_STATUS}); no production ` +
@@ -1469,16 +1645,23 @@ Run with plain Node (24+ native TypeScript):
 
 Upload mode: one Zoho OAuth refresh-token exchange (one exchange per run —
 max 10 access tokens per refresh token per 10 minutes), the app list read
-(paginated), the monotonic version pre-check, the two-phase /emsapi/files
-upload (completion confirmed from the response's fileStatus), then either
-app create (Enterprise/in-house, app_type 2) or add-version on the Beta
-label, and the single group association with silent_install. It NEVER
+(paginated by the documented envelope: paging.next as a full URL, else the
+limit/offset query params — never "page="), the monotonic version pre-check,
+the read-only group validation (GET /api/v1/mdm/groups/{group_id} — the
+group's documented name must equal the expected group name), then the
+two-phase /emsapi/files upload (completion confirmed from the response's
+fileStatus), the Beta release label (reused from the app's existing
+release_labels when present — POST /api/v1/mdm/labels only otherwise), then
+either app create (Enterprise/in-house, app_type 2) or add-version on the
+Beta label, and the single group association with silent_install. It NEVER
 calls production approve / distribute_update / retire_old_version
 operations.
 
 Dry-run (--dry-run or MDM_DRY_RUN=true): token exchange + read-only GETs
-(app list with pagination, group list) + the version pre-check. No
-mutation, no APK read; exits 0 with a summary.
+(app list with pagination, group details with name verification) + the
+version pre-check. No mutation, no APK read; exits 0 with a summary — and
+NON-ZERO when the group is missing or its name does not match (a real run
+could not proceed safely).
 
 Secrets (required; flag or env; VALUES ARE MASKED in all output — logs
 count as credential exposure):
@@ -1495,6 +1678,9 @@ Target (required):
                                                       strictly greater than the
                                                       existing app's version
   --group-id <id>                MDM_GROUP_ID       the ONE non-production group
+  --expected-group-name <name>   MDM_EXPECTED_GROUP_NAME   the exact NAME the
+                                                      group-id must resolve to
+                                                      (positive verification)
 
 Guards and options:
   --production-group-id <id>     MDM_PRODUCTION_GROUP_ID   when set, a target
