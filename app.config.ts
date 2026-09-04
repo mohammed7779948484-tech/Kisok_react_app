@@ -29,6 +29,12 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: BUNDLE_ID,
+    // KISOK kiosk-runtime (IR-08): EXPLICIT versionCode, no reliance on
+    // Expo's hidden `?? 1` default. Every MDM-delivered release must set a
+    // strictly greater integer (Android enforces >= for updates); the
+    // release workflows fail closed when this field is absent, so a
+    // release can never silently ship versionCode 1 forever.
+    versionCode: 1,
   },
   ios: {
     supportsTablet: true,

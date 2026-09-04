@@ -82,10 +82,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # The expected APK identity is DERIVED from the evaluated app config,
-      # never hard-coded literals. Expo's own defaulting applies (the installed
-      # @expo/config-plugins android/Version.js — the same functions prebuild
-      # uses when it writes android/app/build.gradle): versionCode =
-      # android.versionCode ?? 1, versionName = android.version ?? version.
+      # never hard-coded literals. versionName keeps Expo's own defaulting
+      # (android.version ?? version); versionCode does NOT — an absent
+      # android.versionCode is a NAMED FAILURE here (IR-08), because prebuild's
+      # own default (@expo/config-plugins android/Version.js — the same
+      # functions that write android/app/build.gradle) would silently supply 1,
+      # shipping versionCode 1 forever and skipping the N→N+1 bump contract.
       # Deriving here keeps the verify step comparing like with like, so a
       # config bump cannot desync the expectation from the artifact. Every
       # derived value is validated as a simple token BEFORE it is written to
@@ -103,7 +105,15 @@ jobs:
             const android = config.android ?? {};
             const packageName = android.package;
             const versionName = android.version ?? config.version;
-            const versionCode = android.versionCode ?? 1;
+            const versionCode = android.versionCode;
+            // IR-08: an absent versionCode is a NAMED failure, not Expo's
+            // hidden `?? 1` default — that default would ship versionCode 1
+            // forever and silently skip the N→N+1 bump contract. Fail closed
+            // BEFORE any $GITHUB_ENV write.
+            if (versionCode === undefined) {
+              console.error("evaluated app config is missing android.versionCode — the version-bump contract requires it EXPLICIT in app.config.ts (the hidden ?? 1 default would ship versionCode 1 forever; set android.versionCode for the next release)");
+              process.exit(1);
+            }
             const identity = [
               ["android.package", packageName],
               ["android.version (or the root version)", versionName],
@@ -119,8 +129,8 @@ jobs:
                 process.exit(1);
               }
             }
-            // versionCode defaults to 1 so it cannot be missing, but a
-            // non-numeric value from the config must never reach the env file.
+            // A present-but-invalid value must never reach the env file
+            // (this also catches null and empty-string tokens).
             const versionCodeToken = String(versionCode);
             if (!/^[0-9]+$/.test(versionCodeToken)) {
               console.error(`evaluated android.versionCode is not a plain non-negative integer: ${JSON.stringify(versionCode)}`);

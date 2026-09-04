@@ -2044,3 +2044,36 @@ maxSdkVersion=…)`, `Source Stamp Signer`) → parse by line SUFFIX. Android
   68/881; verify exit 0.
 - **GATE: PASS** — the delivery gate now rejects any wrong non-debug key
   (IR-06 closed); operators get actionable shape failures.
+
+---
+
+## T18 — explicit versionCode + fail-closed derivation (remediation Round 4, IR-08)
+
+**Mode**: config · **Acceptance**: Supporting AC-08 · **Deps**: T17 (PASS) ·
+**Scaffold**: N/A (config files)
+
+- **Research basis**: packet R6 — installed @expo/config-plugins Version.js
+  `?? 1` default means every release would ship versionCode 1 forever;
+  Android enforces >= (downgrade protection), Expo/MDM guidance says
+  increase per release.
+- **IMPLEMENT** (3 files, exactly in scope): `app.config.ts` gains
+  `android.versionCode: 1` with the bump-contract comment; BOTH workflows'
+  derivation steps replace `android.versionCode ?? 1` with a named failure
+  (exit 1 BEFORE any $GITHUB_ENV write) when the field is absent; the
+  stale `?? 1` comment above each step corrected (reviewer-endorsed
+  judgment call).
+- **Config-mode evidence** (fresh implementer agent-f61e36aa; derivation
+  scripts programmatically EXTRACTED from the committed YAML, /tmp
+  replays): field absent → exit 1 + named message + no env write;
+  `versionCode: 1` / `"12"` → pass; `"7a"` / `null` / `""` → exit 1; the
+  REAL config → pass with 1; `expo config --json` carries versionCode 1;
+  `expo prebuild --clean` → build.gradle `versionCode 1` (byte-identical to
+  the old default's output; no tracked file changed after the documented
+  package.json restore).
+- **Fresh review** (agent-b4a6188c): **0 blocking / 0 major / 1 minor**
+  (T18-R1: mdm-operations.md still documents the removed `?? 1` default as
+  current behavior — folded into T20's checklist with the T16-R2/R3 items).
+  Reviewer independently re-extracted and re-ran the replays, verified
+  byte-consistency of both steps, and re-ran prebuild (byte-identical
+  output).
+- **GATE: PASS** — the bump contract can no longer be silently skipped.
