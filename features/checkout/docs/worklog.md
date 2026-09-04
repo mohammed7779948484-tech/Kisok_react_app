@@ -202,3 +202,78 @@ features/checkout/model/normalized-request.test.ts (new)
 Nothing outside the task's allowed scope.
 
 GATE: PASS
+
+### T03 — checkout-attempt record schema
+
+MODE: behavior
+ACCEPTANCE: Supporting AC-06, AC-07
+
+SCAFFOLD (Lead, before delegating)
+$ pnpm generate schema checkout checkout-attempt
+created : features/checkout/model/checkout-attempt.schema.ts
+features/checkout/model/checkout-attempt.schema.test.ts
+skipped : —
+replaced : —
+manual : —
+
+RED (behavior)
+$ npx jest features/checkout/model/checkout-attempt.schema.test.ts
+Tests: 77 failed, 4 passed (81 total)
+Intended failure: the generated placeholder (z.object({ id: z.uuid() }))
+cannot parse a valid attempt record — the entry-evidence case "rejects a
+record missing clientRequestId" failed because the placeholder's only
+issue is at `id`. The 4 pre-passing cases are the non-object-root
+rejections, which the placeholder also rejects at the root path —
+pre-existing behaviour, not the new contract. Reviewer independently
+reproduced the exact 77/4 split.
+
+IMPLEMENT
+model/checkout-attempt.schema.ts — versioned envelope (version: literal 1),
+z.discriminatedUnion("status", …): unresolved (NO success/cleanup) vs
+confirmed (MUST carry success{orderId, displayNumber, createdAt} +
+cleanup{cartClear: pending|done|failed}) — impossible combinations
+unrepresentable. Checkout-local postgres uuid regex; items exactly
+{variant_id, quantity} with .int().positive().max(2147483647),
+.min(1).max(MAX_NORMALIZED_ITEMS from T02) + case-insensitive
+distinct-variant refine (mirrors K1001); fingerprint non-empty opaque text;
+lineSnapshots checkout-owned CartLine-shaped (1..99, nullable imageUri) —
+deliberately not importing the cart's Zod schema (restore must not depend
+on another feature's schema evolution); displayNumber/createdAt pinned to
+T01's exact shapes (locally defined, cross-referenced comments).
+model/checkout-attempt.schema.test.ts — 81 → 89 cases after remediation.
+
+GREEN
+$ npx jest features/checkout/model/checkout-attempt.schema.test.ts
+Tests: 89 passed, 89 total
+$ npx jest features/checkout → 3 suites / 148 tests
+$ pnpm test:ci → 57 suites / 704 tests, zero console output
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean (exit 0)
+$ npx eslint <both files> → zero issues
+$ npx prettier --check <both files> → clean
+
+TASK REVIEW (fresh code-reviewer, agent-283b40c7)
+Independently verified: D1/D4 contract complete; impossible-combination
+enforcement airtight both directions; pinned shapes byte-identical to T01
+and the migrations; case-insensitive duplicate refine consistent with the
+RPC's uuid-cast distinct count; snapshot ownership sound; RED reproduced
+exactly (77/4 with the right reasons); type pins have real teeth.
+Findings: T03-R1 major (no items↔lineSnapshots cross-field consistency —
+empty/mismatched snapshots restored cleanly, contradicting the module's
+own fail-loud boundary contract), T03-R2 minor (quantity ceiling claim vs
+schema), T03-R3 minor (success unknown-field untested), T03-R4 (worklog —
+Lead action, this entry).
+Remediation (same-implementer resume): lineSnapshots .min(1) +
+snapshotVariantParity set-equality refine on BOTH branches (teeth proven:
+neutralized refine fails exactly the 4 new hardening tests, then restored);
+.max(2147483647) added with migration citation; success unknown-field case.
+81 → 89 tests. Three accept-path fixtures gained a parity-satisfying
+snapshot entry — assertions unchanged, no test weakened.
+
+DIFF
+features/checkout/model/checkout-attempt.schema.ts (new)
+features/checkout/model/checkout-attempt.schema.test.ts (new)
+Nothing outside the task's allowed scope.
+
+GATE: PASS

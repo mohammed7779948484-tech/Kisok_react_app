@@ -17,9 +17,9 @@ is the first thing the next agent reads.
 ```
 Current round     : 1
 Current task      : T01
-Current stage     : T02 GATE PASS — next T03 (checkout-attempt schema)
-Last gate         : T02 GATE PASS
-Next legal action : Lead scaffold T03 (schema checkout-attempt), then delegate
+Current stage     : T03 GATE PASS — next T04 (submit-order api)
+Last gate         : T03 GATE PASS
+Next legal action : Lead scaffold T04 (mutation submit-order), then delegate
 Blocked by        : —
 ```
 
@@ -44,7 +44,7 @@ Scan this first. Detail is below.
 | ---- | -------- | ------------------------------------- | ---------------------------------------------------------- | ----------------------- | ----------- | ------- |
 | T01  | behavior | Supporting AC-07, AC-08               | create-order-response schema                               | —                       | done        | PASS    |
 | T02  | behavior | Acceptance: AC-05                     | normalized-request pure rules                              | —                       | done        | PASS    |
-| T03  | behavior | Supporting AC-06, AC-07               | checkout-attempt record schema                             | T02                     | not started | PENDING |
+| T03  | behavior | Supporting AC-06, AC-07               | checkout-attempt record schema                             | T02                     | done        | PASS    |
 | T04  | behavior | Supporting AC-07–AC-10                | submit-order api + mutation hook                           | T01                     | not started | PENDING |
 | T05  | behavior | Supporting AC-07, AC-11               | Cart `clearCartDurable()` extension                        | —                       | not started | PENDING |
 | T06  | behavior | Acceptance: AC-04, AC-06, AC-09–AC-11 | Checkout attempt store (state machine + durable lifecycle) | T02, T03, T04, T05      | not started | PENDING |
@@ -102,7 +102,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Expected generated files**: `model/checkout-attempt.schema.ts`,
   `model/checkout-attempt.schema.test.ts`
 - **Allowed manual files**: —
-- **Scaffold status**: `PENDING`
+- **Scaffold status**: `READY` (ran by the Lead; SCAFFOLD block in worklog)
 - **Allowed file scope**: `features/checkout/model/checkout-attempt.schema*`
 
 ### T04 — submit-order api + mutation hook
@@ -115,7 +115,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Expected generated files**: `api/submit-order.ts`,
   `queries/use-submit-order-mutation.ts`, `queries/keys.ts`
 - **Allowed manual files**: —
-- **Scaffold status**: `PENDING`
+- **Scaffold status**: `READY` (ran by the Lead; SCAFFOLD block in worklog)
 - **Allowed file scope**: `features/checkout/api/submit-order*`,
   `features/checkout/queries/*`
 
@@ -146,7 +146,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Expected generated files**: `state/attempt-store.ts`,
   `state/attempt-store.test.ts`
 - **Allowed manual files**: —
-- **Scaffold status**: `PENDING`
+- **Scaffold status**: `READY` (ran by the Lead; SCAFFOLD block in worklog)
 - **Allowed file scope**: `features/checkout/state/attempt-store*`
 
 ### T07 — Sign-out guard + cleanup registration
@@ -176,7 +176,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Expected generated files**: `components/order-line-row.tsx` (+ test),
   `screens/order-review/order-review-screen.tsx` (+ test)
 - **Allowed manual files**: —
-- **Scaffold status**: `PENDING`
+- **Scaffold status**: `READY` (ran by the Lead; SCAFFOLD block in worklog)
 - **Allowed file scope**: `features/checkout/components/order-line-row*`,
   `features/checkout/screens/order-review/**`
 
@@ -220,7 +220,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Expected generated files**: `screens/order-success/order-success-screen.tsx`
   (+ test), `screens/order-success/components/success-countdown.tsx` (+ test)
 - **Allowed manual files**: —
-- **Scaffold status**: `PENDING`
+- **Scaffold status**: `READY` (ran by the Lead; SCAFFOLD block in worklog)
 - **Allowed file scope**: `features/checkout/screens/order-success/**`
 
 ### T12 — recovery-gate + layout mounting
@@ -233,7 +233,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Expected generated files**: `components/recovery-gate.tsx` (+ test)
 - **Allowed manual files**: edit `app/(customer)/_layout.tsx` (mount the gate),
   edit `features/checkout/index.ts` (export the gate)
-- **Scaffold status**: `PENDING`
+- **Scaffold status**: `READY` (ran by the Lead; SCAFFOLD block in worklog)
 - **Allowed file scope**: `features/checkout/components/recovery-gate*`,
   `features/checkout/index.ts`, `app/(customer)/_layout.tsx`
 
@@ -250,7 +250,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Expected generated files**: `app/(customer)/checkout.tsx`,
   `app/(customer)/checkout-success.tsx`, index.ts export additions
 - **Allowed manual files**: —
-- **Scaffold status**: `PENDING`
+- **Scaffold status**: `READY` (ran by the Lead; SCAFFOLD block in worklog)
 - **Allowed file scope**: `app/(customer)/checkout.tsx`,
   `app/(customer)/checkout-success.tsx`, `features/checkout/index.ts`
 
