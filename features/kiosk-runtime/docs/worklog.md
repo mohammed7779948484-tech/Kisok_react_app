@@ -2177,3 +2177,36 @@ mdm-upload` (upload job) with the human-migration follow-up comments.
 - **ROUND 4 GATE: PASS** — IR-01/03/04/05/06/07/08 closed at code level
   with fresh evidence; IR-02 documented REJECTED; R5 drifts fixed. IR-09
   (develop integration) remains, scheduled next per the plan.
+
+---
+
+## Final verification — develop integration (IR-09) + runtime regression (remediation)
+
+- **develop integration (IR-09)**: `git fetch origin --prune` —
+  origin/develop = 3a25640 (unchanged since the amendment; PR #12's cart
+  pre-checkout hardening, 15 commits ahead of the feature's earlier
+  integration base 6161a4c). Merged non-destructively:
+  `git merge origin/develop --no-edit` → **zero conflicts** (cart surfaces
+  disjoint from kiosk-runtime); merge commit **db3a50d** pushed; PR #9
+  head = db3a50d, state open/draft/base develop, mergeable_state clean.
+- **Post-merge verification**: `pnpm verify` EXIT 0 — 68 suites /
+  **894 tests** (881 + 13 from the merged cart hardening).
+- **Runtime browser regression (db3a50d, CI-equivalent static export,
+  agent-browser, tablet landscape 1280×800 + portrait 800×1280)**:
+  - signed-out root → `/sign-in` **immediately** (the T14 readiness hold
+    is invisible on web — module absent resolves instantly; no hang);
+  - Customer journey: signed in with the committed disposable test account
+    → the customer experience renders (Demo Store / Brands / Products /
+    Categories / Search), zero console errors, zero page errors;
+  - Preparation journey: signed in with the disposable preparation account
+    → the preparation experience renders (Sign out control) immediately —
+    AC-04 behavior through the readiness change, no hang;
+  - `/kiosk-mismatch` direct visit (unauthenticated): fail-closed — the
+    sign-in experience renders, NO mismatch content leaks;
+  - no kiosk surfaces (no maintenance affordance) anywhere on the standard
+    path; both viewports.
+- **Native tier**: the `android-build` label was added to PR #9 (API),
+  triggering the label-gated Android build on db3a50d — outcome recorded
+  below at completion. Maestro/E2E: N/A per plan (skipped, not PASS).
+- **Fast CI on db3a50d**: Verify / Web bundle / Expo doctor / Android
+  prebuild — outcome recorded below at completion.
