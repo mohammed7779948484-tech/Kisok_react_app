@@ -17,9 +17,9 @@ is the first thing the next agent reads.
 ```
 Current round     : 1
 Current task      : T01
-Current stage     : plan READY — task loop starting
-Last gate         : — (workspace + brief + plan READY)
-Next legal action : Lead scaffolds T01 (schema create-order-response), then delegate T01
+Current stage     : T01 GATE PASS — next T02 (normalized-request rules)
+Last gate         : T01 GATE PASS
+Next legal action : delegate T02 (manual model artifact — no scaffold needed)
 Blocked by        : —
 ```
 
@@ -42,7 +42,7 @@ Scan this first. Detail is below.
 
 | Task | Mode     | Acceptance                            | Objective                                                  | Deps                    | Stage       | Gate    |
 | ---- | -------- | ------------------------------------- | ---------------------------------------------------------- | ----------------------- | ----------- | ------- |
-| T01  | behavior | Supporting AC-07, AC-08               | create-order-response schema                               | —                       | not started | PENDING |
+| T01  | behavior | Supporting AC-07, AC-08               | create-order-response schema                               | —                       | done        | PASS    |
 | T02  | behavior | Acceptance: AC-05                     | normalized-request pure rules                              | —                       | not started | PENDING |
 | T03  | behavior | Supporting AC-06, AC-07               | checkout-attempt record schema                             | T02                     | not started | PENDING |
 | T04  | behavior | Supporting AC-07–AC-10                | submit-order api + mutation hook                           | T01                     | not started | PENDING |
@@ -76,7 +76,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Expected generated files**: `model/create-order-response.schema.ts`,
   `model/create-order-response.schema.test.ts`
 - **Allowed manual files**: —
-- **Scaffold status**: `PENDING`
+- **Scaffold status**: `READY` (ran by the Lead; SCAFFOLD block in worklog)
 - **Allowed file scope**: `features/checkout/model/create-order-response.schema*`
 
 ### T02 — normalized-request pure rules
