@@ -29,6 +29,12 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: BUNDLE_ID,
+    // KISOK kiosk-runtime (IR-08): EXPLICIT versionCode, no reliance on
+    // Expo's hidden `?? 1` default. Every MDM-delivered release must set a
+    // strictly greater integer (Android enforces >= for updates); the
+    // release workflows fail closed when this field is absent, so a
+    // release can never silently ship versionCode 1 forever.
+    versionCode: 1,
   },
   ios: {
     supportsTablet: true,
@@ -61,6 +67,19 @@ const config: ExpoConfig = {
         },
       },
     ],
+    // KISOK kiosk-runtime: declares the Android managed-configurations
+    // (app restrictions) schema and sets android:lockTaskMode="if_whitelisted"
+    // on the main activity so the SAME APK is a locked store kiosk on
+    // DPC-allowlisted tablets and a normal app everywhere else. The app never
+    // calls startLockTask/stopLockTask; the MDM owns enforcement.
+    "./modules/kiosk-policy/app.plugin.js",
+    // KISOK kiosk-runtime: env-guarded release signing for the managed
+    // deployment path. Inert without the MYAPP_UPLOAD_* env — local dev and
+    // e2e CI keep the Expo template's debug-signed release default. With all
+    // four present at prebuild time it writes the guarded signing config into
+    // the generated, gitignored android/ tree only. Fail-closed
+    // secret-presence checks live in the release workflow, not the plugin.
+    "./plugins/with-android-release-signing.ts",
   ],
   experiments: {
     typedRoutes: true,

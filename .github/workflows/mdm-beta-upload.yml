@@ -1,0 +1,509 @@
+name: MDM Beta upload
+
+# MANUAL DISPATCH ONLY. This workflow spends the ManageEngine MDM OAuth
+# secrets, so no push or PR trigger may ever reach it — workflow_dispatch
+# requires write access to the repository, which is the access boundary for
+# who can talk to the MDM tenant. It does NOT build anything: the Android
+# release workflow is the only builder (plan decision 10). Given the run id
+# of a prior Android release run, this workflow validates that run's
+# provenance (R5-12), downloads that run's kisok-release-apk artifact,
+# RE-VERIFIES it with
+# tools/release/verify-release-apk.ts against the identity derived from the
+# app config, and only then runs tools/mdm/upload-beta.ts (DRY-RUN BY
+# DEFAULT) against the ManageEngine MDM Cloud: the "Beta" release label,
+# ONE admin-configured non-production device group (R5-07: the group triple
+# comes from the mdm-upload environment's VARIABLES — MDM_BETA_GROUP_ID /
+# MDM_BETA_GROUP_NAME / MDM_PRODUCTION_GROUP_ID — so a dispatcher CANNOT aim
+# the upload at any group; configuring an environment variable requires a
+# repository admin, a boundary above dispatch's write access), silent_install.
+# Production rollout stays a human action (AC-09).
+on:
+  workflow_dispatch:
+    inputs:
+      run-id:
+        description: Id of the prior Android release run whose kisok-release-apk artifact is uploaded
+        required: true
+        type: string
+      dry-run:
+        description: Read-only dry-run (token exchange, GETs, version pre-check); a real upload requires deliberately setting this to false
+        required: false
+        default: true
+        type: boolean
+      app-category-id:
+        description: Optional MDM App Repository category id, required only when the app does not exist yet (create path)
+        required: false
+        type: string
+      app-name:
+        description: MDM App Repository app name to match or create
+        required: false
+        default: KISOK
+        type: string
+      data-centre:
+        description: ManageEngine data centre code (us, eu, in, au, jp, ca, cn, sa, uk)
+        required: false
+        default: us
+        type: string
+      redirect-uri:
+        description: Optional OAuth redirect URI registered for the MDM API client
+        required: false
+        type: string
+
+# Least privilege, plus the one addition cross-run artifact download needs:
+# fetching an artifact by run id goes through the Actions API, which requires
+# `actions: read` on the token. Nothing here writes to the repository.
+permissions:
+  contents: read
+  actions: read
+
+# Release-scoped and SERIALIZED, like the Android release workflow: every
+# dispatch of this workflow shares one group, and an in-flight upload is
+# never cancelled — a newer dispatch queues instead (cancelling an upload
+# mid-flight would leave the MDM App Repository in an unknown state).
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    name: Download, re-verify and upload the signed release APK to MDM (Beta)
+    runs-on: ubuntu-latest
+    # IR-07 / R5-07: this job spends the three MDM_* OAuth secrets AND
+    # resolves the Beta target triple from this environment's VARIABLES, so
+    # it runs in a dedicated GitHub environment. The repository admin
+    # creates `mdm-upload`, configures its protection (required reviewers
+    # are optional), migrates the MDM_* secrets from repository to
+    # environment scope, and sets the three target VARIABLES
+    # (MDM_BETA_GROUP_ID / MDM_BETA_GROUP_NAME / MDM_PRODUCTION_GROUP_ID):
+    # a job referencing `environment: mdm-upload` resolves that
+    # environment's variables via `vars.`, an unset variable renders as ""
+    # and the fail-closed checks below refuse to run, and configuring
+    # environment variables/protection requires admin while dispatch
+    # requires only write — the boundary that makes the Beta target an
+    # admin-controlled allowlist (R5-07). (mdm-operations.md, T20/T29.)
+    environment: mdm-upload
+    # No build here: download + verify + upload. The tool's own bounded
+    # backoff retries are the only thing that can stretch the runtime.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The job never pushes; the artifact download below takes its own
+          # explicit token, so do not leave one in .git/config either.
+          persist-credentials: false
+
+      # Belt-and-braces on `required: true`: the dispatch UI refuses an empty
+      # run-id, but an API dispatch can still send an empty one, and the
+      # artifact download must never receive a value that is not a run id.
+      # R5-07: the Beta target triple is NO LONGER dispatch input — it is the
+      # mdm-upload environment's VARIABLES (admin-controlled; the documented
+      # `vars.` mechanism; an unset variable renders as "", the same
+      # fail-closed primitive as secrets), checked here so a misconfigured
+      # repository fails fast, before checkout's toolchain setup, install,
+      # download and re-verification all run — the tool would otherwise only
+      # refuse at the LAST step. A dispatcher can no longer aim the upload at
+      # ANY group. Only the missing variable NAME is ever printed; values are
+      # never echoed (group ids/names are not secrets, but they are not this
+      # step's to echo either).
+      - name: Validate the run-id dispatch input and the Beta target environment variables
+        env:
+          # Read by THIS step's bash only — no tool runs in this step, so
+          # these env names carry no tool contract (note the collision:
+          # MDM_PRODUCTION_GROUP_ID is also the TOOL's own env name of the
+          # same meaning, while the two MDM_BETA_* names are the mdm-upload
+          # environment VARIABLE names — the names match the vars for
+          # traceability, nothing more). The upload step forwards these
+          # values to the tool as FLAGS, through its own UPLOAD_* plumbing
+          # names — never the tool's MDM_* env names.
+          RUN_ID: ${{ inputs.run-id }}
+          MDM_BETA_GROUP_ID: ${{ vars.MDM_BETA_GROUP_ID }}
+          MDM_BETA_GROUP_NAME: ${{ vars.MDM_BETA_GROUP_NAME }}
+          MDM_PRODUCTION_GROUP_ID: ${{ vars.MDM_PRODUCTION_GROUP_ID }}
+        run: |
+          case "$RUN_ID" in
+            "" | *[!0-9]*)
+              echo "::error::run-id must be the numeric id of a prior Android release run — the provided value is empty or not numeric."
+              exit 1
+              ;;
+          esac
+          missing=0
+          for name in MDM_BETA_GROUP_ID MDM_BETA_GROUP_NAME MDM_PRODUCTION_GROUP_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not set. It is an environment variable of the mdm-upload GitHub environment — a repository admin must configure it (Settings → Environments → mdm-upload → Environment variables). The MDM upload refuses to run without all three; dispatch can no longer supply any group value (R5-07)."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      # FAIL CLOSED immediately after checkout, before any toolchain setup,
+      # install, download or upload work (the discipline the Android release
+      # workflow established, AC-07). GitHub renders an unset secret as an
+      # empty string and secrets cannot be used in `if:` conditions — so the
+      # documented primitive is: pass them as step env, then check for
+      # non-empty here. Only the missing secret NAME is ever printed; values
+      # are never echoed.
+      - name: Check the MDM secrets are present (fail closed)
+        env:
+          MDM_CLIENT_ID: ${{ secrets.MDM_CLIENT_ID }}
+          MDM_CLIENT_SECRET: ${{ secrets.MDM_CLIENT_SECRET }}
+          MDM_REFRESH_TOKEN: ${{ secrets.MDM_REFRESH_TOKEN }}
+        run: |
+          missing=0
+          for name in MDM_CLIENT_ID MDM_CLIENT_SECRET MDM_REFRESH_TOKEN; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not set. Create it as a repository Actions secret; the MDM upload refuses to run without all three."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      # PROVENANCE GATE (R5-12 — defense-in-depth recommended by the Round 5
+      # research, NOT a documented product requirement). The dispatch input
+      # is any NUMERIC run id, and workflow_dispatch lets anyone with write
+      # access run the Android release workflow from ANY ref — so a backdoored
+      # branch carrying the same app config would build an artifact that
+      # passes EVERY content check below (same package, same versionCode/
+      # versionName, same pinned upload-cert SHA-256, same embedded bundle).
+      # Content re-verification cannot see WHERE an artifact was built; only
+      # the run's identity can. So before anything is downloaded, ask the
+      # Actions REST API who this run is, and fail closed unless it is a
+      # successful run of the Android release workflow from a release-source
+      # branch. Per R5-C2 the workflow-identity and conclusion checks are
+      # secondary defenses (fail fast, audit attribution, nicer errors) — the
+      # head_branch allowlist is the one element that closes the real,
+      # otherwise-open branch-swap hole. The lookup uses `actions: read`
+      # (already granted above — the documented minimal permission for BOTH
+      # the run lookup and the artifact download) with the same github.token
+      # the download step below passes to its action, so no new permission is
+      # introduced. Only the five validated fields are ever echoed — never
+      # the full run JSON (it carries actor emails and other fields this
+      # step has no business printing).
+      - name: Validate the release run before downloading its artifact
+        shell: bash
+        env:
+          # The house rule — no inline ${{ }} inside any run: script — applies
+          # here too: the URL is assembled in bash from env values, and RUN_ID
+          # (a dispatch input) never appears in the script text. GITHUB_API_URL
+          # and GITHUB_REPOSITORY restate the runner's own documented defaults
+          # so every script input is visible in one place; GITHUB_TOKEN is
+          # scoped to this step and read only by curl's Authorization header.
+          GITHUB_API_URL: ${{ github.api_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run-id }}
+        run: |
+          run_url="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID"
+          # --show-error keeps transport failures visible in the log; the HTTP
+          # status is captured separately so a 404 is a NAMED failure instead
+          # of curl's generic exit 22. No retries: provenance is established
+          # once, and a transient failure means a re-dispatch.
+          http_code="$(curl --silent --show-error \
+            --output "$RUNNER_TEMP/release-run.json" \
+            --write-out "%{http_code}" \
+            --header "Authorization: Bearer $GITHUB_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            "$run_url")" || {
+            echo "::error::The run lookup request itself failed — $run_url could not be reached, so the provenance of run $RUN_ID cannot be established and its artifact will not be downloaded."
+            exit 1
+          }
+          case "$http_code" in
+            200) ;;
+            404)
+              echo "::error::Actions run $RUN_ID was not found — GET $run_url returned HTTP 404. The run-id dispatch input must be the id of a prior Android release run."
+              exit 1
+              ;;
+            *)
+              echo "::error::The run lookup returned HTTP $http_code (expected 200) — the provenance of run $RUN_ID cannot be established, so its artifact will not be downloaded."
+              exit 1
+              ;;
+          esac
+          # jq (preinstalled on ubuntu-latest) extracts ONLY the five fields
+          # this step validates, tab-separated: @tsv escapes any tab or
+          # newline INSIDE a value, so a value can never inject extra fields.
+          # The read below has the opposite invariant: an empty or null
+          # field yields consecutive tabs, and tab is IFS whitespace, so the
+          # fields shift LEFT — which always lands an empty value in the
+          # head-branch variable. Malformed field shapes therefore fail
+          # closed (the error may attribute the failure to a shifted field
+          # rather than the truly missing one; that misattribution is
+          # accepted — real GitHub run objects carry all five fields). An
+          # unparsable or non-object response is a NAMED failure here rather
+          # than a silent empty string later.
+          run_fields="$(jq -r \
+            '[.name // "", .path // "", .status // "", .conclusion // "", .head_branch // ""] | @tsv' \
+            "$RUNNER_TEMP/release-run.json")" || {
+            echo "::error::The run lookup response for run $RUN_ID is not the expected workflow-run JSON — the provenance cannot be established, so its artifact will not be downloaded."
+            exit 1
+          }
+          IFS=$'\t' read -r run_name run_path run_status run_conclusion run_head_branch <<<"$run_fields"
+          # 1) Workflow identity: the path is the stronger identity (the
+          #    workflow FILE in this repository); the display name is checked
+          #    as well. Both are pinned constants of this pipeline, exactly
+          #    like the branch allowlist below — renaming the workflow file
+          #    or its display name is a deliberate change, and this case
+          #    statement is the one reviewed line that must move with it.
+          case "$run_path" in
+            ".github/workflows/android-release.yml" | ".github/workflows/android-release.yml"@*)
+              ;;
+            *)
+              echo "::error::Run $RUN_ID belongs to workflow path '$run_path', not '.github/workflows/android-release.yml' — only the Android release workflow may produce the artifact this workflow uploads."
+              exit 1
+              ;;
+          esac
+          if [ "$run_name" != "Android release" ]; then
+            echo "::error::Run $RUN_ID is a run of workflow '$run_name', not 'Android release' — only the Android release workflow may produce the artifact this workflow uploads."
+            exit 1
+          fi
+          # 2) Run outcome: finished, and successful.
+          if [ "$run_status" != "completed" ]; then
+            echo "::error::Run $RUN_ID has status '$run_status', not 'completed' — an in-flight or queued run's artifact must never be uploaded."
+            exit 1
+          fi
+          if [ "$run_conclusion" != "success" ]; then
+            echo "::error::Run $RUN_ID concluded '$run_conclusion', not 'success' — a failed, cancelled or unknown-outcome build's artifact must never be uploaded."
+            exit 1
+          fi
+          # 3) Release-source branch. ENGINEERING CHOICE (R5-12): {main,
+          #    develop} are the branches a release may be dispatched from —
+          #    post-review, post-merge sources, never a feature branch. This
+          #    is the check that closes the same-version branch-swap hole;
+          #    a future change to the allowlist is one reviewed line here.
+          case "$run_head_branch" in
+            main | develop)
+              ;;
+            *)
+              echo "::error::Run $RUN_ID was built from head branch '$run_head_branch', which is not in the release-source allowlist {main, develop} — an artifact built from any other branch would still pass every content check below when the version matches (R5-12), so the run is refused before anything is downloaded."
+              exit 1
+              ;;
+          esac
+          # Success: one auditable line carrying exactly the five validated
+          # fields — never the full run JSON.
+          echo "run $RUN_ID provenance accepted: '$run_name' ($run_path), $run_status/$run_conclusion, head branch '$run_head_branch'."
+
+      # The artifact was built and verified by the Android release workflow,
+      # and a human inspected it in between (plan decision 10). The step above
+      # already established the run's PROVENANCE (R5-12): content
+      # re-verification below is strong — package identity, versionCode/
+      # versionName, the pinned upload-cert SHA-256, the embedded bundle —
+      # but it cannot see WHERE the artifact was built, and a same-version
+      # artifact from a different branch would pass every content check; the
+      # run-identity gate (workflow path + successful conclusion +
+      # release-source branch) is what closes that hole. Both are needed.
+      # Download it BY NAME from the chosen run id — the download goes
+      # through the Actions API, which is why the job carries `actions: read`
+      # and the action takes an explicit github-token (checkout persisted no
+      # credential). digest-mismatch defaults to error, so a corrupted
+      # artifact fails closed; a missing artifact fails the action loudly and
+      # is never swallowed. The artifact contains exactly one file,
+      # app-release.apk, at its root.
+      - name: Download the verified release APK from the prior run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: kisok-release-apk
+          run-id: ${{ inputs.run-id }}
+          github-token: ${{ github.token }}
+          path: downloaded-release-apk
+
+      # Node 24 for the whole job: tools/mdm/upload-beta.ts and
+      # tools/release/verify-release-apk.ts are plain TypeScript executed
+      # with `node`, which needs Node 24's native type-stripping (this
+      # workspace's pnpm verify is green under Node 24). pnpm must be
+      # installed BEFORE setup-node, or `cache: pnpm` cannot find it.
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # Java 17 for apksigner in the re-verify gate — pinned, never the runner's ambient JVM.
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # Both tools import nothing beyond node builtins; the install exists
+      # for the identity derivation below, which runs the repo's own expo
+      # CLI (the committed .env is what the evaluation reads — no
+      # EXPO_PUBLIC_* env is needed anywhere in this workflow, because
+      # nothing is bundled or built here).
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Byte-identical to the Android release workflow's derivation step, so
+      # the re-verification below compares the downloaded artifact against
+      # exactly the identity that workflow derived.
+      # The expected APK identity is DERIVED from the evaluated app config,
+      # never hard-coded literals. versionName keeps Expo's own defaulting
+      # (android.version ?? version); versionCode does NOT — an absent
+      # android.versionCode is a NAMED FAILURE here (IR-08), because prebuild's
+      # own default (@expo/config-plugins android/Version.js — the same
+      # functions that write android/app/build.gradle) would silently supply 1,
+      # shipping versionCode 1 forever and skipping the N→N+1 bump contract.
+      # Deriving here keeps the verify step comparing like with like, so a
+      # config bump cannot desync the expectation from the artifact. Every
+      # derived value is validated as a simple token BEFORE it is written to
+      # $GITHUB_ENV — a newline-bearing value would inject extra env lines.
+      # The env names written are the verify script's own env contract; the
+      # verify step's flags carry the same values.
+      - name: Evaluate the expected APK identity from the app config
+        run: |
+          npx --yes expo config --json > "$RUNNER_TEMP/evaluated-app-config.json"
+          node -e '
+            const fs = require("node:fs");
+            const config = JSON.parse(
+              fs.readFileSync(`${process.env.RUNNER_TEMP}/evaluated-app-config.json`, "utf8"),
+            );
+            const android = config.android ?? {};
+            const packageName = android.package;
+            const versionName = android.version ?? config.version;
+            const versionCode = android.versionCode;
+            // IR-08: an absent versionCode is a NAMED failure, not Expo's
+            // hidden `?? 1` default — that default would ship versionCode 1
+            // forever and silently skip the N→N+1 bump contract. Fail closed
+            // BEFORE any $GITHUB_ENV write.
+            if (versionCode === undefined) {
+              console.error("evaluated app config is missing android.versionCode — the version-bump contract requires it EXPLICIT in app.config.ts (the hidden ?? 1 default would ship versionCode 1 forever; set android.versionCode for the next release)");
+              process.exit(1);
+            }
+            const identity = [
+              ["android.package", packageName],
+              ["android.version (or the root version)", versionName],
+            ];
+            const missing = identity.filter(([, value]) => typeof value !== "string" || value.length === 0);
+            if (missing.length > 0) {
+              console.error(`evaluated app config is missing: ${missing.map(([key]) => key).join(", ")}`);
+              process.exit(1);
+            }
+            for (const [, value] of identity) {
+              if (!/^[A-Za-z0-9._+-]+$/.test(value)) {
+                console.error(`evaluated app config value is not a simple package/version token: ${JSON.stringify(value)}`);
+                process.exit(1);
+              }
+            }
+            // A present-but-invalid value must never reach the env file
+            // (this also catches null and empty-string tokens).
+            const versionCodeToken = String(versionCode);
+            if (!/^[0-9]+$/.test(versionCodeToken)) {
+              console.error(`evaluated android.versionCode is not a plain non-negative integer: ${JSON.stringify(versionCode)}`);
+              process.exit(1);
+            }
+            fs.appendFileSync(
+              process.env.GITHUB_ENV,
+              `EXPECTED_PACKAGE_NAME=${packageName}\n` +
+                `EXPECTED_VERSION_NAME=${versionName}\n` +
+                `EXPECTED_VERSION_CODE=${versionCodeToken}\n`,
+            );
+            console.log(`expected APK identity: package ${packageName}, versionName ${versionName}, versionCode ${versionCodeToken}`);
+          '
+
+      # ubuntu-latest ships the Android SDK at ANDROID_HOME with
+      # build-tools/<version>/ directories; take the newest aapt2/apksigner
+      # and pass them EXPLICITLY to the verify script — deterministic, unlike
+      # its PATH-default fallback resolution.
+      - name: Locate aapt2 and apksigner in the runner SDK
+        run: |
+          aapt2="$(find "$ANDROID_HOME/build-tools" -name aapt2 -type f | sort -V | tail -n1)"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n1)"
+          if [ -z "$aapt2" ] || [ -z "$apksigner" ]; then
+            echo "::error::Could not find aapt2/apksigner under $ANDROID_HOME/build-tools — the APK cannot be verified."
+            exit 1
+          fi
+          echo "AAPT2_PATH=$aapt2" >> "$GITHUB_ENV"
+          echo "APKSIGNER_PATH=$apksigner" >> "$GITHUB_ENV"
+
+      # The delivery gate, re-run on the DOWNLOADED artifact BEFORE anything
+      # touches the MDM tenant (plan decision 10): the same T09 script the
+      # build workflow ran, against the identity derived above plus the pinned
+      # signing-certificate SHA-256 (IR-06 — Android compares certificates
+      # byte-for-byte; a non-debug DN alone is not identity). The script's
+      # exit code is the primary gate (shell: bash + set -o pipefail so it
+      # propagates through tee); the success-line assertion below is
+      # belt-and-braces (T09-F02) so a mis-invoked or renamed script cannot
+      # pass the delivery gate silently.
+      - name: Re-verify the downloaded release APK
+        shell: bash
+        env:
+          # PUBLIC repository Actions VARIABLE, never a secret (IR-06): the
+          # upload-certificate fingerprint is computable by anyone holding the
+          # shipped APK. An unset variable renders as "" — the presence check
+          # inside the run block fails closed, naming the variable.
+          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_UPLOAD_CERT_SHA256 }}
+        run: |
+          set -o pipefail
+          if [ -z "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::ANDROID_UPLOAD_CERT_SHA256 is not set. Create it as a repository Actions VARIABLE (Settings → Secrets and variables → Actions → Variables — it is PUBLIC, not a secret: the certificate fingerprint is computable by anyone holding the shipped APK). Compute it with 'apksigner verify --print-certs <known-good.apk>' (the 'certificate SHA-256 digest' line) or 'keytool -exportcert -keystore <keystore> -alias <alias> | sha256sum'."
+            exit 1
+          fi
+          log="$RUNNER_TEMP/verify-release-apk.log"
+          node tools/release/verify-release-apk.ts \
+            --apk downloaded-release-apk/app-release.apk \
+            --package "$EXPECTED_PACKAGE_NAME" \
+            --version-code "$EXPECTED_VERSION_CODE" \
+            --version-name "$EXPECTED_VERSION_NAME" \
+            --cert-sha256 "$EXPECTED_CERT_SHA256" \
+            --aapt2 "$AAPT2_PATH" \
+            --apksigner "$APKSIGNER_PATH" \
+            2>&1 | tee "$log"
+          if ! grep -q "APK verification passed" "$log"; then
+            echo "::error::verify-release-apk produced no 'APK verification passed' line — the script may be mis-invoked or renamed (T09-F02)."
+            exit 1
+          fi
+
+      # The MDM upload itself (AC-09): the "Beta" release label, ONE
+      # non-production device group (the ADMIN-CONFIGURED allowlist — the
+      # mdm-upload environment's variables, R5-07; dispatch cannot aim the
+      # upload at any group), silent_install. tools/mdm/upload-beta.ts owns
+      # every refusal rule (empty/production group, wrong group_type, non-Beta
+      # label, non-increasing version) and masks every credential value in
+      # its own output.
+      # DRY-RUN IS THE DEFAULT (the dispatch input defaults to true): the
+      # --dry-run flag is added unless the dispatcher deliberately set the
+      # input false — a real upload is always a deliberate act.
+      # The OAuth secrets reach the tool ONLY as step env — never as flags,
+      # never echoed. Every dispatch input and every environment variable
+      # reaches bash through an env var rather than inline ${{ }}
+      # interpolation. The UPLOAD_* names are intermediate plumbing,
+      # deliberately NOT the tool's MDM_* env names. The group triple (R5-07:
+      # sourced from the mdm-upload environment's VARIABLES — admin
+      # configuration, not dispatch) is forwarded UNCONDITIONALLY, exactly
+      # like the other required flags: the early-validation step above
+      # already rejected an empty value before this step can run (an unset
+      # Actions variable renders as ""). The OPTIONAL app-category-id and
+      # redirect-uri inputs are still forwarded as flags ONLY when non-empty
+      # (T11-F02 — an unset Actions input renders as "" and the tool
+      # hard-fails on set-but-empty optional inputs, so an empty value must
+      # never reach the tool as a flag or as an env var).
+      - name: Upload the verified APK to the MDM App Repository (Beta)
+        shell: bash
+        env:
+          MDM_CLIENT_ID: ${{ secrets.MDM_CLIENT_ID }}
+          MDM_CLIENT_SECRET: ${{ secrets.MDM_CLIENT_SECRET }}
+          MDM_REFRESH_TOKEN: ${{ secrets.MDM_REFRESH_TOKEN }}
+          UPLOAD_APP_NAME: ${{ inputs.app-name }}
+          UPLOAD_GROUP_ID: ${{ vars.MDM_BETA_GROUP_ID }}
+          UPLOAD_GROUP_NAME: ${{ vars.MDM_BETA_GROUP_NAME }}
+          UPLOAD_PRODUCTION_GROUP_ID: ${{ vars.MDM_PRODUCTION_GROUP_ID }}
+          UPLOAD_DATA_CENTRE: ${{ inputs.data-centre }}
+          UPLOAD_DRY_RUN: ${{ inputs.dry-run }}
+          UPLOAD_APP_CATEGORY_ID: ${{ inputs.app-category-id }}
+          UPLOAD_REDIRECT_URI: ${{ inputs.redirect-uri }}
+        run: |
+          args=(
+            --apk downloaded-release-apk/app-release.apk
+            --app-name "$UPLOAD_APP_NAME"
+            --app-version "$EXPECTED_VERSION_NAME"
+            --group-id "$UPLOAD_GROUP_ID"
+            --expected-group-name "$UPLOAD_GROUP_NAME"
+            --production-group-id "$UPLOAD_PRODUCTION_GROUP_ID"
+            --data-centre "$UPLOAD_DATA_CENTRE"
+          )
+          if [ "$UPLOAD_DRY_RUN" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          if [ -n "$UPLOAD_APP_CATEGORY_ID" ]; then
+            args+=(--app-category-id "$UPLOAD_APP_CATEGORY_ID")
+          fi
+          if [ -n "$UPLOAD_REDIRECT_URI" ]; then
+            args+=(--redirect-uri "$UPLOAD_REDIRECT_URI")
+          fi
+          node tools/mdm/upload-beta.ts "${args[@]}"

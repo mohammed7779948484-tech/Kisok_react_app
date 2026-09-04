@@ -1,0 +1,487 @@
+# KioskRuntime — independent review
+
+Written by a reviewer with a FRESH context, not by the implementer. Findings
+only — the reviewer reports, it does not quietly fix.
+
+Implementation notes do not belong here; they belong in `worklog.md`.
+
+## Round 5 reopening (2026-09-04) — INDEPENDENT post-gate review
+
+A NEW independent review (fresh context, after the Round 4 gate PASS at 527a7e6)
+reopened the Feature Gate with thirteen findings, R5-01…R5-13. Summary of the
+hypotheses as delivered by the reviewer (verdicts pending the Round 5 seven-
+researcher gate — DO NOT treat as confirmed):
+
+| ID    | Finding (hypothesis to validate)                                                                                             |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------- |
+| R5-01 | Android native-module absence resolves permissive standard (null sentinel shared web/Android)                                |
+| R5-02 | Explicit restrictions-change event does not invalidate a previously permissive verdict before re-read                        |
+| R5-03 | Official file-status API exists (`POST /emsapi/fileupload/status`); current client treats initial fileStatus ≠ 2 as terminal |
+| R5-04 | Update App body missing documented-Mandatory `app_type` / `app_name`                                                         |
+| R5-05 | Endpoint headers/request schemas need full mutation contract audit (`Accept: application/json` on some MDM calls)            |
+| R5-06 | Generic automatic retry can replay non-idempotent mutations (429/COM0002/5xx shared by reads and mutations)                  |
+| R5-07 | Beta target is dispatcher-controlled id+name pair, not an admin allowlist                                                    |
+| R5-08 | Policy-read failure holds Preparation at startup with no policy-specific error/retry UX                                      |
+| R5-09 | Receiver export semantics (`RECEIVER_NOT_EXPORTED` vs current Android guidance + protected-intent status)                    |
+| R5-10 | Maintenance sheet local open state survives kiosk→standard→kiosk role transitions                                            |
+| R5-11 | Provisional restrictions + LOCKED can expose the maintenance credential while restrictions are unsettled                     |
+| R5-12 | Cross-run artifact provenance (run identity) not validated before download                                                   |
+| R5-13 | develop freshness must be re-verified before the final gate                                                                  |
+
+Known contradiction to resolve explicitly: the Round 4 research recorded IR-02
+REJECTED ("no file-upload status endpoint in current docs"); the Round 5
+reviewer observed current first-party pages (API Index +
+/emsapi/files + /emsapi/fileupload/status) that DO document
+`POST /emsapi/fileupload/status`, `fileStatus` 1/2/3, and
+`file_availability_status` where 2 = ready. Round 5 research must determine
+whether the Round 4 conclusion was stale/incomplete or a product/edition
+distinction explains it, and record the evidence either way.
+
+The Round 4 gate PASS (527a7e6) is preserved below as HISTORY. It is not
+current. No PASS result was backfilled or altered.
+
+## Round 5 research synthesis — SEVEN read-only Evidence Packets (2026-09-04)
+
+All seven researchers returned (batches A=3, B=2, C=2, concurrency ≤ 3; fresh
+contexts; read-only). The Lead personally re-opened every load-bearing
+first-party page listed below and confirmed the quoted contracts. Agent ids
+(Super Z coordination log): R5-A1 `agent-fae96c2e…`, R5-A2
+`agent-ef8a0443…`, R5-A3 `agent-fad0415e…`, R5-B1 `agent-5421d4be…`, R5-B2
+`agent-695fd6e9…`, R5-C1 `agent-87f8ae5a…`, R5-C2 `agent-0ba18835…`.
+
+### R5 verdict matrix (Lead-synthesized; primary sources Lead-verified 2026-09-04)
+
+| ID    | Verdict                                                    | Primary source(s) (Lead-opened)                                                                                                                                                                                                                                                                                                                                                                     | Current-code gap                                                                                                                                              | Required change (task)                                                                                                                                                                                                                                                                                                                                                                                                                             | Live-only residual                                                                                 |
+| ----- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| R5-01 | CONFIRMED                                                  | Expo SDK 54 API ref (`requireOptionalNativeModule` returns null "when the module cannot be found"); installed `expo-modules-core@3.0.30` source (lookup chain, silent null); RN `Platform.OS` ref                                                                                                                                                                                                   | null sentinel shared by web/jest AND unexpected Android module absence → `markModuleAbsent()` resolves permissive standard on Android                         | Platform discriminator at the policy-source seam: `Platform.OS !== "android"` + null ⇒ resolved; `android` + null ⇒ readiness stays pending (fail-closed hold) + `readError: module-absent` (T21)                                                                                                                                                                                                                                                  | none (expo-modules-core source read directly)                                                      |
+| R5-02 | CONFIRMED                                                  | Intent ref: ACTION_APPLICATION_RESTRICTIONS_CHANGED "Sent after application restrictions are changed" (protected, system-only); AOSP UserManagerService write-then-broadcast order (engineering corroboration)                                                                                                                                                                                      | event triggers `refresh()` without invalidating readiness; failed re-read keeps stale permissive verdict + unlocked maintenance session                       | On event, synchronously: permissive (`standard`+`resolved`) verdict → `pending`; ALWAYS `clearMaintenance()`; never revert a kiosk role; failed post-event read stays pending (T21)                                                                                                                                                                                                                                                                | whether the DPC ever sets `restrictions_pending` in this tenant                                    |
+| R5-03 | CONFIRMED                                                  | files-get-file-upload-status.html (POST /emsapi/fileupload/status, `fileIDs` array-of-strings Mandatory, `response[]` with `file_id`/`file_availability_status`/`remarks`, "2 indicates … ready for use", 500/min, 5-min lock) + files-upload-file-ems.html (`fileStatus` 1=PENDING/2=COMPLETED/3=FAILED; "Use Get File Upload Status to verify the file is ready for use") — both Lead-opened live | client treats initial fileStatus ≠ 2 as terminal; no status call anywhere                                                                                     | Bounded lifecycle: 2 → proceed; 1 → poll POST /emsapi/fileupload/status (Accept+Content-Type, `{"fileIDs":[String(id)]}`); 3/unknown/malformed/bound-exhausted → fail closed nonzero (T24)                                                                                                                                                                                                                                                         | whether real APK uploads ever return initial 1; unknown-fileID behavior                            |
+| R5-04 | CONFIRMED                                                  | app-management-update-app-details.html Request Body table: `app_type` integer **Mandatory** (0/1/2), `app_name` string **Mandatory**; `app_file` Optional; `force_update_in_label` Optional; release_label_id is a PATH param — Lead-opened live                                                                                                                                                    | `addAppVersion` sends only `{app_file, force_update_in_label: true}`                                                                                          | PUT body gains `app_name` + `app_type: 2` (T25)                                                                                                                                                                                                                                                                                                                                                                                                    | whether the live server enforces the mandatory fields                                              |
+| R5-05 | CONFIRMED WITH MODIFICATION                                | Request-Headers tables (Lead-opened): Accept **Mandatory** on POST /emsapi/files, GET /api/v1/mdm/groups/{id}, POST /api/v1/mdm/groups/{id}/apps, POST /emsapi/fileupload/status; NOT documented on labels/apps/update pages (sample-consistent only); `Module: MDM_APP_MGMT` + multipart key `file` already correct                                                                                | `authHeaders()` sends only Authorization — no Accept anywhere                                                                                                 | Add `Accept: application/json` to the documented-Mandatory calls (and uniformly to MDM JSON calls — sample-consistent, engineering recommendation) (T24)                                                                                                                                                                                                                                                                                           | whether the live server enforces Accept (COM0011)                                                  |
+| R5-06 | CONFIRMED                                                  | Per-page rate footers (60/min most mutations; 300/min associate; 500/min file-status; 120/min group GET; 5-minute lock — all Lead-opened); NO idempotency/duplicate/re-association documented on ANY mutation page; COM0002=429, COM0010=409 "Resource Already Exists", COM0011=422 "Invalid/Missing headers" (product-level error table); Zoho token throttle 10/10min (Lead-opened)               | `requestWithRetry` shared by reads AND mutations; retries 429/COM0002/5xx on POST/PUT (ambiguous replay risk); 1s/2s backoff cannot clear a 5-minute lock     | Split retry policy by call class: reads + token + status-poll keep 429/COM0002/5xx; mutations retry ONLY 429/COM0002 and FAIL CLOSED on 5xx with re-run reconciliation guidance; final-429 names the documented 5-minute lock (T26)                                                                                                                                                                                                                | whether 429/COM0002 is always pre-execution; whether locked requests re-arm the lock               |
+| R5-07 | CONFIRMED                                                  | groups-get-an-existing-group.html: `group_type` integer "Type of group: 6 — Device Group" (Lead-opened; list-page query enum 6/7/11); NO documented production/test distinction in ANY group field                                                                                                                                                                                                  | group-id + group-name are dispatcher-supplied dispatch inputs (internal consistency only); production-group-id optional (omittable); group_type not validated | Allowlist design: remove group/group-name/production-group-id from dispatch inputs; source `vars.MDM_BETA_GROUP_ID`/`MDM_BETA_GROUP_NAME`/`MDM_PRODUCTION_GROUP_ID` from the `mdm-upload` environment (admin-controlled; fail-closed presence checks); validate `group_type == 6` (number-or-string) pre-mutation; keep production equality refusal as belt-and-braces (T27)                                                                       | tenant's actual group_type values; environments/protection not yet configured (human prerequisite) |
+| R5-08 | CONFIRMED                                                  | UserManager.getApplicationRestrictions note: "performs disk I/O … may take several seconds" (Lead-opened via A1); no completion guarantee documented                                                                                                                                                                                                                                                | first-read failure holds `StartupScreen` indefinitely with NO policy-specific error/retry surface                                                             | Store gains `readError` (set only while no verdict exists); kiosk-runtime-owned policy error surface with ErrorState + manual Retry (re-invokes the sync seam); NEVER authorizes Preparation on failure (T22)                                                                                                                                                                                                                                      | real cold-start latency on store tablets                                                           |
+| R5-09 | REJECTED (no change)                                       | Intent ref (protected intent, system-only — Lead-opened); Context ref flags; ContextCompat ("from the system UID, use the RECEIVER_NOT_EXPORTED flag"); Android 14 behavior changes (system-broadcast receivers exempt from the flag requirement); broadcasts guide ("NOT_EXPORTED … able to receive some system broadcasts")                                                                       | none — current `RECEIVER_NOT_EXPORTED` for this protected system-sent, dynamic-only broadcast is the documented-correct pattern                               | none; evidence recorded here and in mdm-operations.md (T29 doc row)                                                                                                                                                                                                                                                                                                                                                                                | physical delivery on real tablets (documented as unverified)                                       |
+| R5-10 | CONFIRMED                                                  | react.dev state-preservation contract ("React preserves a component's state for as long as it's being rendered at its position") — engineering fact, not Android                                                                                                                                                                                                                                    | `sheetOpen` local state survives kiosk→standard→kiosk within one mounted overlay                                                                              | Reset `sheetOpen` when role leaves `customer-kiosk` (effect before the early return) (T23)                                                                                                                                                                                                                                                                                                                                                         | none                                                                                               |
+| R5-11 | CONFIRMED                                                  | UserManager.KEY_RESTRICTIONS_PENDING: "restrictions may be applied in the near future but are not available yet" (Lead-opened) — a provisional bundle's code is NOT the final enforced credential; ActivityManager LOCKED = live OS query (routing corroboration only)                                                                                                                              | provisional+LOCKED derives kiosk AND extracts maintenance code from the same unsettled bundle; `tryUnlock` succeeds on it                                     | `DevicePolicy.restrictionsSettled` (= `!isProvisionalSnapshot`); `tryUnlock` returns false while unsettled; sheet shows a settling state; routing unchanged (mismatch immediacy preserved). Deliberately supersedes the RD-02 credential corollary (T23; test amendments pinned)                                                                                                                                                                   | whether this tenant's DPC sets the pending marker at all                                           |
+| R5-12 | CONFIRMED (defense-in-depth, not a documented requirement) | docs.github.com secure-use (pinning full-SHA = "only way to use an action as an immutable release"); workflow-runs REST (run fields: name/path/event/conclusion/head_branch/head_sha); download-artifact v8 README (run-id + github-token + actions:read); manage-environments (Prevent self-review) — Lead-opened                                                                                  | run-id accepted without validating run identity: a same-version artifact built from ANY branch passes content re-verification (branch-swap hole)              | Validate the run BEFORE download: expected workflow identity (name "Android release" / path .github/workflows/android-release.yml), `conclusion == success`, `head_branch` ∈ {main, develop} (documented engineering allowlist), via REST with `actions: read` (already granted) (T28); all six existing full-SHA pins Lead-re-verified against official repos (checkout v7.0.1, download-artifact v8.0.1, upload-artifact v7.0.1 resolve exactly) | environments/protection not yet configured (human prerequisite, unchanged)                         |
+| R5-13 | CONFIRMED (procedural)                                     | git (origin/develop = 3a25640 at reopen; re-fetch at final gate)                                                                                                                                                                                                                                                                                                                                    | freshness must be re-verified before the final gate                                                                                                           | scheduled: re-fetch + integrate if advanced, before final verification (Round 5 closing sequence)                                                                                                                                                                                                                                                                                                                                                  | —                                                                                                  |
+
+### IR-02 contradiction — RESOLVED
+
+The Round 4 research (IR-02 REJECTED, "no polling endpoint in current docs")
+swept the **general tree** `mobile-device-management/api/*` (edition-general
+MDM Plus docs; on-prem build markers; X-Customer sample) — that tree
+genuinely lacks the status endpoint today (R5-A3 + R5-C1 both re-verified,
+incl. the EU mirror). The **cloud help tree**
+`mobile-device-management/help/api/cloud/*` — the tree that matches KISOK's
+actual cloud hosts (`mdm.manageengine.<dc>`, `accounts.zoho.<dc>`) —
+documents `POST /emsapi/fileupload/status` on its own page, in the API Index
+Files section, and cross-referenced from the upload page's `fileID` field.
+The Round 4 negative was an incomplete-tree over-generalization (possibly
+plus page-age: no dates are exposed on either tree). The cloud tree
+supersedes it for KISOK: **IR-02's REJECTED verdict is overturned by current
+first-party evidence; R5-03 is CONFIRMED.** Recorded in mdm-operations.md at
+T29 so the operational contract no longer carries the stale claim.
+
+### Contradictions resolved by the Lead
+
+1. Broadcasts-guide lead sentence ("system or other apps → RECEIVER_EXPORTED")
+   vs ContextCompat ("from the system UID → RECEIVER_NOT_EXPORTED"): resolved
+   by the guide's own "highly privileged apps" paragraph — for THIS protected
+   system-sent action, NOT_EXPORTED is correct (R5-09 → no change).
+2. Get-Group-Details field table (`group_type` integer, "6 — Device Group")
+   vs its own sample (`group_type: 1`): the documented enum {6,7,11} is
+   authoritative over sample values; validation must tolerate number-or-string.
+3. MDM docs "Endpoint Domain" page lists accounts.zoho.ca/.cn (DNS-dead)
+   vs the tool's live-DNS-correct `accounts.zohocloud.ca`/`accounts.zoho.com.cn`
+   (R5-C1): the tool stays as-is (correct per live DNS); documented at T29.
+4. ManageEngine's own /api/ tree vs cloud help tree (the IR-02 root cause):
+   the cloud tree is authoritative for KISOK's deployment.
+
+### Round 5 task-review accepted boundaries (recorded so no future round re-litigates)
+
+- **Schema-REJECTED first reads stay a silent pending hold (no readError
+  surface) — T22 review verdict (a), ACCEPTED.** A malformed bridge payload
+  is deterministic per build: a manual retry would be a tap that cannot
+  succeed (the design system forbids retry on deterministic failures), and
+  the hold is not permanent (AppState-active + restrictions events still
+  re-read). R5-08's finding was about transport rejections with no
+  completion guarantee. Pinned deliberately in the T22 store tests.
+- **`onRestrictionsChanged` does not touch readError — T22 review verdict
+  (b), CORRECT.** The event is a world-change signal, not a read outcome;
+  the post-event re-read's outcome decides the surface.
+
+- **T23-R1 (stale rejection message on the settling flip) — ACCEPTED as
+  cosmetic (T23 fresh review verdict).** A wrong-code message surviving the
+  restrictions-change settling flip is stale-but-truthful, non-actionable
+  (input inert), self-healing (next submit/close replaces it), and discloses
+  nothing (the unsettled refusal is the same silent `false` as a wrong
+  code). Optional one-line prop gate documented for any future touching of
+  the sheet.
+
+- **T26-R1 (mutation 5xx + COM0002-envelope diagnostic precedence) —
+  ACCEPTED (T26 fresh review verdict).** A mutation-class final failure
+  carrying COM0002 on a ≥500 status gets the ambiguity diagnostic but not
+  the 5-minute-lock naming. Low realism (COM0002 is documented as the 429
+  status; 500+COM0002 is a server contradiction) and the ambiguity
+  diagnostic is the safer guidance. Precedence documented in the code.
+
+## Final full-feature review (Round 5 close-out, 2026-09-04)
+
+A FRESH final reviewer (agent-b8161ce6, new context — no implementation
+watched; ran its own pnpm test:ci 69/980, tsc, lint, check:docs, boundary
+greps, secret scan) reviewed the COMPLETE feature diff (3a25640..HEAD, 52
+commits, 51 files, +20219/−32) against brief/plan/code/workflow/docs:
+**0 blocking / 0 major / 3 minor.**
+
+- **FF-01 (minor, behavioral hygiene) — ACCEPTED with rationale.** An
+  unlocked maintenance session survives a sign-out performed OUTSIDE the
+  maintenance panel (unlock → close sheet → sign out via the mismatch
+  screen → ≤timeout window remains). Rationale: the residual is bounded
+  (≤90 s default / ≤600 s max), benign (the panel's only action is the
+  SAME shared sign-out the mismatch screen already offers publicly; a
+  successful switch clears the session), and AC-05's clear-list (timeout /
+  background / account switch) is met AS WRITTEN. One-line future fix
+  documented: clear the maintenance session on the auth signed-out
+  transition.
+- **FF-02 (minor, record hygiene) — FIXED** in the Feature-Gate commit
+  (todo.md checkpoint refreshed to the close-out state).
+- **FF-03 (minor, citation mangling) — REJECTED: false positive with
+  byte-level proof.** "anageengine" is `manageengine[1:]` — plain grep
+  matches the INTACT word 21×; and the tool-output renderer eats the
+  leading `[m` (SGR-reset-shaped) when displaying lines, making intact
+  citations LOOK mangled. Byte evidence: every named line starts `5b 6d`
+  ("[m"); `grep -c '^[[:space:]]*anageengine'` = 0 in the working tree,
+  HEAD, T29, T20, AND the original T13 commit; brackets balance 25/25.
+  The prescribed sed would have CORRUPTED 21 intact citations — the
+  resumed implementer correctly STOPPED at the wrong premise (the role
+  discipline working as designed). Harness note recorded: verify citation
+  bytes with od/grep -c, never rendered line output.
+
+The reviewer's clean verdicts: all ten ACs verified against the CODE
+(AC-01…AC-10 point-by-point); the policy state machine traced end-to-end
+with NO hole; boundary/scope checks clean (core/components/supabase/other
+features untouched; the 51-file diff maps exactly to the plan's three file
+lists); MDM delivery safety end-to-end (read-before-mutation, retry
+classes, allowlist, truthful dry-run, zero production ops); the release
+path fail-closed; test quality genuine (no fabricated/weakened rows);
+security scan clean.
+
+### Live-tenant / hardware items that remain unverifiable from this sandbox
+
+Live MDM dry-run; whether the server enforces Accept/app*name/app_type/
+group_type; duplicate-channel/duplicate-app/re-association behavior; whether
+initial fileStatus 1 occurs for real APKs; the token throttle's HTTP status;
+environments `android-signing`/`mdm-upload` protection (human prerequisite,
+incl. the new `MDM_BETA*\*`/`MDM_PRODUCTION_GROUP_ID` environment variables);
+physical kiosk behavior (unchanged unverified list).
+
+## Findings
+
+| ID      | Severity | Finding                                                                                                                                                            | Evidence                                                    | Disposition                    | Remediation                                                                                                                                                                                                                                  |
+| ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T01-F01 | major    | check:docs flagged 3 bare docs/&lt;doc&gt;.md references in this feature's control documents                                                                       | `pnpm check:docs` output; brief.md/plan.md/worklog.md lines | fixed                          | Lead rephrased with feature-local qualifiers (reviewer agent-077e8b21)                                                                                                                                                                       |
+| T01-F02 | major    | worklog/todo did not yet record the T01 implementation state before gating                                                                                         | worklog.md (pre-fix)                                        | fixed                          | Full T01 entry recorded; todo updated before gate                                                                                                                                                                                            |
+| T01-F03 | minor    | null-valued restriction keys would cross the bridge as null, breaking the TS union and making T02's Zod boundary reject the WHOLE snapshot (fail-open consequence) | KioskPolicyModule.kt applicationRestrictionsAsMap           | fixed                          | Implementer resumed: null-valued keys dropped (Android: explicit null == unset); doc comments updated; Lead re-verified. Fresh full re-review not re-run for this 2-line minor remediation — Round 1 gate review covers the accumulated diff |
+| T01-F04 | minor    | plan said kiosk_device_role "choice"; shipped schema uses "string"                                                                                                 | plan.md design decision 4 vs app.plugin.js                  | fixed                          | Plan text reconciled with the choice→string rejection rationale                                                                                                                                                                              |
+| T02-R1  | minor    | Control-record lag: todo/worklog did not yet carry the T02 RED/GREEN evidence before gating                                                                        | todo.md/worklog.md (pre-fix)                                | fixed                          | Full T02 entry recorded with RED failure output, GREEN output, affected checks; todo updated before gate                                                                                                                                     |
+| T02-R2  | minor    | Brief AC-02 wording tension: "contradictory values leave the device standard" vs plan decision 2 resolving config-vs-allowlist contradiction toward kiosk          | brief.md:65 vs plan.md decision 2                           | accepted (interpretation note) | See Accepted risks — "contradictory" means contradictory VALUES; the config-vs-allowlist contradiction resolves kiosk per plan decision 2 (safety first)                                                                                     |
+
+| T05-R1 | minor | Plan's test strategy promised "(blocked/failed message surfaced)"; only the blocked outcome was tested at the screen seam (the failed→message mapping is owned and tested by core/auth) | plan.md test strategy vs screen test (blocked only) | fixed | Implementer resumed: one failed-outcome test (mock signOut error + session retained → pipeline's failed reason in the announced Alert, exactly one signOut call, scope "local"); seam-sensitivity probe proves it pins the failed mapping |
+| T05-R2 | minor | Committed todo.md status board contradicted the worklog (T01–T04 "not started/PENDING" vs GATE: PASS) — previous session's record lag, carried by the PR HEAD | git show ae8f9ca:...todo.md vs ...worklog.md | fixed | Board catch-up (T01–T04 → done/PASS) committed with the T05 gate commit; board+checkpoint updated in the same commit as each gate from now on |
+
+| T06-R1 | minor | RED relay said "2 trivially-passing tests"; empirical RED re-run shows 3 (the overlay's standard-device absence pin also passed trivially) | reviewer scratch-copy RED re-run: 21 failed / 3 passed / 24 | fixed | Lead recorded the corrected count (3 honest post-contract absence pins) in the T06 worklog entry; no test change needed |
+| T06-R2 | minor | Sheet Close button not disabled while signOut.pending — mid-flight close hides a blocked/failed outcome (success unaffected) | maintenance-sheet.tsx:154 vs primary action :125 | fixed | Implementer resumed: Close mirrors the primary action's disabled state; regression RED reproduced the gap exactly, then green; in-flight test extended to both controls |
+
+| T07-R1 | minor | Brief AC-03 lists a runtime web preview with the policy source stubbed to kiosk; Lead runtime evidence initially covered only the standard path (the plan had narrowed browser runtime deliberately) | brief.md AC-03 vs plan.md Verification scopes | fixed | RESOLVED at the T07 gate: kiosk-stubbed web preview recorded (entry + long-press + sheet + wrong/right code + 90s expiry re-lock; zero errors; uncommitted stub reverted byte-identical) + honest supersession note for the session-dependent routing (no preparation credentials in this environment; resolver/hook/12-suite test coverage; hardware at MDM enrollment) |
+
+| R2-1 | minor | Sheet dismissible mid-sign-out-flight via the dialog primitive's built-in paths (scrim tap, hardware back, a11y escape) — onOpenChange passed through ungated; T06-R2 had gated only the Close button | maintenance-sheet.tsx:114 vs @rn-primitives/dialog sources | fixed | T06 implementer resumed: handleOpenChange wrapper ignores false while signOut.pending (one gate, all three paths); regression RED reproduced (scrim press mid-flight) then green; 12 feature suites / 129 tests |
+| R2-2 | minor | brief.md out-of-scope clause not reconciled with the pre-T07 plan amendment (claimed only \_layout + route as app/ changes; app/index.tsx also edited) | brief.md:120-122 vs git diff 5aa440a..801f48c --name-status | fixed | Lead amended the brief's parenthetical to name app/index.tsx and point at plan Design decision 6 |
+
+| T08-F01 | blocking | process.env[KEY] computed access violates expo/no-dynamic-env-var (global in the flat config) — expo lint never scans plugins/, but the pre-commit lint-staged eslint --max-warnings=0 gate hard-fails the commit | pnpm exec eslint --max-warnings=0 plugins/... (exit 1, 4 errors) | fixed | Implementer resumed: static member access (behavior-identical) + [string, string][]; gate reproduced failing before / clean after; \*\_KEY constants retained for gradle keys and sentry |
+| T08-F02 | minor | .js import suffix sound but undocumented — a future cleanup to extensionless would reintroduce ERR_MODULE_NOT_FOUND under Node 24 type-stripping (expo has no exports map) | probes: import('expo/config-plugins') fails; .js resolves | fixed | 3-line comment at the import + rationale recorded in the T08 worklog entry |
+| T08-F03 | minor | Config-mode evidence (prebuild matrix, md5 idempotency, control byte-identity) existed only in the handoff text — AC-07's app-side trail would be lost if the gate commit omitted it | worklog.md had no T08 entry at review time | fixed | Full T08 worklog entry written with the entire prebuild evidence matrix and committed with the gate |
+| T08-F04 | minor | T10 heads-up (restore package.json after prebuild) lived only in the implementer handoff; T10's implementer reads todo.md, not the handoff | todo.md T10 focused verification (no package.json mention) | fixed | One line added to todo.md's T10 focused verification by the Lead |
+
+| T09-F01 | minor | Green-path main test used the real outputSink — the success line leaked to stdout during test:ci and was asserted by no test | pnpm test:ci 2 \| grep -c "APK verification passed" → 1 | fixed | Implementer resumed: sink injected + success line pinned (package/versionName/versionCode/non-debug certificate/JS bundle); leak grep → 0; mutation probe failed exactly the green test |
+| T09-F02 | minor | --help exits 0 and the direct-run guard is rename-coupled (hardcoded SCRIPT_FILENAME) — a mis-invoked or renamed script could pass the workflow gate silently | verify-release-apk.ts:543–568 | fixed | Recorded as a T10 requirement in todo.md: the workflow's verify step must assert the success line in its output (covers both paths) |
+| T09-F03 | minor | The parseFlags "flag requires a value" failure path had no test (every other fail-closed input path was pinned) | verify-release-apk.ts:316–319 vs test file | fixed | Implementer resumed: new test — --apk without a value → non-zero, "--apk requires a value", zero executor calls |
+
+| T10-F01 | minor | EXPECTED*VERSION_CODE had no token validation before the $GITHUB_ENV write (GITHUB_ENV line-injection class; defense-in-depth — app.config.ts is trusted repo content) | android-release.yml identity step (review T10, agent-cb06c837) | fixed | Implementer resumed: String(versionCode) tested against ^[0-9]+$ with a named single-line error; env write + log use the validated token; /tmp mock matrix (1/"12"/7 pass; "7a"/newline/"1.5"/"" fail, env file not written); Lead re-verified diff + checks. Fresh full re-review not re-run for the ~10-line minor remediation (T01-F03 precedent); Round 3 gate review covers the accumulated diff |
+| T10-F02 | minor | The android-release dispatch contract (who may dispatch; human must create the four ANDROID_KEYSTORE*\* repo secrets first; workflow_dispatch needs the workflow file on the default branch before the first dispatch; 30-day artifact window the MDM workflow downloads by run id) had no durable documentation — T10's scope was exactly one file | docs/ci.md vs new workflow (review T10, agent-cb06c837) | assigned | Recorded as a T13 requirement (T09-F02 precedent): the feature's mdm-operations.md must document the android-release dispatch procedure alongside the MDM upload contract |
+
+| T11-F01 | major | Input-resolution failure lines bypassed the redaction wrapper — a positional argv token (e.g. a pasted secret from a dropped flag) was echoed verbatim through the raw errorSink before the redacting context existed; same gap in the direct-run catch (live-reproduced) | upload-beta.ts parseFlags + main() emission ordering (review T11, agent-c2ef160a) | fixed | Implementer resumed: collectSecretValues (env + both flag forms) built before any emission; resolution failures routed through redactSecrets; positional message drops the raw value; formatDirectRunFailure (exported, tested) replaces the raw catch write; success-path secret list is the union incl. the losing side of overrides; 6 new masking tests. Fresh re-review (agent-06acbd9f): "adequately fixed as filed" — no raw-sink bypass remains; adversarial variants covered. Lead re-ran the exact reproduction: exit 1, secret absent |
+| T11-F02 | minor | Optional inputs hard-fail when set-but-empty (an Actions unset var renders "") — a realistic T12 wiring trap (e.g. MDM_APP_CATEGORY_ID="" would refuse even the update path that does not need it) | upload-beta.ts optional-input resolution (review T11) | assigned | Dispositioned as a T12 wiring requirement (todo.md T12 focused verification): the workflow exports optional env vars only when non-empty. Current fail-closed semantics deliberately unchanged |
+| T11-R1 | minor | Residual paste-leak class from the fresh re-review: a credential-shaped value existing ONLY in a non-credential argv slot was quoted verbatim by typed-validation messages (narrow — the wired T12 case is fully redacted; the leak needs a manual mis-paste with the credential nowhere correct) | upload-beta.ts typed validations (re-review T11, agent-06acbd9f) | fixed | Implementer resumed: typed validations of non-credential inputs (data-centre enum, numeric ids, MDM_DRY_RUN) stop quoting the received value entirely (structurally closed); free-form echoes kept and union-redacted when matching a known secret; collectSecretValues doc comment rewritten to the precise guarantee; 8 new tests with a nowhere-else PASTED_SECRET. Lead live-re-verified with env -i: pasted secret absent from all output (grep 0) |
+| T11-R2 | minor | Control-record state at re-review time: no T11 worklog entry / review rows (no gate claimed PASS yet, so no contradiction — but the entry must land with the gate commit per T01-F02/T02-R1/T08-F03 precedent) | worklog.md/review.md heading census (re-review T11) | fixed | Resolved by the T11 gate commit itself: full worklog entry (RED/GREEN/affected checks/review pair) + these review rows |
+
+| T12-F01 | minor | Belt-and-braces asymmetry on required string inputs: run-id validated early "because an API dispatch can still send one" (its own comment), but group-id — also required and also bypassable as "" via the REST dispatch API — was only caught by the tool's refusal at the last step, after checkout, install, download and re-verification had run (not a fail-open: the tool refuses pre-network with a named error) | mdm-beta-upload.yml early-validation step vs upload step (review T12, agent-5556ddac) | fixed | Implementer resumed: the early validation step now also rejects an empty group-id dispatch input (env-indirection pattern, names the dispatch input, never echoes the value); mock replays prove both branches exit 1 with named errors. Lead re-verified diff + checks |
+
+| T13-F01 | minor | §5's parenthetical "(creating the channel if it does not exist)" asserted idempotent semantics for POST /api/v1/mdm/labels that no research record supports — the tool POSTs unconditionally; a duplicate-channel rejection would fail closed on every later upload, contradicting the reuse implication | mdm-operations.md §5 vs plan synthesis + worklog revalidation R-03 (review T13, agent-05e7557d) | fixed | Implementer resumed: reworded to the recorded contract (resolves the Beta release label id through the documented channels endpoint) AND the duplicate-channel behavior added to §9's unverified list. Lead re-verified both edits + checks |
+| T13-F02 | minor | §6's "(the ANDROID*KEYSTORE*_ secrets, Section 7a)" strict-glob reading omits ANDROID*KEY_ALIAS/ANDROID_KEY_PASSWORD (the alias pair that identifies the key) — internal inconsistency with §7b's complete formulation | mdm-operations.md §6 vs §7a/§7b (review T13) | fixed | Implementer resumed: §6 now uses §7b's complete "the four ANDROID_KEYSTORE*_ / ANDROID*KEY*\* signing secrets" formulation |
+
+| R3-1 | minor | The ops doc never stated where the repo's versionCode comes from (app.config.ts unset → every build defaults to 1) while the MDM server enforces the versionCode increase — the second-release procedure was incomplete at the exact field the server checks | app.config.ts + android-release.yml defaulting + upload-beta pre-check vs mdm-operations.md §6 (round review, agent-95fd66ea) | fixed | T13 implementer resumed: §6 "Bump BOTH version fields in app.config.ts for the next release" — version AND android.versionCode, the tool-vs-server asymmetry, and the first-update requirement (android.versionCode 2+) |
+| R3-2 | minor | Mid-flight failure recovery undocumented (partial state between add-version and association; safe-retry semantics; completion paths) | upload-beta.ts mutation order vs mdm-operations.md §7d/§9 (round review) | fixed | T13 implementer resumed: §7d "If an upload run fails mid-flight" — mutation order, the monotonic pre-check's guaranteed-safe same-version retry refusal before any new mutation, console-side association or fix-forward (no downgrade) |
+| R3-3 | minor | Plan text drift within the round: design decision 11 literally promised `permissions: contents: read` for both workflows while mdm-beta-upload.yml carries + `actions: read` (justified, documented in-file, but the plan and shipped workflow disagreed on a security-relevant property) | plan.md decision 11 vs mdm-beta-upload.yml permissions (round review) | fixed | Lead: decision 11 reconciled (one clause: + actions: read on the MDM upload workflow, minimal sufficient, documented in-file) and the mdm-operations.md reference made feature-local |
+
+| FR-01 | blocking | The label-gated Android build CI on the final HEAD d468afc FAILED at :app:processDebugResources — AAPT rejected the literal string in android:description of the generated res/xml/kiosk*restrictions.xml ("is incompatible with attribute description (attr) reference") — the native-tier compile evidence the plan assigns to that job | GitHub run 33825189511 log (fetched by the Lead); modules/kiosk-policy/app.plugin.js RESTRICTIONS_XML (final review, agent-5a082a39) | fixed | Root cause: the plugin wrote literal display strings; android:description accepts a string-resource reference only (the official managed-configurations pattern uses @string for both title and description). Fresh implementer (agent-5974f4f2): the mod now also writes res/values/kiosk_policy_strings.xml and the restrictions XML references @string/kiosk_policy*\* (keys/types/comments byte-identical; T01 outputs intact). Compile re-gate: android-build re-triggered on the PR after the fix commit — outcome recorded in the worklog |
+| FR-02 | minor | The sheet's blocked/failed outcome Alert rendered only in the unlocked branch — if the maintenance session cleared mid-sign-out-flight (expiry timer, AppState background, or snapshot application), the sheet flipped to the locked code form and the pipeline outcome was never surfaced (T06-R2/R2-1 fixed the close-path variants; the ephemeral-clear paths were missed); no test covered the intersection | maintenance-sheet.tsx outcome rendering + settle effect (final review, agent-5a082a39) | fixed | Fresh implementer (agent-6019068c): RED first (two failing tests — blocked and failed settles landing while the sheet shows the locked form), then the outcome Alert extracted and rendered in BOTH branches (smallest change; T06-R2/R2-1 guards byte-identical); +2 regression tests (68 suites / 798 tests) |
+
+| FRR-01 | minor | The final-HEAD evidence trail (the android-build SUCCESS record, the 68/798 re-verify, the final runtime evidence) existed only in the working tree — the committed worklog ended at a dangling "outcome recorded below"; todo.md's checkpoint and feature-gate lines were stale (develop-integration stage / "final-HEAD run still pending") | git status at re-review time; committed worklog tail; todo.md:17,250 (fresh re-review, agent-c73d726b) | fixed | Landed with the closing control-document commit (this commit): the worklog's compile-re-gate + FINAL_HEAD entry committed, the Re-review section below filled, todo.md checkpoint/board/feature-gate checklist refreshed to the actual final state |
+
+Severity means: **blocking** — must not merge; **major** — fix in this feature;
+**minor** — worth doing, safe to defer with a note.
+
+## Re-review
+
+After remediation, re-run the reviewer against the same scope.
+
+- Result (REOPENED-gate remediation, 2026-09-04): FRESH full re-review after
+  the final-review record fixes (agent-76b0b9e1, fresh context — did not
+  watch any implementation or the prior final review): **0 unresolved
+  blocking, 0 unresolved major.** FR2-01 (major, records) — ADEQUATELY
+  FIXED: the worklog's final-verification entry records the final-HEAD
+  7d6702d outcomes with run ids (CI 33857102917 SUCCESS; Android build
+  33857102920 SUCCESS; E2E 33857103028 skipped, never claimed), each
+  independently verified against the live GitHub Actions API including the
+  head_sha match; the db3a50d runs are correctly recorded as cancelled-as
+  -superseded (33856728023/40/24); the file ends complete. FR2-02 —
+  ADEQUATELY FIXED (todo checkpoint current). FR2-03 — PROPERLY
+  DISPOSITIONED (accepted, fail-closed rationale recorded). Closing commit
+  7d6702d..cfc7a10 verified docs-only (three control documents, additive);
+  `pnpm verify` re-run by the re-reviewer: 68 suites / 894 tests, exit 0;
+  the gate line remains correctly NOT yet PASS. Convergence statement:
+  the feature stands at 0 unresolved blocking / 0 unresolved major; the
+  new Feature Gate may now be earned via the quality audit + gate
+  checklist.
+
+- Result: FRESH full re-review after the final-review remediations
+  (agent-c73d726b, post-remediation, fresh context — did not watch any
+  implementation): **0 unresolved blocking, 0 unresolved major.** Both
+  remediations verified correct, complete, and empirically re-verified:
+  FR-01 — the plugin diff leaves keys/types/comments and manifest mods
+  untouched, the string values are byte-equal to the old literals, the
+  cross-link check (referenced set == defined set) and byte-identical
+  idempotent re-run were independently executed by the reviewer in a
+  scratch tree, and the android-build SUCCESS on ae1a982 was confirmed
+  through the public GitHub check-runs (the same check failed on d468afc
+  under the exact run cited in the FR-01 row — the re-gate is real, not
+  asserted). FR-02 — the outcome Alert renders in both branches with the
+  settle effect, in-flight dismissal gate, and Close-disabled guards
+  byte-identical (T06-R2/R2-1 hold); the RED was re-verified empirically
+  (pre-fix component + post-fix tests → 2 failed for exactly the intended
+  reason); sheet suite 14/14; full verify 68 suites / 798 tests; the
+  linger semantics of signOut.message were examined and accepted
+  (identical lifecycle to the unlocked branch since T06, deliberate,
+  staff-facing, no secret content; clearing on close would reintroduce the
+  swallowed-outcome hazard class). No new findings beyond FRR-01 (the
+  uncommitted-evidence record, fixed by the closing commit).
+- Findings resolved: FR-01 (blocking → fixed + compile re-gated GREEN),
+  FR-02 (minor → fixed with regression tests)
+- Still open: none blocking/major; FRR-01 resolved by the closing
+  control-document commit
+
+## Accepted risks
+
+Anything deliberately not fixed, with the reason and who decided.
+
+- AC-02 interpretation (T02-R2, Lead decision): "missing, invalid, pending, or
+  contradictory values" in the brief means contradictory restriction VALUES
+  (e.g. a malformed role string). The config-vs-allowlist contradiction
+  (explicit "standard" while the DPC allowlists this package) resolves toward
+  KIOSK per plan Design decision 2 — safety first; downgrading a store tablet
+  is an MDM action (remove the allowlist), not an app-config toggle. Pinned by
+  `model/derive-device-policy.test.ts` (contradiction row) and recorded here
+  so a later audit does not misread the brief.
+- T01 Kotlin compilation is not provable in this environment (no Android SDK
+  / gradle). Static contract review (fresh reviewer, verified against the
+  installed expo-modules-core SDK-54 sources) found nothing expected to fail
+  compile; the label-gated `android-build` CI job is the compile evidence once
+  the PR exists (external dependency — no push credentials here).
+- Cold-start policy-vs-auth ordering (Lead decision, T04 design): the device
+  policy is read from LOCAL managed-configuration storage (disk, ~ms) while
+  auth readiness requires a network profile resolution, so the kiosk policy
+  lands before routing decisions in every realistic ordering. A pathological
+  inversion (native read slower than the network) could show the preparation
+  experience for a sub-second window on a kiosk tablet with a persisted
+  preparation session. Accepted because: the root routing guard is UX
+  protection (routes.md — RLS is the real authorization boundary), the MDM
+  keeps the device locked regardless, and no meaningful interaction is
+  possible in that window. Revisit only if a final reviewer rates it
+  blocking/major.
+
+## Quality audit
+
+A **different question** from the review above. Code review asks "is the
+implementation correct?". The audit asks "was the promised delivery actually
+completed, and is the evidence real?" — comparing `brief.md`, `plan.md`,
+`todo.md`, `worklog.md`, this file, and the actual diff.
+
+Run by `quality-auditor` with fresh context, after review findings are
+dispositioned. It returns findings; the Lead records them here.
+
+| Category      | Finding                                                                                                                                                                                                                                                                                                                                                                                 | Evidence                                 | Resolution |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| not evidenced | GitHub CI on ae1a982 (all four checks SUCCESS) was recorded only by check-run names + sha — no run ids/links in the worklog final entry; PR #9's object state and the runtime browser screenshots were taken on record rather than independently re-checkable from the audit sandbox; the two new workflows have never been dispatched (secrets do not exist) — recorded, never claimed | audit re-run limits (agent-a4f4d55f)     | resolved   | The Lead added the ae1a982 run ids + job URLs to the worklog final entry (CI run 33827690769; Android build run 33827690789) and verified PR #9's state head = the final HEAD through the API; the never-dispatched items remain the documented human follow-ups (mdm-operations.md §7a/§7e/§9)                       |
+| stale record  | The "FINAL HEAD" label in todo.md (ae1a982) predated the closing docs commit — the actual head was b149f16 (docs-only; code identical); inherent for a closing commit, but no CI run was then recorded on b149f16 either                                                                                                                                                                | todo.md checkpoint vs git status (audit) | resolved   | The Feature Gate commit updates the FINAL HEAD to the actual gate-commit state and records the CI state on it; the audit's two observations (AC-06's terse task-table column; the plan-amendment process letter) are noted here with no code change — the intent of the plan rules was met and recorded transparently |
+
+- Acceptance criteria in `brief.md` all implemented: YES (AC-01…AC-10 —
+  the audit re-verified the observables: package unchanged, lock-task
+  grep clean, storage/log negative assertions, both workflows'
+  fail-closed first steps, the 90-test MDM client with zero production
+  operations, the 551-line operational contract)
+- Every task gate `PASS`, every round gate `PASS`: YES (T01–T13 + Rounds
+  1/2/3; every worklog entry carries mode, scaffold paths (all exist),
+  honest RED, GREEN, affected checks, fresh-reviewer findings;
+  test-count arithmetic chains 17/138 → 68/798 and reproduces)
+- Worklog carries real command output per task: YES (the audit re-ran
+  `pnpm verify` (PASS), `pnpm test:ci` (68/798), both tools' no-input
+  fail-closed smokes — messages reproduced byte-for-byte)
+- Shared files touched beyond this feature: NONE beyond the plan's
+  expected-change list (core/ and components/ untouched — audit-verified
+  file-by-file)
+- Definition of Done (`AGENTS.md`) met: YES with the two honest
+  exceptions the record already carries (Android-physical and
+  live-tenant items explicitly unverified; "quality audit done" discharged
+  by this report)
+
+Audit verdict: **the delivery is sound.** No "not delivered", no "not
+planned", zero scope drift. Strongest evidence seen: the independently
+re-run 68/798 green verify at the final HEAD plus the fail-closed tool
+smokes reproducing the recorded messages; and the FR-01 chain — a failed
+CI run cited by id (33825189511), root-caused from the fetched log, fixed
+in-task (b7b6529), and compile-re-gated green.
+
+Audit result: `PASS`
+
+## Post-gate independent remediation review (2026-09-04) — IR-01…IR-09
+
+A NEW independent senior review performed after the HUMAN_HANDOFF found
+material remediation work. The prior FEATURE GATE: PASS (and the Quality Audit
+above) are hereby REOPENED — historical evidence, not current approval. The
+findings below are HYPOTHESES to be validated or disproved by seven fresh
+READ-ONLY current-first-party-documentation researchers BEFORE any code
+change; nothing below is an implementation instruction until the Lead
+synthesis assigns each a verdict (CONFIRMED / CONFIRMED WITH MODIFICATION /
+REJECTED BY CURRENT EVIDENCE / BLOCKED-AMBIGUOUS).
+
+| IR    | Hypothesis (as received)                                                                                                                                                                                                                                                                                                          | Code surfaces observed by the Lead (2026-09-04, b71c828)                                                                                                                                                                                                                         | Verdict (pending research)                                                        |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| IR-01 | Policy readiness may be fail-open for the Preparation invariant: unknown/initial state, malformed snapshot, unavailable native module, read failure, and `restrictions_pending` can resolve/retain `standard`, and `ready + preparation + standard` mounts Preparation — violating "Preparation never mounts on a Customer kiosk" | Confirmed observationally: `derive-device-policy` maps provisional/unresolved → `standard`; store default is `standard`; `useRootTarget` = auth × policy → `ready+preparation+standard` → `preparation`. Prior accepted-risk note (cold-start ordering) is exactly this exposure | PENDING (R1/R2)                                                                   |
+| IR-02 | Current official ManageEngine docs appear to document `/emsapi/fileupload/status` (upload-status endpoint) with `fileStatus=1` a valid pending state; current code rejects any initial `fileStatus != 2` immediately                                                                                                              | Confirmed observationally: `uploadApkFile` requires `fileStatus == 2` from the upload response; no polling. Prior revalidation (2026-09-03) concluded the opposite — the conflict must be resolved against CURRENT primary sources                                               | PENDING (R3)                                                                      |
+| IR-03 | App Repository list pagination may use `limit`/`offset` and/or `paging.next`, not `?page=N` with fixed 50-row termination                                                                                                                                                                                                         | Confirmed observationally: `fetchAppPages` uses `?page=${page}` with 50/short-page termination                                                                                                                                                                                   | PENDING (R4)                                                                      |
+| IR-04 | Beta/non-production group targeting + dry-run truthfulness: workflow accepts arbitrary `group-id`, `production-group-id` optional denylist; dry-run can report PASS when the group is missing; real run validates association only after earlier mutations                                                                        | Confirmed observationally: dry-run prints "group was NOT found … would fail" then exits 0; real run never fetches the group list before mutation (association POST is the first bad-group failure point)                                                                         | PENDING (R4)                                                                      |
+| IR-05 | Beta release-label lifecycle: upload path POSTs a `Beta` label on every real run; reuse/idempotency of existing labels unproven                                                                                                                                                                                                   | Confirmed observationally: `resolveBetaLabelId` POSTs unconditionally in `runUpload`                                                                                                                                                                                             | PENDING (R4)                                                                      |
+| IR-06 | Signing identity pinning: APK verification rejects the Android Debug certificate but may accept an arbitrary different non-debug key                                                                                                                                                                                              | Confirmed observationally: `checkSigningCertificates` rejects only `CN=Android Debug`; no SHA-256 pinning                                                                                                                                                                        | PENDING (R6)                                                                      |
+| IR-07 | GitHub Actions supply-chain hardening: actions pinned by tag (not immutable SHAs); repository secrets instead of protected Environments for signing/MDM material in a public repo                                                                                                                                                 | Confirmed observationally: both workflows pin `@vN` tags and consume `secrets.*` at repository scope; no Environment usage                                                                                                                                                       | PENDING (R7)                                                                      |
+| IR-08 | `android.versionCode` not explicit in `app.config.ts` (relies on Expo default 1) — update-pipeline contract unclear                                                                                                                                                                                                               | Confirmed observationally: `android.versionCode` absent; workflows derive `?? 1`                                                                                                                                                                                                 | PENDING (R6)                                                                      |
+| IR-09 | `develop` advanced after the Feature's integration point; final gate invalid unless re-integrated                                                                                                                                                                                                                                 | Confirmed: `origin/develop` = 3a25640 (PR #12 cart-pre-checkout-hardening) vs Feature's merge base 6161a4c                                                                                                                                                                       | CONFIRMED (repository evidence — integration scheduled before final verification) |
+
+Remediation task IDs will be appended to `plan.md`/`todo.md` only after the
+seven research packets return and the Lead Planning Review restores `READY`.
+
+## Remediation research synthesis (2026-09-04, seven packets, Lead spot-checked)
+
+SEVEN fresh READ-ONLY researchers returned Evidence Packets (batches 3+2+2);
+the Lead personally spot-checked every load-bearing primary source (ME
+pagination/groups/apps/files/oauth pages + searchindex.json; Zoho multi-dc
+table + live serverinfo endpoints for us/cn; Android managed-configurations +
+UserManager KEY_RESTRICTIONS_PENDING; AOSP ApkSignerTool.java certificate
+output; docs.github.com secure-use; installed expo-router Protected.js).
+Verdict matrix:
+
+| Finding | Verdict                         | Primary evidence                                                                                                                                                                                                                                                                                                                                                            | Required change                                                                                                                                                                                                                                                                                                                                                      | Verification                                                                                                                                         | Owner       |
+| ------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| IR-01   | CONFIRMED                       | developer.android.com managed-configurations ("reading from data storage", "call it once when your app starts or resumes, and cache") + UserManager (KEY_RESTRICTIONS_PENDING "not available yet"; read "may take several seconds", "performs disk I/O") + installed expo-router Protected.js (render-time group, removal-after-change)                                     | Store-owned policy READINESS verdict + resolver parameter; only the preparation row is gated; hold at `startup` until resolved; derivation gains the documented live `lockTaskModeState === "locked"` corroboration (not provisional-suppressed — live OS evidence)                                                                                                  | Delayed-native-read vs fast-auth cold-start test (Preparation never mounts); pending/malformed/first-read-failure rows; standard rows byte-identical | T14         |
+| IR-02   | REJECTED BY CURRENT EVIDENCE    | manageengine.com/mobile-device-management/api/ (all 20 pages + 638-entry searchindex.json + EU mirror: ZERO "fileupload"; "fileStatus" appears once, the literal 2)                                                                                                                                                                                                         | None (current single-phase fail-closed `fileStatus==2` check matches the only documented contract; the reviewer's polling endpoint exists only in the now-dead help/api/cloud/\* pages)                                                                                                                                                                              | Existing upload pins stay; live-tenant smoke records the real response                                                                               | — (no code) |
+| IR-03   | CONFIRMED                       | ME api/pagination page: `offset`/`limit` query params, `paging.next`/`paging.previous`, `metadata.total_record_count`, 50-by-default; "page" documented nowhere                                                                                                                                                                                                             | Rewrite `fetchAppPages`/`fetchGroupList`: never send `?page=`; follow `paging.next` when present; else `limit`/`offset` stepping; terminate on absent next / accumulated total; malformed envelope tolerated only as the documented apps-example shape (short page)                                                                                                  | >50-item walk via paging.next; limit/offset variant; malformed envelope; non-terminating fail-closed; no request contains `?page=`                   | T15         |
+| IR-04   | CONFIRMED WITH MODIFICATION     | ME api/groups: GET /api/v1/mdm/groups (fields group_id/**name**/group_type/domain — `group_name` documented nowhere) + GET /groups/{group_id} details (read-only)                                                                                                                                                                                                           | Pre-mutation group validation in BOTH flows: resolve the group read-only (GET /groups/{id} or paginated walk), refuse when missing; NEW required expected-group-name input = positive name verification (no documented group-type distinction exists); dry-run exits NON-ZERO on missing/mismatch; optional production-group-id denylist retained as belt-and-braces | Missing/wrong/mismatched group refused BEFORE any mutation; dry-run non-zero on unsafe state                                                         | T15         |
+| IR-05   | CONFIRMED WITH MODIFICATION     | ME api/apps: per-app `release_labels[]` (release_label_name/release_label_id/app_version) is the documented label lookup; POST /api/v1/mdm/labels is create-only ("If not present app will be added in default stable channel"); duplicate behavior undocumented; NO labels LIST endpoint                                                                                   | Update path reuses the app's existing Beta label id (match release_label_name === "Beta"); POST /labels ONLY when the app has no Beta label; duplicate-POST error fails closed (named error, live-tenant unknown recorded)                                                                                                                                           | Existing-Beta → zero POST; no-Beta → exactly one POST; POST failure → fail closed                                                                    | T15         |
+| IR-06   | CONFIRMED                       | developer.android.com app-signing ("system allows the update if the certificates match" — byte-level, not DN) + AOSP ApkSignerTool.java (prints `certificate DN:` + `certificate SHA-256 digest:` per signer, HexEncoding lowercase)                                                                                                                                        | Pin the expected upload-certificate SHA-256: REQUIRED verifier input (`--cert-sha256` / `EXPECTED_CERT_SHA256`), suffix-anchored parse, colon/case normalization, exact match; debug-DN rejection retained; workflows source the digest from a PUBLIC Actions variable (`vars.ANDROID_UPLOAD_CERT_SHA256`) with fail-closed presence check                           | Fingerprint mismatch failure; absent input fail-closed; normalization (mixed case + colons) accepted                                                 | T17         |
+| IR-07   | CONFIRMED WITH MODIFICATION     | docs.github.com secure-use ("Pin actions to a full-length commit SHA … currently the only way to use an action as an immutable release" — good practice, not required absent an org policy) + environments docs (public repos: all plans; required reviewers; Prevent self-review toggle; approval BEFORE the job runs; typo = implicit empty environment — fail-safe here) | Pin the 6 actions in the two secret-bearing workflows to full SHAs (`# vX.Y.Z` comments, re-resolved at implementation time); add `environment:` lines (`android-signing`, `mdm-upload`) with documented human migration steps (create env + reviewers + move the 7 secrets); permissions/dispatch/artifact usage already documented-compliant — unchanged           | SHA resolution proof (git ls-remote per pin); YAML/check:ci-scripts green; env-referenced dispatch still fails closed pre-migration                  | T19         |
+| IR-08   | CONFIRMED                       | developer.android.com versioning (downgrade protection; "greater value with each release") + installed @expo/config-plugins Version.js (`android.versionCode ?? 1` — every release would ship 1 forever)                                                                                                                                                                    | Explicit `android.versionCode: 1` in app.config.ts; both workflows' identity-derivation steps FAIL when `android.versionCode` is absent (the `?? 1` default becomes a named error — the bump contract can no longer be silently skipped)                                                                                                                             | Evaluated-config presence test; derivation-step mock matrix (absent → exit 1)                                                                        | T18         |
+| IR-09   | CONFIRMED (repository evidence) | origin/develop = 3a25640 (PR #12) vs Feature merge base 6161a4c                                                                                                                                                                                                                                                                                                             | Integrate current origin/develop non-destructively BEFORE final verification; re-run affected verification on the integrated HEAD                                                                                                                                                                                                                                    | Merge + post-merge `pnpm verify` + CI on the final HEAD                                                                                              | post-tasks  |
+
+Additional CONFIRMED code drifts found by R5 (not in the IR list, same
+treatment): (a) `DATA_CENTRES` accounts hosts for `ca`/`cn` are
+DNS-non-resolvable (`accounts.zoho.ca`/`accounts.zoho.cn`; documented hosts are
+`accounts.zohocloud.ca`/`accounts.zoho.com.cn` — verified against the live
+serverinfo endpoints); (b) the documented error envelope example carries a
+NUMERIC `error_code` (1002) while the code compares `error_code` only as a
+string; (c) minor: the token-endpoint `{"error": ...}` shape's
+`error_description` is dropped in diagnostics; (d) minor: the masking header
+comment's "Zoho policy" provenance is unsubstantiated by current official docs
+(behavior unchanged, comment reworded). → T16.
+
+Research verdicts are recorded; remediation tasks are defined in plan.md's
+Remediation amendment (T14–T20) after the Lead Planning Review.
+
+### Remediation review rows
+
+| ID     | Severity | Finding                                                                                                                                                                                                                     | Evidence                                                                             | Disposition | Remediation                                                                                                                                                                                                                                                                                                 |
+| ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T14-R1 | minor    | RD-02's maintenance-code consequence on provisional+LOCKED was unpinned (no test combined provisional + locked + `maintenance_unlock_code`)                                                                                 | derive-device-policy.ts doc + test census (review T14, agent-8c75e30c)               | fixed       | Implementer resumed: derive row (provisional+locked+code → code derived) + store `tryUnlock` test pinning credential/readiness independence                                                                                                                                                                 |
+| T14-R2 | minor    | The "gate ONLY the preparation row" decision (RD-01) had no pending-row pins — a future refactor widening the gate would pass the table                                                                                     | root-guard.test.ts rows at "resolved" only (review T14)                              | fixed       | Three characterization rows added (signedOut/unauthorized/customer at pending → unchanged targets)                                                                                                                                                                                                          |
+| T14-R3 | minor    | The plan's promised cold-start race test composed the scenario in two halves (hook seam + sync seam) instead of one mounted composition                                                                                     | plan test strategy vs use-root-target/use-device-policy-sync split (review T14)      | fixed       | "THE composed cold-start race": one probe mounting BOTH hooks under the real AuthProvider with a deferred mocked policy-source read; gate-revert RED empirically reproduced (Expected "startup"/Received "preparation"); layout-guard half documented as transitive (no router harness exists in this repo) |
+| T15-R1 | minor    | `paging.next` was followed verbatim with no origin guard — a foreign-host next URL would receive the MDM bearer token on every stepped request                                                                              | upload-beta.ts fetchAppPages + requestWithRetry headers (review T15, agent-70888e64) | fixed       | Implementer resumed: origin-equality guard (URL.origin vs mdmOrigin), foreign OR unparseable next fails closed with a named error quoting only origins; RED → GREEN with a foreign-host test (pre-fix probe: 99 requests to evil.example.com each carrying the token; post-fix: zero)                       |
+| T15-R2 | minor    | The new free-form `--expected-group-name` echo surface had no union-redaction pin (T11-F01/T11-R1 precedent)                                                                                                                | upload-beta.test.ts masking census (review T15)                                      | fixed       | Union-redaction test (expected name == client secret → `[REDACTED]` in the refusal); expectMasked added to the two omission sites; free-form doc lists extended                                                                                                                                             |
+| T15-R3 | minor    | Four edge shapes of the new read path unpinned: wrapped group-details body; string/non-numeric total_record_count; two Beta entries (first-match); empty/whitespace paging.next                                             | test census (review T15)                                                             | fixed       | Four characterization rows added; the two-Beta row pins BOTH the first reused id and the first entry's app_version as the monotonic baseline                                                                                                                                                                |
+| T16-R1 | minor    | The `--help` USAGE string still asserted the unsubstantiated "logs count as credential exposure" provenance the MASKING header had just retracted — the tool contradicted itself between two user-visible surfaces          | upload-beta.ts USAGE vs MASKING header (review T16, agent-1c8afa52)                  | fixed       | Implementer resumed: one-clause reword to "logs are treated as a credential-exposure surface"; 118 tests green                                                                                                                                                                                              |
+| T16-R2 | minor    | The same unsubstantiated provenance survives in the operator runbook (mdm-operations.md, Zoho policy/logs-as-exposure claim)                                                                                                | review T16                                                                           | assigned    | Folded into T20 checklist (T20 already touches mdm-operations.md)                                                                                                                                                                                                                                           |
+| T16-R3 | minor    | The runbook token-host template https://accounts.zoho.<dc>/oauth/v2/token resolves to the DNS-dead hosts for dc=ca/cn that T16 fixed in code                                                                                | mdm-operations.md vs upload-beta.ts DATA_CENTRES (review T16)                        | assigned    | Folded into T20 checklist (name the ca/cn exception or point at --data-centre)                                                                                                                                                                                                                              |
+| T16-R4 | minor    | The plan third T16 RED item (429-with-numeric-code still retries) was a plan-time mislabel — that case passed before and after (status branch); the delivered test is correctly labelled characterization                   | plan.md vs upload-beta.test.ts (review T16)                                          | fixed       | Recorded accurately in the T16 worklog entry (3 RED + 1 characterization) and here                                                                                                                                                                                                                          |
+| T17-R1 | minor    | The pinned digest was never shape-validated: pasting sha256sum whole output line (<hex> -) survived normalization and produced an IDENTICAL-prefix unactionable mismatch message                                            | checkCertificateDigests probes (review T17, agent-3c5d09c6)                          | fixed       | Implementer resumed: normalized pin validated against 64-hex pattern with a distinct named failure; RED reproduced verbatim; +main-level test                                                                                                                                                               |
+| T17-R2 | minor    | Three parse-robustness rows unpinned: SHA-1 line ignored; actual-side colon/uppercase normalization; source-stamp label shape                                                                                               | test fixture census (review T17)                                                     | fixed       | Pin rows added; signerCerts fixture now carries the AOSP SHA-1 line everywhere; one disclosed fixture correction (65-hex key digest -> real 64-hex, making the key-line test more discriminating)                                                                                                           |
+| T18-R1 | minor    | mdm-operations.md still documents the removed `?? 1` versionCode default as current behavior (S6 'currently unset' + workflow-steps 'Expo exact defaulting')                                                                | mdm-operations.md vs app.config.ts/workflows (review T18, agent-b4a6188c)            | assigned    | Folded into T20 checklist (with T16-R2/R3)                                                                                                                                                                                                                                                                  |
+| R4-1   | minor    | mdm-operations.md S4/S9 still described the two-signal kiosk derivation, missing T14's RD-02 third signal (lockTaskModeState 'locked', exempt from provisional suppression)                                                 | round review (agent-5dd85f16)                                                        | fixed       | T20 implementer resumed: both passages rewritten to the three-signal derivation with precise pending semantics                                                                                                                                                                                              |
+| FR2-01 | major    | The final-verification worklog entry ended with dangling CI promises ("outcome recorded below at completion" with nothing following) and attributed the build trigger to db3a50d while the green outcomes landed on 7d6702d | final review (agent-49d1b14b) + API verification                                     | fixed       | Closing docs commit records the 7d6702d outcomes with run ids (CI 33857102917 SUCCESS; Android build 33857102920 SUCCESS; E2E skipped 33857103028) and notes the db3a50d runs were cancelled as superseded                                                                                                  |
+| FR2-02 | minor    | todo.md checkpoint one step behind the repository (integration + final verification already landed)                                                                                                                         | todo.md vs git log (final review)                                                    | fixed       | Checkpoint refreshed in the same closing commit                                                                                                                                                                                                                                                             |
+| FR2-03 | minor    | The identity-derivation node script is duplicated byte-for-byte in both secret-bearing workflows (maintenance cost; a desync fails CLOSED)                                                                                  | android-release.yml vs mdm-beta-upload.yml (final review)                            | accepted    | Documented plan design; byte-identical by contract (T18 review verified); a future extraction to a shared script is a deliberate change with its own task                                                                                                                                                   |
+
+## Quality audit (REOPENED-gate remediation, 2026-09-04)
+
+A FRESH quality-auditor (agent-956ddd2f, new context — did not watch the
+implementation, reviews, or record-keeping) audited the delivery at HEAD
+cfc7a10 against all five control documents, the actual diff
+(+15702/−32 = code 7d6702d + docs-only), the commit chain, and the GitHub
+API.
+
+- **not delivered**: none — every AC-01…AC-10 observable re-verified in
+  the diff; hardware/live-tenant/E2E honestly listed as unverified and
+  never claimed PASS (E2E run 33857103028 genuinely skipped, API-verified).
+- **not evidenced**: the FR2 re-review convergence lived only outside the
+  repository — RESOLVED by recording it in the Re-review section above
+  (this commit); (observation) the cfc7a10 Android-build run 33858954741
+  was in_progress at audit time — the recorded native evidence on the
+  code-identical 7d6702d (run 33857102920 SUCCESS) stands; fast CI on
+  cfc7a10 already SUCCESS (run 33858954820).
+- **not planned**: none — the 49-file diff maps 1:1 to the plan's
+  expected-change lists; the remediation added no unplanned capability;
+  core/components/supabase/other-features untouched.
+- **stale record**: the PR #9 body still carried the pre-reopening
+  readiness claims (RESOLVED by the Lead's PR-body rewrite at the gate);
+  todo.md checkpoint lines lagged (RESOLVED in the gate commit); the
+  seven-packet research narrative lives in review.md per the plan's
+  designation (informational — each T14–T20 entry cites its packet and
+  agent id; R3 = agent-2cbc4630).
+- **Remediation integrity**: clean — the record shows the reopened gate,
+  the verdict matrix, and NEW evidence per remediation commit
+  (1a30a5a/68f9cbb/307f05f/24d662d/7fbd5f2/2174f15/8354b5a/6b66b48 each
+  verified per-commit); T01–T13 preserved as immutable history; the
+  68/894 chain reproduces.
+- Auditor's own verification: `pnpm verify` exit 0; `pnpm test:ci` 68
+  suites / 894 tests; `pnpm export:web` + a browser re-run reproducing the
+  recorded standard-path behavior (0 errors); both tools' fail-closed
+  smokes reproduce their recorded messages; greps clean; API-verified CI
+  runs on 7d6702d + the cancelled db3a50d runs exactly as recorded; PR #9
+  open/draft/base develop/head cfc7a10.
+
+**Audit verdict: the delivery is sound.** Strongest evidence: the
+independently re-run full gate at the audited HEAD (68/894) plus the
+browser regression reproduction, and the API-verifiable external evidence
+chain (green runs correctly attributed, cancelled runs exactly recorded,
+tool smokes reproducing their messages). Pre-gate record items closed by
+this commit and the PR-body rewrite.
+
+Audit result: `PASS` (remediation gate)
