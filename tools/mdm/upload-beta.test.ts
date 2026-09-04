@@ -7,13 +7,22 @@
  * No test performs a real HTTP request and no test reads the filesystem. The
  * suite runs with zero console output — every sink is an injected array.
  *
- * The contract under test is the 2026-09-03 revalidation (see the feature
- * worklog RECOVERY RESEARCH entry): completion confirmed from the upload
- * response's own fileStatus (no polling endpoint exists), app create with the
- * documented Required app_category_id + release_label_id, STRING app versions
- * for the monotonic pre-check, and the `file` multipart key from the docs
- * prose (the code examples' `fileName` is the recorded discrepancy — asserted
- * NOT to be used).
+ * The contract under test is the Round 5 (2026-09-04) cloud-help-tree
+ * revalidation: the documented TWO-PHASE file upload — POST /emsapi/files
+ * returns fileStatus 1 (PENDING — "file is queued for processing"), 2
+ * (COMPLETED), 3 (FAILED), and the upload page's fileID field says "Use Get
+ * File Upload Status to verify the file is ready for use", so PENDING is
+ * resolved by polling POST /emsapi/fileupload/status until the entry for OUR
+ * file_id reports file_availability_status 2 (the 2026-09-03 "no polling
+ * endpoint exists" IR-02 claim was an incomplete-tree over-generalization —
+ * see review.md, "IR-02 contradiction — RESOLVED"). Accept: application/json
+ * is documented Mandatory on POST /emsapi/files, GET
+ * /api/v1/mdm/groups/{id}, POST /api/v1/mdm/groups/{id}/apps and the status
+ * POST, and is sent uniformly on every MDM JSON call (RD5-06). Still from the
+ * earlier revalidations: app create with the documented Required
+ * app_category_id + release_label_id, STRING app versions for the monotonic
+ * pre-check, and the `file` multipart key from the docs prose (the code
+ * examples' `fileName` is the recorded discrepancy — asserted NOT to be used).
  *
  * Plus the 2026-09-04 remediation read-path contract (RD-03/RD-04/RD-05, T15):
  * documented list pagination (paging.next as a FULL URL, else the documented
@@ -206,6 +215,14 @@ interface GreenRouteOptions {
    */
   groups?: unknown[];
   fileStatus?: number;
+  /**
+   * Successive POST /emsapi/fileupload/status response BODIES, served in
+   * request order (the last one repeats) — each is the documented envelope
+   * carrying the response[] array of {file_id, file_availability_status,
+   * remarks} entries. Only reached when the upload response reports PENDING
+   * (the poll path — RD5-05).
+   */
+  statusResponses?: unknown[];
   labelId?: unknown;
   createAppId?: unknown;
 }
@@ -231,9 +248,13 @@ function greenRoute(options: GreenRouteOptions = {}): RouteHandler {
       : { error_code: "GD0001", error_description: "Group not found" });
   const groups = options.groups ?? [{ group_id: 701, name: "Beta Tablets" }];
   const fileStatus = options.fileStatus ?? 2;
+  const statusResponses = options.statusResponses ?? [
+    { response: [{ file_id: "555", file_availability_status: 2, remarks: "" }] },
+  ];
   const labelId = options.labelId ?? 5;
   const createAppId = options.createAppId ?? 202;
   let appsCall = 0;
+  let statusCall = 0;
   return (request) => {
     const { url, method } = request;
     if (method === "POST" && url.endsWith("/oauth/v2/token")) {
@@ -261,6 +282,11 @@ function greenRoute(options: GreenRouteOptions = {}): RouteHandler {
         expiryDate: "2026-09-04 10:00",
         fileStatus,
       });
+    }
+    if (method === "POST" && url.endsWith("/emsapi/fileupload/status")) {
+      const body = statusResponses[Math.min(statusCall, statusResponses.length - 1)];
+      statusCall += 1;
+      return json(body);
     }
     if (method === "POST" && url.endsWith("/api/v1/mdm/apps")) {
       return json({ app_id: createAppId });
@@ -1394,13 +1420,21 @@ describe("two-phase file upload", () => {
     expect(bodyJson(put)).toEqual({ app_file: 555, force_update_in_label: true });
   });
 
-  it("a fileStatus other than 2 fails closed showing the actual status, with no further calls", async () => {
+  // AMENDED at T24 (bug mode): the old assertion "expected 2" pinned the
+  // single-phase interpretation — every initial status ≠ 2 was terminal, the
+  // R5-03 bug. Under the documented two-phase contract an undocumented status
+  // still fails closed, but the failure is NAMED as undocumented (1/2/3 are
+  // the documented statuses) and no status poll happens.
+  it("an undocumented fileStatus (0) fails closed naming it, with no status poll", async () => {
     const result = await runMain(fullEnv(), { route: greenRoute({ fileStatus: 0 }) });
 
     expect(result.exitCode).not.toBe(0);
     const message = result.errors.join("\n");
     expect(message).toContain("fileStatus 0");
-    expect(message).toContain("expected 2");
+    expect(message).toContain("not a documented status");
+    expect(result.requests.filter((r) => r.url.endsWith("/emsapi/fileupload/status"))).toHaveLength(
+      0,
+    );
     expect(result.requests).toHaveLength(4);
     expect(result.requests.find((r) => r.method === "PUT")).toBeUndefined();
     expectMasked(result);
@@ -1417,6 +1451,281 @@ describe("two-phase file upload", () => {
 
     expect(result.exitCode).not.toBe(0);
     expect(result.errors.join("\n")).toContain("did not include a fileID");
+  });
+
+  it("the fast path: initial fileStatus 2 succeeds with ZERO status calls", async () => {
+    const result = await runMain(fullEnv(), { route: greenRoute({ fileStatus: 2 }) });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.errors).toEqual([]);
+    expect(result.requests.filter((r) => r.url.endsWith("/emsapi/fileupload/status"))).toHaveLength(
+      0,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The file-status lifecycle (RD5-05 / R5-03: fileStatus 1 → bounded poll)
+// ---------------------------------------------------------------------------
+
+describe("file upload status lifecycle (RD5-05)", () => {
+  it("initial fileStatus 1 (PENDING) polls POST /emsapi/fileupload/status with the exact documented body and headers; file_availability_status 2 proceeds with the SAME fileID", async () => {
+    const result = await runMain(fullEnv(), {
+      route: greenRoute({
+        // 1 = the documented PENDING fileStatus ("queued for processing").
+        fileStatus: 1,
+        statusResponses: [
+          {
+            response: [
+              // 2 = the documented ready file_availability_status.
+              { file_id: "555", file_availability_status: 2, remarks: "" },
+            ],
+          },
+        ],
+      }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.errors).toEqual([]);
+    const statusCalls = result.requests.filter((r) => r.url.endsWith("/emsapi/fileupload/status"));
+    expect(statusCalls).toHaveLength(1);
+    const statusCall = statusCalls[0];
+    expect(statusCall?.method).toBe("POST");
+    expect(statusCall?.url).toBe(`${MDM_BASE}/emsapi/fileupload/status`);
+    expect(statusCall?.headers.Authorization).toBe(`Zoho-oauthtoken ${ACCESS_TOKEN}`);
+    expect(statusCall?.headers["Content-Type"]).toBe("application/json");
+    expect(statusCall?.headers.Accept).toBe("application/json");
+    // The documented sample body: fileIDs is an array of STRINGS.
+    expect(bodyText(statusCall)).toBe('{"fileIDs":["555"]}');
+    // The SAME fileID from the upload response feeds the add-version PUT.
+    const put = result.requests.find((r) => r.method === "PUT");
+    expect(bodyJson(put)).toEqual({ app_file: 555, force_update_in_label: true });
+    expectMasked(result);
+  });
+
+  it("initial fileStatus 3 (FAILED) fails immediately naming the documented FAILED status, with NO status call", async () => {
+    const result = await runMain(fullEnv(), {
+      // 3 = the documented FAILED fileStatus.
+      route: greenRoute({ fileStatus: 3 }),
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("fileStatus 3");
+    expect(message).toContain("FAILED");
+    expect(result.requests.filter((r) => r.url.endsWith("/emsapi/fileupload/status"))).toHaveLength(
+      0,
+    );
+    expect(result.requests.find((r) => r.method === "PUT")).toBeUndefined();
+    // token, apps list, group details, files POST — nothing else happened.
+    expect(result.requests).toHaveLength(4);
+    expectMasked(result);
+  });
+
+  it("initial fileStatus 1 with the status never reaching 2: the poll is BOUNDED, failing closed naming the last observed status (remarks is never parsed for truth)", async () => {
+    const sleeps: number[] = [];
+    const result = await runMain(fullEnv(), {
+      route: greenRoute({
+        // 1 = the documented PENDING fileStatus.
+        fileStatus: 1,
+        // remarks LIES about readiness — only file_availability_status counts.
+        statusResponses: [
+          {
+            response: [{ file_id: "555", file_availability_status: 1, remarks: "file is ready" }],
+          },
+        ],
+      }),
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    const statusCalls = result.requests.filter((r) => r.url.endsWith("/emsapi/fileupload/status"));
+    // Bounded: exactly the attempt bound (20 — the engineering choice), never
+    // an infinite loop.
+    expect(statusCalls).toHaveLength(20);
+    const message = result.errors.join("\n");
+    expect(message).toContain("file_availability_status was 1");
+    // The interval sleeps BETWEEN attempts only (19 × 3000 ms — the
+    // engineering choice); the first check is immediate.
+    expect(sleeps).toHaveLength(19);
+    expect(sleeps.every((ms) => ms === 3000)).toBe(true);
+    expect(result.requests.find((r) => r.method === "PUT")).toBeUndefined();
+    expectMasked(result);
+  });
+
+  it("a status response with NO entry for our file_id fails closed", async () => {
+    const result = await runMain(fullEnv(), {
+      route: greenRoute({
+        fileStatus: 1,
+        statusResponses: [
+          { response: [{ file_id: "999", file_availability_status: 2, remarks: "" }] },
+        ],
+      }),
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.errors.join("\n")).toContain("file_id 555");
+    expect(result.requests.filter((r) => r.url.endsWith("/emsapi/fileupload/status"))).toHaveLength(
+      1,
+    );
+    expect(result.requests.find((r) => r.method === "PUT")).toBeUndefined();
+    expectMasked(result);
+  });
+
+  it("a status response whose response is not an array fails closed", async () => {
+    const result = await runMain(fullEnv(), {
+      route: greenRoute({
+        fileStatus: 1,
+        statusResponses: [{ response: { file_id: "555", file_availability_status: 2 } }],
+      }),
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.errors.join("\n")).toContain('"response" array');
+    expect(result.requests.filter((r) => r.url.endsWith("/emsapi/fileupload/status"))).toHaveLength(
+      1,
+    );
+    expectMasked(result);
+  });
+
+  it("a malformed (non-JSON) status body fails closed", async () => {
+    const route = withIntercept(greenRoute({ fileStatus: 1 }), (request) => {
+      if (request.method === "POST" && request.url.endsWith("/emsapi/fileupload/status")) {
+        return { status: 200, body: "not-json{{{ " };
+      }
+      return undefined;
+    });
+    const result = await runMain(fullEnv(), { route });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.errors.join("\n")).toContain("malformed");
+    expect(result.requests.filter((r) => r.url.endsWith("/emsapi/fileupload/status"))).toHaveLength(
+      1,
+    );
+    expectMasked(result);
+  });
+
+  it("a status entry whose file_availability_status is not a usable integer fails closed (T24-F01b)", async () => {
+    const result = await runMain(fullEnv(), {
+      route: greenRoute({
+        fileStatus: 1,
+        statusResponses: [
+          {
+            response: [
+              // Present for OUR file_id, but the status is neither a number
+              // nor a numeric string — unusable, so never guessed.
+              { file_id: "555", file_availability_status: "banana", remarks: "" },
+            ],
+          },
+        ],
+      }),
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.errors.join("\n")).toContain("did not carry a usable file_availability_status");
+    // The unusable entry fails closed immediately — no further polling.
+    expect(result.requests.filter((r) => r.url.endsWith("/emsapi/fileupload/status"))).toHaveLength(
+      1,
+    );
+    expect(result.requests.find((r) => r.method === "PUT")).toBeUndefined();
+    expectMasked(result);
+  });
+
+  it("an initial fileStatus 1 whose status-poll HTTP call FAILS aborts the run fail-closed (T24-F01a: a failed poll is a run failure, not a poll attempt)", async () => {
+    const sleeps: number[] = [];
+    const route = withIntercept(greenRoute({ fileStatus: 1 }), (request) => {
+      if (request.method === "POST" && request.url.endsWith("/emsapi/fileupload/status")) {
+        // A persistent 500 on the status endpoint: requestWithRetry exhausts
+        // its own bounded attempts and the poll loop ABORTS.
+        return json({ error_code: 5000, error_description: "unexpected internal error" }, 500);
+      }
+      return undefined;
+    });
+    const result = await runMain(fullEnv(), {
+      route,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("MDM API POST /emsapi/fileupload/status");
+    expect(message).toContain("HTTP 500");
+    // Exactly ONE poll attempt — requestWithRetry's own 3 bounded tries for
+    // that single attempt. If a failed poll counted as a poll attempt the
+    // loop would continue: 20 attempts × 3 tries = 60 status calls.
+    const statusCalls = result.requests.filter((r) => r.url.endsWith("/emsapi/fileupload/status"));
+    expect(statusCalls).toHaveLength(3);
+    // Only the retry backoffs (1 s then 2 s) — never a 3 s poll interval.
+    expect(sleeps).toEqual([1000, 2000]);
+    // The run aborts BEFORE any mutation beyond the file upload itself: no
+    // add-version PUT, no app create, no group association.
+    expect(result.requests.find((r) => r.method === "PUT")).toBeUndefined();
+    expect(
+      result.requests.find((r) => r.method === "POST" && r.url.endsWith("/api/v1/mdm/apps")),
+    ).toBeUndefined();
+    expect(
+      result.requests.find((r) => r.method === "POST" && r.url.endsWith("/groups/701/apps")),
+    ).toBeUndefined();
+    // token, apps list, group details, files POST, then the 3 status tries.
+    expect(result.requests).toHaveLength(7);
+    expectMasked(result);
+  });
+
+  it("an UNDOCUMENTED initial fileStatus (4) fails closed naming it, with no status call", async () => {
+    const result = await runMain(fullEnv(), { route: greenRoute({ fileStatus: 4 }) });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("fileStatus 4");
+    expect(message).toContain("not a documented status");
+    expect(result.requests.filter((r) => r.url.endsWith("/emsapi/fileupload/status"))).toHaveLength(
+      0,
+    );
+    expect(result.requests).toHaveLength(4);
+    expectMasked(result);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Accept: application/json (R5-05 / RD5-06)
+// ---------------------------------------------------------------------------
+
+describe("Accept: application/json on every MDM JSON call (R5-05)", () => {
+  it("the documented-Mandatory calls carry Accept: /emsapi/files POST, the group GET, the association POST", async () => {
+    const result = await runMain(fullEnv(), { route: greenRoute() });
+
+    expect(result.exitCode).toBe(0);
+    const filesCall = result.requests.find((r) => r.url.endsWith("/emsapi/files"));
+    expect(filesCall?.headers.Accept).toBe("application/json");
+    const groupGet = result.requests.find(
+      (r) => r.method === "GET" && r.url.endsWith("/api/v1/mdm/groups/701"),
+    );
+    expect(groupGet?.headers.Accept).toBe("application/json");
+    const associate = result.requests.find(
+      (r) => r.method === "POST" && r.url.endsWith("/api/v1/mdm/groups/701/apps"),
+    );
+    expect(associate?.headers.Accept).toBe("application/json");
+  });
+
+  it("uniformly: EVERY MDM call carries Accept, while the Zoho token exchange keeps its own header set", async () => {
+    const result = await runMain(fullEnv(), { route: greenRoute() });
+
+    expect(result.exitCode).toBe(0);
+    const tokenCall = result.requests.find((r) => r.url === TOKEN_URL);
+    // The token exchange is NOT an MDM JSON call — its headers stay its own
+    // (form-urlencoded; no bearer, no Accept).
+    expect(tokenCall?.headers.Accept).toBeUndefined();
+    expect(Object.keys(tokenCall?.headers ?? {}).sort()).toEqual(["Content-Type"]);
+    const mdmCalls = result.requests.filter((r) => r.url !== TOKEN_URL);
+    expect(mdmCalls.length).toBeGreaterThan(0);
+    for (const call of mdmCalls) {
+      expect(call.headers.Accept).toBe("application/json");
+    }
+    expectMasked(result);
   });
 });
 

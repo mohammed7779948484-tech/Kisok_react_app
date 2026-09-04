@@ -46,12 +46,21 @@
  *      exists without a Beta label or does not exist yet (one POST per run at
  *      most; duplicate-channel behavior is undocumented, so any POST error
  *      fails closed);
- *   6. two-phase upload: POST {mdm}/emsapi/files with header
- *      `Module: MDM_APP_MGMT` and multipart key `file` (the docs prose; the
- *      docs CODE EXAMPLES say `fileName` — recorded discrepancy, the written
- *      prose contract is used). Completion is confirmed from THIS response's
- *      `fileStatus` == 2 — current docs document no polling endpoint, so
- *      none is invented;
+ *   6. the documented two-phase upload (RD5-05): POST {mdm}/emsapi/files with
+ *      header `Module: MDM_APP_MGMT` and multipart key `file` (the docs prose;
+ *      the docs CODE EXAMPLES say `fileName` — recorded discrepancy, the
+ *      written prose contract is used). The response's `fileStatus` is 1 =
+ *      PENDING ("file is queued for processing"), 2 = COMPLETED, 3 = FAILED:
+ *      2 proceeds immediately (NO status call — the fast path), 3 fails
+ *      immediately (the documented terminal failure), and 1 polls POST
+ *      {mdm}/emsapi/fileupload/status (the documented Get File Upload Status
+ *      call — body {"fileIDs":[fileID]}) until the entry for OUR file_id
+ *      reports file_availability_status 2, bounded: exhaustion, a malformed
+ *      response, a non-array response or a missing entry fails closed. The
+ *      upload page's fileID field says "Use Get File Upload Status to verify
+ *      the file is ready for use" (review.md R5-03; the IR-02 "no polling
+ *      endpoint" verdict was an incomplete-tree over-generalization — see
+ *      review.md's "IR-02 contradiction — RESOLVED");
  *   7. POST /api/v1/mdm/apps (create; app_type 2 = Enterprise/in-house, with
  *      the documented Required app_category_id and Beta release_label_id) or
  *      PUT /api/v1/mdm/apps/{app_id}/labels/{label_id} (add version,
@@ -212,10 +221,28 @@ export const MAX_REQUEST_ATTEMPTS = 3;
 export const RETRY_BASE_DELAY_MS = 1000;
 
 /**
- * Completion status of the two-phase upload, confirmed from the upload
- * response's own fileStatus (current docs document no polling endpoint).
+ * The fileStatus values documented on POST /emsapi/files (cloud help tree,
+ * Lead-opened 2026-09-04): 1 = PENDING ("file is queued for processing"),
+ * 2 = COMPLETED ("file successfully uploaded and ready for use"), 3 = FAILED
+ * ("upload or processing failed"). file_availability_status 2 on the status
+ * endpoint means the same ready state ("the file has been uploaded and is
+ * ready for use") — see the two-phase lifecycle in uploadApkFile (RD5-05;
+ * review.md R5-03).
  */
+export const FILE_PENDING_STATUS = 1;
 export const FILE_COMPLETED_STATUS = 2;
+export const FILE_FAILED_STATUS = 3;
+
+/**
+ * Bounded polling of POST /emsapi/fileupload/status while the upload response
+ * reports PENDING. The docs document NO poll interval or timeout for that
+ * endpoint — this cadence (3 s) and attempt bound (20 ≈ 60 s of polling) are
+ * ENGINEERING choices: comfortably under the endpoint's DOCUMENTED rate
+ * limit (500 requests/min, 5-minute lock on exceeding it) while failing
+ * closed long before the uploaded file's expiryDate auto-deletion.
+ */
+export const FILE_STATUS_POLL_MAX_ATTEMPTS = 20;
+export const FILE_STATUS_POLL_INTERVAL_MS = 3000;
 
 export const APK_MIME_TYPE = "application/vnd.android.package-archive";
 
@@ -265,6 +292,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * A documented integer field, read fail-closed: a finite number, or a numeric
+ * string (ids and enums arrive number-or-string across these docs — e.g. the
+ * documented group_type sample), is the value; anything else is undefined.
+ */
+function readInteger(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && NUMERIC_ID_PATTERN.test(value.trim())) {
+    return Number(value.trim());
+  }
+  return undefined;
+}
+
 function tryParseJson(text: string): unknown {
   try {
     return JSON.parse(text) as unknown;
@@ -274,7 +316,17 @@ function tryParseJson(text: string): unknown {
 }
 
 function authHeaders(token: string): Record<string, string> {
-  return { Authorization: `Zoho-oauthtoken ${token}` };
+  return {
+    Authorization: `Zoho-oauthtoken ${token}`,
+    // R5-05 / RD5-06: Accept is documented Mandatory on POST /emsapi/files,
+    // GET /api/v1/mdm/groups/{group_id}, POST /api/v1/mdm/groups/{group_id}/apps
+    // and POST /emsapi/fileupload/status. It is sent on EVERY MDM JSON call
+    // uniformly (sample-consistent on the labels/apps/list pages, where it is
+    // not documented — an engineering recommendation, not a documented
+    // requirement there). The Zoho token exchange keeps its own header set
+    // (form-urlencoded, no bearer, no Accept).
+    Accept: "application/json",
+  };
 }
 
 function sleepMilliseconds(ms: number): Promise<void> {
@@ -1242,9 +1294,107 @@ async function resolveBetaLabelId(
 
 type FileUploadResult = { ok: true; fileId: number | string } | { ok: false; failure: string };
 
+type FileStatusPollResult = { ok: true } | { ok: false; failure: string };
+
 /**
- * Two-phase upload, phase 1 (the only phase — completion is confirmed from
- * THIS response's fileStatus; current docs document no polling endpoint).
+ * POST /emsapi/fileupload/status — the documented "Get File Upload Status"
+ * call (cloud help tree, Lead-opened 2026-09-04; review.md R5-03 — the IR-02
+ * "no polling endpoint" verdict was an incomplete-tree over-generalization,
+ * resolved in review.md). Body: {"fileIDs":[String(fileID)]} (fileIDs is an
+ * array of STRINGS — the documented sample). The response entry whose file_id
+ * matches OUR file_id is authoritative: file_availability_status 2 means
+ * "the file has been uploaded and is ready for use"; remarks is informational
+ * only and is NEVER parsed for truth. A malformed body, a non-array
+ * "response", a missing entry for our file_id, or an entry without a usable
+ * status fails closed immediately; any other status keeps polling until the
+ * attempt bound, then fails closed naming the last observed status. Each HTTP
+ * call rides the existing requestWithRetry (the read/write retry split is
+ * T26 — out of scope here). No interval or timeout is documented: the cadence
+ * and bound are the ENGINEERING choices in FILE_STATUS_POLL_* above.
+ */
+async function pollFileUploadStatus(
+  mdmBase: string,
+  token: string,
+  fileId: number | string,
+  deps: NetworkDeps,
+): Promise<FileStatusPollResult> {
+  const targetFileId = String(fileId);
+  let lastStatus: number | undefined;
+  for (let attempt = 1; attempt <= FILE_STATUS_POLL_MAX_ATTEMPTS; attempt += 1) {
+    if (attempt > 1) {
+      await deps.sleep(FILE_STATUS_POLL_INTERVAL_MS);
+    }
+    const outcome = await requestWithRetry(deps, {
+      url: `${mdmBase}/emsapi/fileupload/status`,
+      method: "POST",
+      headers: { ...authHeaders(token), "Content-Type": "application/json" },
+      body: JSON.stringify({ fileIDs: [targetFileId] }),
+      failureContext: "MDM API POST /emsapi/fileupload/status",
+    });
+    if (!outcome.ok) {
+      return { ok: false, failure: outcome.failure };
+    }
+    const parsed = tryParseJson(outcome.body);
+    if (!isRecord(parsed)) {
+      return {
+        ok: false,
+        failure:
+          "the file upload status response is malformed (not a JSON object) — failing closed",
+      };
+    }
+    const entries = parsed.response;
+    if (!Array.isArray(entries)) {
+      return {
+        ok: false,
+        failure:
+          'the file upload status response did not include a "response" array — failing closed',
+      };
+    }
+    const entry = entries.find((item) => isRecord(item) && String(item.file_id) === targetFileId);
+    if (!isRecord(entry)) {
+      return {
+        ok: false,
+        failure:
+          `the file upload status response did not include an entry for file_id ${targetFileId} — ` +
+          "failing closed",
+      };
+    }
+    const status = readInteger(entry.file_availability_status);
+    if (status === undefined) {
+      return {
+        ok: false,
+        failure:
+          `the file upload status entry for file_id ${targetFileId} did not carry a usable ` +
+          "file_availability_status — failing closed",
+      };
+    }
+    if (status === FILE_COMPLETED_STATUS) {
+      return { ok: true };
+    }
+    // Any other status (documented or not) keeps polling — only 2 is "ready".
+    lastStatus = status;
+  }
+  return {
+    ok: false,
+    failure:
+      `the uploaded file did not become ready for use within ${FILE_STATUS_POLL_MAX_ATTEMPTS} ` +
+      `file-status checks: the last observed file_availability_status was ${
+        lastStatus === undefined ? "(none)" : lastStatus
+      } — ` +
+      "failing closed (the poll interval and attempt bound are engineering choices — no " +
+      "timeout is documented)",
+  };
+}
+
+/**
+ * The documented two-phase upload lifecycle (RD5-05 / R5-03). Phase 1,
+ * POST /emsapi/files, returns fileID plus fileStatus: 2 (COMPLETED) → proceed
+ * immediately with NO status call (the fast path); 3 (FAILED) → immediate
+ * named failure (the documented terminal failure — no poll); 1 (PENDING,
+ * "file is queued for processing") → bounded pollFileUploadStatus, then
+ * proceed with the SAME fileID (each upload mints a NEW fileID; expiryDate
+ * auto-deletes it — the ID from THIS response is the one to verify and use);
+ * any other value is undocumented → fail closed naming it.
  */
 async function uploadApkFile(
   mdmBase: string,
@@ -1280,12 +1430,6 @@ async function uploadApkFile(
       failure: "the file upload response is malformed (not a JSON object) — failing closed",
     };
   }
-  if (Number(parsed.fileStatus) !== FILE_COMPLETED_STATUS) {
-    return {
-      ok: false,
-      failure: `the file upload did not complete: fileStatus ${String(parsed.fileStatus)}, expected ${FILE_COMPLETED_STATUS} (completed) — failing closed`,
-    };
-  }
   const fileIdRaw = parsed.fileID;
   if (!(typeof fileIdRaw === "number" || (typeof fileIdRaw === "string" && fileIdRaw !== ""))) {
     return {
@@ -1293,7 +1437,39 @@ async function uploadApkFile(
       failure: "the file upload response did not include a fileID — failing closed",
     };
   }
-  return { ok: true, fileId: fileIdRaw };
+  const fileStatus = readInteger(parsed.fileStatus);
+  if (fileStatus === FILE_COMPLETED_STATUS) {
+    // Fast path: the upload response itself confirms completion — no status call.
+    return { ok: true, fileId: fileIdRaw };
+  }
+  if (fileStatus === FILE_FAILED_STATUS) {
+    return {
+      ok: false,
+      failure:
+        `the file upload failed: POST /emsapi/files returned fileStatus ${FILE_FAILED_STATUS} ` +
+        "(FAILED — upload or processing failed) — failing closed (the documented FAILED " +
+        "status is terminal; no status poll)",
+    };
+  }
+  if (fileStatus === FILE_PENDING_STATUS) {
+    // The upload page's fileID field: "Use Get File Upload Status to verify
+    // the file is ready for use." Same fileID, bounded poll.
+    const poll = await pollFileUploadStatus(mdmBase, token, fileIdRaw, deps);
+    if (!poll.ok) {
+      return { ok: false, failure: poll.failure };
+    }
+    return { ok: true, fileId: fileIdRaw };
+  }
+  const observedText =
+    typeof parsed.fileStatus === "string" || typeof parsed.fileStatus === "number"
+      ? String(parsed.fileStatus)
+      : "(missing or not a number)";
+  return {
+    ok: false,
+    failure:
+      `the file upload response carried fileStatus ${observedText}, which is not a documented ` +
+      `status (1 = pending, 2 = completed, 3 = failed) — failing closed`,
+  };
 }
 
 type CreateResult = { ok: true; appId: number | string } | { ok: false; failure: string };
@@ -1667,11 +1843,13 @@ max 10 access tokens per refresh token per 10 minutes), the app list read
 limit/offset query params — never "page="), the monotonic version pre-check,
 the read-only group validation (GET /api/v1/mdm/groups/{group_id} — the
 group's documented name must equal the expected group name), then the
-two-phase /emsapi/files upload (completion confirmed from the response's
-fileStatus), the Beta release label (reused from the app's existing
-release_labels when present — POST /api/v1/mdm/labels only otherwise), then
-either app create (Enterprise/in-house, app_type 2) or add-version on the
-Beta label, and the single group association with silent_install. It NEVER
+/emsapi/files upload with its documented two-phase lifecycle (fileStatus 2 →
+proceed immediately; 1 → bounded POST /emsapi/fileupload/status polling until
+file_availability_status 2; 3 → fail), the Beta release label (reused from the
+app's existing release_labels when present — POST /api/v1/mdm/labels only
+otherwise), then either app create (Enterprise/in-house, app_type 2) or
+add-version on the Beta label, and the single group association with
+silent_install. Every MDM call carries Accept: application/json. It NEVER
 calls production approve / distribute_update / retire_old_version
 operations.
 

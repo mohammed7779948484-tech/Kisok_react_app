@@ -2486,3 +2486,48 @@ format clean (Lead re-ran test:ci/typecheck).
 GATE: PASS (R5-10/R5-11 closed; the RD-02 credential corollary superseded
 with evidence). Commit + push attempt follows (push still blocked —
 human token prerequisite recorded).
+
+### T24 — file-upload two-phase lifecycle + documented headers (Round 5)
+
+RED (fresh feature-implementer, agent-95ab4e2e, mode bug; baseline 118
+passed pinned first): 10 failed — the poll-success row `Expected: 0 /
+Received: 1` (the R5-03 terminal-failure bug); Accept rows `Expected
+"application/json" / Received: undefined`; the lifecycle shape rows (zero
+status calls). The fresh reviewer independently reproduced the RED against
+HEAD in a /tmp scratch copy (exactly 10 failures for the intended reasons).
+
+IMPLEMENT: `authHeaders()` carries `Accept: application/json` (every MDM
+JSON call; the Zoho token exchange keeps its own set — pinned); constants
+FILE_PENDING_STATUS/FILE_FAILED_STATUS/FILE_STATUS_POLL_MAX_ATTEMPTS(20)/
+FILE_STATUS_POLL_INTERVAL_MS(3000) marked ENGINEERING choices (no
+documented interval/timeout; 500/min threshold noted);
+`pollFileUploadStatus()` — exact body `{"fileIDs":["<string id>"]}`,
+Authorization+Content-Type+Accept, entry matched by String(file_id),
+file_availability_status 2 = ready, missing entry/non-array/malformed →
+named fail-closed, remarks never parsed (lying-remarks row pins this),
+bounded 20 attempts × 3s; `uploadApkFile` owns the lifecycle (2 → fast
+path NO status call; 3 → immediate documented-FAILED failure; 1 → poll;
+undocumented → named fail-closed). Stale "no polling endpoint" comments in
+the tool + test header replaced with the two-phase contract + the IR-02
+resolution pointer. One old single-phase row honestly amended (in-file
+comment records the behavior change).
+
+REVIEW (fresh code-reviewer, agent-12da44d8): **0 blocking / 0 major / 2
+minor** — T24-F01 (three thin fail-closed branches unpinned; (a) the
+status-poll HTTP-failure abort-vs-attempt semantics was the one real
+choice) → resolved by two added pin rows (a: failed poll ⇒ run failure,
+3 status POSTs, no PUT; b: unusable file_availability_status ⇒ named
+fail-closed); T24-F02 (success-summary field attribution "fileStatus 2"
+after a poll success) ACCEPTED cosmetic — folded into T25 (which touches
+the same file). Reviewer verified: byte-exact status body, dual-shape
+tolerance, bounded loop with retry interplay (20×3=60 max status calls ≪
+500/min), sleep discipline (19 intervals, first check immediate), masking
+held in every new row, RED reproduced independently.
+
+GREEN: focused suite 130/130 (128+2); `pnpm test:ci` **69 suites / 954
+tests** (942+10+2); typecheck/lint/format clean; native Node 24 run
+(`--help`) exit 0.
+
+GATE: PASS (R5-03 + R5-05 closed; IR-02 stale claims corrected in the
+tool). Commit + push attempt follows (push still blocked — human token
+prerequisite recorded).
