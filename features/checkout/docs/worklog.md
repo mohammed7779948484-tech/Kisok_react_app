@@ -277,3 +277,80 @@ features/checkout/model/checkout-attempt.schema.test.ts (new)
 Nothing outside the task's allowed scope.
 
 GATE: PASS
+
+### T04 — submit-order api + mutation hook
+
+MODE: behavior
+ACCEPTANCE: Supporting AC-07, AC-08, AC-09, AC-10
+
+SCAFFOLD (Lead, before delegating)
+$ pnpm generate mutation checkout submit-order
+created : features/checkout/api/submit-order.ts
+features/checkout/queries/use-submit-order-mutation.ts
+features/checkout/queries/keys.ts
+skipped : —
+replaced : —
+manual : —
+note : neutral scaffold — placeholder input/throw in the api module, a
+thin useMutation hook with a TODO invalidation, and feature-local
+keys. The task wires them to the T01 response schema and the
+create_order contract.
+
+RED (behavior)
+$ npx jest features/checkout/api
+Tests: 10 failed, 10 total
+Every call rejected with the scaffold's NOT_IMPLEMENTED AppError and the
+args never reached the create_order RPC — the entry-evidence failure.
+Honest note: the queries suite passed in RED (2/2) — the generator had
+already wired mutationFn transport; those tests characterize the contract
+T09 will drive.
+
+IMPLEMENT
+api/submit-order.ts — SubmitOrderInput {clientRequestId, items:
+NormalizedOrderItem[]}; submitOrder → callRpc("create_order",
+{client_request_id, items}, createOrderResponseSchema); non-AppError
+rejections funnel through toAppError so every escaping failure IS an
+AppError (D3 classification safety — documented). Doc comments keep the
+server-owns-correctness + same-id-retry guidance.
+queries/use-submit-order-mutation.ts — thin transport hook; the no-op
+onSuccess invalidation REMOVED per D12 (checkout owns no queries; catalog
+refresh is not checkout's concern) with comment; no lifecycle logic (D8).
+queries/keys.ts — untouched generated surface.
+api/submit-order.test.ts + queries/use-submit-order-mutation.test.tsx —
+client-boundary mock + fetch-catalog/use-catalog precedents.
+
+GREEN
+$ npx jest features/checkout/api → 11 passed, 11 total
+$ npx jest features/checkout/queries → 2 passed
+$ npx jest features/checkout → 5 suites / 161 tests
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean
+$ npx eslint <5 files> → zero issues
+$ npx prettier --check <5 files> → clean
+$ pnpm test:ci (reviewer-rerun) → 59 suites / 716 tests, zero console output
+
+TASK REVIEW (fresh code-reviewer, agent-3bc6822f)
+Verified: exact snake_case args pinned by callsTo; both families validated
+(stock_conflict resolves, never rejects — migration returns jsonb); every
+K-code/SQLSTATE maps to the right kind/code/retryable; AppError pass-through
+preserves identity (core errors test pinned); raw TypeError("fetch failed")
+genuinely rejects → network kind (the D3 proof); hook honestly thin; keys
+byte-identical to template; generator --dry-run confirms the scaffold
+paths; mutation-cache GC workaround sound; no duplicate-order machinery
+client-side. No blocking or major findings.
+Findings: T04-R1 minor (worklog — Lead action, this entry), T04-R2 minor
+(userMessage not asserted in mapping table), T04-R3 minor (auth kind row).
+Remediation: same-implementer resume — all rows now assert exact
+userMessage pass-through (no-re-wrap contract has teeth); PGRST301 → auth
+row added. 10 → 11 tests.
+
+DIFF
+features/checkout/api/submit-order.ts (new)
+features/checkout/api/submit-order.test.ts (new)
+features/checkout/queries/use-submit-order-mutation.ts (new)
+features/checkout/queries/use-submit-order-mutation.test.tsx (new)
+features/checkout/queries/keys.ts (new, generated untouched)
+Nothing outside the task's allowed scope.
+
+GATE: PASS
