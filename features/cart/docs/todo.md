@@ -15,9 +15,9 @@ The single answer to "where are we?". Update it whenever any of it changes; it
 is the first thing the next agent reads.
 
 ```
-Current round     : done (post-merge pre-Checkout hardening complete)
+Current round     : done (post-merge pre-Checkout hardening complete — HARDENING GATE: PASS)
 Current task      : —
-Last gate         : HARDENING GATE — 4/4 task gates, 2/2 round gates, final review SHIP-READY (0/0/3), quality audit CLEAN-WITH-OBSERVATIONS (all observations closed), exact-final-head CI green
+Last gate         : HARDENING GATE: PASS at final HEAD eb5a0d7 — PR #11 merged (6161a4c); branch from exact post-merge develop; 4/4 task gates; 2/2 round gates; 0 unresolved blocking/major; full pnpm verify 0 (54/556); export:web 0; live hosted journey PASS (zero DialogContent warnings, sign-out/re-auth non-resurrection); fresh final review SHIP-READY (0/0/3 dispositioned); quality audit CLEAN-WITH-OBSERVATIONS (all closed); exact-final-head CI green; protected PRs untouched by this assignment; PR #12 DRAFT/unmerged targeting develop; ZERO Checkout implementation
 Next legal action : human review/merge decision on PR #12 (fix/cart-pre-checkout-hardening → develop, DRAFT, unmerged) — https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/12
 Blocked by        : —
 ```
