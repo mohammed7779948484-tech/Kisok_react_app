@@ -217,6 +217,17 @@ has one platform prerequisite and two distribution prerequisites:
   MDM server remains the authority** on the `versionCode` increase.
   [manageengine.com/mobile-device-management/api/apps/, revalidated
   2026-09-03]
+- **Bump BOTH version fields in `app.config.ts` for the next release.** This
+  repository's `android.versionCode` is currently unset, so every build
+  defaults to `versionCode` 1 (Expo's own defaulting — the workflows derive
+  and verify exactly this). Shipping the next release bumps BOTH `version`
+  AND `android.versionCode`. Mind the asymmetry: the tool's pre-check
+  compares the versionName string, while the server enforces the ANDROID
+  `versionCode` increase — an operator who bumps only `version` passes the
+  pre-check and then fails at the server (fail-closed, a named error,
+  nothing distributed). The FIRST update therefore requires setting
+  `android.versionCode` — 2 or higher — in `app.config.ts` before the next
+  release build.
 - **The release signature must NEVER change.** Every release of
   `com.kisok.kiosk` must be signed with the same upload key (the four
   `ANDROID_KEYSTORE_*` / `ANDROID_KEY_*` signing secrets, Section 7a). A
@@ -384,6 +395,20 @@ Android release workflow is the only builder.
   incoming version is not a dispatch input — the workflow feeds the tool
   the `versionName` it derived from the app config and re-verified against
   the APK, so a dispatcher cannot lie to the monotonic pre-check.
+- **If an upload run fails mid-flight.** The mutations run in a fixed order:
+  the Beta label POST (`POST /api/v1/mdm/labels`) → the two-phase file
+  upload (`POST /emsapi/files`) → add-version on the Beta label (or app
+  create, first upload) → the group association with `silent_install`. A
+  run that fails between add-version and the association leaves the new
+  version on the Beta label but not distributed to the group. Re-dispatching
+  with the same inputs is the SAFE move: the app-list read now sees the
+  version the failed run already added, and the monotonic pre-check refuses
+  the same-version re-run BEFORE any new mutation (fail-closed, a named
+  error, nothing new written). Complete the release one of two ways: finish
+  the association in the ManageEngine console (distribute the Beta-labelled
+  app to the non-production group with silent install), or fix forward — a
+  new build with a higher `android.versionCode` (Section 6; no downgrade
+  exists, so there is no "re-send the old version" path).
 - **Dry-run is read-only:** the OAuth token exchange, read-only GETs (the
   paginated app list, the group list) and the version pre-check. No
   mutation, no APK read, nothing written to the tenant.

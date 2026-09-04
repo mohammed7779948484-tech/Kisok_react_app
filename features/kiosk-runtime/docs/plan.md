@@ -282,11 +282,13 @@ lockTaskPermitted === true`; everything else (missing key, invalid value,
 11. **Workflows are manual-trigger only.** `android-release.yml` and
     `mdm-beta-upload.yml` are `workflow_dispatch`-only (dispatch requires
     write access; no push/PR trigger can ever reach signing or MDM secrets).
-    `permissions: contents: read`, `persist-credentials: false`,
+    `permissions: contents: read` (plus `actions: read` on the MDM upload
+    workflow, which downloads the prior run's artifact through the Actions
+    API — minimal sufficient, documented in-file), `persist-credentials: false`,
     release-scoped concurrency, Node 24 (native TS execution for the tools;
     verified locally). Production deployment automation is explicitly absent
     and gated behind documented activation prerequisites in
-    `docs/mdm-operations.md`. (AC-07/AC-09/AC-10)
+    the feature's `docs/mdm-operations.md`. (AC-07/AC-09/AC-10)
 12. **`main` branch remains untouched; PR targets `develop`.** No integration
     branch edits; the draft PR lifecycle begins when push credentials are
     provided (external dependency — see Verification).

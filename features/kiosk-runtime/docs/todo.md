@@ -12,11 +12,11 @@ defeats its only purpose.
 ## Current checkpoint
 
 ```
-Current round     : 3
-Current task      : — (Round 3 Gate in progress)
-Current stage     : round checks
-Last gate         : T13 GATE: PASS (recovered, fresh evidence; gate commit pushed)
-Next legal action : Round 3 Gate (subsystem verification + accumulated-diff review with a fresh round code-reviewer), then develop integration check → final verification
+Current round     : 3 (complete)
+Current task      : —
+Current stage     : develop integration check
+Last gate         : ROUND 3 GATE: PASS
+Next legal action : git fetch origin; compare against current origin/develop (integrate if advanced); final verification (pnpm verify + runtime + CI on final HEAD); fresh full code review; quality audit; Feature Gate
 
 Blocked by        : — (push credentials provided by the user; branch pushed and Draft PR #9 open — see Blocked below for what stays external)
 ```
@@ -235,7 +235,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Allowed file scope**: `features/kiosk-runtime/docs/mdm-operations.md`
 - **Focused verification**: `pnpm verify` green (check:docs); content review against the research packets (enrollment, kiosk profile, app config, silent install, updates/rollback, recovery, beta path, activation prerequisites, unverified list); MUST also cover the android-release dispatch contract per T10-F02 — who may dispatch, that the human must create the four ANDROID*KEYSTORE*\* repository Actions secrets first (naming names, never values), that `workflow_dispatch` only lists/needs the workflow file on the default branch before the first dispatch, and that the MDM upload workflow downloads the `kisok-release-apk` artifact by name + run id within its 30-day retention window
 
-Round gates: Round 1 `PASS` · Round 2 `PASS` · Round 3 `PENDING`
+Round gates: Round 1 `PASS` · Round 2 `PASS` · Round 3 `PASS` (recovered; fresh round review, agent-95fd66ea; R3-1/R3-2/R3-3 fixed)
 
 ## Feature gate
 

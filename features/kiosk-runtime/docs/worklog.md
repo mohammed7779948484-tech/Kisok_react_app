@@ -1609,3 +1609,71 @@ dates; style compliance (check:docs patterns, feature-local references);
 scope discipline.
 
 GATE: PASS
+
+## Round 3 — GATE (RECOVERY — fresh evidence)
+
+ROUND SCOPE: signed release delivery — T08–T13 (accumulated diff
+57f08c3..HEAD: 7 commits, 14 files, ~6300 insertions; T08/T09 durable
+from the previous session, T10–T13 recovered in this session with fresh
+evidence and fresh task reviews).
+
+LEAD ROUND CHECKS
+$ pnpm verify → exit 0 (31 suites / 391 tests; check:docs 64 files;
+check:ci-scripts 5 workflows; generator smoke)
+Cross-task contract validation (Lead): T08 plugin MYAPP*UPLOAD*_ env ↔
+T10 prebuild step (names match; STORE_FILE=kisok-upload.keystore ↔
+android/app/ decode path); T08 _.keystore ignore ↔ decode path
+(double-covered, git check-ignore); T09 CLI flags + success line ↔ BOTH
+workflows' verify steps; T10 artifact name/retention ↔ T12 download
+(name + run-id + 30-day window); T11 flag/env surface ↔ T12 invocation;
+T01 restriction keys ↔ T13 doc §4; one consistent secret-name set
+across brief/workflows/tools/doc; the full chain
+secrets→signed build→T09 verify→artifact→human inspection→re-verify→
+Beta-only non-production-only dry-run-default upload→documented
+operations.
+
+ROUND REVIEW (fresh code-reviewer, agent-95fd66ea — round scope, did not
+watch any implementation)
+Verdict: PASS with 3 minor findings. All cross-task seams examined and
+found clean: env names, ignore coverage + e2e inertness (byte-identity
+control), CLI/success-line/live-gate semantics in both workflows
+(shell: bash gives -e -o pipefail — both the node exit code AND the grep
+are live gates), a config bump between build and upload fails the T12
+re-verify (no silent drift), artifact layout/digest/permissions,
+flag surface + conditional optionals + no label-name dispatch surface +
+--app-version from the re-verified identity (dispatcher cannot lie to
+the pre-check), restriction keys/clamp/never-rendered pins, secret-name
+census, zero production operations (grep), convention consistency,
+round coherence (the 2026-09-03 plan amendment matches the T11
+implementation clause-for-clause; the two workflows' shared steps
+byte-identical by extraction; no file outside the plan's expected-change
+list; no lock-task code). Re-verified every prior task finding's
+"fixed" claim factually accurate at HEAD. Residual noted for the record
+(not a finding): the non-debug cert check does not pin the upload-key
+fingerprint — AC-08/decision 9 promise only "non-debug"; a wrong-but-
+valid non-debug keystore secret would pass verify (a secrets-management
+risk the pipeline was not promised to catch).
+R3-1 minor: the doc never tells the operator the repo's versionCode
+comes from app.config.ts (unset → every build defaults to 1) while the
+server enforces the versionCode increase — the second-release procedure
+was incomplete at the exact field the server checks → FIXED (T13
+implementer resumed): §6 now has "Bump BOTH version fields in
+app.config.ts for the next release" (version AND android.versionCode;
+the tool-vs-server asymmetry; the first update requires setting
+android.versionCode to 2+).
+R3-2 minor: mid-flight failure recovery undocumented → FIXED (T13
+implementer resumed): §7d "If an upload run fails mid-flight" — the
+mutation order, the guaranteed-safe same-version retry refusal BEFORE
+any new mutation, and the two completion paths (console-side
+association or fix-forward; no downgrade).
+R3-3 minor: plan design decision 11 still literally said
+`permissions: contents: read` for both workflows while the MDM upload
+workflow carries + actions: read (required by its cross-run download,
+documented in-file) → FIXED (Lead): decision 11 reconciled with the
+shipped workflow (one clause) and the mdm-operations.md reference made
+feature-local.
+
+ROUND CHECKS (after remediation)
+$ pnpm verify → exit 0 (31 suites / 391 tests unchanged)
+
+ROUND GATE: PASS
