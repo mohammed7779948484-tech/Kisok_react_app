@@ -1475,3 +1475,12 @@ The complete checklist disposition (worked in todo.md):
   with the CI link; the branch is pushed and up to date
 
 FEATURE GATE: PASS → HUMAN_HANDOFF (an agent never merges).
+
+### FINAL_HEAD confirmation
+
+The gate-record commit cd2942c (docs-only) re-triggered CI:
+**SUCCESS on the exact final HEAD cd2942c75de8f9cd77078186285877e35a0bb401**
+(the CI workflow + its Verify/Web-bundle/Expo-Doctor jobs; Android/Maestro
+label-gated). FINAL_HEAD = cd2942c; all final evidence corresponds to it
+(the code-identical 6721600 CI run 33880375499 remains the
+code-bearing-head evidence; the docs-only delta cannot change it).
