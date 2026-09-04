@@ -13,8 +13,8 @@ defeats its only purpose.
 
 ```
 Current round     : 5 — post-review remediation (R5-01…R5-13)
-Current task      : T21 (next to start — plan READY, research gate complete)
-Current stage     : PLAN READY (Round 5 amendment + Lead Planning Review PASS 2026-09-04) → remediation task loop T21–T29
+Current task      : T22 (next) — T21 PASS (incl. T21-R1 epoch-guard remediation, re-reviewed 0 blocking / 0 major)
+Current stage     : remediation task loop — T21 done (911 tests green); T22 next
 Last gate         : FEATURE GATE REOPENED (Round 5) — the Round 4 PASS at 527a7e6 is historical; see review.md Round 5 sections
 Next legal action : launch the T21 fresh feature-implementer (bounded packet per plan Round 5 tasks)
 

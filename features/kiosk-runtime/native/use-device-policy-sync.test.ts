@@ -2,23 +2,37 @@ import { resetLogging, setLogSink, type LogRecord } from "@/core/logging";
 import { act, renderHook } from "@/core/testing";
 import { AppState, type AppStateStatus } from "react-native";
 
+import { resolveRootTarget } from "../model/root-guard";
 import { useDevicePolicyStore } from "../state/device-policy-store";
-import { readDevicePolicySnapshot, subscribeToRestrictionsChanges } from "./policy-source";
+import {
+  isPolicyModuleAbsenceExpected,
+  readDevicePolicySnapshot,
+  subscribeToRestrictionsChanges,
+} from "./policy-source";
 import { useDevicePolicySync } from "./use-device-policy-sync";
 
 /**
  * AC-02 / AC-05 — the sync hook that binds the policy source to the store.
  *
  * Mock boundaries (the plan's test strategy):
- * - `./policy-source` is mocked: controllable read results and a captured
- *   restrictions subscription. The hook must not know the native module
- *   exists.
+ * - `./policy-source` is mocked: controllable read results, the module-
+ *   absence platform answer (RD5-01), and a captured restrictions
+ *   subscription. The hook must not know the native module exists. The
+ *   platform answer defaults to EXPECTED absence — jest-expo runs this
+ *   suite as iOS, a non-Android platform; android rows flip it to false.
  * - `AppState.addEventListener` is SPIED (not module-mocked): the hook must
  *   use the real subscription-returning API, and the spy hands tests a fake
  *   subscription whose handler they invoke manually.
  * - The store is REAL (the singleton, reset via setState between tests):
  *   what is asserted is store behaviour — derived policy, session locking —
  *   not mock bookkeeping.
+ *
+ * RD5-01/RD5-02 rows: the startup-target assertions compose the REAL store
+ * state the hook leaves behind with the pure `resolveRootTarget` table (the
+ * same resolver `useRootTarget` consumes) — AC-03's amended UNRESOLVED
+ * window, checked end-to-end without mounting routing. T21-R1 rows pin the
+ * epoch guard: a read superseded mid-flight by a restrictions event is
+ * discarded so it can never resurrect the verdict the event destroyed.
  *
  * The hook logs one error when a read rejects, by design, so the suite
  * installs a capturing (and therefore silent) log sink — zero console
@@ -27,10 +41,12 @@ import { useDevicePolicySync } from "./use-device-policy-sync";
 jest.mock("./policy-source", () => ({
   readDevicePolicySnapshot: jest.fn(),
   subscribeToRestrictionsChanges: jest.fn(),
+  isPolicyModuleAbsenceExpected: jest.fn(),
 }));
 
 const readMock = readDevicePolicySnapshot as unknown as jest.Mock;
 const subscribeMock = subscribeToRestrictionsChanges as unknown as jest.Mock;
+const moduleAbsenceExpectedMock = isPolicyModuleAbsenceExpected as unknown as jest.Mock;
 
 /** One AppState subscription the hook registered, plus its fake subscription. */
 type AppStateCapture = {
@@ -49,6 +65,7 @@ let appStateCaptures: AppStateCapture[];
 let restrictionsCaptures: RestrictionsCapture[];
 let applySnapshotSpy: jest.SpyInstance;
 let clearMaintenanceSpy: jest.SpyInstance;
+let markModuleAbsentSpy: jest.SpyInstance;
 
 const KIOSK_CODE = "4481";
 const LOCKED_SESSION = { unlocked: false, expiresAt: null };
@@ -95,6 +112,10 @@ beforeEach(() => {
   // not queued implementations.
   readMock.mockReset();
   readMock.mockResolvedValue(null);
+  // Default platform answer: module absence EXPECTED — jest-expo runs this
+  // suite as iOS (non-Android; RD5-01). Android rows override to false.
+  moduleAbsenceExpectedMock.mockReset();
+  moduleAbsenceExpectedMock.mockReturnValue(true);
   subscribeMock.mockImplementation((listener: () => void) => {
     const unsubscribe = jest.fn();
     restrictionsCaptures.push({ listener, unsubscribe });
@@ -111,6 +132,7 @@ beforeEach(() => {
   });
   applySnapshotSpy = jest.spyOn(useDevicePolicyStore.getState(), "applySnapshot");
   clearMaintenanceSpy = jest.spyOn(useDevicePolicyStore.getState(), "clearMaintenance");
+  markModuleAbsentSpy = jest.spyOn(useDevicePolicyStore.getState(), "markModuleAbsent");
 
   logRecords.length = 0;
   setLogSink((record) => {
@@ -154,6 +176,15 @@ function pendingRead() {
     resolve = res;
   });
   return { promise, resolve };
+}
+
+/** A read the test controls: it stays pending until the test REJECTS it. */
+function rejectableRead() {
+  let rejectRead!: (reason?: unknown) => void;
+  const promise = new Promise<ControlledSnapshot>((_, rej) => {
+    rejectRead = rej;
+  });
+  return { promise, rejectRead };
 }
 
 describe("mount", () => {
@@ -240,6 +271,235 @@ describe("restrictions changes", () => {
   });
 });
 
+describe("restrictions-change event invalidation (RD5-02)", () => {
+  it("invalidates a resolved STANDARD verdict and clears the session SYNCHRONOUSLY — before the re-read resolves", async () => {
+    readMock.mockResolvedValueOnce(standardSnapshot());
+
+    await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+    expect(useDevicePolicyStore.getState().policy.role).toBe("standard");
+
+    // The post-event re-read stays pending: every assertion below holds
+    // while it is still in flight.
+    const reRead = pendingRead();
+    readMock.mockReturnValue(reRead.promise);
+
+    fireRestrictionsChanged();
+
+    // SYNCHRONOUS — no await of any kind between the event and these
+    // assertions. The event means the restrictions CHANGED (the system
+    // broadcasts AFTER persisting the new state), so the old permissive
+    // verdict is evidence about a superseded world: pending NOW, not after
+    // the async re-read.
+    expect(readMock).toHaveBeenCalledTimes(2);
+    expect(applySnapshotSpy).toHaveBeenCalledTimes(1);
+    expect(useDevicePolicyStore.getState().readiness).toBe("pending");
+    expect(useDevicePolicyStore.getState().maintenance).toEqual(LOCKED_SESSION);
+
+    reRead.resolve(standardSnapshot());
+    await flushRefresh();
+    await flushRefresh();
+    expect(applySnapshotSpy).toHaveBeenCalledTimes(2);
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+  });
+
+  it("keeps readiness PENDING when the post-event re-read rejects — the event destroyed the stale verdict, and a failed read cannot resurrect it", async () => {
+    readMock.mockResolvedValueOnce(standardSnapshot());
+
+    await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+
+    readMock.mockRejectedValueOnce(new Error("native read failed"));
+    fireRestrictionsChanged();
+    await flushRefresh();
+    await flushRefresh();
+
+    expect(readMock).toHaveBeenCalledTimes(2);
+    expect(useDevicePolicyStore.getState().readiness).toBe("pending");
+    expect(useDevicePolicyStore.getState().policy.role).toBe("standard");
+    // Exactly one payload-free error for the failed read (the existing
+    // logging contract, unchanged).
+    const errors = logRecords.filter((record) => record.level === "error");
+    expect(errors).toHaveLength(1);
+  });
+
+  it("resolves with the NEW policy when the post-event re-read lands a valid snapshot", async () => {
+    readMock.mockResolvedValueOnce(standardSnapshot()).mockResolvedValueOnce(kioskSnapshot());
+
+    await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+    expect(useDevicePolicyStore.getState().policy.role).toBe("standard");
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+
+    fireRestrictionsChanged();
+    await flushRefresh();
+
+    expect(applySnapshotSpy).toHaveBeenCalledTimes(2);
+    expect(applySnapshotSpy).toHaveBeenLastCalledWith(kioskSnapshot());
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+    expect(useDevicePolicyStore.getState().policy.role).toBe("customer-kiosk");
+  });
+
+  it("NEVER reverts a kiosk role on the event but ALWAYS clears its maintenance session synchronously; a failed post-event re-read must not demote it either", async () => {
+    readMock.mockResolvedValueOnce(kioskSnapshot());
+
+    await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+    expect(useDevicePolicyStore.getState().tryUnlock(KIOSK_CODE)).toBe(true);
+    expect(useDevicePolicyStore.getState().isMaintenanceUnlocked()).toBe(true);
+
+    readMock.mockRejectedValueOnce(new Error("native read failed"));
+    fireRestrictionsChanged();
+
+    // Synchronous, re-read not yet processed: the role and the verdict are
+    // untouched (kiosk rows are not readiness-gated — RD5-02c), while the
+    // maintenance session is already cleared (RD5-02b).
+    expect(useDevicePolicyStore.getState().policy.role).toBe("customer-kiosk");
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+    expect(useDevicePolicyStore.getState().maintenance).toEqual(LOCKED_SESSION);
+
+    await flushRefresh();
+    await flushRefresh();
+
+    // The failed re-read must not demote the kiosk either — last-known-good
+    // survives for the customer experience (availability), while the
+    // session stays cleared (protection).
+    expect(readMock).toHaveBeenCalledTimes(2);
+    expect(useDevicePolicyStore.getState().policy.role).toBe("customer-kiosk");
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+    expect(useDevicePolicyStore.getState().maintenance).toEqual(LOCKED_SESSION);
+  });
+});
+
+describe("event supersession of an in-flight read (T21-R1 — the epoch guard)", () => {
+  it("discards a stale in-flight read's PRE-CHANGE snapshot when the event lands mid-read, and a failed post-event re-read still leaves no stale permissive verdict", async () => {
+    // The reviewer's repro (T21-R1): cold read resolves standard → a re-read
+    // is dispatched (AppState-active) and held pending → the restrictions
+    // event fires during it (synchronous invalidation + a queued re-run) →
+    // the STALE read resolves with the PRE-change snapshot → without the
+    // epoch guard, that apply re-resolves the permissive verdict, and the
+    // queued re-run's rejection leaves it standing: resolved/standard.
+    readMock.mockResolvedValueOnce(standardSnapshot());
+
+    await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+
+    const staleRead = pendingRead();
+    readMock.mockReturnValue(staleRead.promise);
+    fireAppStateChange("active");
+    expect(readMock).toHaveBeenCalledTimes(2);
+
+    // The queued post-event re-run (read #3) rejects — the current, not the
+    // superseded, read fails.
+    readMock.mockRejectedValueOnce(new Error("native read failed"));
+
+    fireRestrictionsChanged();
+
+    // Synchronous invalidation (RD5-02): the event destroyed the stale
+    // permissive verdict and the re-read was re-entrantly queued.
+    expect(useDevicePolicyStore.getState().readiness).toBe("pending");
+
+    // The stale read now resolves with the PRE-change (standard) snapshot.
+    staleRead.resolve(standardSnapshot());
+    await flushRefresh();
+    await flushRefresh();
+
+    // The stale apply is DISCARDED: the cold read stays the only apply, and
+    // the verdict the event destroyed is not resurrected by pre-change
+    // evidence. The queued re-run rejected — a CURRENT failure, logged once
+    // — and readiness stays pending: the exact end state RD5-02(a) exists
+    // to guarantee, which the pre-guard code violated (resolved/standard).
+    expect(readMock).toHaveBeenCalledTimes(3);
+    expect(useDevicePolicyStore.getState().readiness).toBe("pending");
+    expect(useDevicePolicyStore.getState().policy.role).toBe("standard");
+    expect(applySnapshotSpy).toHaveBeenCalledTimes(1);
+    expect(applySnapshotSpy).toHaveBeenCalledWith(standardSnapshot());
+    const errors = logRecords.filter((record) => record.level === "error");
+    expect(errors).toHaveLength(1);
+  });
+
+  it("discards the stale in-flight snapshot but resolves with the POST-change snapshot once the queued re-read lands it — the discard loses nothing", async () => {
+    readMock.mockResolvedValueOnce(standardSnapshot());
+
+    await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+    expect(useDevicePolicyStore.getState().policy.role).toBe("standard");
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+
+    const staleRead = pendingRead();
+    readMock.mockReturnValue(staleRead.promise);
+    fireAppStateChange("active");
+    expect(readMock).toHaveBeenCalledTimes(2);
+
+    // The queued post-event re-run (read #3) lands the POST-change state.
+    readMock.mockResolvedValueOnce(kioskSnapshot());
+
+    fireRestrictionsChanged();
+    expect(useDevicePolicyStore.getState().readiness).toBe("pending");
+
+    staleRead.resolve(standardSnapshot());
+    await flushRefresh();
+    await flushRefresh();
+
+    // Exactly two applies: the cold read's standard and the queued re-run's
+    // kiosk. The stale standard apply never happened — and the fresh
+    // post-change evidence still resolves the verdict (no data loss from
+    // the discard: the re-run is guaranteed by the re-entrant guard).
+    expect(readMock).toHaveBeenCalledTimes(3);
+    expect(applySnapshotSpy).toHaveBeenCalledTimes(2);
+    expect(applySnapshotSpy).toHaveBeenNthCalledWith(1, standardSnapshot());
+    expect(applySnapshotSpy).toHaveBeenNthCalledWith(2, kioskSnapshot());
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+    expect(useDevicePolicyStore.getState().policy.role).toBe("customer-kiosk");
+  });
+
+  it("an event-superseded read that REJECTS logs nothing and leaves the queued re-run in charge", async () => {
+    readMock.mockResolvedValueOnce(standardSnapshot());
+
+    await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+
+    // Read #2 is dispatched (AppState-active) and held pending.
+    const staleRead = rejectableRead();
+    readMock.mockReturnValue(staleRead.promise);
+    fireAppStateChange("active");
+    expect(readMock).toHaveBeenCalledTimes(2);
+
+    // The queued post-event re-run (read #3) lands the POST-change snapshot.
+    readMock.mockResolvedValueOnce(kioskSnapshot());
+
+    fireRestrictionsChanged();
+    expect(useDevicePolicyStore.getState().readiness).toBe("pending");
+
+    // The superseded read now REJECTS: its outcome is irrelevant — the
+    // event already invalidated the verdict and a fresh read is already
+    // queued — so the epoch guard discards it SILENTLY.
+    staleRead.rejectRead(new Error("native read failed"));
+    await flushRefresh();
+    await flushRefresh();
+
+    // ZERO error-log records: the superseded rejection is not even logged
+    // (a noise-free discard — a real current failure is still logged by the
+    // rows above). And exactly two applies: the cold read's standard
+    // snapshot and the queued re-run's post-change kiosk snapshot — the
+    // guard did not swallow the recovery, readiness resolves with the NEW
+    // policy.
+    expect(readMock).toHaveBeenCalledTimes(3);
+    const errors = logRecords.filter((record) => record.level === "error");
+    expect(errors).toHaveLength(0);
+    expect(applySnapshotSpy).toHaveBeenCalledTimes(2);
+    expect(applySnapshotSpy).toHaveBeenNthCalledWith(1, standardSnapshot());
+    expect(applySnapshotSpy).toHaveBeenNthCalledWith(2, kioskSnapshot());
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+    expect(useDevicePolicyStore.getState().policy.role).toBe("customer-kiosk");
+  });
+});
+
 describe("AppState", () => {
   it("re-reads when the app becomes active", async () => {
     // First read: the web/test fallback (null, nothing applied).
@@ -311,7 +571,8 @@ describe("unmount", () => {
 });
 
 describe("readiness transitions (RD-01)", () => {
-  it("resolves readiness when the source resolves null — the module is absent, so the standard default IS the platform verdict (web/jest never hold)", async () => {
+  it("resolves readiness when module absence is EXPECTED on the platform (non-Android: web / jest / ios) — markModuleAbsent, never a startup hang", async () => {
+    moduleAbsenceExpectedMock.mockReturnValue(true);
     readMock.mockResolvedValue(null);
 
     await renderHook(() => useDevicePolicySync());
@@ -319,11 +580,68 @@ describe("readiness transitions (RD-01)", () => {
 
     expect(readMock).toHaveBeenCalledTimes(1);
     expect(applySnapshotSpy).not.toHaveBeenCalled();
+    expect(markModuleAbsentSpy).toHaveBeenCalledTimes(1);
     expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
     expect(useDevicePolicyStore.getState().policy).toEqual({
       role: "standard",
       maintenance: { code: null, timeoutSeconds: 90 },
     });
+    // AC-04, pinned from the store state the hook produced: a resolved
+    // standard verdict routes a ready preparation session exactly as today.
+    expect(
+      resolveRootTarget(
+        "ready",
+        "preparation",
+        useDevicePolicyStore.getState().policy.role,
+        useDevicePolicyStore.getState().readiness,
+      ),
+    ).toBe("preparation");
+  });
+
+  it("HOLDS readiness pending when the module is UNEXPECTEDLY absent on ANDROID (RD5-01) — markModuleAbsent is NOT called and a ready+preparation auth renders the startup target", async () => {
+    moduleAbsenceExpectedMock.mockReturnValue(false);
+    readMock.mockResolvedValue(null);
+
+    await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+    await flushRefresh();
+
+    expect(readMock).toHaveBeenCalledTimes(1);
+    expect(applySnapshotSpy).not.toHaveBeenCalled();
+    expect(markModuleAbsentSpy).not.toHaveBeenCalled();
+    expect(useDevicePolicyStore.getState().readiness).toBe("pending");
+    expect(useDevicePolicyStore.getState().policy).toEqual({
+      role: "standard",
+      maintenance: { code: null, timeoutSeconds: 90 },
+    });
+    // The amended AC-03 row, composed from the store state the hook leaves
+    // behind: UNRESOLVED (module unexpectedly absent on Android) ⇒ startup
+    // hold — Preparation can never mount on a broken Android build.
+    expect(
+      resolveRootTarget(
+        "ready",
+        "preparation",
+        useDevicePolicyStore.getState().policy.role,
+        useDevicePolicyStore.getState().readiness,
+      ),
+    ).toBe("startup");
+
+    // The hold is stable, not one-shot: a foreground return re-reads, the
+    // module is STILL absent, and the device still must not resolve.
+    fireAppStateChange("active");
+    await flushRefresh();
+    await flushRefresh();
+    expect(readMock).toHaveBeenCalledTimes(2);
+    expect(markModuleAbsentSpy).not.toHaveBeenCalled();
+    expect(useDevicePolicyStore.getState().readiness).toBe("pending");
+    expect(
+      resolveRootTarget(
+        "ready",
+        "preparation",
+        useDevicePolicyStore.getState().policy.role,
+        useDevicePolicyStore.getState().readiness,
+      ),
+    ).toBe("startup");
   });
 
   it("holds readiness pending while the first read is deferred, and resolves it when the snapshot lands", async () => {
@@ -361,7 +679,7 @@ describe("readiness transitions (RD-01)", () => {
     });
   });
 
-  it("leaves readiness unchanged when a read fails AFTER a snapshot resolved it — last-known-good includes the verdict", async () => {
+  it("leaves readiness unchanged when an AppState-ACTIVE re-read fails after a snapshot resolved it — last-known-good includes the verdict (the NON-event trigger; RD5-02 split)", async () => {
     readMock
       .mockResolvedValueOnce(standardSnapshot())
       .mockRejectedValueOnce(new Error("native read failed"));
@@ -371,7 +689,10 @@ describe("readiness transitions (RD-01)", () => {
     expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
 
     // A foreground return re-reads, and this time the read fails: neither
-    // the policy nor the readiness verdict may move (no evidence either way).
+    // the policy nor the readiness verdict may move (no evidence either
+    // way). This is the AppState-triggered half of the RD5-02 split: only
+    // the restrictions-change EVENT destroys a stale verdict — a plain
+    // re-read failure never does.
     fireAppStateChange("active");
     await flushRefresh();
     await flushRefresh();
@@ -384,7 +705,7 @@ describe("readiness transitions (RD-01)", () => {
 });
 
 describe("concurrent reads", () => {
-  it("collapses a burst of events during a pending read into exactly one follow-up read, applied in order", async () => {
+  it("collapses a burst of events during a pending read into exactly one follow-up read, discarding the superseded pre-event apply (T21-R1)", async () => {
     const firstRead = pendingRead();
     readMock.mockReturnValue(firstRead.promise);
 
@@ -407,11 +728,14 @@ describe("concurrent reads", () => {
     await flushRefresh();
 
     // The burst collapsed into ONE follow-up: two reads total, not three.
-    // A dropped-last-event bug would leave the stale kiosk policy in place.
+    // The restrictions event superseded the first read mid-flight, so its
+    // pre-change kiosk snapshot is DISCARDED (T21-R1) — the ONLY apply is
+    // the follow-up read's post-event standard snapshot. A dropped-last-event
+    // bug would leave the stale kiosk policy in place; a stale-apply bug
+    // would re-apply it here.
     expect(readMock).toHaveBeenCalledTimes(2);
-    expect(applySnapshotSpy).toHaveBeenCalledTimes(2);
-    expect(applySnapshotSpy).toHaveBeenNthCalledWith(1, kioskSnapshot());
-    expect(applySnapshotSpy).toHaveBeenNthCalledWith(2, standardSnapshot());
+    expect(applySnapshotSpy).toHaveBeenCalledTimes(1);
+    expect(applySnapshotSpy).toHaveBeenNthCalledWith(1, standardSnapshot());
     expect(useDevicePolicyStore.getState().policy.role).toBe("standard");
 
     // The guard is released afterwards: a later event re-reads normally
@@ -419,7 +743,7 @@ describe("concurrent reads", () => {
     fireAppStateChange("active");
     await flushRefresh();
     expect(readMock).toHaveBeenCalledTimes(3);
-    expect(applySnapshotSpy).toHaveBeenCalledTimes(3);
+    expect(applySnapshotSpy).toHaveBeenCalledTimes(2);
     expect(useDevicePolicyStore.getState().policy.role).toBe("customer-kiosk");
   });
 

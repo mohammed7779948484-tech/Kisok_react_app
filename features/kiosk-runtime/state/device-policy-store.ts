@@ -28,9 +28,16 @@ const log = createLogger("kiosk-runtime.devicePolicy");
  *   hang at the startup hold). A provisional snapshot and a schema-rejected
  *   snapshot hold it `"pending"`; a read REJECTION leaves it untouched (a
  *   failed read carries no evidence — it can neither create nor destroy a
- *   verdict). The verdict lives at the store ROOT, not nested inside
- *   `policy`: it is evidence about the READ, not a property of the derived
- *   policy, and `useRootTarget` consumes it as a second resolver input.
+ *   verdict). The ONE thing that can destroy a stale verdict is the
+ *   restrictions-change EVENT (`onRestrictionsChanged`, RD5-02): the system
+ *   broadcasts it AFTER persisting the new restrictions, so a resolved
+ *   standard verdict is evidence about a superseded world and is invalidated
+ *   synchronously — the EVENT, not a failed read, destroys it. A read
+ *   failure with no event in play (e.g. an AppState-active re-read) still
+ *   keeps last-known-good, verdict included. The verdict lives at the store
+ *   ROOT, not nested inside `policy`: it is evidence about the READ, not a
+ *   property of the derived policy, and `useRootTarget` consumes it as a
+ *   second resolver input.
  * - `maintenance` — the maintenance unlock session. The MDM-managed code and
  *   the unlock state exist in memory only: never persisted, never logged as
  *   values, cleared on timeout, background, and any snapshot application.
@@ -87,6 +94,24 @@ export type DevicePolicyState = {
    * and no session clear. Idempotent.
    */
   markModuleAbsent(): void;
+  /**
+   * Synchronous invalidation on a restrictions-change event (RD5-02 / R5-02).
+   * Called by the sync hook's event listener BEFORE it dispatches the async
+   * re-read — `ACTION_APPLICATION_RESTRICTIONS_CHANGED` is sent AFTER the new
+   * restrictions are persisted, so any existing verdict is evidence about a
+   * superseded world:
+   * (a) a resolved STANDARD verdict becomes `"pending"` — a failed or slow
+   *     post-event re-read then leaves the fail-closed startup hold, never
+   *     a stale permissive verdict;
+   * (b) the maintenance session is ALWAYS cleared — the event invalidated
+   *     the credential basis (the restrictions that carry the code)
+   *     regardless of what the re-read later finds;
+   * (c) a customer-kiosk role is NEVER reverted — kiosk/mismatch routing is
+   *     not readiness-gated, so reverting buys no protection for the
+   *     protected action and costs a running kiosk its availability.
+   * Idempotent, and safe at every readiness/role combination.
+   */
+  onRestrictionsChanged(): void;
   /**
    * Attempt a maintenance unlock. Returns true ONLY when the current policy
    * is a customer kiosk, the derived code is non-null, and `code` equals it.
@@ -168,6 +193,24 @@ export function createDevicePolicyStore() {
 
     markModuleAbsent() {
       set({ readiness: "resolved" });
+    },
+
+    onRestrictionsChanged() {
+      const { readiness, policy } = get();
+
+      // (a) Destroy a stale PERMISSIVE verdict: the event means the
+      // restrictions changed under it (the broadcast follows the persist),
+      // and the async re-read dispatched next may fail or take seconds — the
+      // old verdict must not survive that window. Kiosk rows are exempt
+      // ((c) below): their routing is not readiness-gated.
+      const invalidateVerdict = readiness === "resolved" && policy.role === "standard";
+
+      // (b) The maintenance session clears unconditionally, in the same
+      // atomic transition: the credential basis itself changed.
+      set({
+        ...(invalidateVerdict ? { readiness: "pending" } : {}),
+        maintenance: LOCKED_MAINTENANCE,
+      });
     },
 
     tryUnlock(code: string) {

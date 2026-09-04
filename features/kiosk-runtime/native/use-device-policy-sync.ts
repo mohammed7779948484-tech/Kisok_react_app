@@ -4,7 +4,11 @@ import { AppState, type AppStateStatus } from "react-native";
 import { createLogger } from "@/core/logging";
 
 import { useDevicePolicyStore } from "../state/device-policy-store";
-import { readDevicePolicySnapshot, subscribeToRestrictionsChanges } from "./policy-source";
+import {
+  isPolicyModuleAbsenceExpected,
+  readDevicePolicySnapshot,
+  subscribeToRestrictionsChanges,
+} from "./policy-source";
 
 const log = createLogger("kiosk-runtime.devicePolicySync");
 
@@ -16,8 +20,25 @@ const log = createLogger("kiosk-runtime.devicePolicySync");
  *
  * This hook is also what drives the store's READINESS verdict: a completed
  * snapshot resolves it (inside `applySnapshot`), a null read resolves it via
- * `markModuleAbsent` (web/jest — the standard default IS the platform
- * verdict), and a rejected read leaves it untouched (no evidence).
+ * `markModuleAbsent` ONLY when module absence is EXPECTED on this platform
+ * (RD5-01: non-Android — the standard default IS the platform verdict; on
+ * Android an unexpected module absence is a broken build, so readiness
+ * stays pending and the device holds at the fail-closed startup target),
+ * and a rejected read leaves it untouched (no evidence — the restrictions-
+ * change EVENT is the one exception that destroys a stale verdict, via
+ * `onRestrictionsChanged`, RD5-02).
+ *
+ * T21-R1 (the epoch guard): a read is evidence about the world AS IT WAS
+ * when the read was dispatched. A restrictions-change event that lands
+ * while a read is in flight SUPERSEDES that read — the listener bumps a
+ * closure epoch synchronously, and the in-flight refresh discards its
+ * result entirely (no `applySnapshot`, no `markModuleAbsent`, no log) so a
+ * slow PRE-change snapshot or rejection can never resurrect the permissive
+ * verdict the event just destroyed. The re-entrant guard guarantees exactly
+ * one queued post-event re-run in that situation, which fetches the new
+ * state. AppState re-reads are refresh points, not invalidation signals,
+ * and do NOT bump the epoch: a failure that no event superseded still keeps
+ * last-known-good (RD5-02's non-event rule).
  *
  * Mounted exactly once at the app root (wired into `app/_layout.tsx` in
  * T07). Everything flows through the `policy-source` seam; the store owns
@@ -41,6 +62,10 @@ export function useDevicePolicySync(): void {
     // cannot recurse unboundedly: one burst, one follow-up read.
     let refreshInFlight = false;
     let rerunRequested = false;
+    // T21-R1: bumped synchronously by the restrictions-change listener. A
+    // refresh that captured an older value is a read the event superseded —
+    // see the guard after the await below.
+    let epoch = 0;
 
     const refresh = async (): Promise<void> => {
       if (refreshInFlight) {
@@ -48,25 +73,53 @@ export function useDevicePolicySync(): void {
         return;
       }
       refreshInFlight = true;
+      const myEpoch = epoch;
       try {
         const snapshot = await readDevicePolicySnapshot();
+        if (epoch !== myEpoch) {
+          // A restrictions-change event landed after this read was
+          // dispatched, so the snapshot it returned is PRE-change evidence
+          // about a superseded world. Discard it entirely — no apply, no
+          // markModuleAbsent, nothing: the listener's re-entrant refresh
+          // call already queued exactly one post-event re-run, and that
+          // re-run will fetch the new state.
+          return;
+        }
         if (snapshot !== null) {
           useDevicePolicyStore.getState().applySnapshot(snapshot);
-        } else {
-          // null = no native module (web/jest/non-Android): the store's
-          // fail-closed standard default IS the platform verdict, so the
-          // readiness resolves — those platforms must never hold at the
-          // startup target. Absence is synchronous and is not an error.
+        } else if (isPolicyModuleAbsenceExpected()) {
+          // null + non-Android (web/jest/ios): the module cannot exist there,
+          // so its absence is the platform verdict — the store's fail-closed
+          // standard default resolves readiness; those platforms must never
+          // hold at the startup target. Absence is synchronous and is not an
+          // error.
           useDevicePolicyStore.getState().markModuleAbsent();
         }
+        // null + android: the module is UNEXPECTEDLY absent (RD5-01) — NOT a
+        // verdict. Readiness stays "pending" and the device holds at the
+        // fail-closed startup target. Deliberately nothing else happens
+        // here: absence is not a snapshot application, not a policy change,
+        // and not a failure to log.
       } catch {
         // One error, no payload — the maintenance code travels inside the
         // restrictions, so nothing from a failed read may reach a log. A
         // failed read is not evidence for any role: keep the last-known-good
         // policy AND the last-known readiness verdict — a failed read can
-        // neither create nor destroy a verdict; a queued re-run or the next
+        // neither create nor destroy a verdict; the one exception is a read
+        // failure that follows a restrictions-change EVENT, where the EVENT
+        // (not this failure) already destroyed the stale verdict via
+        // `onRestrictionsChanged` (RD5-02). A queued re-run or the next
         // refresh point retries.
-        log.error("Failed to read the device-policy snapshot; keeping the last-known-good policy");
+        //
+        // T21-R1: a rejection superseded mid-flight by an event is discarded
+        // the same way a superseded snapshot is — it is not evidence about
+        // the current world, so it is not even logged; the queued post-event
+        // re-run is the authoritative retry.
+        if (epoch === myEpoch) {
+          log.error(
+            "Failed to read the device-policy snapshot; keeping the last-known-good policy",
+          );
+        }
       } finally {
         refreshInFlight = false;
         if (rerunRequested) {
@@ -81,7 +134,21 @@ export function useDevicePolicySync(): void {
     // decision 3). Registered BEFORE the initial read is dispatched: the
     // read is async, and a change broadcast landing between its snapshot and
     // this registration would be missed until the next AppState-active.
+    //
+    // The event means the restrictions CHANGED and were already persisted
+    // (the system broadcasts AFTER the write — RD5-02): the old verdict is
+    // evidence about a superseded world. Invalidate it SYNCHRONOUSLY — the
+    // store action runs here in the listener, BEFORE the async re-read below
+    // is dispatched — so a failed or slow re-read can never keep a stale
+    // permissive verdict or an unlocked maintenance session alive.
+    //
+    // T21-R1: bumping the epoch (before the re-read is dispatched) also
+    // supersedes any read already in flight — its PRE-change result will be
+    // discarded by the guard in `refresh`, so it cannot resurrect the
+    // verdict this listener just destroyed.
     const unsubscribeRestrictions = subscribeToRestrictionsChanges(() => {
+      epoch += 1;
+      useDevicePolicyStore.getState().onRestrictionsChanged();
       void refresh();
     });
 

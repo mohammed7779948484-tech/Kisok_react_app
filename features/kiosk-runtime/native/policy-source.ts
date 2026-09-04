@@ -1,3 +1,5 @@
+import { Platform } from "react-native";
+
 import { getKioskPolicyModule, type KioskPolicySnapshotNative } from "@/modules/kiosk-policy";
 
 /**
@@ -22,6 +24,14 @@ import { getKioskPolicyModule, type KioskPolicySnapshotNative } from "@/modules/
  * there, and this source degrades to "no policy available" — a null snapshot
  * the hook turns into "apply nothing", leaving the store's fail-closed
  * standard default in place (AC-02).
+ *
+ * RD5-01 (R5-01): the MEANING of that null is platform-discriminated, and
+ * THIS seam owns the discrimination. `isPolicyModuleAbsenceExpected()` says
+ * whether a missing module is the expected platform verdict (non-Android:
+ * call `markModuleAbsent()` — the standard default IS the platform verdict
+ * there) or an unexpected absence on Android (autolinking miss, broken dev
+ * client, Expo Go, global JSI failure — readiness must stay pending: the
+ * fail-closed startup hold).
  */
 
 /** The native module's snapshot type, under the feature's own name. */
@@ -30,14 +40,36 @@ export type DevicePolicySnapshotNative = KioskPolicySnapshotNative;
 /**
  * Read the current device-policy snapshot from the native module.
  *
- * Resolves null when the module is unavailable (web, jest, non-Android) —
- * platform absence is not an error. A native read failure REJECTS, and the
+ * Resolves null when the module is unavailable — platform absence is not an
+ * error, but it is not automatically a verdict either: the caller must ask
+ * `isPolicyModuleAbsenceExpected()` what a null MEANS on this platform before
+ * resolving readiness (RD5-01). A native read failure REJECTS, and the
  * rejection propagates: this layer has no policy authority.
  */
 export async function readDevicePolicySnapshot(): Promise<DevicePolicySnapshotNative | null> {
   const kioskPolicyModule = getKioskPolicyModule();
   if (kioskPolicyModule === null) return null;
   return kioskPolicyModule.getDevicePolicySnapshot();
+}
+
+/**
+ * Whether a MISSING native policy module is the EXPECTED platform verdict
+ * rather than evidence about a broken Android build (RD5-01 / R5-01).
+ *
+ * The native KioskPolicy module exists only on Android, so on every other
+ * platform (web, jest, ios, …) `getKioskPolicyModule()` returning null is
+ * the normal state of the world: the standard default IS the platform
+ * verdict there, and `markModuleAbsent()` is correct. On Android a kiosk
+ * build MUST carry the module; a null there means an autolinking miss, a
+ * broken dev client, Expo Go, or a global JSI failure — and Expo's
+ * `requireOptionalNativeModule` returns the SAME silent null for every one
+ * of those (no reason code exists), so `Platform.OS` is the only sanctioned
+ * discriminator. The sync hook consumes this answer ONLY on a null read: an
+ * unexpected absence must leave readiness pending (the fail-closed startup
+ * hold), never a permissive verdict.
+ */
+export function isPolicyModuleAbsenceExpected(): boolean {
+  return Platform.OS !== "android";
 }
 
 /**

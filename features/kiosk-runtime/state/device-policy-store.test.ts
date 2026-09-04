@@ -12,6 +12,10 @@ import { createDevicePolicyStore } from "./device-policy-store";
  *   clear that every snapshot triggers (a role change invalidates an unlock);
  * - the maintenance unlock session: right code / wrong code / no code,
  *   expiry, clearing;
+ * - the readiness verdict (RD-01) and its event-driven invalidation
+ *   (RD5-02): a restrictions-change event destroys a stale permissive
+ *   STANDARD verdict synchronously and always clears the maintenance
+ *   session, but never reverts a customer-kiosk role;
  * - the NEGATIVE space — the maintenance code and unlock state live in
  *   memory only: the store never touches `@/core/storage`, and no snapshot
  *   value ever reaches a logger (the maintenance code travels inside the
@@ -331,6 +335,60 @@ describe("readiness verdict (RD-01)", () => {
   });
 });
 
+describe("onRestrictionsChanged — event-driven invalidation (RD5-02)", () => {
+  it("invalidates a resolved STANDARD verdict to pending — the event means the restrictions changed under it", () => {
+    const useStore = createDevicePolicyStore();
+    useStore.getState().applySnapshot(standardSnapshot());
+    expect(useStore.getState().readiness).toBe("resolved");
+
+    useStore.getState().onRestrictionsChanged();
+
+    // The broadcast follows the persist (AOSP write-then-broadcast order),
+    // so a resolved standard verdict is evidence about a superseded world:
+    // destroyed NOW — synchronously, in the sync hook's listener, BEFORE
+    // the async re-read — never by the re-read's own outcome.
+    expect(useStore.getState().readiness).toBe("pending");
+    // Only the verdict is destroyed: the policy itself is not reverted —
+    // the re-read (or its failure) supplies what comes next.
+    expect(useStore.getState().policy.role).toBe("standard");
+    expect(useStore.getState().maintenance).toEqual(LOCKED_SESSION);
+  });
+
+  it("ALWAYS clears the maintenance session, even when the verdict is not invalidated — the credential basis changed regardless of read outcome", () => {
+    const useStore = createDevicePolicyStore();
+    useStore.getState().applySnapshot(kioskSnapshot());
+    expect(useStore.getState().tryUnlock(KIOSK_CODE)).toBe(true);
+    expect(useStore.getState().isMaintenanceUnlocked()).toBe(true);
+
+    useStore.getState().onRestrictionsChanged();
+
+    expect(useStore.getState().maintenance).toEqual(LOCKED_SESSION);
+    expect(useStore.getState().isMaintenanceUnlocked()).toBe(false);
+  });
+
+  it("NEVER reverts a customer-kiosk role or its resolved verdict — kiosk rows are not readiness-gated (RD5-02c)", () => {
+    const useStore = createDevicePolicyStore();
+    useStore.getState().applySnapshot(kioskSnapshot());
+    expect(useStore.getState().readiness).toBe("resolved");
+
+    useStore.getState().onRestrictionsChanged();
+
+    expect(useStore.getState().policy.role).toBe("customer-kiosk");
+    expect(useStore.getState().readiness).toBe("resolved");
+  });
+
+  it("leaves an already-pending verdict pending — nothing to invalidate; the session still clears", () => {
+    const useStore = createDevicePolicyStore();
+    useStore.getState().applySnapshot(provisionalSnapshot());
+    expect(useStore.getState().readiness).toBe("pending");
+
+    useStore.getState().onRestrictionsChanged();
+
+    expect(useStore.getState().readiness).toBe("pending");
+    expect(useStore.getState().maintenance).toEqual(LOCKED_SESSION);
+  });
+});
+
 describe("tryUnlock", () => {
   it("unlocks with the correct code on a kiosk device and sets a future expiry from the derived timeout", () => {
     const useStore = createDevicePolicyStore();
@@ -489,6 +547,7 @@ describe("no persistence (AC-05)", () => {
     useStore.getState().tryUnlock("");
     useStore.getState().isMaintenanceUnlocked(BASE_TIME);
     useStore.getState().clearMaintenance();
+    useStore.getState().onRestrictionsChanged();
 
     expect(storageMock.read).not.toHaveBeenCalled();
     expect(storageMock.write).not.toHaveBeenCalled();

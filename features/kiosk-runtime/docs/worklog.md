@@ -2330,3 +2330,68 @@ reviewer.
 - todo.md: Round 5 status board + refreshed checkpoint.
 - Plan is READY for T21. No implementation started before this point
   (research-before-code rule honored).
+
+### T21 — platform-discriminated module absence + event-driven invalidation (Round 5)
+
+RED (fresh feature-implementer, agent-eae39dc5, behavior-change):
+`pnpm jest features/kiosk-runtime/native/policy-source.test.ts
+features/kiosk-runtime/native/use-device-policy-sync.test.ts
+features/kiosk-runtime/state/device-policy-store.test.ts`
+→ 3 suites failed / 14 tests failed (42 passed): android+null called
+markModuleAbsent (Expected 0 / Received 1 — the permissive resolution);
+synchronous event invalidation Expected "pending" / Received "resolved";
+post-event failed re-read kept resolved; kiosk maintenance session survived
+the event; `isPolicyModuleAbsenceExpected`/`onRestrictionsChanged` not
+functions. Lead independently re-verified RED by stashing the three
+implementation files and re-running the suites (9 failures remain — the RED
+premise is real).
+
+IMPLEMENT: `policy-source.ts` gains `isPolicyModuleAbsenceExpected()`
+(`Platform.OS !== "android"` — the sanctioned discriminator;
+requireOptionalNativeModule's null carries no reason code);
+`device-policy-store.ts` gains `onRestrictionsChanged()` (resolved+standard →
+pending + unconditional maintenance clear, one atomic set; kiosk role never
+touched); `use-device-policy-sync.ts` calls markModuleAbsent ONLY on
+non-Android null (android null ⇒ hold pending, deliberately silent) and
+calls the store action synchronously in the restrictions listener before the
+re-read. Platform.OS mocked by direct assignment (writable property under
+jest-expo; restored in afterEach; mechanism documented in the test file).
+
+REVIEW (fresh code-reviewer, agent-1159215c): 1 MAJOR (T21-R1) — an event
+landing while a read is in flight can be re-defeated by the stale read's own
+resolution (empirical repro: cold standard → re-read held → event
+invalidates → stale pre-change snapshot re-resolves resolved → queued re-read
+rejects → stale permissive verdict stands). 0 blocking.
+
+T21-R1 REMEDIATION (same implementer resumed): epoch/generation guard in the
+hook — `epoch += 1` synchronously in the listener (before the re-read
+dispatch); `refresh()` captures the epoch before the await and DISCARDS the
+result on all paths (apply/markModuleAbsent/log) when superseded; the
+re-entrant queued re-run is guaranteed and captures the new epoch;
+AppState-active does not bump the epoch (retained semantics). RED for the
+remediation rows reproduced the reviewer's repro exactly (Expected
+"pending" / Received "resolved"; apply count Expected 1 / Received 2). The
+burst row was amended (its interleaving IS event-driven — the old
+stale-apply-first expectation WAS the bug; now pins standard-only apply for
+the burst and 2 applies with the trailing AppState re-read). A final pin row
+(superseded-rejection silence: zero error logs; recovery intact) was added
+as delivered-behavior documentation.
+
+RE-REVIEW (NEW fresh code-reviewer, agent-5a5fbfd3): **T21-R1 resolved; 0
+blocking / 0 major / 1 minor** (control-docs recording at gate time — this
+entry). The epoch guard verified airtight (no interleaving point between
+guard-check/apply and finally; multiple events collapse into one re-run
+capturing the latest epoch; post-unmount in-flight apply shape predates T21
+and is unchanged; listener-before-initial-read holds).
+
+GREEN: the three suites 58/58 (+ the final pin row) → hook suite 21 tests;
+`pnpm test:ci` **68 suites / 911 tests PASS** (reopen baseline 894 + 17 new
+rows: 5 policy-source, 8+1+1 hook, 4 store). `pnpm typecheck` exit 0;
+`pnpm lint` 0 issues; `pnpm format:check` clean. Scope: exactly the six
+planned files (Lead-verified via git status/diff --stat; nothing outside
+features/kiosk-runtime).
+
+GATE: PASS (R5-01/R5-01 remediation closed with independently verified RED,
+fresh review, bounded remediation, and a fresh re-review converging 0
+blocking / 0 major). Commit + push attempt follows (push requires the
+human's GitHub token in this restored sandbox — recorded prerequisite).
