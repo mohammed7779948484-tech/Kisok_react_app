@@ -44,9 +44,9 @@ typecheck + lint, and the next fresh-eyes gate is the quality audit below.
 
 ## Accepted risks
 
-Anything deliberately not fixed, with the reason and who decided.
-
-- —
+Anything deliberately not fixed, with the reason and who decided — recorded
+in the "Accepted risks and explicit dispositions" section below (the
+dispositions added at Round 4 and the final review).
 
 ## Quality audit
 
@@ -62,13 +62,33 @@ dispositioned. It returns findings; the Lead records them here.
 | ---------------------------------------------------------- | ------- | ----------------------------------------------- | ---------- |
 | not delivered / not evidenced / not planned / stale record | TODO    | which document said what vs what the diff shows | TODO       |
 
-- Acceptance criteria in `brief.md` all implemented: TODO
-- Every task gate `PASS`, every round gate `PASS`: TODO
-- Worklog carries real command output per task: TODO
-- Shared files touched beyond this feature: TODO (expect none)
-- Definition of Done (`AGENTS.md`) met: TODO
+- Acceptance criteria in `brief.md` all implemented: CLEAN — all 16 ACs
+  mapped to code + tests + (where feasible) runtime evidence; the live
+  gaps honestly dispositioned, never claimed
+- Every task gate `PASS`, every round gate `PASS`: CLEAN — every gate has
+  a worklog block with command output and a fresh-reviewer record; the
+  auditor's own re-runs reproduce the final claims exactly (verify exit
+  0; checkout 14/294; the screenshots' dimensions verified)
+- Worklog carries real command output per task: CLEAN (independent RED
+  reproductions by reviewers at T01/T03/T05/T09/T14; the harness-kill
+  losses honestly labeled)
+- Shared files touched beyond this feature: CLEAN — exactly the plan's
+  expected-changes + the reconciled list; no migrations/RLS/grants; no
+  new dependencies
+- Definition of Done (`AGENTS.md`) met: CLEAN-WITH-OBSERVATIONS — the
+  three stale-record items the audit found (todo's round-ledger line, the
+  DoD count 69/864, the review.md placeholder) were fixed by the Lead at
+  audit time; "text scaling does not clip" has no feature-specific
+  explicit evidence (the repo-wide convention + the browser journey are
+  the implicit coverage) — recorded here as an honest gap, not a claim
 
-Audit result: `PENDING`
+Audit result: `CLEAN-WITH-OBSERVATIONS` — the auditor's three
+stale-record findings (docs-only, none blocking) are dispositioned above
+as fixed; the observations (text-scaling evidence, the T11 expected-files
+wording, the PR-body sync as remote state) are recorded. The full audit
+report is in the session record; its verification runs: verify exit 0,
+69/864, checkout 14/294, screenshots verified, branch pushed and current,
+base unchanged.
 
 - **The sign-out guard's pre-recovery-read window (F-FR-04, accepted)**:
   the guard reads in-memory state; a durable unresolved record from a prior

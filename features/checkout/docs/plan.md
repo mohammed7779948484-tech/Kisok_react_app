@@ -294,19 +294,20 @@ The exact commands, in order, each mapped to the task that uses it. **The Lead
 runs each one immediately before delegating that task** — not all of them up
 front.
 
-| Generator command                                                                      | Task |
-| -------------------------------------------------------------------------------------- | ---- |
-| `pnpm generate schema checkout create-order-response`                                  | T01  |
-| `pnpm generate schema checkout checkout-attempt`                                       | T03  |
-| `pnpm generate mutation checkout submit-order`                                         | T04  |
-| `pnpm generate store checkout attempt`                                                 | T06  |
-| `pnpm generate component checkout order-line-row`                                      | T08  |
-| `pnpm generate screen checkout order-review`                                           | T08  |
-| `pnpm generate screen checkout order-success`                                          | T11  |
-| `pnpm generate component checkout success-countdown --screen=order-success`            | T11  |
-| `pnpm generate component checkout recovery-gate`                                       | T12  |
-| `pnpm generate route checkout checkout --role=customer --screen=order-review`          | T13  |
-| `pnpm generate route checkout checkout-success --role=customer --screen=order-success` | T13  |
+| Generator command                                                                                                                                                                                                            | Task       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| `pnpm generate schema checkout create-order-response`                                                                                                                                                                        | T01        |
+| `pnpm generate schema checkout checkout-attempt`                                                                                                                                                                             | T03        |
+| `pnpm generate mutation checkout submit-order`                                                                                                                                                                               | T04        |
+| `pnpm generate store checkout attempt`                                                                                                                                                                                       | T06        |
+| `pnpm generate component checkout order-line-row`                                                                                                                                                                            | T08        |
+| `pnpm generate screen checkout order-review`                                                                                                                                                                                 | T08        |
+| `pnpm generate screen checkout order-success`                                                                                                                                                                                | T11        |
+| `pnpm generate component checkout success-countdown --screen=order-success`                                                                                                                                                  | T11        |
+| `pnpm generate component checkout recovery-gate`                                                                                                                                                                             | T12        |
+| (promoted, not generated: `components/conflict-row.tsx` — the F-T12-03 review remediation: two real consumers appeared, so the row moved from screen-local copies to the feature level per the design-system ownership rule) | T12 review |
+| `pnpm generate route checkout checkout --role=customer --screen=order-review`                                                                                                                                                | T13        |
+| `pnpm generate route checkout checkout-success --role=customer --screen=order-success`                                                                                                                                       | T13        |
 
 Allowed manual files (with the reason no capability fits):
 

@@ -219,7 +219,9 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Lead scaffold**: `pnpm generate screen checkout order-success` then
   `pnpm generate component checkout success-countdown --screen=order-success`
 - **Expected generated files**: `screens/order-success/order-success-screen.tsx`
-  (+ test), `screens/order-success/components/success-countdown.tsx` (+ test)
+  (+ test), `screens/order-success/components/success-countdown.tsx`
+  (the generator emits no component test — the colocated test is planned
+  manual)
 - **Allowed manual files**: —
 - **Scaffold status**: `READY` (ran by the Lead; SCAFFOLD block in worklog)
 - **Allowed file scope**: `features/checkout/screens/order-success/**`
@@ -306,8 +308,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Scaffold status**: `N/A — integration test, planned in plan.md`
 - **Allowed file scope**: `features/checkout/checkout-journey.test.tsx`
 
-Round 1 gate: `PASS`
-Round 2–4 gates: `PENDING`
+Rounds 1–4 gates: `PASS` (the worklog's ROUND GATE blocks carry the evidence)
 
 ## Feature gate
 

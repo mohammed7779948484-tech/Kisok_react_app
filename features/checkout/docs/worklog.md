@@ -1399,7 +1399,10 @@ transport-level interruption mid-flight on the shared project — covered
 deterministically by the store/journey suites).
 
 Round 4 local DoD: `pnpm verify` exit 0 (typecheck, lint, format:check,
-test:ci 68 suites / 856 tests, check:docs, check:commits, check:e2e-appid,
+test:ci 69 suites / 864 tests at the final
+HEAD 5af6513 (the F-FR-03 self-heal test landed after the earlier
+69/863 round-gate count — the final-review-era counts are accurate for
+their own commits), check:docs, check:commits, check:e2e-appid,
 check:ci-scripts, generate:smoke; db:verify SKIPS honestly — no local
 PostgreSQL; CI runs the real check on the PR).
 
