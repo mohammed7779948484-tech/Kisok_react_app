@@ -2238,3 +2238,28 @@ deliberate future change with its own task. Coverage: all ACs verified
 clean, all remediation closures verified, no regression against T01–T13,
 scope clean (49-file expected list), pins re-resolved, 68/894 re-run by the
 reviewer.
+
+---
+
+## NEW FEATURE GATE — kiosk-runtime remediation complete (2026-09-04)
+
+- **Quality audit (fresh, agent-956ddd2f)**: "the delivery is sound" — no
+  not-delivered / not-planned findings; not-evidenced and stale-record items
+  closed (the FR2 re-review convergence recorded in review.md; the todo
+  checkpoint refreshed; the PR body rewritten at this gate). The auditor
+  independently re-ran: `pnpm verify` exit 0 (68/894), `pnpm test:ci`, the
+  browser standard-path regression, both tools' fail-closed smokes, the
+  static greps, and the GitHub API evidence chain (runs 33857102917 /
+  33857102920 on 7d6702d SUCCESS; the db3a50d cancellations exactly as
+  recorded; PR #9 state). Remediation integrity verified clean: new
+  evidence per commit, T01–T13 preserved as history, no backfilled PASS.
+- **cfc7a10 (docs-only) CI**: CI run 33858954820 SUCCESS; Android build
+  run 33858954741 SUCCESS (completed after the audit's in-progress
+  observation).
+- **Gate checklist**: every line evidence-backed (todo.md "Feature gate
+  (the NEW gate)"). `pnpm verify` re-run green on the gate-commit tree
+  before this commit.
+- **FEATURE GATE: PASS** (the NEW gate) — the prior b71c828 pass remains
+  historical/reopened context in review.md. PR #9 stays DRAFT for the
+  human review; the agent never merges.
+- **Terminal state: HUMAN_HANDOFF.**

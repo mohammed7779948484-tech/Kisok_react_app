@@ -12,18 +12,17 @@ defeats its only purpose.
 ## Current checkpoint
 
 ```
-Current round     : 4 — post-review remediation (T14–T20)
-Current task      : — (final review complete: FR2-01/02 fixed, FR2-03 accepted; fresh re-review next)
-Current stage     : RESEARCH GATE COMPLETE (7/7 packets, Lead spot-checked; IR verdict matrix in review.md); Plan remediation amendment READY after Lead Planning Review. T14 PASS (IR-01); T15 PASS (IR-03/04/05); T16 PASS (R5 drifts); T14–T19 PASS (IR-01/03/04/05/06/08 + R5 drifts + IR-07 hardening).
-Last gate         : (historical) FEATURE GATE: PASS @ b71c828 — REOPENED 2026-09-04; no remediation task gate yet
-Next legal action : Lead: push the FR2-01/02 record fixes (this commit), then launch the FRESH final re-reviewer (new context) to confirm convergence (0 blocking / 0 major), then the fresh quality-auditor, then the NEW Feature Gate checklist.
+Current round     : 4 (complete) — post-review remediation
+Current task      : —
+Current stage     : NEW FEATURE GATE: PASS — PR #9 body updated for human review, HUMAN_HANDOFF
+Last gate         : FEATURE GATE: PASS (the NEW gate, earned 2026-09-04 on the remediated + integrated HEAD; quality audit fresh-PASS "the delivery is sound"; final review + fresh re-review converged 0 blocking / 0 major)
+Next legal action : HUMAN — review Draft PR #9 (base develop) and decide whether to merge. Never merged by an agent.
 
-REMEDIATION_START_FEATURE_SHA=b71c8285c6e26fb6fd1463c4b0a81cd8ae1afe31
-REMEDIATION_START_DEVELOP_SHA=3a25640b602a685c690a4b467b6e900625484c89 (develop advanced past the earlier integration point 6161a4c — PR #12 cart hardening; re-integration required before final verification)
+FINAL REMEDIATED HEAD (code): 7d6702d (verify 68/894) -> docs-only closing commits -> the FEATURE GATE commit (this commit; code-identical to 7d6702d)
+CI on the exact audited code state: 7d6702d — CI run 33857102917 SUCCESS + Android build run 33857102920 SUCCESS; cfc7a10 (docs-only) — CI run 33858954820 SUCCESS + Android build run 33858954741 SUCCESS; Maestro/E2E skipped (N/A per plan, never claimed)
+Remediation start: b71c828 (gate REOPENED) -> 8604a51 (plan) -> T14 1a30a5a / T15 68f9cbb / T16 307f05f / T17 24d662d / T18 7fbd5f2 / T19 2174f15 / T20 8354b5a / R4 gate 6b66b48 / develop merge db3a50d (zero conflicts; origin/develop 3a25640 integrated) -> final verification + reviews + audit
 
-FINAL CODE HEAD: ae1a982 (code) → b149f16 (closing records) → the FEATURE GATE commit (docs-only; CI re-verified on b149f16: fast tier run 33830212176 + Android build run 33830212185, both SUCCESS) — all HISTORICAL evidence; invalid for the reopened gate on any new HEAD
-
-Blocked by        : — (push credentials verified; workflow scope present; PR #9 open/draft/base=develop at b71c828)
+Blocked by        : — (external/human-only remain: live ManageEngine MDM dry-run, first real workflow dispatches incl. the ANDROID_UPLOAD_CERT_SHA256 variable + environment migration setup, physical-kiosk verification — all documented in mdm-operations.md §7/§9)
 ```
 
 ## Rules
@@ -259,35 +258,35 @@ accumulated remediation diff). Then: develop integration (IR-09) → final
 verification on the integrated HEAD → fresh final review → fresh quality
 audit → NEW Feature Gate → PR #9 update → HUMAN_HANDOFF.
 
-Round gates: Round 1 `PASS` · Round 2 `PASS` · Round 3 `PASS` (recovered; fresh round review, agent-95fd66ea; R3-1/R3-2/R3-3 fixed)
+Round gates: Round 1 `PASS` · Round 2 `PASS` · Round 3 `PASS` (recovered) · Round 4 `PASS` (fresh round review agent-5dd85f16; R4-1 fixed)
 
-## Feature gate
+## Feature gate (the NEW gate, 2026-09-04 — earned on the remediated + integrated HEAD)
 
-Every line is a box, and `pnpm verify` alone is not the authority — several of
-these depend on an environment only CI has. See `review.md` for the review and
-audit findings this checklist points at.
+Every line is a box, and `pnpm verify` alone is not the authority — several
+of these depend on an environment only CI has. See `review.md` for the
+review and audit findings this checklist points at.
 
-- [x] Every Task Gate PASS (T01–T09 durable pre-recovery, re-baselined green at the recovery checkpoint; T10–T13 recovered with fresh evidence, each with a fresh task review)
-- [x] Every Round Gate PASS (Round 1/2 durable; Round 3 recovered — fresh round review agent-95fd66ea, R3-1/2/3 fixed)
-- [x] Every AC verified (AC-01…AC-10 — see the worklog's final review entry; on-hardware rows explicitly unverified, never claimed)
-- [x] `pnpm verify` PASS after the final local change (68 suites / 798 tests at ae1a982, integrated with current develop)
-- [x] required fast GitHub CI PASS on the final HEAD — Verify / Web bundle / Expo doctor all SUCCESS on ae1a982
-- [x] required runtime evidence recorded (browser standard-path at tablet landscape + portrait from the CI-equivalent static export; zero errors; no kiosk surfaces; /kiosk-mismatch fail-closed — re-collected at the final HEAD after the FR-02 fix)
-- [x] required native tier(s) PASS, N/A, or explicitly unverified — prebuild local PASS; **Kotlin/native compile: Android build job PASS on ae1a982** (label-gated run; the FR-01 failure was diagnosed and fixed in the fix-in-task loop); physical kiosk = explicitly unverified
-- [x] Reviewer findings dispositioned (T01…T13, R2/R3, FR-01/FR-02, FRR-01 — every row in review.md dispositioned)
-- [x] blocking/major fixes re-reviewed (FR-01 blocking → fresh re-review agent-c73d726b verified the fix AND the compile re-gate; FR-02 → same re-review, RED empirically re-verified)
-- [x] Quality Audit clean — PASS (fresh auditor agent-a4f4d55f: "the delivery is sound"; no not-delivered / not-planned findings; not-evidenced items settled with run ids; recorded in review.md)
-- [x] anything not verified explicitly recorded (the brief's Evidence section + mdm-operations.md §9: physical kiosk behavior, live MDM dry-run, first real upload, hardware/live-tenant items — first-class unverified lists)
-- [x] shared/core changes justified (the plan's "Files expected to change" list; core/** and components/** untouched)
-- [x] PR evidence matches the worklog — Draft PR #9 (base develop) head = ae1a982 = the final HEAD; every gate commit pushed and verified on the PR
+- [x] Every Task Gate PASS (T01–T09 durable, re-baselined green at the recovery checkpoint; T10–T13 recovered; T14–T20 remediated — each with a FRESH task review; all gate commits pushed and verified on PR #9)
+- [x] Every Round Gate PASS (Rounds 1/2/3 historical; Round 4 recovered with a fresh round review agent-5dd85f16 — R4-1 fixed)
+- [x] Every AC verified (AC-01…AC-10; AC-03 as amended 2026-09-04 — the cold-start ordering regression is pinned; on-hardware rows explicitly unverified, never claimed)
+- [x] `pnpm verify` PASS after the final local change (68 suites / 894 tests at the code HEAD 7d6702d — re-run independently by the final reviewer AND the quality auditor)
+- [x] required fast GitHub CI PASS on the final HEAD — CI run 33857102917 SUCCESS on 7d6702d; re-confirmed on the docs-only cfc7a10 (CI run 33858954820 SUCCESS); Verify / Web bundle / Expo doctor / Android prebuild all success
+- [x] required runtime evidence recorded (browser regression at the integrated HEAD: customer AND preparation journeys via the committed disposable test accounts, signed-out root → sign-in immediately (readiness invisible on web), /kiosk-mismatch fail-closed, zero console/page errors, tablet landscape + portrait — re-run by the quality auditor)
+- [x] required native tier(s) PASS — label-gated Android build run 33857102920 SUCCESS on 7d6702d and run 33858954741 SUCCESS on cfc7a10; physical kiosk = explicitly unverified
+- [x] Reviewer findings dispositioned (T01–T13, R2/R3/R4, FR-01/FR-02, FR2-01/02/03, T14–T20 rows — every row in review.md terminal: fixed / accepted / rejected-with-evidence / folded-and-landed)
+- [x] blocking/major fixes re-reviewed (FR2-01 → fresh re-review agent-76b0b9e1: 0 unresolved blocking / 0 unresolved major, run-ids API-verified)
+- [x] Quality Audit clean — fresh auditor agent-956ddd2f: "the delivery is sound"; no not-delivered / not-planned findings; the pre-gate record items (re-review record, todo checkpoint, PR body) closed at this gate
+- [x] anything not verified explicitly recorded (the brief's Evidence section + mdm-operations.md §9: physical kiosk behavior, live MDM dry-run, first real dispatches incl. the cert variable + environment migration, hardware/live-tenant items — first-class unverified lists)
+- [x] shared/core changes justified (the plan's expected-change lists; core/** and components/** untouched — audit-verified file-by-file)
+- [x] PR evidence matches the worklog — Draft PR #9 (base develop) head = the gate commit; PR body rewritten to the remediated state at this gate
 
-FEATURE GATE: PASS — **historical; REOPENED 2026-09-04 by an independent
-post-gate review (IR-01..IR-09; see review.md "Post-gate independent
-remediation review"). The checklist above describes the evidence that earned
-the PRIOR pass, not a current approval. A NEW gate must be earned on the
-remediated HEAD after: seven current-documentation research packets,
-remediation task gates, current-develop re-integration, fresh final review,
-fresh quality audit.**
+FEATURE GATE: PASS (the NEW gate, 2026-09-04 — earned on the remediated,
+develop-integrated HEAD after: seven research packets → IR verdict matrix
+→ T14–T20 remediation gates → Round 4 gate → develop integration (3a25640)
+→ final verification → fresh final review + fresh re-review (0/0) → fresh
+quality audit ("the delivery is sound"). The PRIOR gate pass at b71c828 was
+historical evidence, reopened by the independent IR-01..IR-09 review, and is
+preserved as history in review.md.\*\*
 
 ## Remediation (post-gate review)
 

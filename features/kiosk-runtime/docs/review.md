@@ -65,6 +65,25 @@ Severity means: **blocking** — must not merge; **major** — fix in this featu
 
 After remediation, re-run the reviewer against the same scope.
 
+- Result (REOPENED-gate remediation, 2026-09-04): FRESH full re-review after
+  the final-review record fixes (agent-76b0b9e1, fresh context — did not
+  watch any implementation or the prior final review): **0 unresolved
+  blocking, 0 unresolved major.** FR2-01 (major, records) — ADEQUATELY
+  FIXED: the worklog's final-verification entry records the final-HEAD
+  7d6702d outcomes with run ids (CI 33857102917 SUCCESS; Android build
+  33857102920 SUCCESS; E2E 33857103028 skipped, never claimed), each
+  independently verified against the live GitHub Actions API including the
+  head_sha match; the db3a50d runs are correctly recorded as cancelled-as
+  -superseded (33856728023/40/24); the file ends complete. FR2-02 —
+  ADEQUATELY FIXED (todo checkpoint current). FR2-03 — PROPERLY
+  DISPOSITIONED (accepted, fail-closed rationale recorded). Closing commit
+  7d6702d..cfc7a10 verified docs-only (three control documents, additive);
+  `pnpm verify` re-run by the re-reviewer: 68 suites / 894 tests, exit 0;
+  the gate line remains correctly NOT yet PASS. Convergence statement:
+  the feature stands at 0 unresolved blocking / 0 unresolved major; the
+  new Feature Gate may now be earned via the quality audit + gate
+  checklist.
+
 - Result: FRESH full re-review after the final-review remediations
   (agent-c73d726b, post-remediation, fresh context — did not watch any
   implementation): **0 unresolved blocking, 0 unresolved major.** Both
@@ -247,3 +266,50 @@ Remediation amendment (T14–T20) after the Lead Planning Review.
 | FR2-01 | major    | The final-verification worklog entry ended with dangling CI promises ("outcome recorded below at completion" with nothing following) and attributed the build trigger to db3a50d while the green outcomes landed on 7d6702d | final review (agent-49d1b14b) + API verification                                     | fixed       | Closing docs commit records the 7d6702d outcomes with run ids (CI 33857102917 SUCCESS; Android build 33857102920 SUCCESS; E2E skipped 33857103028) and notes the db3a50d runs were cancelled as superseded                                                                                                  |
 | FR2-02 | minor    | todo.md checkpoint one step behind the repository (integration + final verification already landed)                                                                                                                         | todo.md vs git log (final review)                                                    | fixed       | Checkpoint refreshed in the same closing commit                                                                                                                                                                                                                                                             |
 | FR2-03 | minor    | The identity-derivation node script is duplicated byte-for-byte in both secret-bearing workflows (maintenance cost; a desync fails CLOSED)                                                                                  | android-release.yml vs mdm-beta-upload.yml (final review)                            | accepted    | Documented plan design; byte-identical by contract (T18 review verified); a future extraction to a shared script is a deliberate change with its own task                                                                                                                                                   |
+
+## Quality audit (REOPENED-gate remediation, 2026-09-04)
+
+A FRESH quality-auditor (agent-956ddd2f, new context — did not watch the
+implementation, reviews, or record-keeping) audited the delivery at HEAD
+cfc7a10 against all five control documents, the actual diff
+(+15702/−32 = code 7d6702d + docs-only), the commit chain, and the GitHub
+API.
+
+- **not delivered**: none — every AC-01…AC-10 observable re-verified in
+  the diff; hardware/live-tenant/E2E honestly listed as unverified and
+  never claimed PASS (E2E run 33857103028 genuinely skipped, API-verified).
+- **not evidenced**: the FR2 re-review convergence lived only outside the
+  repository — RESOLVED by recording it in the Re-review section above
+  (this commit); (observation) the cfc7a10 Android-build run 33858954741
+  was in_progress at audit time — the recorded native evidence on the
+  code-identical 7d6702d (run 33857102920 SUCCESS) stands; fast CI on
+  cfc7a10 already SUCCESS (run 33858954820).
+- **not planned**: none — the 49-file diff maps 1:1 to the plan's
+  expected-change lists; the remediation added no unplanned capability;
+  core/components/supabase/other-features untouched.
+- **stale record**: the PR #9 body still carried the pre-reopening
+  readiness claims (RESOLVED by the Lead's PR-body rewrite at the gate);
+  todo.md checkpoint lines lagged (RESOLVED in the gate commit); the
+  seven-packet research narrative lives in review.md per the plan's
+  designation (informational — each T14–T20 entry cites its packet and
+  agent id; R3 = agent-2cbc4630).
+- **Remediation integrity**: clean — the record shows the reopened gate,
+  the verdict matrix, and NEW evidence per remediation commit
+  (1a30a5a/68f9cbb/307f05f/24d662d/7fbd5f2/2174f15/8354b5a/6b66b48 each
+  verified per-commit); T01–T13 preserved as immutable history; the
+  68/894 chain reproduces.
+- Auditor's own verification: `pnpm verify` exit 0; `pnpm test:ci` 68
+  suites / 894 tests; `pnpm export:web` + a browser re-run reproducing the
+  recorded standard-path behavior (0 errors); both tools' fail-closed
+  smokes reproduce their recorded messages; greps clean; API-verified CI
+  runs on 7d6702d + the cancelled db3a50d runs exactly as recorded; PR #9
+  open/draft/base develop/head cfc7a10.
+
+**Audit verdict: the delivery is sound.** Strongest evidence: the
+independently re-run full gate at the audited HEAD (68/894) plus the
+browser regression reproduction, and the API-verifiable external evidence
+chain (green runs correctly attributed, cancelled runs exactly recorded,
+tool smokes reproducing their messages). Pre-gate record items closed by
+this commit and the PR-body rewrite.
+
+Audit result: `PASS` (remediation gate)
