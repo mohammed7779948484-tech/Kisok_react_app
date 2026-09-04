@@ -1414,3 +1414,106 @@ assertions, zero console output), self-containment, T09 structural
 parity, scope discipline.
 
 GATE: PASS
+
+### T12 — mdm-beta-upload workflow (RECOVERY — fresh workspace, fresh evidence)
+
+MODE: config
+ACCEPTANCE: Supporting AC-09 (workflow half; the client half was T11)
+
+SCAFFOLD (Lead — none: the workflow file IS the planned manual artifact;
+`N/A — workflow file`)
+
+LEAD VERIFIED FACTS FED TO THE TASK: actions/download-artifact@v8 (latest
+v8.0.1, action.yml fetched and verified: name/path/run-id/github-token,
+digest-mismatch defaults to error, node24 runtime; cross-run download
+needs `actions: read`); the T11 tool's actual flag surface (including
+--app-version, the packet's --version corrected to the tool interface);
+artifact layout kisok-release-apk → app-release.apk at root.
+
+IMPLEMENT (fresh feature-implementer, agent-0df1f0ae)
+.github/workflows/mdm-beta-upload.yml (336 lines after follow-ups) —
+workflow*dispatch ONLY with inputs: run-id (required, string), dry-run
+(boolean, DEFAULT TRUE — a real upload is always a deliberate act),
+group-id (required), production-group-id / app-category-id /
+redirect-uri (optional, forwarded ONLY when non-empty), app-name
+(default KISOK), data-centre (default us). permissions: contents: read +
+actions: read (minimal sufficient for checkout + cross-run artifact
+download); checkout persist-credentials: false; release-scoped
+concurrency with cancel-in-progress: false (an in-flight upload is never
+cancelled); timeout 30. Steps: checkout → early validation of run-id
+(numeric, non-empty — API dispatch can bypass the UI's required check)
+and group-id (non-empty, T12-F01) → MDM secret presence check (three
+secrets, fail closed, names only, before any toolchain work) →
+actions/download-artifact@v8 (name kisok-release-apk, run-id, explicit
+github-token, path downloaded-release-apk; digest-mismatch left at its
+error default; a missing artifact fails loudly) → pnpm setup → Node 24
+→ setup-java@v5 temurin 17 (Lead-directed follow-up: pinned JVM for
+apksigner, matching the three sibling workflows) → pnpm install
+(for the identity derivation's expo CLI; the tools themselves are
+node-builtin-only) → identity derivation from `npx expo config --json`
+with Expo's exact defaulting + token validation before GITHUB_ENV writes
+(byte-identical to android-release.yml's step — extraction + diff) →
+aapt2/apksigner located from $ANDROID_HOME/build-tools (byte-identical
+step) → RE-VERIFY the downloaded APK with the T09 script (pipefail +
+tee + `APK verification passed` grep, T09-F02; BEFORE anything touches
+the MDM tenant) → upload via `node tools/mdm/upload-beta.ts` with
+conditional optional FLAGS only when non-empty (T11-F02 wiring — an
+unset Actions input renders "" and the tool hard-fails on
+set-but-empty optionals; strictly stronger than conditional env export),
+--dry-run mapped from the boolean input, required secrets as STEP env
+only, and every dispatch input reaching bash through UPLOAD*_ /
+RUN*ID/GROUP_ID intermediate env vars (no inline ${{ }} in any run:
+script — no script-injection surface; names collide with nothing either
+tool reads). No build, no artifact upload, no EXPO_PUBLIC*_ env
+(anything bundled here; the APK arrives already built and verified).
+
+GREEN (implementer + Lead re-ran independently)
+$ python3 -c "import yaml; ...safe_load(...)" → YAML_OK
+$ pnpm exec prettier --check <file> → clean
+$ pnpm check:ci-scripts → 5 workflows, 10 checks, pass
+$ pnpm check:docs → 63 files pass
+$ pnpm verify → exit 0 (31 suites / 391 tests unchanged — no TS/TSX)
+$ git status --porcelain → exactly `?? .github/workflows/mdm-beta-upload.yml`
+Embedded-script diligence (/tmp, outside the repo): run-id validation
+rejects empty/non-numeric/injection-shaped values without echoing them;
+group-id empty → named dispatch-input error; upload argv built correctly
+for defaults/dry-run, all-optionals, mixed, spaced values (one argv
+element); tool --help smokes exit 0; every emittable flag mechanically
+confirmed against the tool interface; no-network argv-shape replays
+against the real tool parse cleanly.
+
+AFFECTED CHECKS
+$ pnpm verify → PASS (Lead re-ran after each follow-up; exit 0).
+
+REVIEW (fresh code-reviewer, agent-5556ddac)
+No blocking, no major. One minor:
+T12-F01 minor: belt-and-braces asymmetry — run-id validated early but
+group-id (also required, also API-bypassable as "") only caught by the
+tool's last-step refusal after download/re-verify work had already run
+(not a fail-open: the tool refuses pre-network with a named error) →
+FIXED (implementer resumed): the early validation step now also rejects
+an empty group-id dispatch input (env-indirection pattern, names the
+dispatch input, never echoes the value); mock replays prove both
+branches. Lead re-read the diff and re-ran YAML/prettier/verify.
+Reviewer-verified clean: dispatch-only trigger (parsed); re-verify
+strictly precedes upload; the only MDM operation is the T11 tool; no
+label-name dispatch surface (Beta-only default + refusal unbypassable);
+--app-version fed from the re-verified artifact identity (a dispatcher
+cannot lie to the monotonic pre-check); zero workflow-owned
+production-promotion operations; permissions minimal sufficient; secret
+hygiene (the three secrets in exactly two step env blocks; ${!name}
+indirection; no ${{ }} in any run: script; UPLOAD\_\* names collide with
+nothing either tool reads); artifact handling (digest-mismatch error
+default; both consumers match the single-file-at-root layout; the
+re-verify gate independently rejects wrong-run-id confusion);
+byte-identical derivation/locate steps (reviewer's own extraction +
+diff); T11-F02 wiring satisfied (flags only when non-empty; mock-replayed
+argv shapes parse cleanly against the real tool); sibling conventions;
+scope discipline; every failure path fails the job (no
+continue-on-error, no || true, no if: skips).
+Notes: `actions: read` addition to design decision 11's literal
+`contents: read` is required by T12's own cross-run download design and
+documented in-file (minimal sufficient). Dispatch-contract documentation
+pinned to T13 per the T10-F02 precedent.
+
+GATE: PASS

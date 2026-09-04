@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : 3
-Current task      : T12
+Current task      : T13
 Current stage     : not started
-Last gate         : T11 GATE: PASS (recovered, fresh evidence; major T11-F01 fixed + fresh re-review; gate commit pushed)
-Next legal action : delegate T12 (.github/workflows/mdm-beta-upload.yml — config mode), then T13
+Last gate         : T12 GATE: PASS (recovered, fresh evidence; gate commit pushed)
+Next legal action : delegate T13 (features/kiosk-runtime/docs/mdm-operations.md — config mode), then Round 3 Gate
 
 Blocked by        : — (push credentials provided by the user; branch pushed and Draft PR #9 open — see Blocked below for what stays external)
 ```
@@ -51,7 +51,7 @@ Scan this first. Detail is below.
 | T09  | behavior        | Acceptance: AC-08, Supporting AC-01 | tools/release/verify-release-apk.ts + tests                                  | —             | done        | PASS    |
 | T10  | config          | Supporting AC-07                    | android-release.yml workflow                                                 | T08, T09      | done        | PASS    |
 | T11  | behavior        | Acceptance: AC-09                   | tools/mdm/upload-beta.ts + tests                                             | —             | done        | PASS    |
-| T12  | config          | Supporting AC-09                    | mdm-beta-upload.yml workflow                                                 | T09, T11      | not started | PENDING |
+| T12  | config          | Supporting AC-09                    | mdm-beta-upload.yml workflow                                                 | T09, T11      | done        | PASS    |
 | T13  | config          | Acceptance: AC-10                   | docs/mdm-operations.md operational contract                                  | T01–T12       | not started | PENDING |
 
 Stage is one of: `not started` · `scaffolding` · `red/baseline` ·
@@ -220,7 +220,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Allowed manual files**: `.github/workflows/mdm-beta-upload.yml`
 - **Scaffold status**: `N/A — workflow file`
 - **Allowed file scope**: `.github/workflows/mdm-beta-upload.yml`
-- **Focused verification**: YAML parses; `pnpm verify` green; structural review (dispatch-only, dry-run default, artifact download by run id, re-verify before upload, secret checks, masking, permissions, persist-credentials, concurrency). Per T11-F02 (Lead disposition): the workflow exports the OPTIONAL tool env vars (MDM_APP_CATEGORY_ID / MDM_PRODUCTION_GROUP_ID / MDM_REDIRECT_URI) to the step env ONLY when non-empty — an Actions unset var renders as "" and the tool deliberately hard-fails on set-but-empty optional inputs; the required MDM_CLIENT_ID / MDM_CLIENT_SECRET / MDM_REFRESH_TOKEN are always exported
+- **Focused verification**: YAML parses; `pnpm verify` green; structural review (dispatch-only, dry-run default, artifact download by run id, re-verify before upload, secret checks, masking, permissions, persist-credentials, concurrency). Per T11-F02 (Lead disposition, as implemented): optional dispatch inputs (production-group-id / app-category-id / redirect-uri) reach the tool ONLY when non-empty — implemented as conditional CLI FLAGS at the upload step (strictly stronger than conditional env export; no set-but-empty value ever reaches the tool as a flag or env); the required MDM_CLIENT_ID / MDM_CLIENT_SECRET / MDM_REFRESH_TOKEN are always exported as step env
 
 ### T13 — ManageEngine operational contract
 
