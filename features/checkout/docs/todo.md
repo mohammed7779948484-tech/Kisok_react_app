@@ -16,10 +16,10 @@ is the first thing the next agent reads.
 
 ```
 Current round     : 1
-Current task      : T01
-Current stage     : Round 1 complete — T04 GATE PASS; ROUND GATE pending
-Last gate         : T04 GATE PASS (Round 1 tasks complete)
-Next legal action : Round 1 gate — accumulated diff review + fresh Round reviewer
+Current task      : — (round complete)
+Current stage     : ROUND 1 GATE PASS — Round 2 starting
+Last gate         : ROUND 1 GATE PASS
+Next legal action : delegate T05 (cart clearCartDurable extension — owning-feature edit)
 Blocked by        : —
 ```
 
@@ -279,7 +279,8 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Scaffold status**: `N/A — integration test, planned in plan.md`
 - **Allowed file scope**: `features/checkout/checkout-journey.test.tsx`
 
-Round gate: `PENDING` (all four rounds)
+Round 1 gate: `PASS`
+Round 2–4 gates: `PENDING`
 
 ## Feature gate
 

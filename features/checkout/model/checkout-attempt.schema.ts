@@ -1,46 +1,17 @@
 import { z } from "zod";
 
-import { MAX_NORMALIZED_ITEMS } from "./normalized-request";
-
-/**
- * PostgreSQL-canonical UUID text, checkout-local — the same approach as
- * create-order-response.schema.ts in this feature (consistency and comment
- * continuity). The server's `uuid` type accepts any 8-4-4-4-12 hex string —
- * case-insensitive, with no RFC 9562 version or variant nibble rule — so Zod
- * 4's `z.uuid()` would be stricter than the contract and could reject a
- * canonical id the server itself issued. Defined here rather than imported
- * from that sibling module because its file scope is closed to this task:
- * same regex, same semantics.
- */
-const postgresUuidSchema = z
-  .string()
-  .regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, {
-    message: "Expected canonical PostgreSQL UUID text",
-  });
-
-/**
- * Pinned to exactly the same shape as create-order-response.schema.ts's
- * `displayNumberSchema` — the `check (display_number ~
- * '^[A-HJ-NP-Z2-9]{6}$')` constraint on `public.orders`
- * (`20260826050004_lean_inventory_orders_schema.sql`): six characters from
- * the look-alike-free kiosk alphabet (no I/O/0/1), the value the Order
- * Success screen shows a customer reading it aloud across a counter. The
- * record captures the VALIDATED server value (D4), so a value outside that
- * alphabet never came from this contract and must not restore as a success.
- * Defined locally — the sibling module does not export it, and widening that
- * module's exports is out of this task's scope.
- */
-const displayNumberSchema = z.string().regex(/^[A-HJ-NP-Z2-9]{6}$/, {
-  message: "Expected a 6-character display number from the kiosk alphabet",
-});
-
-/**
- * Same pinned shape as create-order-response.schema.ts's `createdAtSchema`:
- * `orders.created_at` is timestamptz, captured here as the ISO-8601 text the
- * RPC embeds in its jsonb — an explicit offset (PostgreSQL renders `+00:00`),
- * never a naive local timestamp or a date-only string.
- */
-const createdAtSchema = z.iso.datetime({ offset: true });
+// The three wire-contract primitives (postgres uuid text, display number,
+// created_at) are imported from create-order-response.schema.ts — the round
+// gate consolidated the formerly duplicated local definitions, so the
+// persisted record and the RPC contract are now mechanically one shape: a
+// change to a primitive fails this module's suite too, not just the wire
+// schema's own.
+import {
+  createdAtSchema,
+  displayNumberSchema,
+  postgresUuidSchema,
+} from "./create-order-response.schema";
+import { MAX_NORMALIZED_ITEMS, MAX_RPC_QUANTITY } from "./normalized-request";
 
 /**
  * ONE display snapshot of a submitted cart line — checkout-owned, with
@@ -93,8 +64,8 @@ const lineSnapshotSchema = z.strictObject({
  * 56–85 — `parsed_quantity <= 0 or parsed_quantity > 2147483647` → K1001,
  * lines 81–85), duplicate variant ids rejected (K1001, lines 95–105). The
  * record must replay byte-identical items, so it enforces the same rules —
- * ceiling included, restated as a literal because T02's MAX_RPC_QUANTITY is
- * module-private and that file is outside this task's scope. The ceiling
+ * ceiling included, mirrored via T02's exported MAX_RPC_QUANTITY so that
+ * bound also has ONE source (the round gate consolidated it). The ceiling
  * makes "a persisted item is always a payload create_order would accept"
  * literally true at the RESTORE boundary too; normalized-request remains the
  * single pre-write enforcement point, this is its re-validation twin.
@@ -103,7 +74,7 @@ const attemptItemsSchema = z
   .array(
     z.strictObject({
       variant_id: postgresUuidSchema,
-      quantity: z.number().int().positive().max(2147483647),
+      quantity: z.number().int().positive().max(MAX_RPC_QUANTITY),
     }),
   )
   .min(1)

@@ -1,7 +1,9 @@
 import { z } from "zod";
 
 /**
- * PostgreSQL-canonical UUID text, checkout-local.
+ * PostgreSQL-canonical UUID text — shared across the checkout feature's
+ * model layer (the `create_order` wire contract here, and the durable attempt
+ * record in checkout-attempt.schema.ts, which imports it).
  *
  * The server's `uuid` type accepts any 8-4-4-4-12 hex string — case
  * insensitive, with no RFC 9562 version or variant nibble rule — and the
@@ -9,10 +11,12 @@ import { z } from "zod";
  * RFC nibbles, so it is stricter than the contract here: a canonical
  * `variant_id` Catalog's own canonical-uuid check already accepted must not
  * fail checkout validation. Same semantics as the cart and catalog features'
- * local uuid schemas; deliberately not shared (cross-feature imports go
- * through public APIs only, and no shared uuid abstraction exists to reuse).
+ * local uuid schemas — shared WITHIN this feature (one definition for the
+ * wire contract and the persisted record, so they cannot diverge),
+ * deliberately not hoisted into a cross-feature abstraction (cross-feature
+ * imports go through public APIs only).
  */
-const postgresUuidSchema = z
+export const postgresUuidSchema = z
   .string()
   .regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, {
     message: "Expected canonical PostgreSQL UUID text",
@@ -27,9 +31,10 @@ const postgresUuidSchema = z
  * not come from this contract; and this value is what the Order Success
  * screen shows a customer reading it aloud across a counter, where an
  * ambiguous 0/O or 1/I matters. A backend format change should fail loudly
- * here.
+ * here. Shared with checkout-attempt.schema.ts's confirmed-record capture,
+ * so the wire value and the persisted copy of it stay one contract.
  */
-const displayNumberSchema = z.string().regex(/^[A-HJ-NP-Z2-9]{6}$/, {
+export const displayNumberSchema = z.string().regex(/^[A-HJ-NP-Z2-9]{6}$/, {
   message: "Expected a 6-character display number from the kiosk alphabet",
 });
 
@@ -37,9 +42,10 @@ const displayNumberSchema = z.string().regex(/^[A-HJ-NP-Z2-9]{6}$/, {
  * `orders.created_at` is timestamptz; embedded in the RPC's jsonb it arrives
  * as an ISO-8601 string with an explicit offset (PostgreSQL renders `+00:00`).
  * Any explicit offset form is accepted; a naive local timestamp or a date-only
- * string is not this contract.
+ * string is not this contract. Shared with checkout-attempt.schema.ts's
+ * confirmed-record capture for the same reason as the display number.
  */
-const createdAtSchema = z.iso.datetime({ offset: true });
+export const createdAtSchema = z.iso.datetime({ offset: true });
 
 const stockConflictItemSchema = z.strictObject({
   variant_id: postgresUuidSchema,

@@ -4,9 +4,12 @@ import type { CartLine } from "@/features/cart";
  * The server's per-item quantity ceiling: `parsed_quantity <= 0 or
  * parsed_quantity > 2147483647` → K1001
  * (`20260826050007_lean_create_order.sql` lines 81–85). An `integer` column
- * bound, mirrored here so an invalid sum never leaves the device.
+ * bound, mirrored here so an invalid sum never leaves the device. Shared with
+ * checkout-attempt.schema.ts, which re-validates persisted items against the
+ * same ceiling on restore — one source, so the pre-write rule and the restore
+ * boundary cannot drift apart.
  */
-const MAX_RPC_QUANTITY = 2147483647;
+export const MAX_RPC_QUANTITY = 2147483647;
 
 /**
  * The server's entry-count cap: more than 100 items → K1001 (migration lines

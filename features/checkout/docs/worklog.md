@@ -354,3 +354,40 @@ features/checkout/queries/keys.ts (new, generated untouched)
 Nothing outside the task's allowed scope.
 
 GATE: PASS
+
+### ROUND 1 GATE — domain model & contract
+
+ROUND DIFF REVIEW (Lead)
+9d16bcc..c06d358 plus the round-remediation commit: 13 code files, all
+inside features/checkout/ (model/ 4+3 tests, api/ 1+1, queries/ 3+1).
+Cross-task contracts verified: T04's args construction consumes T02's
+NormalizedOrderItem exactly; T03 persists the same shape; T01/T03 shared
+primitives now mechanically single-sourced (post-remediation).
+
+ROUND CHECKS
+$ pnpm test → 60 suites / 723 tests, zero console output
+$ pnpm typecheck → clean
+$ pnpm lint → zero warnings (exit 0)
+$ npx prettier --check <round files> → clean
+
+ROUND REVIEW (fresh code-reviewer, agent-e64e45a8)
+Examined and clean: contract fidelity of all four modules against the
+migrations; the normalization→persistence→submission chain (no K1001
+escape, no K1003 hazard); mutation retry disabled; boundaries (only
+type-only cross-feature import; Supabase only in api/); worklog/todo
+accuracy; no store/screens/routes built (correctly later rounds).
+Findings: R1-01 minor (T01/T03 duplicate primitives with no mechanical
+linkage), R1-02 minor (no runtime T02→T03 integration test), R1-03 minor
+(stale todo checkpoint line).
+Remediation: fresh round-remediation implementer (agent-2e9f1b68) —
+consolidated postgresUuidSchema/displayNumberSchema/createdAtSchema exports
+from create-order-response.schema.ts (imported by checkout-attempt.schema),
+exported MAX_RPC_QUANTITY (single source), added
+checkout-model-integration.test.ts (6 tests: capped 100-variant cart
+round-trips normalization → record on both status branches, exact
+fingerprint binding, quantity ceiling both sides). Teeth proven:
+displayNumber regex mutation in the shared module now fails BOTH suites
+(mechanical linkage proven); quantity-cap mutation fails the ceiling tests.
+R1-03 fixed in todo by the Lead.
+
+ROUND 1 GATE: PASS
