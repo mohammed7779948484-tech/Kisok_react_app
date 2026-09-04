@@ -564,6 +564,9 @@ existing tests, so they may run sequentially in Round 1.
   explicitly justified by decision 4),
   `features/cart/components/quick-cart-sheet.tsx`,
   `quick-cart-sheet.test.tsx`
+- H-T03b: `features/cart/state/cart-store.test.ts` (test-only composed-path
+  pin; authorized by the Round 1 gate R1-02 disposition and the task-graph
+  row — mirrored here per the final reviewer FR-H-1)
 - NOTHING else. No `docs/**` (control documents are the Lead's), no tests
   outside the feature except none are needed (the primitive has no
   `__tests__/adaptive-sheet` suite; quick-cart-sheet.test.tsx owns the

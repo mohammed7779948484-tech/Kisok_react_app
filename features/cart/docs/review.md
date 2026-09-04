@@ -439,3 +439,35 @@ malformed line restores with the exact +23 diff; pre-Round-2 code → 3 failed
 | R2-3 | micro-note                                        | ui-lab demo body's first sentence near-duplicates the new description                                                                       | ACCEPTED — cosmetic only, dev-only surface; the demo's own body text predates the change                                 |
 
 **ROUND 2 GATE: PASS.**
+
+## FINAL REVIEW (fresh code-reviewer, 2026-09-03, complete diff 6161a4c..05c6779)
+
+Verdict: **SHIP-READY — 0 blocking / 0 major / 3 minor.**
+
+The reviewer re-ran every number fresh and matched them exactly (54 suites /
+556 tests full; 27/285 scoped; cart 11/183; integration 5/46; cart-store
+51/51; typecheck/lint/format 0). All 10 axes verified clean: all three
+findings genuinely closed (canonical identity end-to-end with the correct
+lowercase-before-sort order; the pre-throw envelope reset with the
+byte-identical throw and the fail-closed double-failure machinery untouched;
+the sibling-shaped Description member wired into both consumers with both
+presentations pinned); grep-verified ZERO console suppressions, zero
+eslint-disable/@ts-ignore, zero aria-hacks in the diff; core/ and the
+integration/catalog features zero-diff; zero Checkout artifacts; RED honest
+by construction (each new assertion contradicts the read pre-fix code); the
+uppercase-legacy edge consciously dispositioned as the designed
+corrupt→durable-clear path. db:verify SKIP in the reviewer's sandbox is
+environmental (zero DB surface in the diff; CI owns the real run — and CI's
+Verify job is green on the final head).
+
+| ID     | Severity | Finding                                                                                                                                  | Disposition                                                                                                                                                                     |
+| ------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-H-1 | minor    | plan.md's allowed-file-scope enumeration had no H-T03b bullet naming cart-store.test.ts (authorized only via the task graph/rounds text) | RESOLVED — the bullet is mirrored into the scope enumeration (this commit)                                                                                                      |
+| FR-H-2 | minor    | PR #12 body was not independently verifiable from the reviewer's sandbox (GitHub API rate-limited there)                                 | RESOLVED — the Lead re-fetched PR #12 with credentials: draft=True, open, base=develop, head=05c67794, mergeable=True, body 7665 chars with the final-evidence sections present |
+| FR-H-3 | micro    | The review invocation said "12 commits"; git rev-list counts 11 — an invocation-side discrepancy, no repository record claims 12         | NOTED — no repo action needed                                                                                                                                                   |
+
+**Exact-final-head CI (05c6779): Verify / Web bundle / Expo doctor all
+success; Android prebuild + Maestro skipped (native tier — no device in this
+environment, per policy).**
+
+**FINAL REVIEW CONVERGED: SHIP-READY.**
