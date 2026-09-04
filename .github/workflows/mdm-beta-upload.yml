@@ -10,8 +10,12 @@ name: MDM Beta upload
 # tools/release/verify-release-apk.ts against the identity derived from the
 # app config, and only then runs tools/mdm/upload-beta.ts (DRY-RUN BY
 # DEFAULT) against the ManageEngine MDM Cloud: the "Beta" release label,
-# ONE configured non-production device group, silent_install. Production
-# rollout stays a human action (AC-09).
+# ONE admin-configured non-production device group (R5-07: the group triple
+# comes from the mdm-upload environment's VARIABLES — MDM_BETA_GROUP_ID /
+# MDM_BETA_GROUP_NAME / MDM_PRODUCTION_GROUP_ID — so a dispatcher CANNOT aim
+# the upload at any group; configuring an environment variable requires a
+# repository admin, a boundary above dispatch's write access), silent_install.
+# Production rollout stays a human action (AC-09).
 on:
   workflow_dispatch:
     inputs:
@@ -24,18 +28,6 @@ on:
         required: false
         default: true
         type: boolean
-      group-id:
-        description: The ONE non-production MDM device group id to associate the app with (silent_install)
-        required: true
-        type: string
-      group-name:
-        description: The exact MDM group NAME the group-id must resolve to (positive non-production verification)
-        required: true
-        type: string
-      production-group-id:
-        description: Optional production group id; the upload refuses a group-id equal to it (AC-09 guard)
-        required: false
-        type: string
       app-category-id:
         description: Optional MDM App Repository category id, required only when the app does not exist yet (create path)
         required: false
@@ -74,14 +66,19 @@ jobs:
   upload:
     name: Download, re-verify and upload the signed release APK to MDM (Beta)
     runs-on: ubuntu-latest
-    # IR-07: this job spends the three MDM_* OAuth secrets, so it runs in a
-    # dedicated GitHub environment. The repository admin creates `mdm-upload`
-    # and configures its protection (required reviewers are optional) as the
-    # documented follow-up; migrating the MDM_* secrets from repository to
-    # environment scope activates the boundary (mdm-operations.md, T20). Until
-    # then this reference merely auto-creates an EMPTY environment —
-    # repository-scope secrets still resolve, and the fail-closed checks below
-    # still guard.
+    # IR-07 / R5-07: this job spends the three MDM_* OAuth secrets AND
+    # resolves the Beta target triple from this environment's VARIABLES, so
+    # it runs in a dedicated GitHub environment. The repository admin
+    # creates `mdm-upload`, configures its protection (required reviewers
+    # are optional), migrates the MDM_* secrets from repository to
+    # environment scope, and sets the three target VARIABLES
+    # (MDM_BETA_GROUP_ID / MDM_BETA_GROUP_NAME / MDM_PRODUCTION_GROUP_ID):
+    # a job referencing `environment: mdm-upload` resolves that
+    # environment's variables via `vars.`, an unset variable renders as ""
+    # and the fail-closed checks below refuse to run, and configuring
+    # environment variables/protection requires admin while dispatch
+    # requires only write — the boundary that makes the Beta target an
+    # admin-controlled allowlist (R5-07). (mdm-operations.md, T20/T29.)
     environment: mdm-upload
     # No build here: download + verify + upload. The tool's own bounded
     # backoff retries are the only thing that can stretch the runtime.
@@ -94,18 +91,32 @@ jobs:
           persist-credentials: false
 
       # Belt-and-braces on `required: true`: the dispatch UI refuses an empty
-      # run-id, group-id or group-name, but an API dispatch can still send an
-      # empty one, and the artifact download must never receive a value that
-      # is not a run id. An empty group-id or group-name would only be caught
-      # by the upload tool's own refusal at the LAST step — rejecting it here
-      # fails fast, before checkout's toolchain setup, install, download and
-      # re-verification all run. The group-name VALUE is never echoed.
-      - name: Validate the run-id, group-id and group-name dispatch inputs
+      # run-id, but an API dispatch can still send an empty one, and the
+      # artifact download must never receive a value that is not a run id.
+      # R5-07: the Beta target triple is NO LONGER dispatch input — it is the
+      # mdm-upload environment's VARIABLES (admin-controlled; the documented
+      # `vars.` mechanism; an unset variable renders as "", the same
+      # fail-closed primitive as secrets), checked here so a misconfigured
+      # repository fails fast, before checkout's toolchain setup, install,
+      # download and re-verification all run — the tool would otherwise only
+      # refuse at the LAST step. A dispatcher can no longer aim the upload at
+      # ANY group. Only the missing variable NAME is ever printed; values are
+      # never echoed (group ids/names are not secrets, but they are not this
+      # step's to echo either).
+      - name: Validate the run-id dispatch input and the Beta target environment variables
         env:
-          # Intermediate plumbing only — not a name any tool reads.
+          # Read by THIS step's bash only — no tool runs in this step, so
+          # these env names carry no tool contract (note the collision:
+          # MDM_PRODUCTION_GROUP_ID is also the TOOL's own env name of the
+          # same meaning, while the two MDM_BETA_* names are the mdm-upload
+          # environment VARIABLE names — the names match the vars for
+          # traceability, nothing more). The upload step forwards these
+          # values to the tool as FLAGS, through its own UPLOAD_* plumbing
+          # names — never the tool's MDM_* env names.
           RUN_ID: ${{ inputs.run-id }}
-          GROUP_ID: ${{ inputs.group-id }}
-          GROUP_NAME: ${{ inputs.group-name }}
+          MDM_BETA_GROUP_ID: ${{ vars.MDM_BETA_GROUP_ID }}
+          MDM_BETA_GROUP_NAME: ${{ vars.MDM_BETA_GROUP_NAME }}
+          MDM_PRODUCTION_GROUP_ID: ${{ vars.MDM_PRODUCTION_GROUP_ID }}
         run: |
           case "$RUN_ID" in
             "" | *[!0-9]*)
@@ -113,14 +124,14 @@ jobs:
               exit 1
               ;;
           esac
-          if [ -z "$GROUP_ID" ]; then
-            echo "::error::group-id dispatch input is empty — the MDM upload refuses to run without one non-production device group id."
-            exit 1
-          fi
-          if [ -z "$GROUP_NAME" ]; then
-            echo "::error::group-name dispatch input is empty — the MDM upload requires the exact group NAME the group-id must resolve to (positive non-production verification)."
-            exit 1
-          fi
+          missing=0
+          for name in MDM_BETA_GROUP_ID MDM_BETA_GROUP_NAME MDM_PRODUCTION_GROUP_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not set. It is an environment variable of the mdm-upload GitHub environment — a repository admin must configure it (Settings → Environments → mdm-upload → Environment variables). The MDM upload refuses to run without all three; dispatch can no longer supply any group value (R5-07)."
+              missing=1
+            fi
+          done
+          exit "$missing"
 
       # FAIL CLOSED immediately after checkout, before any toolchain setup,
       # install, download or upload work (the discipline the Android release
@@ -308,24 +319,29 @@ jobs:
           fi
 
       # The MDM upload itself (AC-09): the "Beta" release label, ONE
-      # non-production device group, silent_install. tools/mdm/upload-beta.ts
-      # owns every refusal rule (empty/production group, non-Beta label,
-      # non-increasing version) and masks every credential value in its own
-      # output.
+      # non-production device group (the ADMIN-CONFIGURED allowlist — the
+      # mdm-upload environment's variables, R5-07; dispatch cannot aim the
+      # upload at any group), silent_install. tools/mdm/upload-beta.ts owns
+      # every refusal rule (empty/production group, wrong group_type, non-Beta
+      # label, non-increasing version) and masks every credential value in
+      # its own output.
       # DRY-RUN IS THE DEFAULT (the dispatch input defaults to true): the
       # --dry-run flag is added unless the dispatcher deliberately set the
       # input false — a real upload is always a deliberate act.
       # The OAuth secrets reach the tool ONLY as step env — never as flags,
-      # never echoed. Every dispatch input reaches bash through an env var
-      # rather than inline ${{ }} interpolation. The UPLOAD_* names are
-      # intermediate plumbing, deliberately NOT the tool's MDM_* env names:
-      # the optional inputs are forwarded as flags ONLY when non-empty
+      # never echoed. Every dispatch input and every environment variable
+      # reaches bash through an env var rather than inline ${{ }}
+      # interpolation. The UPLOAD_* names are intermediate plumbing,
+      # deliberately NOT the tool's MDM_* env names. The group triple (R5-07:
+      # sourced from the mdm-upload environment's VARIABLES — admin
+      # configuration, not dispatch) is forwarded UNCONDITIONALLY, exactly
+      # like the other required flags: the early-validation step above
+      # already rejected an empty value before this step can run (an unset
+      # Actions variable renders as ""). The OPTIONAL app-category-id and
+      # redirect-uri inputs are still forwarded as flags ONLY when non-empty
       # (T11-F02 — an unset Actions input renders as "" and the tool
       # hard-fails on set-but-empty optional inputs, so an empty value must
-      # never reach the tool as a flag or as an env var). The REQUIRED
-      # group-id and group-name are forwarded unconditionally, exactly like
-      # the other required flags: the early-validation step above already
-      # rejected an empty value before this step can run.
+      # never reach the tool as a flag or as an env var).
       - name: Upload the verified APK to the MDM App Repository (Beta)
         shell: bash
         env:
@@ -333,11 +349,11 @@ jobs:
           MDM_CLIENT_SECRET: ${{ secrets.MDM_CLIENT_SECRET }}
           MDM_REFRESH_TOKEN: ${{ secrets.MDM_REFRESH_TOKEN }}
           UPLOAD_APP_NAME: ${{ inputs.app-name }}
-          UPLOAD_GROUP_ID: ${{ inputs.group-id }}
-          UPLOAD_GROUP_NAME: ${{ inputs.group-name }}
+          UPLOAD_GROUP_ID: ${{ vars.MDM_BETA_GROUP_ID }}
+          UPLOAD_GROUP_NAME: ${{ vars.MDM_BETA_GROUP_NAME }}
+          UPLOAD_PRODUCTION_GROUP_ID: ${{ vars.MDM_PRODUCTION_GROUP_ID }}
           UPLOAD_DATA_CENTRE: ${{ inputs.data-centre }}
           UPLOAD_DRY_RUN: ${{ inputs.dry-run }}
-          UPLOAD_PRODUCTION_GROUP_ID: ${{ inputs.production-group-id }}
           UPLOAD_APP_CATEGORY_ID: ${{ inputs.app-category-id }}
           UPLOAD_REDIRECT_URI: ${{ inputs.redirect-uri }}
         run: |
@@ -347,13 +363,11 @@ jobs:
             --app-version "$EXPECTED_VERSION_NAME"
             --group-id "$UPLOAD_GROUP_ID"
             --expected-group-name "$UPLOAD_GROUP_NAME"
+            --production-group-id "$UPLOAD_PRODUCTION_GROUP_ID"
             --data-centre "$UPLOAD_DATA_CENTRE"
           )
           if [ "$UPLOAD_DRY_RUN" = "true" ]; then
             args+=(--dry-run)
-          fi
-          if [ -n "$UPLOAD_PRODUCTION_GROUP_ID" ]; then
-            args+=(--production-group-id "$UPLOAD_PRODUCTION_GROUP_ID")
           fi
           if [ -n "$UPLOAD_APP_CATEGORY_ID" ]; then
             args+=(--app-category-id "$UPLOAD_APP_CATEGORY_ID")

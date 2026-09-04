@@ -69,6 +69,19 @@
  * number while the common-codes table maps string codes like COM0002), and the
  * token endpoint's {"error": ...} shape surfaces its error_description (the
  * documented throttle example carries it).
+ *
+ * Plus the 2026-09-04 Round 5 remediation R5-07 (T27): the Beta target is an
+ * ADMIN-CONTROLLED ALLOWLIST. The documented group_type enum (6 — Device
+ * Group, 7 — User Group, 11 — Tag Group; the docs' own samples emit it as
+ * both number and string) is now VALIDATED pre-mutation: only 6 — Device
+ * Group passes, number-or-string tolerated, everything else (including the
+ * details sample's own undocumented value 1 and any non-numeric value) fails
+ * closed with a refusal naming the group id, the full documented enum and
+ * the observed value/absence. No documented group field distinguishes
+ * production from test — the non-production identity is pinned by the
+ * mdm-beta-upload workflow's environment-variable allowlist, which is
+ * config-verified (YAML parse + check:ci-scripts), not test-covered;
+ * the tool's CLI flags stay unchanged (standalone use).
  */
 
 import {
@@ -143,11 +156,16 @@ const existingAppFixture = (
       : [{ release_label_id: 5, release_label_name: "Beta", app_version: options.betaVersion }]),
 });
 
-/** A group-details response as documented (group_id/name/group_type/domain). */
-const groupDetailsFixture = (name: string) => ({
+/**
+ * A group-details response as documented (group_id/name/group_type/domain).
+ * The default group_type is 6 — Device Group (the R5-07 requirement); the
+ * second parameter drives the shape rows (7/11/1, numeric strings,
+ * non-numeric strings) in the group_type validation tests.
+ */
+const groupDetailsFixture = (name: string, groupType: unknown = 6) => ({
   group_id: 701,
   name,
-  group_type: 2,
+  group_type: groupType,
   domain: "Zoho",
   description: "KISOK beta test devices",
 });
@@ -1348,6 +1366,143 @@ describe("pre-mutation group validation with the expected group name (RD-04)", (
     expect(message).toContain("[REDACTED]");
     expect(mdmMutations(result.requests)).toHaveLength(0);
     expectMasked(result);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// group_type validation — 6 — Device Group only (R5-07, T27)
+// ---------------------------------------------------------------------------
+
+describe("pre-mutation group_type validation (R5-07: 6 — Device Group only)", () => {
+  const mdmMutations = (requests: RecordedRequest[]): RecordedRequest[] =>
+    requests.filter((r) => r.url.startsWith(MDM_BASE) && r.method !== "GET");
+
+  /**
+   * The documented group_type enum is 6 — Device Group, 7 — User Group,
+   * 11 — Tag Group; the docs' own samples emit it both as a number (details)
+   * and as a string (list), so validation must tolerate both shapes. Every
+   * row here is a group_type the Beta upload must REFUSE: the documented
+   * wrong kinds, the details sample's own undocumented value 1, a wrong
+   * value in the string shape, and a non-numeric string (unusable). These
+   * rows FAIL against the pre-T27 client, which checked only the name.
+   */
+  const refusingGroupTypes: unknown[] = [7, 11, 1, "7", "user-group"];
+
+  it.each(refusingGroupTypes)(
+    "dry-run: group_type %s refuses the run BEFORE any mutation, naming the documented enum and the observed value",
+    async (groupType) => {
+      const result = await runMain(dryEnv(), {
+        route: greenRoute({ group: { body: groupDetailsFixture("Beta Tablets", groupType) } }),
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      const message = result.errors.join("\n");
+      expect(message).toContain("MDM dry-run failed");
+      expect(message).toContain("701");
+      // The full documented enum, so the refusal educates the operator.
+      expect(message).toContain("6 — Device Group");
+      expect(message).toContain("7 — User Group");
+      expect(message).toContain("11 — Tag Group");
+      // The observed value, rendered so number and string stay distinguishable.
+      expect(message).toContain(`group_type ${JSON.stringify(groupType)}`);
+      expect(mdmMutations(result.requests)).toHaveLength(0);
+      expectMasked(result);
+    },
+  );
+
+  it("dry-run: a details body with NO group_type field refuses naming the absence and the enum", async () => {
+    const result = await runMain(dryEnv(), {
+      route: greenRoute({
+        group: { body: { group_id: 701, name: "Beta Tablets", domain: "Zoho" } },
+      }),
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("MDM dry-run failed");
+    expect(message).toContain("701");
+    expect(message).toContain("absent");
+    expect(message).toContain("6 — Device Group");
+    expect(mdmMutations(result.requests)).toHaveLength(0);
+    expectMasked(result);
+  });
+
+  it("the REAL run refuses a User Group (group_type 7) BEFORE any mutation", async () => {
+    const result = await runMain(fullEnv(), {
+      route: greenRoute({ group: { body: groupDetailsFixture("Beta Tablets", 7) } }),
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("refusing");
+    expect(message).toContain("group_type 7");
+    expect(message).toContain("Device Group");
+    expect(mdmMutations(result.requests)).toHaveLength(0);
+    expectMasked(result);
+  });
+
+  it('a WRAPPED {"group":{...}} details body with a wrong group_type is refused — the name AND the group_type come from the same nested record (T15-R3 shape; T27-F1 pin)', async () => {
+    const result = await runMain(dryEnv(), {
+      route: greenRoute({ group: { body: { group: groupDetailsFixture("Beta Tablets", 7) } } }),
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("MDM dry-run failed");
+    expect(message).toContain("group_type 7");
+    expect(message).toContain("Device Group");
+    expect(mdmMutations(result.requests)).toHaveLength(0);
+    expectMasked(result);
+  });
+
+  it("dry-run: group_type 6 as a NUMBER with a matching name passes (the details-sample shape)", async () => {
+    const result = await runMain(dryEnv(), {
+      route: greenRoute({ group: { body: groupDetailsFixture("Beta Tablets", 6) } }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    const summary = result.output.join("\n");
+    expect(summary).toContain("group 701");
+    expect(summary).toContain('"Beta Tablets"');
+    expect(summary).toContain("Device Group");
+  });
+
+  it('dry-run: group_type 6 as the STRING "6" passes (the list-sample shape)', async () => {
+    const result = await runMain(dryEnv(), {
+      route: greenRoute({ group: { body: groupDetailsFixture("Beta Tablets", "6") } }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    const summary = result.output.join("\n");
+    expect(summary).toContain("group 701");
+    expect(summary).toContain('"Beta Tablets"');
+  });
+
+  it("the tool keeps its standalone CLI flags (workflow-independent use unchanged): --group-id, --expected-group-name and --production-group-id all resolve from argv", () => {
+    const result = resolveInputs(
+      [
+        ...ARGV,
+        "--group-id",
+        "702",
+        "--expected-group-name",
+        "Beta Tablets",
+        "--production-group-id",
+        "900",
+      ],
+      {
+        ...fullEnv(),
+        MDM_GROUP_ID: undefined,
+        MDM_EXPECTED_GROUP_NAME: undefined,
+        MDM_PRODUCTION_GROUP_ID: undefined,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.inputs.groupId).toBe("702");
+      expect(result.inputs.expectedGroupName).toBe("Beta Tablets");
+      expect(result.inputs.productionGroupId).toBe("900");
+    }
   });
 });
 

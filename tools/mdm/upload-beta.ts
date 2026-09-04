@@ -33,13 +33,18 @@
  *      versionCode increase. A non-increasing version refuses BEFORE any
  *      mutation;
  *   4. read-only group validation BEFORE ANY MUTATION (RD-04): GET
- *      /api/v1/mdm/groups/{group_id} — the group must resolve and its
+ *      /api/v1/mdm/groups/{group_id} — the group must resolve, its
  *      documented "name" field must equal the REQUIRED expected group name
- *      (--expected-group-name / MDM_EXPECTED_GROUP_NAME). A missing,
- *      unparseable or name-mismatched group refuses BOTH flows — id + exact
- *      name is the strongest non-production identification the documented
- *      contract supports (no group_type distinguishes production); the
- *      optional production-group-id denylist is retained as belt-and-braces;
+ *      (--expected-group-name / MDM_EXPECTED_GROUP_NAME), and its documented
+ *      group_type must be 6 — Device Group (R5-07: the documented enum is
+ *      6 — Device Group, 7 — User Group, 11 — Tag Group, read
+ *      number-or-string per the docs' own dual sample shapes; anything else
+ *      fails closed). No documented group field distinguishes production
+ *      from test — the non-production identity is pinned by the
+ *      ADMIN-CONTROLLED allowlist the mdm-beta-upload workflow sources from
+ *      the mdm-upload environment's variables (MDM_BETA_GROUP_ID /
+ *      MDM_BETA_GROUP_NAME / MDM_PRODUCTION_GROUP_ID); the optional
+ *      production-group-id equality guard is retained as belt-and-braces;
  *   5. the Beta release label (RD-05): an existing app's Beta label
  *      (release_labels[] with release_label_name "Beta") is REUSED — POST
  *      /api/v1/mdm/labels {"channel_name":"Beta"} runs ONLY when the app
@@ -71,16 +76,18 @@
  *      exactly ONE group, the configured one.
  *
  * It REFUSES to run without a group id, without an expected group name,
- * refuses the configured production group id, refuses an unresolvable or
- * name-mismatched group BEFORE any mutation, refuses any label name other
+ * refuses the configured production group id, refuses an unresolvable,
+ * name-mismatched or non-Device-Group (group_type not 6) group BEFORE any
+ * mutation, refuses any label name other
  * than exactly "Beta", and contains NO call to approve / distribute_update /
  * retire_old_version or any other production-promotion operation (AC-09).
  *
  * Dry-run (--dry-run or MDM_DRY_RUN=true): token exchange + read-only GETs
- * (app list with pagination, group details with the name verification) + the
- * version pre-check. No mutation, no APK read. Exits 0 with a summary of what
- * it found — and NON-ZERO whenever the group is missing or its name does not
- * match (a state in which a real run could not proceed safely): a truthful
+ * (app list with pagination, group details with the name + group_type
+ * verification) + the version pre-check. No mutation, no APK read. Exits 0
+ * with a summary of what it found — and NON-ZERO whenever the group is
+ * missing, its name does not match, or its group_type is not 6 — Device
+ * Group (a state in which a real run could not proceed safely): a truthful
  * dry-run.
  *
  * MASKING (deliberate engineering discipline): the access token, client
@@ -225,6 +232,18 @@ export interface MainOptions {
 // ---------------------------------------------------------------------------
 
 export const BETA_LABEL_NAME = "Beta";
+
+/**
+ * R5-07: the documented group_type of a Device Group — the ONLY kind of group
+ * the Beta upload may associate apps with. The documented enum (the Get Group
+ * List query parameter) is 6 — Device Group, 7 — User Group, 11 — Tag Group;
+ * the docs' own samples emit it as a number (the details sample) and as a
+ * string (the list sample), so readInteger's number-or-numeric-string rule
+ * tolerates both shapes. The details sample's own `group_type: 1` is an
+ * UNDOCUMENTED value — the documented enum is authoritative, and validation
+ * fails closed on anything but 6.
+ */
+const DEVICE_GROUP_TYPE = 6;
 
 /** Current docs: app repository reads are paginated, 50 per page by default. */
 export const MDM_API_PAGE_SIZE = 50;
@@ -1265,15 +1284,27 @@ async function fetchAppPages(
   };
 }
 
-type GroupDetailsResult = { ok: true; name: string } | { ok: false; failure: string };
+type GroupDetailsResult =
+  | {
+      ok: true;
+      name: string;
+      /** The parsed documented group_type (R5-07): a finite number or a numeric string is the value; anything else is undefined (unusable). */
+      groupType: number | undefined;
+      /** The RAW observed group_type value, for the refusal diagnostic (R5-07). From the MDM API response, never a credential; the emitted line still passes the redaction union. */
+      groupTypeRaw: unknown;
+    }
+  | { ok: false; failure: string };
 
 /**
  * GET /api/v1/mdm/groups/{group_id} — the documented read-only single-group
  * details call (fields group_id/name/group_type/domain; RD-03 replaces the
- * unpaged full-list walk where a single group is needed). The field is the
- * documented "name" — "group_name" appears nowhere in current docs. A
- * non-200 outcome or an unparseable body is reported as a failure and the
- * caller treats the group as missing (fail closed).
+ * unpaged full-list walk where a single group is needed). The name is the
+ * documented "name" field — "group_name" appears nowhere in current docs.
+ * The group_type is parsed fail-closed with readInteger (R5-07: the docs'
+ * own samples emit it as a number and as a string — both tolerated; a
+ * missing or non-numeric value stays undefined and validateTargetGroup
+ * refuses). A non-200 outcome or an unparseable body is reported as a
+ * failure and the caller treats the group as missing (fail closed).
  */
 async function fetchGroupDetails(
   mdmBase: string,
@@ -1303,19 +1334,29 @@ async function fetchGroupDetails(
       failure: 'the group details response did not include a usable "name" field',
     };
   }
-  return { ok: true, name };
+  const groupTypeRaw = groupRecord?.group_type;
+  const groupType = readInteger(groupTypeRaw);
+  return { ok: true, name, groupType, groupTypeRaw };
 }
 
 type GroupValidation = { ok: true; name: string } | { ok: false; failure: string };
 
 /**
- * RD-04: pre-mutation group validation with positive name verification.
- * Resolves the target group read-only and requires its documented "name" to
- * equal the required expected group name — id + exact name is the strongest
- * non-production identification the documented contract supports (no
- * documented group_type distinguishes production). Missing, unparseable or
- * mismatched → a refusal naming the group id and the expected name (group
- * ids/names are not secrets; the line still passes the redaction union).
+ * RD-04 + R5-07: pre-mutation group validation with positive verification.
+ * Resolves the target group read-only and requires (a) its documented "name"
+ * to equal the required expected group name, and (b) its documented
+ * group_type to be 6 — Device Group (the documented enum: 6 — Device Group;
+ * 7 — User Group; 11 — Tag Group, read number-or-string; anything else,
+ * including a missing or non-numeric value, fails closed). No documented
+ * group field distinguishes production from test — the non-production
+ * identity is pinned by the ADMIN-CONTROLLED allowlist the mdm-beta-upload
+ * workflow sources from the mdm-upload environment's variables
+ * (MDM_BETA_GROUP_ID / MDM_BETA_GROUP_NAME / MDM_PRODUCTION_GROUP_ID,
+ * R5-07); the production-group-id equality guard stays belt-and-braces on
+ * top. Missing, unparseable, name-mismatched or wrong-type groups refuse
+ * with a message naming the group id, the expected name / the documented
+ * enum and the observed value or its absence (group ids/names are not
+ * secrets; the line still passes the redaction union).
  */
 async function validateTargetGroup(
   mdmBase: string,
@@ -1341,6 +1382,19 @@ async function validateTargetGroup(
         `refusing: group ${inputs.groupId} resolved with name "${details.name}", which does not ` +
         `match the expected group name "${inputs.expectedGroupName}" (MDM_EXPECTED_GROUP_NAME) — ` +
         "the positive group verification failed, fail closed: no mutation was attempted",
+    };
+  }
+  if (details.groupType !== DEVICE_GROUP_TYPE) {
+    const observed =
+      details.groupTypeRaw === undefined
+        ? "absent from the response"
+        : JSON.stringify(details.groupTypeRaw);
+    return {
+      ok: false,
+      failure:
+        `refusing: group ${inputs.groupId} resolved with group_type ${observed}, and the Beta ` +
+        "upload requires group_type 6 — Device Group (the documented group_type enum: 6 — " +
+        "Device Group; 7 — User Group; 11 — Tag Group) — fail closed: no mutation was attempted",
     };
   }
   return { ok: true, name: details.name };
@@ -1758,9 +1812,10 @@ async function runDryRun(
       `version "${version ?? "(unknown)"}" — the incoming version ${inputs.appVersion} is strictly greater`;
   }
 
-  // RD-04: a truthful dry-run — exit NON-ZERO whenever the group is missing
-  // or its name does not match the expected name (a state in which a real run
-  // could not proceed safely).
+  // RD-04/R5-07: a truthful dry-run — exit NON-ZERO whenever the group is
+  // missing, its name does not match the expected name, or its group_type is
+  // not 6 — Device Group (a state in which a real run could not proceed
+  // safely).
   const group = await validateTargetGroup(centre.mdm, token.accessToken, inputs, deps);
   if (!group.ok) {
     context.emit(`MDM dry-run failed — ${group.failure}`);
@@ -1771,7 +1826,8 @@ async function runDryRun(
   context.report(appLine);
   context.report(
     `group ${inputs.groupId} ("${group.name}") was verified read-only — the name matches ` +
-      "MDM_EXPECTED_GROUP_NAME, so the association step would target it.",
+      "MDM_EXPECTED_GROUP_NAME and the group_type is 6 — Device Group, so the association " +
+      "step would target it.",
   );
   return 0;
 }
@@ -1838,11 +1894,14 @@ async function runUpload(
     return 1;
   }
 
-  // RD-04: pre-mutation group validation — resolve the target group read-only
-  // (GET /api/v1/mdm/groups/{id}) and verify its documented "name" against the
-  // required expected group name BEFORE the first mutation (the label POST, the
-  // file upload, the app create). The production-group-id equality guard in
-  // resolveInputs is belt-and-braces on top of this positive verification.
+  // RD-04/R5-07: pre-mutation group validation — resolve the target group
+  // read-only (GET /api/v1/mdm/groups/{id}) and verify BEFORE the first
+  // mutation (the label POST, the file upload, the app create) BOTH that its
+  // documented "name" equals the required expected group name AND that its
+  // documented group_type is 6 — Device Group. The production-group-id
+  // equality guard in resolveInputs is belt-and-braces on top of this
+  // positive verification; the non-production identity itself is pinned by
+  // the workflow's admin-controlled allowlist (R5-07).
   const group = await validateTargetGroup(centre.mdm, token.accessToken, inputs, deps);
   if (!group.ok) {
     context.emit(group.failure);
@@ -1971,7 +2030,8 @@ max 10 access tokens per refresh token per 10 minutes), the app list read
 (paginated by the documented envelope: paging.next as a full URL, else the
 limit/offset query params — never "page="), the monotonic version pre-check,
 the read-only group validation (GET /api/v1/mdm/groups/{group_id} — the
-group's documented name must equal the expected group name), then the
+group's documented name must equal the expected group name AND its
+documented group_type must be 6 — Device Group), then the
 /emsapi/files upload with its documented two-phase lifecycle (fileStatus 2 →
 proceed immediately; 1 → bounded POST /emsapi/fileupload/status polling until
 file_availability_status 2; 3 → fail), the Beta release label (reused from the
@@ -1983,10 +2043,10 @@ calls production approve / distribute_update / retire_old_version
 operations.
 
 Dry-run (--dry-run or MDM_DRY_RUN=true): token exchange + read-only GETs
-(app list with pagination, group details with name verification) + the
-version pre-check. No mutation, no APK read; exits 0 with a summary — and
-NON-ZERO when the group is missing or its name does not match (a real run
-could not proceed safely).
+(app list with pagination, group details with name + group_type verification)
++ the version pre-check. No mutation, no APK read; exits 0 with a summary —
+and NON-ZERO when the group is missing, its name does not match, or its
+group_type is not 6 — Device Group (a real run could not proceed safely).
 
 Secrets (required; flag or env; VALUES ARE MASKED in all output — logs are
 treated as a credential-exposure surface):

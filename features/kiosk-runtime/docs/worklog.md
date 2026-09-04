@@ -2611,3 +2611,50 @@ GREEN: focused suite 145/145; `pnpm test:ci` **69 suites / 969 tests**
 
 GATE: PASS (R5-06 closed). Commit + push attempt follows (push still
 blocked — human token prerequisite recorded).
+
+### T27 — Beta target allowlist (vars-sourced) + group_type 6 validation (Round 5)
+
+RED (fresh feature-implementer, agent-61f57741, behavior-change tool +
+config workflow): 8 failed / 147 passed — the 7 group_type refusal rows
+(all `Expected: not 0`: today only the group NAME is checked; a User/Tag
+group sails through) + the dry-run summary "Device Group" truthfulness
+row. The fresh reviewer independently reproduced the RED in a /tmp scratch
+copy (8 failed / 147 passed, same rows).
+
+IMPLEMENT: tool — `DEVICE_GROUP_TYPE = 6` (documented enum 6/7/11; the
+details sample's own 1 is undocumented); `fetchGroupDetails` parses
+group_type from the same wrapped-or-flat record as the name (number or
+numeric string via readInteger; else unusable);
+`validateTargetGroup` requires groupType === 6 AFTER the unchanged name
+check, pre-mutation, refusal naming id + enum + observed value (or
+absence); CLI flags unchanged (standalone use); truthful dry-run summary.
+Workflow — group/group-name/production-group-id dispatch inputs REMOVED
+(run-id, dry-run, app-name, data-centre, app-category-id, redirect-uri
+remain); the triple sourced from `vars.MDM_BETA_GROUP_ID` /
+`MDM_BETA_GROUP_NAME` / `MDM_PRODUCTION_GROUP_ID` (the `mdm-upload`
+environment's VARIABLES — admin-controlled); fail-closed presence checks
+naming the variable + the admin configuration path (Settings →
+Environments → mdm-upload → Environment variables; values never echoed);
+--production-group-id forwarded UNCONDITIONALLY (early validation
+guarantees non-empty); T11-F02 conditional pattern retained for
+category/redirect.
+
+REVIEW (fresh code-reviewer, agent-335b46f3): **0 blocking / 0 major / 2
+minor** — T27-F1 (wrapped-shape × wrong-group_type refusal row) and
+T27-F2 (two comment-accuracy nits) both CLOSED by a same-implementer
+resume (the wrapped refusal row added and green; both comments reworded).
+Reviewer verified: the allowlist genuinely removes the dispatcher's aim
+(no group value can enter via dispatch; admin config vs write-dispatch
+boundary); exit-code accumulator correctness; permissions/concurrency/
+persist-credentials unchanged; the fixture 2→6 update honest; RED
+reproduced; config-mode evidence (YAML parse; the validation + upload
+step run-blocks extracted and executed against unset/set inputs;
+check:ci-scripts; pnpm verify).
+
+GREEN: focused suite 156/156 (147+9+1... 10 tool rows + 1 wrapped-refusal
+row); `pnpm test:ci` **69 suites / 980 tests**; typecheck/lint/format
+clean; check:ci-scripts + verify green (Lead re-ran test:ci).
+
+GATE: PASS (R5-07 closed — the Beta target is now an admin-controlled
+allowlist; dispatch cannot override it). Commit + push attempt follows
+(push still blocked — human token prerequisite recorded).

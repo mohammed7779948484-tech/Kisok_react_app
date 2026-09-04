@@ -13,8 +13,8 @@ defeats its only purpose.
 
 ```
 Current round     : 5 — post-review remediation (R5-01…R5-13)
-Current task      : T27 (next) — T26 PASS (fresh review 0 blocking / 0 major)
-Current stage     : remediation task loop — T21–T26 done (969 tests green); T27 next
+Current task      : T28 (next) — T27 PASS (fresh review 0 blocking / 0 major; 2 minors closed in-task)
+Current stage     : remediation task loop — T21–T27 done (980 tests green); T28 next
 Last gate         : FEATURE GATE REOPENED (Round 5) — the Round 4 PASS at 527a7e6 is historical; see review.md Round 5 sections
 Next legal action : launch the T21 fresh feature-implementer (bounded packet per plan Round 5 tasks)
 
