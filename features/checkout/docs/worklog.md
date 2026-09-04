@@ -1104,3 +1104,42 @@ features/checkout/screens/order-review/order-review-screen.test.tsx
 (the Lead's flake fix B)
 
 GATE: PASS
+
+### ROUND 3 GATE — surfaces
+
+ROUND DIFF REVIEW (Lead)
+566f774..HEAD + the R3-01 fix commit: the review screen + its outcome
+panels, the success screen + countdown, the recovery gate + shared
+conflict row, the catalog settings seam, the customer layout mount, the
+integration pin refreshes, core/testing's mutation gcTime fix (T09).
+
+ROUND CHECKS
+$ pnpm test → 68 suites / 847 tests, zero console output
+$ pnpm typecheck → clean
+$ pnpm lint → zero warnings (exit 0)
+
+ROUND REVIEW (fresh code-reviewer, agent-89944a96)
+Verified: D8 single-machine coherence across the three surfaces (no
+double navigation; the gate owns the session until handoff); the full
+journey walk with exactly one way forward per outcome; the T10↔T11 seam
+one-truth; shared components structurally sound; 13-suite coherence;
+boundaries/generator conformity/RN/a11y clean; all runs reproduced.
+Findings: R3-01 BLOCKING (the T12 LAYOUT MOUNT WAS NEVER COMMITTED — the
+T12 git add missed app/(customer)/\_layout.tsx; the pushed branch lacked
+the D7/AC-13 artifact and would fail the new pins on a clean checkout),
+R3-02 major (no hardware/gesture-back defense on the checkout surfaces —
+AC-04's "back navigation is prevented" is touch-only; reachable strands:
+back during unknown, back from success kills the countdown), R3-03 minor
+(stale todo rows), R3-04 minor (plan D9 + schema comment never reconciled
+with the accepted live-lines join), R3-05 minor (outcome copy duplicated
+across surfaces — deferred with the reviewer's note).
+Remediation: R3-01 fixed IMMEDIATELY — the layout committed (c92f223),
+full suite re-verified green at the exact new HEAD, pushed; the worklog
+records the miss honestly. R3-03 fixed (board rows + round number).
+R3-04 reconciled (plan D9 + the schema comment now record the accepted
+deviation and its reason). R3-02 scheduled: the BackHandler note added
+to T13 in todo.md (lands with Round 4 — the routes round; the server's
+idempotency owns duplicate-safety, this is UX completeness for AC-04).
+R3-05 deferred (minor copy drift risk; recorded).
+
+ROUND 3 GATE: PASS

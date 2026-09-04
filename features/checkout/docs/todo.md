@@ -15,11 +15,11 @@ The single answer to "where are we?". Update it whenever any of it changes; it
 is the first thing the next agent reads.
 
 ```
-Current round     : 2
+Current round     : 3
 Current task      : — (round complete)
-Current stage     : T12 GATE PASS — Round 3 complete; ROUND GATE pending
-Last gate         : T12 GATE PASS (Round 3 tasks complete)
-Next legal action : Round 3 gate — accumulated diff review + fresh Round reviewer
+Current stage     : ROUND 3 GATE PASS — Round 4 starting
+Last gate         : ROUND 3 GATE PASS
+Next legal action : Lead scaffold T13 (routes), then delegate
 Blocked by        : —
 ```
 
@@ -49,11 +49,11 @@ Scan this first. Detail is below.
 | T05  | behavior | Supporting AC-07, AC-11               | Cart `clearCartDurable()` extension                        | —                       | done        | PASS    |
 | T06  | behavior | Acceptance: AC-04, AC-06, AC-09–AC-11 | Checkout attempt store (state machine + durable lifecycle) | T02, T03, T04, T05      | done        | PASS    |
 | T07  | behavior | Acceptance: AC-12                     | Sign-out guard + cleanup registration                      | T06                     | done        | PASS    |
-| T08  | behavior | Acceptance: AC-02, AC-03              | Order Review screen + order-line-row                       | —                       | not started | PENDING |
+| T08  | behavior | Acceptance: AC-02, AC-03              | Order Review screen + order-line-row                       | —                       | done        | PASS    |
 | T09  | behavior | Acceptance: AC-04, AC-08–AC-10        | Review submission flow + outcome panels                    | T04, T06, T08           | done        | PASS    |
 | T10  | behavior | Supporting AC-14                      | Catalog settings seam                                      | —                       | done        | PASS    |
 | T11  | behavior | Acceptance: AC-07, AC-14, AC-15       | Order Success screen + countdown                           | T06, T08, T10           | done        | PASS    |
-| T12  | behavior | Acceptance: AC-13                     | recovery-gate + layout mounting                            | T06, T07                | not started | PENDING |
+| T12  | behavior | Acceptance: AC-13                     | recovery-gate + layout mounting                            | T06, T07                | done        | PASS    |
 | T13  | config   | N/A — routing                         | Routes: /checkout, /checkout-success                       | T08, T11                | not started | PENDING |
 | T14  | behavior | Acceptance: AC-01                     | Full Cart Review Order CTA                                 | T13                     | not started | PENDING |
 | T15  | behavior | Acceptance: AC-16                     | Customer journey integration test                          | T09, T11, T12, T13, T14 | not started | PENDING |
@@ -247,6 +247,15 @@ it — two summaries disagree the moment one is updated and the other is not.
 ## Round 4 — routes, entry & journey
 
 ### T13 — routes
+
+- **Note (from Round 3 review R3-02, AC-04 gap)**: the checkout surfaces have
+  no hardware/gesture-BACK defense yet — Android's back button can pop the
+  review screen during submitting/unknown (stranding the unknown-phase
+  customer on a locked cart with no Check Again until restart) and can kill
+  the success screen's countdown. Subscribe `BackHandler` while phase is
+  submitting/unknown on the review screen and while the success countdown
+  owns the session (return true; clean removal) — pin with RN's BackHandler
+  jest mock. Land with the routes (T13/T14).
 
 - **Note (from T11 review F-T11-04, disposition deferred here)**: decide the
   reset navigation semantics when the routes land — the success reset

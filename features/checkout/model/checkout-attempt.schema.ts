@@ -96,8 +96,11 @@ const attemptItemsSchema = z
  * loudly at this boundary … never parse halfway into a lifecycle decision")
  * made mechanical: the SET of lowercased snapshot `variantId`s must EQUAL the
  * set of lowercased item `variant_id`s. Every submitted variant must carry
- * its display snapshot (the success screen and the D9 conflict join render
- * from the snapshots, never the live cart), and no snapshot may name a
+ * its display snapshot (the success screen renders from the snapshots; the
+ * D9 conflict join uses the LIVE locked cart lines — reconciled at Round 3
+ * review R3-04: the record is discarded at the definite conflict resolve,
+ * so no capture exists at render time; the lock guarantees the lines are
+ * the submission context), and no snapshot may name a
  * variant the request never carried. SET equality, not a count or a pairing:
  * multiple snapshots of one variant are the normal persisted shape (one cart
  * line per option selection — T02 merges them into ONE item), so the two

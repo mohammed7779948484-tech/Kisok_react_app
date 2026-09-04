@@ -190,8 +190,12 @@ order wins); the deployed catalog feature confirms execution is live.
   explicitly forbids collapsing the six states; recovery needs them durable).
 - **D9 — Stock conflict joins client-side.** The conflict payload carries
   only `variant_id` + quantities; the panel joins each `variant_id` to the
-  ATTEMPT'S captured line snapshots (not the live cart — which is preserved
-  but conceptually may drift) for names/labels/images. Requested vs available
+  LIVE cart lines for names/labels. [Reconciled at Round 3 review R3-04: the
+  original wording said the ATTEMPT'S captured snapshots — but the store
+  discards the record at the definite conflict resolve (D1), so no capture
+  exists at render time; the flight/replay lock guarantees the live lines
+  are exactly the submission context. The deviation was accepted by the
+  T09/T12 task reviews with exactly that documentation.] Requested vs available
   rendered as words + numbers, never colour alone. No auto-correction, no
   cart mutation. Rejected: re-rendering conflict rows from the catalog (the
   cart snapshot is the submission context; catalog state is irrelevant and
