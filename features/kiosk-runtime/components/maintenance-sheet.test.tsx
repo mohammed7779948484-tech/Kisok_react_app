@@ -324,4 +324,88 @@ describe("MaintenanceSheet — unlocked panel", () => {
 
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  describe("when the maintenance session clears mid-flight", () => {
+    // The ephemeral-clear variant of the hazard class T06-R2/R2-1 fixed for
+    // the CLOSE paths: the maintenance session can clear while a switch
+    // attempt is still in flight — the overlay's expiry timer, the sync
+    // hook's AppState transition, or a snapshot application — and every one
+    // of those paths flips `unlocked` to false, so the sheet swaps to the
+    // LOCKED code-entry form before the pipeline settles. Whatever settles
+    // after the flip must still surface its outcome: a blocked or failed
+    // message is the failure surface the shared pipeline exists to deliver
+    // (AC-06), and the locked form must not swallow it. At this seam the
+    // sheet is presentational about the session, so the clear is exactly the
+    // store-driven `unlocked` flip the overlay applies — the same rerender
+    // `unlockToPanel` performs, in reverse.
+    it("still surfaces the blocked outcome after the settle, on the locked form", async () => {
+      // The guard hangs, so the attempt stays in flight across the flip.
+      type BlockedResult = { status: "blocked"; reason: string };
+      let settleGuard: ((result: BlockedResult) => void) | undefined;
+      registerSignOutGuard({
+        name: "checkout",
+        run: () =>
+          new Promise<BlockedResult>((resolve) => {
+            settleGuard = resolve;
+          }),
+      });
+      const { user, view } = await unlockToPanel();
+
+      await user.press(screen.getByRole("button", { name: SWITCH_ACCOUNT }));
+
+      // Mid-flight: the session clears (expiry, backgrounding, and a snapshot
+      // re-lock all look like this at the sheet's seam) and the locked
+      // code-entry form takes over while the attempt is still pending.
+      await view.rerender(<MaintenanceSheet {...defaultProps({ unlocked: false })} />);
+      expect(screen.getByLabelText(CODE_LABEL)).toBeOnTheScreen();
+      // The attempt is genuinely in flight at the flip (the T06-R2 guard
+      // holds in either branch).
+      expect(screen.getByRole("button", { name: CLOSE })).toBeDisabled();
+
+      await act(async () => {
+        settleGuard?.({ status: "blocked", reason: BLOCKED_REASON });
+      });
+
+      // The settle lands while the locked form is showing: the pipeline's own
+      // words must still reach the staff member.
+      await waitFor(() => expect(screen.getByText(BLOCKED_REASON)).toBeOnTheScreen());
+      const alert = screen.getByText(BLOCKED_REASON).parent;
+      expect(alert).toHaveProp("accessibilityRole", "alert");
+      expect(alert).toHaveProp("accessibilityLiveRegion", "polite");
+      // A block aborts before auth is touched, whichever branch is showing.
+      expect(auth?.signOutCalls).toEqual([]);
+    });
+
+    it("still surfaces the failed outcome after the settle, on the locked form", async () => {
+      // The server call hangs, then errors while the stored session is
+      // retained: the pipeline reports `failed` after the flip.
+      let settleSignOut: (() => void) | undefined;
+      auth = installMockAuth({
+        signOut: () =>
+          new Promise((resolve) => {
+            settleSignOut = () => resolve({ error: { message: "network down" } });
+          }),
+        sessionAfterSignOut: { access_token: "still-here", user: { id: "u1" } },
+      });
+      const { user, view } = await unlockToPanel();
+
+      await user.press(screen.getByRole("button", { name: SWITCH_ACCOUNT }));
+
+      await view.rerender(<MaintenanceSheet {...defaultProps({ unlocked: false })} />);
+      expect(screen.getByLabelText(CODE_LABEL)).toBeOnTheScreen();
+      expect(screen.getByRole("button", { name: CLOSE })).toBeDisabled();
+
+      await act(async () => {
+        settleSignOut?.();
+      });
+
+      await waitFor(() => expect(screen.getByText(FAILED_REASON)).toBeOnTheScreen());
+      const alert = screen.getByText(FAILED_REASON).parent;
+      expect(alert).toHaveProp("accessibilityRole", "alert");
+      expect(alert).toHaveProp("accessibilityLiveRegion", "polite");
+      // A failure happens after exactly one local-only attempt — the flip
+      // changes what the sheet shows, not the pipeline's semantics.
+      expect(auth?.signOutCalls).toEqual([{ scope: "local" }]);
+    });
+  });
 });

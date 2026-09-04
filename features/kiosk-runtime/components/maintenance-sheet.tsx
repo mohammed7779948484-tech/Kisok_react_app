@@ -57,7 +57,10 @@ const CLOSE = "Close";
  *   SHARED sign-out pipeline via `useSignOutAction` (the same contract as the
  *   kiosk mismatch screen): pending disables the control, and a blocked or
  *   failed outcome surfaces the pipeline's own message verbatim on an
- *   announced Alert. No parallel sign-out logic lives here (AC-06).
+ *   announced Alert — in EITHER branch, because the ephemeral session can
+ *   clear while an attempt is in flight and a settle that lands after the
+ *   sheet has flipped back to the code form must not be swallowed by it. No
+ *   parallel sign-out logic lives here (AC-06).
  *
  * The typed code never outlives its purpose: it is cleared when the unlock
  * lands and when the sheet closes, and it is never logged or persisted.
@@ -91,9 +94,10 @@ export function MaintenanceSheet({
   }, [open]);
 
   // A switch attempt has settled. A message means the pipeline blocked or
-  // failed: the panel stays put so the pipeline's own words are in front of
-  // the staff member. No message after a completed run means full success —
-  // report it upward; the overlay clears the session and closes the sheet.
+  // failed: the sheet stays put with the outcome Alert on screen (either
+  // branch — see `outcomeMessage`) so the pipeline's own words are in front
+  // of the staff member. No message after a completed run means full success
+  // — report it upward; the overlay clears the session and closes the sheet.
   useEffect(() => {
     if (!switchAttempted || signOut.pending) return;
     if (signOut.message === null) onAccountSwitched?.();
@@ -121,6 +125,18 @@ export function MaintenanceSheet({
     onOpenChange(next);
   }
 
+  // The settled attempt's outcome, in the pipeline's own words. The hook owns
+  // the lifecycle: null while idle or in flight, set only when a run settles
+  // blocked or failed, cleared by the next run. Rendered in BOTH branches, not
+  // only the panel: the maintenance session can clear while an attempt is
+  // still in flight — the expiry timer, a backgrounding, or a snapshot re-lock
+  // flips the sheet to the code-entry form, and a settle landing after that
+  // flip must not have its message swallowed by the locked form (the
+  // close-path variants of this hazard class were the T06-R2/R2-1 findings;
+  // the ephemeral-clear paths are what this covers).
+  const outcomeMessage =
+    signOut.message !== null ? <Alert variant="warning" title={signOut.message} /> : null;
+
   return (
     <AdaptiveSheet open={open} onOpenChange={handleOpenChange}>
       <AdaptiveSheetContent>
@@ -136,7 +152,7 @@ export function MaintenanceSheet({
             <Button size="large" block disabled={signOut.pending} onPress={handleSwitchAccount}>
               <Text>{SWITCH_ACCOUNT}</Text>
             </Button>
-            {signOut.message ? <Alert variant="warning" title={signOut.message} /> : null}
+            {outcomeMessage}
           </View>
         ) : (
           <View className="gap-4 px-5 pb-5">
@@ -158,6 +174,7 @@ export function MaintenanceSheet({
             <Button size="large" block onPress={handleSubmit}>
               <Text>{UNLOCK}</Text>
             </Button>
+            {outcomeMessage}
           </View>
         )}
 
