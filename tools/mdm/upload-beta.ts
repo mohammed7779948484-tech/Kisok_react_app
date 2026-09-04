@@ -72,11 +72,13 @@
  * match (a state in which a real run could not proceed safely): a truthful
  * dry-run.
  *
- * MASKING (Zoho policy — logs count as credential exposure and trigger
- * revocation): the access token, client secret, refresh token and client id
- * values never appear in any output, error, or log line — every emitted line
- * passes through a mechanical redaction of the known secret values, and no
- * message is ever constructed from them in the first place. This includes the
+ * MASKING (deliberate engineering discipline): the access token, client
+ * secret, refresh token and client id values never appear in any output,
+ * error, or log line — every emitted line passes through a mechanical
+ * redaction of the known secret values, and no message is ever constructed
+ * from them in the first place. The documented guidance is only "Do not
+ * share this credentials"; we treat logs as a potential exposure surface
+ * and redact every credential-shaped value defensively. This includes the
  * input-resolution failure path: those lines are redacted with the credential
  * values gathered from argv/env BEFORE emission (a rejected positional
  * argument's value is not echoed at all — the position is the diagnostic),
@@ -234,7 +236,10 @@ const NUMERIC_ID_PATTERN = /^[0-9]+$/;
 /**
  * Data-centre endpoints (US default). Selection is EXPLICIT via
  * --data-centre / MDM_DATA_CENTRE: the token exchange host and the MDM host
- * move together per centre.
+ * move together per centre. The ca/cn accounts hosts follow the official
+ * multi-dc table (verified against the live serverinfo endpoints): they are
+ * accounts.zohocloud.ca / accounts.zoho.com.cn — the accounts.zoho.ca /
+ * accounts.zoho.cn hosts do NOT resolve (R5, T16).
  */
 const DATA_CENTRES = new Map<string, { accounts: string; mdm: string }>([
   ["us", { accounts: "https://accounts.zoho.com", mdm: "https://mdm.manageengine.com" }],
@@ -242,8 +247,8 @@ const DATA_CENTRES = new Map<string, { accounts: string; mdm: string }>([
   ["in", { accounts: "https://accounts.zoho.in", mdm: "https://mdm.manageengine.in" }],
   ["au", { accounts: "https://accounts.zoho.com.au", mdm: "https://mdm.manageengine.com.au" }],
   ["jp", { accounts: "https://accounts.zoho.jp", mdm: "https://mdm.manageengine.jp" }],
-  ["ca", { accounts: "https://accounts.zoho.ca", mdm: "https://mdm.manageengine.ca" }],
-  ["cn", { accounts: "https://accounts.zoho.cn", mdm: "https://mdm.manageengine.cn" }],
+  ["ca", { accounts: "https://accounts.zohocloud.ca", mdm: "https://mdm.manageengine.ca" }],
+  ["cn", { accounts: "https://accounts.zoho.com.cn", mdm: "https://mdm.manageengine.cn" }],
   ["sa", { accounts: "https://accounts.zoho.sa", mdm: "https://mdm.manageengine.sa" }],
   ["uk", { accounts: "https://accounts.zoho.uk", mdm: "https://mdm.manageengine.uk" }],
 ]);
@@ -845,19 +850,32 @@ interface NetworkDeps {
   sleep: (ms: number) => Promise<void>;
 }
 
+/**
+ * The error code as comparable text: the documented REST error example
+ * carries error_code as a NUMBER (1002) while the common-codes table maps
+ * STRING codes (COM0002) — both shapes are documented, so a code is read as
+ * its String() whenever it is a string or a number (R5, T16).
+ */
+function errorCodeText(envelope: Record<string, unknown> | undefined): string | undefined {
+  const raw = envelope?.error_code;
+  return typeof raw === "string" || typeof raw === "number" ? String(raw) : undefined;
+}
+
 /** Surfaces error_code + error_description, never a raw dump of the body. */
 function describeErrorBody(envelope: Record<string, unknown> | undefined, rawBody: string): string {
   if (envelope !== undefined) {
-    const code = typeof envelope.error_code === "string" ? envelope.error_code : undefined;
+    const code = errorCodeText(envelope);
     const description =
       typeof envelope.error_description === "string" ? envelope.error_description : undefined;
     if (code !== undefined) {
       return description === undefined ? code : `${code} — ${description}`;
     }
-    // The Zoho accounts token endpoint reports errors as {"error": "..."}.
+    // The Zoho accounts token endpoint reports errors as {"error": "..."} —
+    // and the documented throttle example also carries error_description, so
+    // both are surfaced (R5, T16).
     const error = typeof envelope.error === "string" ? envelope.error : undefined;
     if (error !== undefined) {
-      return `error: ${error}`;
+      return description === undefined ? `error: ${error}` : `error: ${error} — ${description}`;
     }
   }
   const firstLine =
@@ -893,7 +911,7 @@ async function requestWithRetry(deps: NetworkDeps, call: HttpCall): Promise<Http
     }
     const parsed = tryParseJson(body);
     const envelope = isRecord(parsed) ? parsed : undefined;
-    const errorCode = typeof envelope?.error_code === "string" ? envelope.error_code : undefined;
+    const errorCode = errorCodeText(envelope);
     const retryable = response.status === 429 || errorCode === "COM0002" || response.status >= 500;
     if (retryable && attempt < MAX_REQUEST_ATTEMPTS) {
       await deps.sleep(RETRY_BASE_DELAY_MS * 2 ** (attempt - 1));
@@ -1663,8 +1681,8 @@ version pre-check. No mutation, no APK read; exits 0 with a summary — and
 NON-ZERO when the group is missing or its name does not match (a real run
 could not proceed safely).
 
-Secrets (required; flag or env; VALUES ARE MASKED in all output — logs
-count as credential exposure):
+Secrets (required; flag or env; VALUES ARE MASKED in all output — logs are
+treated as a credential-exposure surface):
   --client-id <id>               MDM_CLIENT_ID
   --client-secret <secret>       MDM_CLIENT_SECRET
   --refresh-token <token>        MDM_REFRESH_TOKEN

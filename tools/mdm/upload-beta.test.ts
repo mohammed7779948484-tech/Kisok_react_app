@@ -23,6 +23,15 @@
  * documented "name" field — "group_name" appears nowhere in current docs), a
  * dry-run that exits NON-ZERO on a missing/mismatched group (truthful), and
  * Beta-label reuse from the app's release_labels before POST /api/v1/mdm/labels.
+ *
+ * Plus the 2026-09-04 auth/error contract drifts (RD-06, T16, packet R5): the
+ * ca/cn accounts hosts follow the official multi-dc table
+ * (accounts.zohocloud.ca / accounts.zoho.com.cn — the accounts.zoho.ca /
+ * accounts.zoho.cn hosts in the old map are DNS-dead), error_code is accepted
+ * as a STRING or a NUMBER (the documented REST error example emits 1002 as a
+ * number while the common-codes table maps string codes like COM0002), and the
+ * token endpoint's {"error": ...} shape surfaces its error_description (the
+ * documented throttle example carries it).
  */
 
 import {
@@ -317,7 +326,7 @@ async function runMain(
   return { exitCode, output, errors, requests };
 }
 
-/** The masking invariant (Zoho policy: logs count as credential exposure). */
+/** The masking invariant: no credential value ever reaches a sink. */
 function expectMasked(result: { output: string[]; errors: string[] }): void {
   const everything = [...result.output, ...result.errors].join("\n");
   for (const secret of [CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN, ACCESS_TOKEN]) {
@@ -786,6 +795,19 @@ describe("token exchange", () => {
     expect(us.requests[1]?.url.startsWith(MDM_BASE)).toBe(true);
   });
 
+  it("the ca and cn data centres use the RESOLVABLE accounts hosts (R5: zohocloud.ca / zoho.com.cn — the accounts.zoho.ca / accounts.zoho.cn hosts are DNS-dead)", async () => {
+    const ca = await runMain({ ...dryEnv(), MDM_DATA_CENTRE: "ca" }, { route: greenRoute() });
+
+    expect(ca.exitCode).toBe(0);
+    expect(ca.requests[0]?.url).toBe("https://accounts.zohocloud.ca/oauth/v2/token");
+    expect(ca.requests[1]?.url.startsWith("https://mdm.manageengine.ca/")).toBe(true);
+
+    const cn = await runMain({ ...dryEnv(), MDM_DATA_CENTRE: "cn" }, { route: greenRoute() });
+    expect(cn.exitCode).toBe(0);
+    expect(cn.requests[0]?.url).toBe("https://accounts.zoho.com.cn/oauth/v2/token");
+    expect(cn.requests[1]?.url.startsWith("https://mdm.manageengine.cn/")).toBe(true);
+  });
+
   it("carries the Zoho-oauthtoken authorization header on EVERY MDM call, exactly once per token", async () => {
     const result = await runMain(fullEnv(), { route: greenRoute() });
 
@@ -815,6 +837,30 @@ describe("token exchange", () => {
     expect(message).toContain("HTTP 400");
     expect(message).toContain("invalid_client");
     expect(message).toContain("MDM_CLIENT_ID");
+    expect(result.requests).toHaveLength(1);
+    expectMasked(result);
+  });
+
+  it("a token-exchange {error, error_description} envelope surfaces the description (the documented throttle shape)", async () => {
+    const route = withIntercept(greenRoute(), (request) => {
+      if (request.method === "POST" && request.url.endsWith("/oauth/v2/token")) {
+        return json(
+          {
+            error: "Access Denied",
+            error_description:
+              "You have made too many requests continuously. Please try again after some time.",
+          },
+          400,
+        );
+      }
+      return undefined;
+    });
+    const result = await runMain(fullEnv(), { route });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("Access Denied");
+    expect(message).toContain("too many requests");
     expect(result.requests).toHaveLength(1);
     expectMasked(result);
   });
@@ -1805,6 +1851,34 @@ describe("backoff and bounded retries", () => {
     expect(sleeps).toEqual([1000]);
   });
 
+  // Characterization (T16): a NUMERIC error_code must not defeat the
+  // status-based retry — the HTTP status is the primary rate signal, the
+  // COM0002 string match is the secondary one. The fixture code (500) mirrors
+  // the 5xx status; only the status is the documented retry trigger here.
+  it("characterization: a numeric-code envelope with HTTP 500 still retries via the status check", async () => {
+    let appsCalls = 0;
+    const route = withIntercept(greenRoute(), (request) => {
+      if (request.method === "GET" && request.url.includes("/api/v1/mdm/apps")) {
+        appsCalls += 1;
+        return json({ error_code: 500, error_description: "Internal Error" }, 500);
+      }
+      return undefined;
+    });
+    const sleeps: number[] = [];
+
+    const result = await runMain(fullEnv(), {
+      route,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(appsCalls).toBe(3);
+    expect(sleeps).toEqual([1000, 2000]);
+    expect(result.errors.join("\n")).toContain("after 3 attempts");
+  });
+
   it("retries the token exchange on 429 (bounded), then succeeds", async () => {
     let tokenCalls = 0;
     const route = withIntercept(greenRoute(), (request) => {
@@ -1965,6 +2039,26 @@ describe("error envelope", () => {
     expect(message).toContain("insufficient privileges");
     expect(message).toContain("HTTP 403");
     expect(message).not.toContain("localized_error_description");
+    expectMasked(result);
+  });
+
+  it("a non-2xx with a NUMERIC error_code (the documented 1002 example) renders structured, not as a raw first line", async () => {
+    const route = withIntercept(
+      greenRoute({ appResponses: [{ apps: [existingAppFixture({ version: "1.1.0" })] }] }),
+      (request) => {
+        if (request.method === "POST" && request.url.endsWith("/api/v1/mdm/labels")) {
+          return json({ error_code: 1002, error_description: "Unknown ID" }, 400);
+        }
+        return undefined;
+      },
+    );
+    const result = await runMain(fullEnv(), { route });
+
+    expect(result.exitCode).not.toBe(0);
+    const message = result.errors.join("\n");
+    expect(message).toContain("1002 — Unknown ID");
+    expect(message).not.toContain('{"error_code"');
+    expect(message).toContain("HTTP 400");
     expectMasked(result);
   });
 

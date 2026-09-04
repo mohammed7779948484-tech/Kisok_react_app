@@ -1962,3 +1962,42 @@ tooling; no generator capability)
 - **GATE: PASS** — documented read path (pagination/groups/labels), truthful
   dry-run, pre-mutation group+name validation, label reuse; production-group
   denylist + masking discipline retained.
+
+---
+
+## T16 — MDM auth/error contract remediation (remediation Round 4, R5 drifts)
+
+**Mode**: bug · **Acceptance**: Supporting AC-09 · **Deps**: T15 (PASS) ·
+**Scaffold**: N/A (repo tooling)
+
+- **Research basis**: packet R5 (agent-0a11aa0c), Lead spot-checked against
+  the live serverinfo endpoints — `ca` accounts host =
+  `accounts.zohocloud.ca`, `cn` = `accounts.zoho.com.cn` (both previous
+  hosts DNS-dead); documented error envelope example carries a NUMERIC
+  `error_code` (1002) while the codes table maps strings; the token throttle
+  JSON carries `error_description` alongside `{"error": ...}`.
+- **RED** (fresh implementer agent-67c4199b): **3 failed / 115 passed** —
+  ca host (`Expected accounts.zohocloud.ca / Received accounts.zoho.ca`),
+  token description dropped (`Expected "too many requests" / Received "error:
+Access Denied — check MDM_CLIENT_ID…"`), numeric code fell to the raw
+  first line. One additional row was delivered as a CHARACTERIZATION, not
+  RED: the plan's third RED item ("429-with-numeric-code still retries") was
+  a plan-time mislabel — the HTTP-429 status branch already fired on the old
+  code, so that case passed before and after (reviewer T16-R4; the delivered
+  characterization pins HTTP 500 + numeric code via the status check, and
+  429 is pinned by the pre-existing tests).
+- **IMPLEMENT** (2 files, surgical): DATA_CENTRES ca/cn hosts fixed;
+  `errorCodeText()` (string|number) used in `describeErrorBody` AND the
+  COM0002 retry check; the `{"error": ...}` token branch surfaces
+  `error_description` (redaction unchanged); MASKING header comment
+  provenance reworded to engineering discipline.
+- **GREEN**: 118 tests (114 + 4); `pnpm test:ci` 68 suites / 850 tests;
+  typecheck/lint/prettier clean.
+- **Fresh review** (agent-1c8afa52): **0 blocking / 0 major / 4 minor** —
+  T16-R1 USAGE string still carried the retracted provenance (implementer
+  resumed: one-clause reword, 118 tests green); T16-R2/T16-R3 are
+  mdm-operations.md provenance + ca/cn host-template inconsistencies
+  (assigned to T20's scope); T16-R4 record accuracy (this entry's
+  characterization note).
+- **GATE: PASS** — documented DC hosts, both documented error-envelope
+  shapes, token error descriptions surfaced; T15 surfaces byte-identical.
