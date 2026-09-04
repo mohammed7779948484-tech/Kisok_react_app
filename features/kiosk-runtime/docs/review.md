@@ -120,6 +120,13 @@ T29 so the operational contract no longer carries the stale claim.
   code). Optional one-line prop gate documented for any future touching of
   the sheet.
 
+- **T26-R1 (mutation 5xx + COM0002-envelope diagnostic precedence) —
+  ACCEPTED (T26 fresh review verdict).** A mutation-class final failure
+  carrying COM0002 on a ≥500 status gets the ambiguity diagnostic but not
+  the 5-minute-lock naming. Low realism (COM0002 is documented as the 429
+  status; 500+COM0002 is a server contradiction) and the ambiguity
+  diagnostic is the safer guidance. Precedence documented in the code.
+
 ### Live-tenant / hardware items that remain unverifiable from this sandbox
 
 Live MDM dry-run; whether the server enforces Accept/app*name/app_type/

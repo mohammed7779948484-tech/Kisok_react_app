@@ -101,10 +101,24 @@
  * name) are echoed deliberately as diagnostics and are always redacted when
  * they match a known credential value.
  *
- * Rate limits: HTTP 429, error code COM0002 ("API Limit Exceeded") and 5xx
- * are retried with bounded backoff (3 attempts, 1 s then 2 s). The numeric
- * 60/min + 5-min-lock figures are NOT in current docs; they are conservative
- * soft assumptions for backoff only.
+ * Rate limits, SPLIT BY CALL CLASS (RD5-07 / R5-06, T26). READ-SAFE calls
+ * (the Zoho token exchange, the GET /api/v1/mdm/apps pages, GET
+ * /api/v1/mdm/groups/{id}, the POST /emsapi/fileupload/status poll) keep
+ * the current retry: HTTP 429, error code COM0002 ("API Limit Exceeded")
+ * and 5xx, bounded backoff, 3 attempts, 1 s then 2 s. MUTATIONS (POST
+ * /api/v1/mdm/labels, POST /emsapi/files, POST /api/v1/mdm/apps, PUT
+ * /api/v1/mdm/apps/{app_id}/labels/{release_label_id}, POST
+ * /api/v1/mdm/groups/{group_id}/apps) retry ONLY 429/COM0002: a 5xx after
+ * a mutation is an AMBIGUOUS outcome — the server may have mutated, and no
+ * mutation page documents idempotency/duplicate/re-association behavior —
+ * so it FAILS CLOSED after one attempt with a re-run reconciliation
+ * diagnostic (the run-start read walk: app-list re-read, Beta-label reuse,
+ * monotonic version re-check). A FINAL 429/COM0002 failure (either class)
+ * names the documented 5-minute lock. The per-page rate footers ARE
+ * documented now (Lead-opened 2026-09-04): 60/min on most mutation pages,
+ * 300/min associate, 500/min file-status, 120/min group GET — and a
+ * 5-minute lock on every page ("Wait time before consecutive API
+ * requests"), which the 1 s/2 s backoff cannot clear.
  *
  * Fail-closed (AC-07 discipline): every required input is checked for
  * missing/empty BEFORE any network call, and a failure exits non-zero with a
@@ -218,7 +232,13 @@ export const MDM_API_PAGE_SIZE = 50;
 /** Safety bound so a never-terminating pagination fails closed, not forever. */
 export const MAX_LIST_PAGES = 100;
 
-/** Bounded retry: 3 attempts per request, backoff 1 s then 2 s (soft limits). */
+/**
+ * Bounded retry: 3 attempts per retryable request, backoff 1 s then 2 s. An
+ * ENGINEERING choice — the documented 5-minute rate lock is deliberately
+ * NOT waited out (that would stall the run for minutes); a final 429/COM0002
+ * failure names the lock in its message instead (RD5-07 / R5-06). Which
+ * outcomes are retryable depends on the call's retry class (see HttpCall).
+ */
 export const MAX_REQUEST_ATTEMPTS = 3;
 export const RETRY_BASE_DELAY_MS = 1000;
 
@@ -885,8 +905,20 @@ export function createNodeFetch(): FetchLike {
 }
 
 // ---------------------------------------------------------------------------
-// Retrying request core (bounded; 429 / COM0002 / 5xx)
+// Retrying request core (bounded; retry class split — RD5-07 / R5-06)
 // ---------------------------------------------------------------------------
+
+/**
+ * The retry class of one HTTP call (RD5-07 / R5-06, T26). READ-SAFE calls —
+ * the Zoho token exchange, the app-list GET pages, the group GET, the
+ * file-status poll — cannot mutate MDM state, so an ambiguous 5xx is safely
+ * retryable (the historical 429/COM0002/5xx rule). MUTATIONS — the five
+ * write calls — retry ONLY the documented rate rejections (429 / COM0002);
+ * a 5xx there may mean the server DID mutate, so replaying is unsafe and
+ * the call fails closed after one attempt with the reconciliation
+ * diagnostic.
+ */
+type RetryClass = "read-safe" | "mutation";
 
 interface HttpCall {
   url: string;
@@ -895,6 +927,8 @@ interface HttpCall {
   body?: string | Uint8Array;
   /** How the failure message names the call, e.g. "MDM API POST /api/v1/mdm/apps". */
   failureContext: string;
+  /** Declared at every call site — see RetryClass. */
+  retryClass: RetryClass;
 }
 
 type HttpOutcome = { ok: true; status: number; body: string } | { ok: false; failure: string };
@@ -943,6 +977,30 @@ function describeErrorBody(envelope: Record<string, unknown> | undefined, rawBod
   return firstLine.length > 200 ? `${firstLine.slice(0, 200)}...` : firstLine;
 }
 
+/**
+ * RD5-07 / R5-06: appended to a MUTATION-class 5xx failure message. A 5xx
+ * after a mutation is an AMBIGUOUS outcome — the server may have applied
+ * the change — so instead of retrying (replaying a mutation whose
+ * idempotency/duplicate/re-association behavior is undocumented on every
+ * mutation page), the failure names the documented reconciliation path: a
+ * re-run's start performs the read walk before any mutation.
+ */
+const MUTATION_AMBIGUITY_DIAGNOSTIC =
+  " — the server may have applied this change; the outcome is ambiguous. No retry was made " +
+  "(fail closed: this mutation's idempotency is undocumented, so a replay could double-apply " +
+  "it). Re-run the upload to reconcile: the run start re-reads the app list, reuses the Beta " +
+  "label, and re-checks the monotonic version before any mutation";
+
+/**
+ * RD5-07 / R5-06: appended to a FINAL 429/COM0002 failure (either class).
+ * Every used endpoint's page documents a 5-minute rate lock ("Wait time
+ * before consecutive API requests") — the 1 s/2 s backoff cannot clear it,
+ * so the message says so instead of implying an immediate re-run would work.
+ */
+const RATE_LIMIT_LOCK_GUIDANCE =
+  " — the endpoint's documented rate limit is a 5-minute lock (\"Wait time before consecutive " +
+  'API requests"): the 1 s/2 s backoff cannot clear it; wait before re-running';
+
 async function requestWithRetry(deps: NetworkDeps, call: HttpCall): Promise<HttpOutcome> {
   for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt += 1) {
     let response: HttpResponse;
@@ -953,7 +1011,11 @@ async function requestWithRetry(deps: NetworkDeps, call: HttpCall): Promise<Http
         body: call.body,
       });
     } catch (error) {
-      // Transport-level failure: fail closed immediately (no retry).
+      // Transport-level failure: fail closed immediately (no retry) — for a
+      // MUTATION the outcome is exactly as ambiguous as a 5xx (the request
+      // may have reached the server and been applied), and one clean
+      // failure is the safe posture either way (RD5-07: retained behavior,
+      // pinned by tests at T26).
       return {
         ok: false,
         failure: `${call.failureContext} could not be performed: ${errorMessage(error)}`,
@@ -966,17 +1028,34 @@ async function requestWithRetry(deps: NetworkDeps, call: HttpCall): Promise<Http
     const parsed = tryParseJson(body);
     const envelope = isRecord(parsed) ? parsed : undefined;
     const errorCode = errorCodeText(envelope);
-    const retryable = response.status === 429 || errorCode === "COM0002" || response.status >= 500;
+    const rateLimited = response.status === 429 || errorCode === "COM0002";
+    // RD5-07 / R5-06: the retry rule is split by call class. READ-SAFE keeps
+    // the historical 429/COM0002/5xx rule (no mutation, no ambiguity).
+    // MUTATION retries ONLY a documented rate rejection (429 / COM0002 =
+    // "API Limit Exceeded", read as a pre-execution refusal) — an ENGINEERING
+    // judgment: whether such rejections are ALWAYS pre-execution is
+    // undocumented, but this is the conservative direction; a 5xx is NOT
+    // retried, because the server may have mutated and no mutation page
+    // documents idempotency — it fails closed after one attempt instead.
+    const retryable =
+      call.retryClass === "mutation" ? rateLimited : rateLimited || response.status >= 500;
     if (retryable && attempt < MAX_REQUEST_ATTEMPTS) {
       await deps.sleep(RETRY_BASE_DELAY_MS * 2 ** (attempt - 1));
       continue;
     }
     const detail = describeErrorBody(envelope, body);
     const attempts = attempt > 1 ? ` after ${attempt} attempts` : "";
-    return {
-      ok: false,
-      failure: `${call.failureContext} failed (HTTP ${response.status})${attempts}: ${detail}`,
-    };
+    let failure = `${call.failureContext} failed (HTTP ${response.status})${attempts}: ${detail}`;
+    if (call.retryClass === "mutation" && response.status >= 500) {
+      // An ambiguous mutation outcome: the named failure plus the
+      // reconciliation diagnostic — never a retry.
+      failure += MUTATION_AMBIGUITY_DIAGNOSTIC;
+    } else if (rateLimited) {
+      // A FINAL 429/COM0002 failure (either class) names the documented
+      // 5-minute lock.
+      failure += RATE_LIMIT_LOCK_GUIDANCE;
+    }
+    return { ok: false, failure };
   }
   return { ok: false, failure: `${call.failureContext} failed` };
 }
@@ -999,6 +1078,7 @@ async function exchangeToken(
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: buildTokenExchangeBody(params),
     failureContext: "the token exchange",
+    retryClass: "read-safe",
   });
   if (!outcome.ok) {
     return {
@@ -1082,6 +1162,7 @@ async function fetchAppPages(
       method: "GET",
       headers: authHeaders(token),
       failureContext: `MDM API GET /api/v1/mdm/apps (page ${page})`,
+      retryClass: "read-safe",
     });
     if (!outcome.ok) {
       return { ok: false, failure: outcome.failure };
@@ -1205,6 +1286,7 @@ async function fetchGroupDetails(
     method: "GET",
     headers: authHeaders(token),
     failureContext: `MDM API GET /api/v1/mdm/groups/${groupId}`,
+    retryClass: "read-safe",
   });
   if (!outcome.ok) {
     return { ok: false, failure: outcome.failure };
@@ -1279,6 +1361,7 @@ async function resolveBetaLabelId(
     headers: { ...authHeaders(token), "Content-Type": "application/json" },
     body: JSON.stringify({ channel_name: labelName }),
     failureContext: "MDM API POST /api/v1/mdm/labels",
+    retryClass: "mutation",
   });
   if (!outcome.ok) {
     return { ok: false, failure: outcome.failure };
@@ -1320,9 +1403,11 @@ type FileStatusPollResult = { ok: true } | { ok: false; failure: string };
  * "response", a missing entry for our file_id, or an entry without a usable
  * status fails closed immediately; any other status keeps polling until the
  * attempt bound, then fails closed naming the last observed status. Each HTTP
- * call rides the existing requestWithRetry (the read/write retry split is
- * T26 — out of scope here). No interval or timeout is documented: the cadence
- * and bound are the ENGINEERING choices in FILE_STATUS_POLL_* above.
+ * call rides the READ-SAFE retry class (RD5-07 / R5-06, T26): it is a POST
+ * in verb but a pure status READ — a 5xx is unambiguous (no server state
+ * changed), so the full 429/COM0002/5xx retry applies. No interval or
+ * timeout is documented: the cadence and bound are the ENGINEERING choices
+ * in FILE_STATUS_POLL_* above.
  */
 async function pollFileUploadStatus(
   mdmBase: string,
@@ -1342,6 +1427,7 @@ async function pollFileUploadStatus(
       headers: { ...authHeaders(token), "Content-Type": "application/json" },
       body: JSON.stringify({ fileIDs: [targetFileId] }),
       failureContext: "MDM API POST /emsapi/fileupload/status",
+      retryClass: "read-safe",
     });
     if (!outcome.ok) {
       return { ok: false, failure: outcome.failure };
@@ -1431,6 +1517,7 @@ async function uploadApkFile(
       bytes,
     ),
     failureContext: "MDM API POST /emsapi/files",
+    retryClass: "mutation",
   });
   if (!outcome.ok) {
     return { ok: false, failure: outcome.failure };
@@ -1509,6 +1596,7 @@ async function createApp(
       release_label_id: releaseLabelId,
     }),
     failureContext: "MDM API POST /api/v1/mdm/apps",
+    retryClass: "mutation",
   });
   if (!outcome.ok) {
     return { ok: false, failure: outcome.failure };
@@ -1558,6 +1646,7 @@ async function addAppVersion(
       force_update_in_label: true,
     }),
     failureContext: `MDM API PUT /api/v1/mdm/apps/${appId}/labels/${releaseLabelId}`,
+    retryClass: "mutation",
   });
   if (!outcome.ok) {
     return { ok: false, failure: outcome.failure };
@@ -1583,6 +1672,7 @@ async function associateAppToGroup(
       silent_install: true,
     }),
     failureContext: `MDM API POST /api/v1/mdm/groups/${groupId}/apps`,
+    retryClass: "mutation",
   });
   if (!outcome.ok) {
     return { ok: false, failure: outcome.failure };
@@ -1930,9 +2020,13 @@ Guards and options:
   --dry-run                      MDM_DRY_RUN=true|false
   --help, -h
 
-Flags override the environment. Rate limits: HTTP 429 / COM0002 and 5xx are
-retried with bounded backoff (3 attempts, 1 s then 2 s — conservative soft
-limits; the numeric 60/min + 5-min-lock figures are not in current docs).
+Flags override the environment. Rate limits, split by call class: read-safe
+calls (token exchange, app-list GETs, group GET, file-status poll) retry
+429 / COM0002 / 5xx with bounded backoff (3 attempts, 1 s then 2 s);
+mutations (labels POST, files POST, apps POST, add-version PUT, association
+POST) retry ONLY 429 / COM0002 — a 5xx is an ambiguous outcome and fails
+closed after one attempt with re-run reconciliation guidance; a final
+429/COM0002 names the documented 5-minute rate lock.
 Exit status: 0 on success (or a completed dry-run); 1 on every failure, with
 each failure printed to stderr as it is found.`;
 

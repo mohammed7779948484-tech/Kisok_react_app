@@ -2571,3 +2571,43 @@ GREEN: focused suite 133/133; `pnpm test:ci` **69 suites / 957 tests**
 
 GATE: PASS (R5-04 closed; T24-F02 folded). Commit + push attempt follows
 (push still blocked — human token prerequisite recorded).
+
+### T26 — retry policy split by call class + documented lock guidance (Round 5)
+
+RED (fresh feature-implementer, agent-64eebf4e, behavior-change): 8 failed
+— five mutation-5xx rows (labels/files/apps/PUT/associate) each `Expected
+length: 1 / Received length: 3` (the ambiguous-outcome replay R5-06 names)
+and three lock rows (no "5-minute lock" in final 429/COM0002 messages).
+The fresh reviewer independently reproduced the RED in a /tmp scratch copy
+AND proved the compile-time class requirement (deleting one retryClass
+declaration fails typecheck).
+
+IMPLEMENT: `HttpCall.retryClass: "read-safe" | "mutation"` (required — all
+9 call sites declare: token/pages/group-GET/status-poll read-safe; the
+five mutations mutation); `requestWithRetry` branches — mutation retries
+ONLY 429/COM0002 (ENGINEERING judgment labeled: pre-execution assumption
+undocumented, conservative fail-closed direction); mutation 5xx ⇒ one
+attempt + MUTATION_AMBIGUITY_DIAGNOSTIC (re-run performs the read-walk
+reconciliation); any final 429/COM0002 (either class) appends the
+documented 5-minute-lock guidance; transport exceptions unchanged (zero
+retries — now pinned); stale "figures are NOT in current docs" comment
+replaced with the documented footers (60/120/300/500/min + 5-min lock).
+12 new rows (pure additions — the pre-existing 502-labels row rides the
+one-attempt path compatibly by design). FOLD-IN T25-F01: PUT 422 COM0011 ⇒
+named fail-closed, zero associate POSTs.
+
+REVIEW (fresh code-reviewer, agent-a24f20fb): **0 blocking / 0 major / 2
+minor** — T26-R1 (diagnostic precedence in the mutation-5xx+COM0002
+corner) ACCEPTED as documented (low realism: COM0002 is documented as
+429; 500+COM0002 is a server contradiction; the ambiguity diagnostic is
+the safer guidance — recorded in review.md); T26-R2 gate-time bookkeeping
+(this entry). Reviewer verified: all 9 class assignments; read-safe
+unchanged (pins); the T24-F01(a) status-poll row unchanged and guarding
+the poll's read-safe classification; masking held; no weakened rows
+(pure-addition test diff); RED reproduced.
+
+GREEN: focused suite 145/145; `pnpm test:ci` **69 suites / 969 tests**
+(957+12); typecheck/lint/format clean (Lead re-ran).
+
+GATE: PASS (R5-06 closed). Commit + push attempt follows (push still
+blocked — human token prerequisite recorded).

@@ -45,6 +45,22 @@
  * upload response's fileStatus 2, a PENDING→poll success cites
  * file_availability_status 2 — never the wrong source.
  *
+ * Plus the 2026-09-04 Round 5 remediation R5-06 (T26): the retry policy is
+ * SPLIT BY CALL CLASS. Read-safe calls (the Zoho token exchange, the
+ * app-list GET pages, the group GET, the POST /emsapi/fileupload/status
+ * poll) keep the 429 / COM0002 / 5xx retry; MUTATIONS (POST
+ * /api/v1/mdm/labels, POST /emsapi/files, POST /api/v1/mdm/apps, the
+ * add-version PUT, POST /api/v1/mdm/groups/{group_id}/apps) retry ONLY
+ * 429 / COM0002 — a 5xx there is an AMBIGUOUS outcome (the server may have
+ * mutated; no mutation page documents idempotency/duplicate/re-association
+ * behavior), so it fails closed after ONE attempt with the re-run
+ * reconciliation diagnostic (the run-start read walk: app-list re-read,
+ * Beta-label reuse, monotonic version re-check). A FINAL 429/COM0002
+ * failure (either class) names the documented 5-minute rate lock; the
+ * per-page footers ARE documented now (60/min most mutations, 300/min
+ * associate, 500/min file-status, 120/min group GET). Transport exceptions
+ * were already fail-closed-immediately and are now pinned.
+ *
  * Plus the 2026-09-04 auth/error contract drifts (RD-06, T16, packet R5): the
  * ca/cn accounts hosts follow the official multi-dc table
  * (accounts.zohocloud.ca / accounts.zoho.com.cn — the accounts.zoho.ca /
@@ -2424,6 +2440,309 @@ describe("backoff and bounded retries", () => {
     expect(
       result.requests.filter((r) => r.method === "GET" && r.url.includes("/api/v1/mdm/apps")),
     ).toHaveLength(MAX_LIST_PAGES);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Retry policy split by call class (RD5-07 / R5-06 — T26)
+// ---------------------------------------------------------------------------
+
+describe("retry policy split by call class (RD5-07 / R5-06)", () => {
+  /**
+   * The five MUTATION call sites. A 5xx on any of them is an AMBIGUOUS
+   * outcome — the server may have mutated, and no mutation page documents
+   * idempotency/duplicate/re-association behavior — so the call must fail
+   * closed after exactly ONE attempt (never replay the mutation) with the
+   * reconciliation diagnostic naming the run-start read walk. These rows
+   * FAIL against the pre-T26 client, which retried 5xx on every call.
+   */
+  const mutationCallSites: {
+    title: string;
+    routeOptions: GreenRouteOptions;
+    isFailingCall: (request: RecordedRequest) => boolean;
+  }[] = [
+    {
+      title: "POST /api/v1/mdm/labels (label create)",
+      routeOptions: { appResponses: [{ apps: [existingAppFixture({ version: "1.1.0" })] }] },
+      isFailingCall: (request) =>
+        request.method === "POST" && request.url.endsWith("/api/v1/mdm/labels"),
+    },
+    {
+      title: "POST /emsapi/files (the APK upload)",
+      routeOptions: {},
+      isFailingCall: (request) =>
+        request.method === "POST" && request.url.endsWith("/emsapi/files"),
+    },
+    {
+      title: "POST /api/v1/mdm/apps (app create)",
+      routeOptions: { appResponses: [{ apps: fillerApps(20, 0) }] },
+      isFailingCall: (request) =>
+        request.method === "POST" && request.url.endsWith("/api/v1/mdm/apps"),
+    },
+    {
+      title: "PUT /api/v1/mdm/apps/{app_id}/labels/{release_label_id} (add version)",
+      routeOptions: {},
+      isFailingCall: (request) => request.method === "PUT",
+    },
+    {
+      title: "POST /api/v1/mdm/groups/{group_id}/apps (association)",
+      routeOptions: {},
+      isFailingCall: (request) =>
+        request.method === "POST" && request.url.endsWith("/groups/701/apps"),
+    },
+  ];
+
+  for (const callSite of mutationCallSites) {
+    it(`a MUTATION 5xx on ${callSite.title} fails closed after exactly ONE attempt with the reconciliation diagnostic`, async () => {
+      const route = withIntercept(greenRoute(callSite.routeOptions), (request) => {
+        if (callSite.isFailingCall(request)) {
+          // The documented product-level error table: COM0004 = 500
+          // "Internal server error, Please try again in a moment".
+          return json(
+            {
+              error_code: "COM0004",
+              error_description: "Internal server error, Please try again in a moment",
+            },
+            500,
+          );
+        }
+        return undefined;
+      });
+      const sleeps: number[] = [];
+
+      const result = await runMain(fullEnv(), {
+        route,
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+      });
+
+      expect(result.exitCode).not.toBe(0);
+      const failingCalls = result.requests.filter(callSite.isFailingCall);
+      expect(failingCalls).toHaveLength(1);
+      // Fail closed: the failed mutation is the run's LAST request — nothing
+      // at all happens after an ambiguous outcome.
+      const lastRequest = result.requests.at(-1);
+      expect(lastRequest).toBeDefined();
+      if (lastRequest !== undefined) {
+        expect(callSite.isFailingCall(lastRequest)).toBe(true);
+      }
+      // No backoff was ever slept: a mutation 5xx is never retried.
+      expect(sleeps).toEqual([]);
+      const message = result.errors.join("\n");
+      expect(message).toContain("failed (HTTP 500)");
+      expect(message).toContain("COM0004");
+      // The reconciliation diagnostic (RD5-07): the ambiguity is named and
+      // the documented re-run path is spelled out.
+      expect(message).toContain("the server may have applied this change");
+      expect(message).toContain("Re-run the upload to reconcile");
+      expectMasked(result);
+    });
+  }
+
+  it("a MUTATION 429 still retries (3 attempts, 1 s/2 s backoffs) and the FINAL failure names the documented 5-minute lock", async () => {
+    let labelCalls = 0;
+    const route = withIntercept(
+      greenRoute({ appResponses: [{ apps: [existingAppFixture({ version: "1.1.0" })] }] }),
+      (request) => {
+        if (request.method === "POST" && request.url.endsWith("/api/v1/mdm/labels")) {
+          labelCalls += 1;
+          return { status: 429, body: "" };
+        }
+        return undefined;
+      },
+    );
+    const sleeps: number[] = [];
+
+    const result = await runMain(fullEnv(), {
+      route,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(labelCalls).toBe(3);
+    expect(sleeps).toEqual([1000, 2000]);
+    const message = result.errors.join("\n");
+    expect(message).toContain("MDM API POST /api/v1/mdm/labels");
+    expect(message).toContain("HTTP 429");
+    // The documented per-page footers put a 5-minute lock on every endpoint
+    // ("Wait time before consecutive API requests") — 1 s/2 s cannot clear it.
+    expect(message).toContain("5-minute lock");
+    expectMasked(result);
+  });
+
+  it("a MUTATION COM0002 envelope on a non-429 numeric status still retries, and the FINAL failure names the 5-minute lock", async () => {
+    let labelCalls = 0;
+    const route = withIntercept(
+      greenRoute({ appResponses: [{ apps: [existingAppFixture({ version: "1.1.0" })] }] }),
+      (request) => {
+        if (request.method === "POST" && request.url.endsWith("/api/v1/mdm/labels")) {
+          labelCalls += 1;
+          // COM0002 = "API Limit Exceeded" per the product-level error table —
+          // the code itself is the rate signal whatever the HTTP status.
+          return json({ error_code: "COM0002", error_description: "API Limit Exceeded" }, 400);
+        }
+        return undefined;
+      },
+    );
+    const sleeps: number[] = [];
+
+    const result = await runMain(fullEnv(), {
+      route,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(labelCalls).toBe(3);
+    expect(sleeps).toEqual([1000, 2000]);
+    const message = result.errors.join("\n");
+    expect(message).toContain("COM0002");
+    expect(message).toContain("5-minute lock");
+    expectMasked(result);
+  });
+
+  it("a READ-SAFE final 429 (the app-list GET) also names the documented 5-minute lock", async () => {
+    let appsCalls = 0;
+    const route = withIntercept(greenRoute(), (request) => {
+      if (request.method === "GET" && request.url.includes("/api/v1/mdm/apps")) {
+        appsCalls += 1;
+        return { status: 429, body: "" };
+      }
+      return undefined;
+    });
+    const sleeps: number[] = [];
+
+    const result = await runMain(fullEnv(), {
+      route,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(appsCalls).toBe(3);
+    expect(sleeps).toEqual([1000, 2000]);
+    const message = result.errors.join("\n");
+    expect(message).toContain("HTTP 429");
+    expect(message).toContain("5-minute lock");
+    expectMasked(result);
+  });
+
+  it("PIN (unchanged): a READ-SAFE 5xx on the group GET still retries with the full 429/COM0002/5xx rule", async () => {
+    let groupCalls = 0;
+    const route = withIntercept(greenRoute(), (request) => {
+      if (request.method === "GET" && /\/api\/v1\/mdm\/groups\/\d+$/.test(request.url)) {
+        groupCalls += 1;
+        return { status: 500, body: "upstream error" };
+      }
+      return undefined;
+    });
+    const sleeps: number[] = [];
+
+    const result = await runMain(fullEnv(), {
+      route,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(groupCalls).toBe(3);
+    expect(sleeps).toEqual([1000, 2000]);
+    expect(result.errors.join("\n")).toContain("HTTP 500");
+  });
+
+  it("PIN (unchanged): the Zoho token exchange (READ-SAFE) still retries a 5xx", async () => {
+    let tokenCalls = 0;
+    const route = withIntercept(greenRoute(), (request) => {
+      if (request.method === "POST" && request.url.endsWith("/oauth/v2/token")) {
+        tokenCalls += 1;
+        return { status: 503, body: "temporarily unavailable" };
+      }
+      return undefined;
+    });
+    const sleeps: number[] = [];
+
+    const result = await runMain(fullEnv(), {
+      route,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(tokenCalls).toBe(3);
+    expect(sleeps).toEqual([1000, 2000]);
+    const message = result.errors.join("\n");
+    expect(message).toContain("HTTP 503");
+    expect(message).toContain("after 3 attempts");
+  });
+
+  it('PIN: a transport-level exception (fetch rejects) is NEVER retried — fail closed immediately with "could not be performed"', async () => {
+    const route = withIntercept(greenRoute(), (request) => {
+      if (request.method === "GET" && request.url.includes("/api/v1/mdm/apps")) {
+        // The route handler runs inside the fake fetchImpl, so throwing here
+        // is a rejected fetch promise — a transport-level failure.
+        throw new Error("ECONNRESET: socket hang up");
+      }
+      return undefined;
+    });
+    const sleeps: number[] = [];
+
+    const result = await runMain(fullEnv(), {
+      route,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    const appsCalls = result.requests.filter(
+      (r) => r.method === "GET" && r.url.includes("/api/v1/mdm/apps"),
+    );
+    expect(appsCalls).toHaveLength(1);
+    expect(sleeps).toEqual([]);
+    const message = result.errors.join("\n");
+    expect(message).toContain("could not be performed");
+    expect(message).toContain("ECONNRESET");
+    expectMasked(result);
+  });
+
+  it("FOLD-IN (T25-F01): a PUT 4xx error envelope (COM0011 / HTTP 422) fails closed with the named error and NO association afterwards", async () => {
+    const route = withIntercept(greenRoute(), (request) => {
+      if (request.method === "PUT" && /\/api\/v1\/mdm\/apps\/\d+\/labels\/\d+$/.test(request.url)) {
+        // The documented product-level error table: COM0011 = 422
+        // "Invalid / Missing headers".
+        return json({ error_code: "COM0011", error_description: "Invalid / Missing headers" }, 422);
+      }
+      return undefined;
+    });
+    const sleeps: number[] = [];
+
+    const result = await runMain(fullEnv(), {
+      route,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+
+    expect(result.exitCode).not.toBe(0);
+    const putCalls = result.requests.filter((r) => r.method === "PUT");
+    expect(putCalls).toHaveLength(1);
+    expect(sleeps).toEqual([]);
+    const message = result.errors.join("\n");
+    expect(message).toContain("COM0011");
+    expect(message).toContain("Invalid / Missing headers");
+    expect(message).toContain("HTTP 422");
+    // Fail closed: no group association happens after a failed add-version.
+    expect(
+      result.requests.find((r) => r.method === "POST" && r.url.endsWith("/groups/701/apps")),
+    ).toBeUndefined();
+    expectMasked(result);
   });
 });
 
