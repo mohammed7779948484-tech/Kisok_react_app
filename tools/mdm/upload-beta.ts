@@ -63,8 +63,10 @@
  *      review.md's "IR-02 contradiction — RESOLVED");
  *   7. POST /api/v1/mdm/apps (create; app_type 2 = Enterprise/in-house, with
  *      the documented Required app_category_id and Beta release_label_id) or
- *      PUT /api/v1/mdm/apps/{app_id}/labels/{label_id} (add version,
- *      force_update_in_label);
+ *      PUT /api/v1/mdm/apps/{app_id}/labels/{release_label_id} (add version:
+ *      the documented-Mandatory app_name + app_type 2 — R5-04 — plus our
+ *      app_file and force_update_in_label true; release_label_id is a PATH
+ *      parameter);
  *   8. POST /api/v1/mdm/groups/{group_id}/apps with silent_install true —
  *      exactly ONE group, the configured one.
  *
@@ -1292,7 +1294,17 @@ async function resolveBetaLabelId(
   return { ok: true, releaseLabelId: idRaw };
 }
 
-type FileUploadResult = { ok: true; fileId: number | string } | { ok: false; failure: string };
+/**
+ * The fileID plus WHICH documented signal made the file ready — the upload
+ * response's own fileStatus ("upload-response", the fast path) or the status
+ * endpoint's file_availability_status ("status-poll", the PENDING path) — so
+ * the run summary can attribute readiness truthfully (T24-F02: the old
+ * summary always said "(fileStatus 2)", which was wrong after a PENDING→poll
+ * success, where the readiness evidence was file_availability_status 2).
+ */
+type FileUploadResult =
+  | { ok: true; fileId: number | string; readyVia: "upload-response" | "status-poll" }
+  | { ok: false; failure: string };
 
 type FileStatusPollResult = { ok: true } | { ok: false; failure: string };
 
@@ -1440,7 +1452,7 @@ async function uploadApkFile(
   const fileStatus = readInteger(parsed.fileStatus);
   if (fileStatus === FILE_COMPLETED_STATUS) {
     // Fast path: the upload response itself confirms completion — no status call.
-    return { ok: true, fileId: fileIdRaw };
+    return { ok: true, fileId: fileIdRaw, readyVia: "upload-response" };
   }
   if (fileStatus === FILE_FAILED_STATUS) {
     return {
@@ -1458,7 +1470,7 @@ async function uploadApkFile(
     if (!poll.ok) {
       return { ok: false, failure: poll.failure };
     }
-    return { ok: true, fileId: fileIdRaw };
+    return { ok: true, fileId: fileIdRaw, readyVia: "status-poll" };
   }
   const observedText =
     typeof parsed.fileStatus === "string" || typeof parsed.fileStatus === "number"
@@ -1514,14 +1526,22 @@ async function createApp(
 
 /**
  * PUT /api/v1/mdm/apps/{app_id}/labels/{release_label_id} — the add-version
- * path. force_update_in_label true = update the app version in a label that
- * already has the app.
+ * path. R5-04 (the current cloud help page, Lead-opened 2026-09-04): app_name
+ * (the plain app name — the same value the list walk matched exactly) and
+ * app_type are documented-Mandatory in the request body; app_type shares the
+ * create-page enum (0 = Free Store App, 1 = Paid Store App, 2 = Enterprise
+ * App), so the Enterprise literal 2 is sent, exactly as in createApp. app_file
+ * and force_update_in_label are Optional but required by our path
+ * (force_update_in_label true = update the app version in a label that
+ * already has the app). release_label_id is a PATH parameter, never a body
+ * field.
  */
 async function addAppVersion(
   mdmBase: string,
   token: string,
   appId: number | string,
   releaseLabelId: number | string,
+  appName: string,
   fileId: number | string,
   deps: NetworkDeps,
 ): Promise<{ ok: true } | { ok: false; failure: string }> {
@@ -1529,7 +1549,14 @@ async function addAppVersion(
     url: `${mdmBase}/api/v1/mdm/apps/${appId}/labels/${releaseLabelId}`,
     method: "PUT",
     headers: { ...authHeaders(token), "Content-Type": "application/json" },
-    body: JSON.stringify({ app_file: fileId, force_update_in_label: true }),
+    body: JSON.stringify({
+      app_name: appName,
+      // The documented app_type enum: 0 = Free Store App, 1 = Paid Store App,
+      // 2 = Enterprise App (in-house) — ours is 2.
+      app_type: 2,
+      app_file: fileId,
+      force_update_in_label: true,
+    }),
     failureContext: `MDM API PUT /api/v1/mdm/apps/${appId}/labels/${releaseLabelId}`,
   });
   if (!outcome.ok) {
@@ -1768,11 +1795,15 @@ async function runUpload(
 
   let appId: number | string;
   if (list.app !== undefined) {
+    // R5-04: the documented-Mandatory app_name — inputs.appName is the exact
+    // value the list walk matched (entry.app_name === inputs.appName), so it
+    // IS the listed app's name.
     const update = await addAppVersion(
       centre.mdm,
       token.accessToken,
       list.app.appId,
       releaseLabelId,
+      inputs.appName,
       upload.fileId,
       deps,
     );
@@ -1819,8 +1850,16 @@ async function runUpload(
           : "created this run by POST /api/v1/mdm/labels"
       }), associated with group ${inputs.groupId} ("${group.name}", silent_install enabled).`,
   );
+  // T24-F02: attribute readiness truthfully — the fast path learned it from
+  // the upload response's own fileStatus; a PENDING→poll success learned it
+  // from the status endpoint's file_availability_status. One wording per
+  // path, never the wrong source.
+  const readiness =
+    upload.readyVia === "upload-response"
+      ? `the upload response reported fileStatus ${FILE_COMPLETED_STATUS} — COMPLETED`
+      : `ready for use — file_availability_status ${FILE_COMPLETED_STATUS} from POST /emsapi/fileupload/status`;
   context.report(
-    `file uploaded: fileID ${upload.fileId} (fileStatus ${FILE_COMPLETED_STATUS}); no production ` +
+    `file uploaded: fileID ${upload.fileId} (${readiness}); no production ` +
       "approve/distribute/retire operation was called.",
   );
   return 0;

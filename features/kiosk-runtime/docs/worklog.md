@@ -2531,3 +2531,43 @@ tests** (942+10+2); typecheck/lint/format clean; native Node 24 run
 GATE: PASS (R5-03 + R5-05 closed; IR-02 stale claims corrected in the
 tool). Commit + push attempt follows (push still blocked — human token
 prerequisite recorded).
+
+### T25 — Update App documented-Mandatory body + truthful summary (Round 5)
+
+RED (fresh feature-implementer, agent-b3f31b8e, mode bug): 6 failed — the
+PUT-body toEqual diffs (Expected app_name/app_type fields / Received the
+2-field violation — R5-04 itself), the distinct-name threading row
+(app_name undefined), and the two summary-attribution rows (the T24-F02
+untruthful "fileStatus 2" claim on a PENDING→poll run). The fresh reviewer
+independently reproduced the RED in a /tmp scratch copy (exactly 6
+failures for the intended reasons).
+
+IMPLEMENT: `addAppVersion` gains the appName parameter and PUTs the exact
+4-field body {app_name, app_type: 2 (Enterprise — documented enum comment),
+app_file, force_update_in_label: true}; release_label_id stays a PATH param
+only; `runUpload` threads inputs.appName (equal to the listed app's name by
+the exact-=== walk — comment records the invariant). T24-F02 fold-in:
+FileUploadResult success arm gains readyVia ("upload-response" |
+"status-poll"); the summary line cites the signal each path actually
+observed (fast path: "the upload response reported fileStatus 2 —
+COMPLETED"; poll path: "ready for use — file_availability_status 2 from
+POST /emsapi/fileupload/status"). THREE pinned PUT-body expectations were
+amended (happy-path, two-phase, RD5-05 poll — the plan's "both" was a
+stale pre-execution figure; T25-F02 records the correction) + three new
+rows (distinct-fixture threading; two summary-attribution rows with
+not.toContain guards against cross-path wording leakage).
+
+REVIEW (fresh code-reviewer, agent-532bfe50): **0 blocking / 0 major / 2
+minor** — T25-F01 (no failing-PUT row: the fake route always 200s the PUT)
+deferred BY PLAN to T26 (whose rows cover mutation failure paths incl.
+the PUT); T25-F02 (record-accuracy: three pins amended, not "both") —
+resolved by this entry. Reviewer verified: exact 4-field body with
+release_label_id path-only; appName threading invariant (strict ===
+match); readyVia confined with the sole consumer type-narrowed; honest
+in-file amendment comments; scope exactly the two files; RED reproduced.
+
+GREEN: focused suite 133/133; `pnpm test:ci` **69 suites / 957 tests**
+(954+3); typecheck/lint/format clean (Lead re-ran).
+
+GATE: PASS (R5-04 closed; T24-F02 folded). Commit + push attempt follows
+(push still blocked — human token prerequisite recorded).

@@ -33,6 +33,18 @@
  * dry-run that exits NON-ZERO on a missing/mismatched group (truthful), and
  * Beta-label reuse from the app's release_labels before POST /api/v1/mdm/labels.
  *
+ * Plus the 2026-09-04 Round 5 remediation R5-04 (T25): the Update App PUT
+ * (PUT /api/v1/mdm/apps/{app_id}/labels/{release_label_id}) request body
+ * carries the documented-Mandatory app_name (the plain app name — the same
+ * value the list walk matched exactly) and app_type 2 (Enterprise — the
+ * create-page enum), alongside our app_file + force_update_in_label true;
+ * release_label_id stays a PATH parameter, never a body field. The three
+ * previously pinned two-field PUT-body expectations WERE the contract
+ * violation and were amended at T25. The success summary now attributes
+ * readiness truthfully per path (T24-F02 fold-in): the fast path cites the
+ * upload response's fileStatus 2, a PENDING→poll success cites
+ * file_availability_status 2 — never the wrong source.
+ *
  * Plus the 2026-09-04 auth/error contract drifts (RD-06, T16, packet R5): the
  * ca/cn accounts hosts follow the official multi-dc table
  * (accounts.zohocloud.ca / accounts.zoho.com.cn — the accounts.zoho.ca /
@@ -98,13 +110,15 @@ const MDM_BASE = "https://mdm.manageengine.com";
 const existingAppFixture = (
   options: {
     appId?: number;
+    /** A name distinct from the default "KISOK" (the R5-04 app_name threading pin). */
+    name?: string;
     version?: string;
     betaVersion?: string;
     labels?: { release_label_id: number; release_label_name: string; app_version?: string }[];
   } = {},
 ) => ({
   app_id: options.appId ?? 101,
-  app_name: "KISOK",
+  app_name: options.name ?? "KISOK",
   ...(options.version === undefined ? {} : { version: options.version }),
   release_labels:
     options.labels ??
@@ -1355,7 +1369,12 @@ describe("upload happy path (existing app → add version)", () => {
     expectMasked(result);
   });
 
-  it("add-version PUTs the file with force_update_in_label true", async () => {
+  // AMENDED at T25 (bug mode, R5-04): the previous expectation pinned only
+  // {app_file, force_update_in_label} — exactly the documented-contract
+  // violation (app_name and app_type are Mandatory in the Update App request
+  // body per the current cloud help page, Lead-opened 2026-09-04). The body is
+  // now pinned to the exact four-field documented shape.
+  it("add-version PUTs the documented body: Mandatory app_name + app_type 2, plus our app_file + force_update_in_label true", async () => {
     const result = await runMain(fullEnv(), { route: greenRoute() });
 
     expect(result.exitCode).toBe(0);
@@ -1363,7 +1382,40 @@ describe("upload happy path (existing app → add version)", () => {
       (r) => r.method === "PUT" && /\/api\/v1\/mdm\/apps\/\d+\/labels\/\d+$/.test(r.url),
     );
     expect(put?.url).toBe(`${MDM_BASE}/api/v1/mdm/apps/101/labels/5`);
-    expect(bodyJson(put)).toEqual({ app_file: 555, force_update_in_label: true });
+    expect(bodyJson(put)).toEqual({
+      app_name: "KISOK",
+      app_type: 2,
+      app_file: 555,
+      force_update_in_label: true,
+    });
+  });
+
+  it("the Mandatory app_name carries the ACTUAL app name of the run, not a default (R5-04)", async () => {
+    // A fixture name distinct from the default "KISOK" proves the field is
+    // threaded from the run's app name (the same value the list walk matched
+    // exactly), never a hard-coded or default-derivative value.
+    const distinctName = "KISOK Distinct Field App";
+    const result = await runMain(
+      { ...fullEnv(), MDM_APP_NAME: distinctName },
+      {
+        route: greenRoute({
+          appResponses: [
+            {
+              apps: [
+                existingAppFixture({ version: "1.0.0", betaVersion: "1.1.0", name: distinctName }),
+              ],
+            },
+          ],
+        }),
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    const put = result.requests.find(
+      (r) => r.method === "PUT" && /\/api\/v1\/mdm\/apps\/\d+\/labels\/\d+$/.test(r.url),
+    );
+    expect((bodyJson(put) as Record<string, unknown>).app_name).toBe(distinctName);
+    expectMasked(result);
   });
 
   it("associates exactly one group — the configured one — with silent_install true", async () => {
@@ -1412,12 +1464,33 @@ describe("two-phase file upload", () => {
     expect(body.endsWith(`\r\n--${MULTIPART_BOUNDARY}--\r\n`)).toBe(true);
   });
 
+  // AMENDED at T25 (R5-04): same contract-violation fix as the happy-path
+  // pin — the PUT body now includes the documented-Mandatory fields.
   it("fileStatus 2 proceeds with the returned fileID", async () => {
     const result = await runMain(fullEnv(), { route: greenRoute({ fileStatus: 2 }) });
 
     expect(result.exitCode).toBe(0);
     const put = result.requests.find((r) => r.method === "PUT");
-    expect(bodyJson(put)).toEqual({ app_file: 555, force_update_in_label: true });
+    expect(bodyJson(put)).toEqual({
+      app_name: "KISOK",
+      app_type: 2,
+      app_file: 555,
+      force_update_in_label: true,
+    });
+  });
+
+  it("the success summary attributes fast-path readiness to the upload response's fileStatus (T24-F02)", async () => {
+    const result = await runMain(fullEnv(), { route: greenRoute({ fileStatus: 2 }) });
+
+    expect(result.exitCode).toBe(0);
+    const summary = result.output.join("\n");
+    expect(summary).toContain(
+      "file uploaded: fileID 555 (the upload response reported fileStatus 2 — COMPLETED)",
+    );
+    // No status call happened on the fast path — the summary must not claim a
+    // file_availability_status observation it never made.
+    expect(summary).not.toContain("file_availability_status");
+    expectMasked(result);
   });
 
   // AMENDED at T24 (bug mode): the old assertion "expected 2" pinned the
@@ -1498,8 +1571,44 @@ describe("file upload status lifecycle (RD5-05)", () => {
     // The documented sample body: fileIDs is an array of STRINGS.
     expect(bodyText(statusCall)).toBe('{"fileIDs":["555"]}');
     // The SAME fileID from the upload response feeds the add-version PUT.
+    // AMENDED at T25 (R5-04): the PUT body now includes the
+    // documented-Mandatory app_name + app_type.
     const put = result.requests.find((r) => r.method === "PUT");
-    expect(bodyJson(put)).toEqual({ app_file: 555, force_update_in_label: true });
+    expect(bodyJson(put)).toEqual({
+      app_name: "KISOK",
+      app_type: 2,
+      app_file: 555,
+      force_update_in_label: true,
+    });
+    expectMasked(result);
+  });
+
+  it("the success summary attributes poll-path readiness to file_availability_status, never to the upload response's fileStatus (T24-F02)", async () => {
+    const result = await runMain(fullEnv(), {
+      route: greenRoute({
+        // 1 = the documented PENDING fileStatus: readiness on this path is
+        // learned from the status endpoint, NOT from the upload response.
+        fileStatus: 1,
+        statusResponses: [
+          {
+            response: [
+              // 2 = the documented ready file_availability_status.
+              { file_id: "555", file_availability_status: 2, remarks: "" },
+            ],
+          },
+        ],
+      }),
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.errors).toEqual([]);
+    const summary = result.output.join("\n");
+    expect(summary).toContain(
+      "file uploaded: fileID 555 (ready for use — file_availability_status 2 from POST /emsapi/fileupload/status)",
+    );
+    // The upload response's fileStatus was 1 (PENDING) on this path — the old
+    // "(fileStatus 2)" claim attributed readiness to the wrong source.
+    expect(summary).not.toContain("fileStatus 2");
     expectMasked(result);
   });
 
