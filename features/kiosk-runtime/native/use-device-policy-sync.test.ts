@@ -102,9 +102,12 @@ beforeEach(() => {
   });
 
   // REAL store, reset between tests so no policy leaks across cases.
+  // Readiness is part of that reset: a test must never inherit a verdict a
+  // previous test resolved (the cold-start default is "pending").
   useDevicePolicyStore.setState({
     policy: { role: "standard", maintenance: { code: null, timeoutSeconds: 90 } },
     maintenance: LOCKED_SESSION,
+    readiness: "pending",
   });
   applySnapshotSpy = jest.spyOn(useDevicePolicyStore.getState(), "applySnapshot");
   clearMaintenanceSpy = jest.spyOn(useDevicePolicyStore.getState(), "clearMaintenance");
@@ -141,10 +144,13 @@ function fireAppStateChange(state: AppStateStatus) {
   capture.handler(state);
 }
 
+/** Snapshot shapes this suite's controlled reads can resolve with. */
+type ControlledSnapshot = ReturnType<typeof kioskSnapshot> | ReturnType<typeof standardSnapshot>;
+
 /** A read the test controls: it stays pending until the test resolves it. */
 function pendingRead() {
-  let resolve!: (value: ReturnType<typeof kioskSnapshot>) => void;
-  const promise = new Promise<ReturnType<typeof kioskSnapshot>>((res) => {
+  let resolve!: (value: ControlledSnapshot) => void;
+  const promise = new Promise<ControlledSnapshot>((res) => {
     resolve = res;
   });
   return { promise, resolve };
@@ -301,6 +307,79 @@ describe("unmount", () => {
     expect(readMock).toHaveBeenCalledTimes(2);
     expect(subscribeMock).toHaveBeenCalledTimes(2);
     expect(appStateSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("readiness transitions (RD-01)", () => {
+  it("resolves readiness when the source resolves null — the module is absent, so the standard default IS the platform verdict (web/jest never hold)", async () => {
+    readMock.mockResolvedValue(null);
+
+    await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+
+    expect(readMock).toHaveBeenCalledTimes(1);
+    expect(applySnapshotSpy).not.toHaveBeenCalled();
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+    expect(useDevicePolicyStore.getState().policy).toEqual({
+      role: "standard",
+      maintenance: { code: null, timeoutSeconds: 90 },
+    });
+  });
+
+  it("holds readiness pending while the first read is deferred, and resolves it when the snapshot lands", async () => {
+    const firstRead = pendingRead();
+    readMock.mockReturnValue(firstRead.promise);
+
+    await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+
+    // Read in flight (Android: "may take several seconds"): the store keeps
+    // its pending verdict — the cold-start ordering race's other half.
+    expect(useDevicePolicyStore.getState().readiness).toBe("pending");
+
+    firstRead.resolve(standardSnapshot());
+    await flushRefresh();
+    await flushRefresh();
+
+    expect(applySnapshotSpy).toHaveBeenCalledWith(standardSnapshot());
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+    expect(useDevicePolicyStore.getState().policy.role).toBe("standard");
+  });
+
+  it("keeps readiness pending when the first read rejects — a failed read carries no evidence", async () => {
+    readMock.mockRejectedValue(new Error("native read failed"));
+
+    await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+    await flushRefresh();
+
+    expect(readMock).toHaveBeenCalledTimes(1);
+    expect(useDevicePolicyStore.getState().readiness).toBe("pending");
+    expect(useDevicePolicyStore.getState().policy).toEqual({
+      role: "standard",
+      maintenance: { code: null, timeoutSeconds: 90 },
+    });
+  });
+
+  it("leaves readiness unchanged when a read fails AFTER a snapshot resolved it — last-known-good includes the verdict", async () => {
+    readMock
+      .mockResolvedValueOnce(standardSnapshot())
+      .mockRejectedValueOnce(new Error("native read failed"));
+
+    await renderHook(() => useDevicePolicySync());
+    await flushRefresh();
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+
+    // A foreground return re-reads, and this time the read fails: neither
+    // the policy nor the readiness verdict may move (no evidence either way).
+    fireAppStateChange("active");
+    await flushRefresh();
+    await flushRefresh();
+
+    expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
+    expect(useDevicePolicyStore.getState().policy.role).toBe("standard");
+    const errors = logRecords.filter((record) => record.level === "error");
+    expect(errors).toHaveLength(1);
   });
 });
 

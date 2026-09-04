@@ -6,11 +6,13 @@ import type { DevicePolicySnapshot } from "./device-policy.schema";
  * AC-02 — the fail-closed device-policy derivation, table-driven over snapshot
  * fixtures.
  *
- * The invariant under test: nothing except an affirmative, non-pending MDM
- * signal yields `customer-kiosk`, and the derivation's ONLY input is the
- * snapshot — there is no auth/session parameter to pass, so Supabase auth
- * state cannot influence device policy (structural, checked by the import
- * list and the signature).
+ * The invariant under test: nothing except an affirmative MDM signal yields
+ * `customer-kiosk` — the restrictions bundle and the DPC allowlist must be
+ * NON-provisional, while `lockTaskModeState === "locked"` is live OS evidence
+ * and is affirmative even while the bundle is provisional (RD-02). The
+ * derivation's ONLY input is the snapshot — there is no auth/session parameter
+ * to pass, so Supabase auth state cannot influence device policy (structural,
+ * checked by the import list and the signature).
  */
 
 type Restrictions = Record<string, string | number | boolean>;
@@ -97,9 +99,24 @@ describe("deriveDevicePolicy (fail-closed role derivation)", () => {
       "standard",
     ],
     [
-      "lockTaskModeState 'locked' alone → standard (transient lock state is not corroboration)",
+      "lockTaskModeState 'locked' alone → customer-kiosk (RD-02: full lock task mode is DPC-enforced — an app can never reach it un-allowlisted)",
       snapshot({}, { lockTaskModeState: "locked" }),
-      "standard",
+      "customer-kiosk",
+    ],
+    [
+      "restrictions_pending true + locked → customer-kiosk (live OS evidence is not provisional-suppressed — RD-02)",
+      snapshot(
+        { kiosk_device_role: "customer_kiosk", restrictions_pending: true },
+        {
+          lockTaskModeState: "locked",
+        },
+      ),
+      "customer-kiosk",
+    ],
+    [
+      "explicit standard with locked → customer-kiosk (locked corroborates like the allowlist; contradiction resolves toward kiosk)",
+      snapshot({ kiosk_device_role: "standard" }, { lockTaskModeState: "locked" }),
+      "customer-kiosk",
     ],
   ])("%s", (_name, given, expectedRole) => {
     expect(deriveDevicePolicy(given).role).toBe(expectedRole);
@@ -146,6 +163,19 @@ describe("deriveDevicePolicy (maintenance credential)", () => {
     [
       "allowlist-only kiosk with code → code derived",
       snapshot({ maintenance_unlock_code: "4481" }, { lockTaskPermitted: true }),
+      "4481",
+      90,
+    ],
+    [
+      "provisional + locked with code → code derived (the kiosk role comes from live LOCKED corroboration, so the credential is exposed — RD-02)",
+      snapshot(
+        {
+          kiosk_device_role: "customer_kiosk",
+          maintenance_unlock_code: "4481",
+          restrictions_pending: true,
+        },
+        { lockTaskModeState: "locked" },
+      ),
       "4481",
       90,
     ],

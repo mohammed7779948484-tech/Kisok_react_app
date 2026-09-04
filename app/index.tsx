@@ -28,8 +28,12 @@ export default function IndexRoute() {
     case "kiosk-mismatch":
       return <Redirect href="/kiosk-mismatch" />;
     case "startup":
-      // Unreachable: the status early-return above covered resolving and
-      // error, the only inputs that map to "startup".
+      // Reachable two ways: auth `resolving`/`error` (the early return above)
+      // and policy-readiness `pending` with a standard policy — the first
+      // native device-policy read has not produced a verdict yet, so the
+      // resolver holds here instead of mounting Preparation (RD-01/IR-01:
+      // the read may take several seconds, with no ordering guarantee
+      // against auth).
       return <StartupScreen />;
   }
 }

@@ -128,6 +128,30 @@ function invalidSnapshot() {
   };
 }
 
+/** Provisional (KEY_RESTRICTIONS_PENDING) with every bundle signal suppressed by it. */
+function provisionalSnapshot() {
+  return {
+    restrictions: { kiosk_device_role: "customer_kiosk", restrictions_pending: true },
+    lockTaskPermitted: true,
+    lockTaskModeState: "none",
+  };
+}
+
+/** Provisional bundle + live LOCKED corroboration — derives kiosk, stays pending (RD-02).
+ *  Carries the maintenance credential: a kiosk role derived via LOCKED exposes it. */
+function provisionalLockedSnapshot() {
+  return {
+    restrictions: {
+      kiosk_device_role: "customer_kiosk",
+      maintenance_unlock_code: KIOSK_CODE,
+      maintenance_unlock_timeout_seconds: TIMEOUT_SECONDS,
+      restrictions_pending: true,
+    },
+    lockTaskPermitted: true,
+    lockTaskModeState: "locked",
+  };
+}
+
 const LOCKED_SESSION = { unlocked: false, expiresAt: null };
 
 beforeEach(() => {
@@ -149,6 +173,12 @@ describe("device-policy store (initial state)", () => {
     });
     expect(useStore.getState().maintenance).toEqual(LOCKED_SESSION);
     expect(useStore.getState().isMaintenanceUnlocked()).toBe(false);
+  });
+
+  it("starts with readiness 'pending' — nothing has read the policy yet (RD-01)", () => {
+    const useStore = createDevicePolicyStore();
+
+    expect(useStore.getState().readiness).toBe("pending");
   });
 });
 
@@ -233,6 +263,74 @@ describe("applySnapshot", () => {
   });
 });
 
+describe("readiness verdict (RD-01)", () => {
+  it("resolves when a valid, non-provisional snapshot is applied — standard or kiosk", () => {
+    const useStore = createDevicePolicyStore();
+
+    useStore.getState().applySnapshot(standardSnapshot());
+    expect(useStore.getState().readiness).toBe("resolved");
+
+    useStore.getState().applySnapshot(kioskSnapshot());
+    expect(useStore.getState().readiness).toBe("resolved");
+  });
+
+  it("holds 'pending' on a provisional snapshot — KEY_RESTRICTIONS_PENDING means the final state is undetermined", () => {
+    const useStore = createDevicePolicyStore();
+
+    useStore.getState().applySnapshot(provisionalSnapshot());
+
+    // Unchanged derivation semantics: the provisional bundle derives the
+    // fail-closed standard role (every bundle/allowlist signal suppressed).
+    expect(useStore.getState().policy.role).toBe("standard");
+    expect(useStore.getState().readiness).toBe("pending");
+  });
+
+  it("holds 'pending' on a provisional snapshot with LOCKED corroboration — the policy is kiosk (RD-02), the verdict is still not final", () => {
+    const useStore = createDevicePolicyStore();
+
+    useStore.getState().applySnapshot(provisionalLockedSnapshot());
+
+    expect(useStore.getState().policy.role).toBe("customer-kiosk");
+    expect(useStore.getState().readiness).toBe("pending");
+  });
+
+  it("reverts to 'pending' when a schema-rejected snapshot arrives after a resolved one", () => {
+    const useStore = createDevicePolicyStore();
+    useStore.getState().applySnapshot(standardSnapshot());
+    expect(useStore.getState().readiness).toBe("resolved");
+
+    useStore.getState().applySnapshot(invalidSnapshot());
+
+    expect(useStore.getState().policy).toEqual({
+      role: "standard",
+      maintenance: { code: null, timeoutSeconds: 90 },
+    });
+    expect(useStore.getState().readiness).toBe("pending");
+  });
+
+  it("markModuleAbsent resolves readiness without touching policy or session — the standard default IS the platform verdict (web/jest)", () => {
+    const useStore = createDevicePolicyStore();
+    const policyBefore = useStore.getState().policy;
+    const sessionBefore = useStore.getState().maintenance;
+
+    useStore.getState().markModuleAbsent();
+
+    expect(useStore.getState().readiness).toBe("resolved");
+    expect(useStore.getState().policy).toBe(policyBefore);
+    expect(useStore.getState().maintenance).toBe(sessionBefore);
+    expect(useStore.getState().isMaintenanceUnlocked()).toBe(false);
+  });
+
+  it("markModuleAbsent is idempotent — every read on an absent module re-resolves the same verdict", () => {
+    const useStore = createDevicePolicyStore();
+
+    useStore.getState().markModuleAbsent();
+    useStore.getState().markModuleAbsent();
+
+    expect(useStore.getState().readiness).toBe("resolved");
+  });
+});
+
 describe("tryUnlock", () => {
   it("unlocks with the correct code on a kiosk device and sets a future expiry from the derived timeout", () => {
     const useStore = createDevicePolicyStore();
@@ -278,6 +376,19 @@ describe("tryUnlock", () => {
     expect(useStore.getState().policy.role).toBe("customer-kiosk");
     expect(useStore.getState().tryUnlock(KIOSK_CODE)).toBe(false);
     expect(useStore.getState().maintenance).toEqual(LOCKED_SESSION);
+  });
+
+  it("unlocks on a provisional+LOCKED kiosk snapshot — the credential is exposed because the role is kiosk however derived (RD-02)", () => {
+    const useStore = createDevicePolicyStore();
+    useStore.getState().applySnapshot(provisionalLockedSnapshot());
+
+    expect(useStore.getState().policy.maintenance.code).toBe(KIOSK_CODE);
+    expect(useStore.getState().tryUnlock(KIOSK_CODE)).toBe(true);
+    expect(useStore.getState().isMaintenanceUnlocked()).toBe(true);
+    // The verdict is still pending — the credential and the readiness are
+    // independent dimensions (a live LOCKED query is affirmative evidence
+    // for the role; a provisional bundle is not for the verdict).
+    expect(useStore.getState().readiness).toBe("pending");
   });
 
   it("returns false for an empty-string attempt", () => {
@@ -371,6 +482,8 @@ describe("no persistence (AC-05)", () => {
     useStore.getState().applySnapshot(kioskSnapshot());
     useStore.getState().applySnapshot(standardSnapshot());
     useStore.getState().applySnapshot(invalidSnapshot());
+    useStore.getState().applySnapshot(provisionalSnapshot());
+    useStore.getState().markModuleAbsent();
     useStore.getState().tryUnlock(KIOSK_CODE);
     useStore.getState().tryUnlock(WRONG_CODE);
     useStore.getState().tryUnlock("");

@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : 4 — post-review remediation (T14–T20)
-Current task      : T14 (next to start)
-Current stage     : RESEARCH GATE COMPLETE (7/7 packets, Lead spot-checked; IR verdict matrix in review.md); Plan remediation amendment READY after Lead Planning Review. First remediation task T14 not yet started.
+Current task      : — (T14 gated PASS; T15 next)
+Current stage     : RESEARCH GATE COMPLETE (7/7 packets, Lead spot-checked; IR verdict matrix in review.md); Plan remediation amendment READY after Lead Planning Review. T14 gated PASS (IR-01 closed: readiness hold + LOCKED corroboration).
 Last gate         : (historical) FEATURE GATE: PASS @ b71c828 — REOPENED 2026-09-04; no remediation task gate yet
-Next legal action : Lead: scaffold check (N/A — no generator capability for T14), delegate T14 (policy readiness + routing guard, IR-01) to a fresh feature-implementer with the R1/R2 evidence packet pointers.
+Next legal action : Lead: verify T14 push (this commit), then delegate T15 (MDM read-path contract — pagination + pre-mutation group validation + expected-group-name + truthful dry-run + Beta label reuse, IR-03/04/05) to a fresh feature-implementer.
 
 REMEDIATION_START_FEATURE_SHA=b71c8285c6e26fb6fd1463c4b0a81cd8ae1afe31
 REMEDIATION_START_DEVELOP_SHA=3a25640b602a685c690a4b467b6e900625484c89 (develop advanced past the earlier integration point 6161a4c — PR #12 cart hardening; re-integration required before final verification)
@@ -244,7 +244,7 @@ it — two summaries disagree the moment one is updated and the other is not.
 
 | Task | Mode            | Acceptance               | Objective                                                                                                                                                                 | Deps     | Stage       | Gate |
 | ---- | --------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------- | ---- |
-| T14  | behavior-change | Acceptance: AC-03, AC-04 | policy readiness verdict + resolver startup hold + LOCKED corroboration (IR-01)                                                                                           | —        | not started | —    |
+| T14  | behavior-change | Acceptance: AC-03, AC-04 | policy readiness verdict + resolver startup hold + LOCKED corroboration (IR-01)                                                                                           | —        | done        | PASS |
 | T15  | bug             | Acceptance: AC-09        | MDM read-path contract: pagination + pre-mutation group validation + expected-group-name + truthful dry-run + Beta label reuse (IR-03/04/05) + workflow group-name wiring | —        | not started | —    |
 | T16  | bug             | Supporting: AC-09        | MDM auth/error contract: ca/cn hosts + numeric error_code + token error_description (R5 drifts)                                                                           | T15      | not started | —    |
 | T17  | behavior-change | Acceptance: AC-08        | verifier certificate SHA-256 pinning + both workflows' verify steps + vars wiring (IR-06)                                                                                 | —        | not started | —    |

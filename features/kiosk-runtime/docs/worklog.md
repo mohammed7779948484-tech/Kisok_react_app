@@ -1866,3 +1866,52 @@ FEATURE GATE (the checklist in todo.md, every item evidence-backed):
   branch HEAD; every gate commit pushed and verified on the PR.
 
 FEATURE GATE: PASS
+
+---
+
+## T14 — policy readiness verdict + routing startup hold + LOCKED corroboration (remediation Round 4, IR-01)
+
+**Mode**: behavior-change · **Acceptance**: AC-03 (amended 2026-09-04), AC-04 ·
+**Deps**: — · **Scaffold**: N/A (no generator capability; JS/TS-only change in
+existing planned surfaces — plan remediation amendment RD-01/RD-02)
+
+- **Research basis**: packets R1/R2 (agent-805fa0cb / agent-d268378d), Lead
+  spot-checked — Android documents the restrictions read as disk I/O that "may
+  take several seconds" with no ordering guarantee vs auth; KEY_RESTRICTIONS_PENDING
+  means "not available yet" (undetermined — never affirmative); Expo Router
+  `Stack.Protected` (installed v6.0.24: `Protected = primitives.Group`) is
+  removal-after-change, so gating must live in the resolver inputs.
+- **RED** (fresh implementer agent-bf55104c): model suites 4 failed / 53
+  passed — new resolver row `Expected "startup" / Received "preparation"` + 3
+  LOCKED derive rows; state/native suites 14 failed / 31 passed — headline race
+  (`Expected "startup" / Received "preparation"`), provisional hold, 8 store
+  readiness assertions (`readiness` undefined / `markModuleAbsent is not a
+function`), 3 sync transitions. All pre-existing rows green throughout.
+- **IMPLEMENT** (11 files, exactly the allowed scope): store `readiness`
+  ("pending" | "resolved") at the store root with the RD-01 transitions
+  (valid+non-provisional → resolved; provisional → pending; schema-rejected →
+  fail-closed policy + pending; read rejection → untouched; module-absent →
+  `markModuleAbsent()` resolves); `resolveRootTarget` 4th param with exactly one
+  new row (`ready+preparation+standard+pending → startup`), every prior row
+  byte-identical; `deriveDevicePolicy` gains `lockTaskModeState === "locked"`
+  OR-ed OUTSIDE the provisional suppression (live OS evidence; "pinned" never
+  kiosk); `useRootTarget` passes both inputs; sync hook resolves
+  module-absent; `app/index.tsx` startup-case comment corrected (comment-only).
+- **GREEN**: 5 suites / 108 tests; `pnpm test:ci` → 68 suites / 822 tests;
+  typecheck/lint/prettier all exit 0 (Lead re-ran independently).
+- **AC-04 static search**: repo-wide `(start|stop)LockTask\(` in app-owned
+  code → zero matches; `root-guard-lock-task.test.ts` green.
+- **Fresh review** (agent-8c75e30c): **0 blocking / 0 major / 3 minor**
+  (T14-R1 provisional+LOCKED maintenance-code row unpinned; T14-R2 non-gating
+  decision unpinned; T14-R3 race composed in two halves). Implementer resumed:
+  all three fixed test-only (+6 tests); **empirical RED re-verification** —
+  the resolver gate temporarily reverted on the uncommitted tree made the
+  composed race test fail exactly `Expected "startup" / Received
+"preparation"`, then restored byte-identical (diff-verified) and re-run
+  green. Incidental discovery recorded: RNTL v14 registers its own AppState
+  listener per render (AppState call-counts cannot prove sync-hook mounts;
+  the composed test asserts the policy-source seam counts instead).
+- **GATE: PASS** — invariant holds through every unresolved path (initial /
+  provisional / schema-rejected / first-read rejection / module-absent /
+  failure-after-success); standard-device rows byte-identical; web/jest
+  resolve immediately (never hang).

@@ -2,19 +2,35 @@ import { create } from "zustand";
 
 import { createLogger } from "@/core/logging";
 
-import { deriveDevicePolicy, type DevicePolicy } from "../model/derive-device-policy";
+import {
+  deriveDevicePolicy,
+  isProvisionalSnapshot,
+  type DevicePolicy,
+} from "../model/derive-device-policy";
 import { devicePolicySchema } from "../model/device-policy.schema";
+import type { PolicyReadiness } from "../model/root-guard";
 
 const log = createLogger("kiosk-runtime.devicePolicy");
 
 /**
  * The app-wide, EPHEMERAL device-policy store (AC-02, AC-05).
  *
- * Two things live here, and neither may ever leave memory:
+ * Three things live here, and none may ever leave memory:
  *
  * - `policy` — the derived device policy, applied from a validated native
  *   snapshot. It starts at the fail-closed standard default: until something
  *   has PROVEN this device is a customer kiosk, it is a standard device.
+ * - `readiness` — whether the platform has produced a settled policy verdict
+ *   (RD-01/IR-01). It starts `"pending"` and resolves ONLY on affirmative
+ *   evidence: a schema-valid, NON-provisional snapshot, or a module-absent
+ *   null read (`markModuleAbsent`, driven by the sync hook — on web/jest the
+ *   standard default IS the platform verdict, so those platforms can never
+ *   hang at the startup hold). A provisional snapshot and a schema-rejected
+ *   snapshot hold it `"pending"`; a read REJECTION leaves it untouched (a
+ *   failed read carries no evidence — it can neither create nor destroy a
+ *   verdict). The verdict lives at the store ROOT, not nested inside
+ *   `policy`: it is evidence about the READ, not a property of the derived
+ *   policy, and `useRootTarget` consumes it as a second resolver input.
  * - `maintenance` — the maintenance unlock session. The MDM-managed code and
  *   the unlock state exist in memory only: never persisted, never logged as
  *   values, cleared on timeout, background, and any snapshot application.
@@ -40,17 +56,37 @@ export type MaintenanceSession = {
 export type DevicePolicyState = {
   /** The app-wide device policy (AC-02). */
   policy: DevicePolicy;
+  /**
+   * Whether the platform has produced a settled policy verdict (RD-01).
+   * `"pending"` initially — see the store doc comment for the transitions.
+   * Consumed by `useRootTarget` as the resolver's readiness input.
+   */
+  readiness: PolicyReadiness;
   /** The ephemeral maintenance session (AC-05). */
   maintenance: MaintenanceSession;
   /**
    * Validate a native device-policy snapshot and apply the derived policy.
    * On success the maintenance session is cleared (unconditionally — a role
    * change invalidates any unlock, and a re-read of a managed configuration
-   * is exactly the moment to re-lock). On a schema failure the store fails
-   * closed: the policy reverts to the standard default and the session is
-   * cleared — an invalid snapshot carries no trustworthy affirmative signal.
+   * is exactly the moment to re-lock) and readiness resolves — UNLESS the
+   * snapshot is provisional (`restrictions_pending` truthy), in which case
+   * the derived policy is applied with today's derivation semantics but
+   * readiness stays/becomes `"pending"` (the final state is undetermined).
+   * On a schema failure the store fails closed: the policy reverts to the
+   * standard default, the session is cleared, and readiness goes to
+   * `"pending"` — an invalid snapshot carries no trustworthy affirmative
+   * signal.
    */
   applySnapshot(snapshot: unknown): void;
+  /**
+   * Resolve readiness because the platform layer reports NO native module
+   * (web, jest, non-Android). Called by the sync hook when a read resolves
+   * null: the fail-closed standard default IS the platform verdict there, so
+   * those platforms must never hold at the startup target. Touches nothing
+   * else — module absence is not a snapshot application, so no policy change
+   * and no session clear. Idempotent.
+   */
+  markModuleAbsent(): void;
   /**
    * Attempt a maintenance unlock. Returns true ONLY when the current policy
    * is a customer kiosk, the derived code is non-null, and `code` equals it.
@@ -109,20 +145,29 @@ const LOCKED_MAINTENANCE: MaintenanceSession = Object.freeze({ unlocked: false, 
 export function createDevicePolicyStore() {
   return create<DevicePolicyState>((set, get) => ({
     policy: FAIL_CLOSED_POLICY,
+    readiness: "pending",
     maintenance: LOCKED_MAINTENANCE,
 
     applySnapshot(snapshot: unknown) {
       const result = devicePolicySchema.safeParse(snapshot);
 
       if (result.success) {
-        set({ policy: deriveDevicePolicy(result.data), maintenance: LOCKED_MAINTENANCE });
+        set({
+          policy: deriveDevicePolicy(result.data),
+          maintenance: LOCKED_MAINTENANCE,
+          readiness: isProvisionalSnapshot(result.data) ? "pending" : "resolved",
+        });
         return;
       }
 
       // No payload in this warn, ever: the maintenance code travels inside
       // the restrictions, so snapshot values must not reach the log (AC-05).
       log.warn("Device-policy snapshot failed schema validation; failing closed to standard");
-      set({ policy: FAIL_CLOSED_POLICY, maintenance: LOCKED_MAINTENANCE });
+      set({ policy: FAIL_CLOSED_POLICY, maintenance: LOCKED_MAINTENANCE, readiness: "pending" });
+    },
+
+    markModuleAbsent() {
+      set({ readiness: "resolved" });
     },
 
     tryUnlock(code: string) {

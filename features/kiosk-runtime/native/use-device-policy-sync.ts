@@ -10,13 +10,19 @@ const log = createLogger("kiosk-runtime.devicePolicySync");
 
 /**
  * Binds the native device policy to the app-wide store (plan Design decision
- * 3): read on mount, re-read on restrictions changes and when the app
- * returns to the foreground, and clear the maintenance session the moment
- * the app leaves the foreground (AC-05 — the unlock is ephemeral).
+ * 3, remediation RD-01): read on mount, re-read on restrictions changes and
+ * when the app returns to the foreground, and clear the maintenance session
+ * the moment the app leaves the foreground (AC-05 — the unlock is ephemeral).
+ *
+ * This hook is also what drives the store's READINESS verdict: a completed
+ * snapshot resolves it (inside `applySnapshot`), a null read resolves it via
+ * `markModuleAbsent` (web/jest — the standard default IS the platform
+ * verdict), and a rejected read leaves it untouched (no evidence).
  *
  * Mounted exactly once at the app root (wired into `app/_layout.tsx` in
  * T07). Everything flows through the `policy-source` seam; the store owns
- * what a snapshot MEANS — validation plus fail-closed derivation (T02/T03).
+ * what a snapshot MEANS — validation plus fail-closed derivation (T02/T03)
+ * plus the readiness verdict (T14).
  *
  * Listener/resolver separation follows the `core/auth` context shape: the
  * event listeners stay trivial, and all async resolution happens in
@@ -44,16 +50,22 @@ export function useDevicePolicySync(): void {
       refreshInFlight = true;
       try {
         const snapshot = await readDevicePolicySnapshot();
-        // null = no native module (web/test): apply nothing and leave the
-        // store at its fail-closed default. Absence is not a policy.
         if (snapshot !== null) {
           useDevicePolicyStore.getState().applySnapshot(snapshot);
+        } else {
+          // null = no native module (web/jest/non-Android): the store's
+          // fail-closed standard default IS the platform verdict, so the
+          // readiness resolves — those platforms must never hold at the
+          // startup target. Absence is synchronous and is not an error.
+          useDevicePolicyStore.getState().markModuleAbsent();
         }
       } catch {
         // One error, no payload — the maintenance code travels inside the
         // restrictions, so nothing from a failed read may reach a log. A
         // failed read is not evidence for any role: keep the last-known-good
-        // policy; a queued re-run or the next refresh point retries.
+        // policy AND the last-known readiness verdict — a failed read can
+        // neither create nor destroy a verdict; a queued re-run or the next
+        // refresh point retries.
         log.error("Failed to read the device-policy snapshot; keeping the last-known-good policy");
       } finally {
         refreshInFlight = false;
