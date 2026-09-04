@@ -539,6 +539,56 @@ describe("OrderSuccessScreen", () => {
     expect(screen.getByLabelText("Order resets in 25 seconds")).toBeOnTheScreen();
   });
 
+  it("self-heals a refused-because-PENDING reset when the clear lands done — the destructive presentation does not outlive its cause (F-FR-03)", async () => {
+    // The sequence: the clear is still pending when the countdown expires;
+    // the expiry-driven reset is (correctly) refused and the destructive
+    // presentation appears; the customer presses Try Again; THEN the
+    // in-flight clear lands done — the presentation must recover to the
+    // normal confirmed state with the reset available, without any
+    // FURTHER press.
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await seedConfirmedAttempt("pending");
+    await renderScreen();
+    await screen.findByText("Order Confirmed");
+
+    // The clear is in flight; expire the countdown BEFORE the tracker
+    // lands. retryCleanup resolves after a tick we control: park it.
+    let releaseClear!: () => void;
+    const clearGate = new Promise<void>((resolve) => {
+      releaseClear = resolve;
+    });
+    const realRetry = useAttemptStore.getState().retryCleanup;
+    jest.spyOn(useAttemptStore.getState(), "retryCleanup").mockImplementation(async () => {
+      await clearGate;
+      await realRetry();
+    });
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(25_000);
+    });
+
+    // The expiry-driven reset was refused (the clear is pending) — the
+    // honest destructive presentation, with Try Again as the way through.
+    await screen.findByText("We couldn\'t finish clearing this tablet for the next customer");
+    const retry = await screen.findByRole("button", { name: "Try Again" });
+    expect(retry).not.toBeDisabled();
+
+    // The customer presses Try Again: the parked retryCleanup is in flight
+    // (the gate holds it); THEN the clear lands done — the stale refusal
+    // heals, handleRetryClear's own gated retry now PASSES, and the flow
+    // completes to the customer home WITHOUT any further press (the F-FR-03
+    // self-heal + the designed one-press recovery).
+    await user.press(retry);
+    await act(async () => {
+      releaseClear();
+    });
+    await flushAsyncWork(() => mockRouterReplace.mock.calls.length > 0);
+    expect(mockRouterReplace).toHaveBeenCalledWith("/");
+    expect(useAttemptStore.getState().record).toBeNull();
+    expect(useAttemptStore.getState().phase).toBe("idle");
+    expect((await readAttemptKeyOnDisk()).status).toBe("miss");
+  });
+
   it("surfaces the unsafe-cleanup state: the warning renders, Next Customer is not offered, no countdown — and Try Clearing Again finishes cleanup and the reset (AC-11)", async () => {
     // A real cart envelope for the record's owner, so the retried clear has
     // something real to clear (asserted through the public cart API after).

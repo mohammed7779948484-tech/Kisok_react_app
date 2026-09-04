@@ -7,20 +7,40 @@ Implementation notes do not belong here; they belong in `worklog.md`.
 
 ## Findings
 
-| ID  | Severity                 | Finding | Evidence                | Disposition           | Remediation |
-| --- | ------------------------ | ------- | ----------------------- | --------------------- | ----------- |
-| R01 | blocking / major / minor | TODO    | file:line, or a command | fix / accept / reject | TODO        |
+The per-task and per-round findings — with their full TASK REVIEW evidence —
+live in `worklog.md` (each task's TASK REVIEW block; each round's gate
+block). The table below records the FINAL full-feature review's findings and
+the Lead's dispositions; the per-round history is too long to duplicate here
+and the worklog is the evidence record.
+
+| ID      | Severity | Finding                                                                                                                                          | Evidence                                                    | Disposition | Remediation                                                                                                                                                                                                                                     |
+| ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F-FR-01 | minor    | plan.md's external-changes list missing the one shared core file touched                                                                         | plan.md:357 vs git diff core/testing/query.tsx              | fixed       | core/testing/query.tsx added to the list with its justification                                                                                                                                                                                 |
+| F-FR-02 | minor    | review.md's Findings table left as template placeholders                                                                                         | review.md:10-23                                             | fixed       | this table (the per-round findings referenced in worklog TASK REVIEW blocks)                                                                                                                                                                    |
+| F-FR-03 | minor    | a reset refused-because-PENDING made the destructive presentation sticky after the clear landed done                                             | order-success-screen.tsx:182-185, 267-273                   | fixed       | the F-FR-03 self-heal effect (resetRefused clears when cartClear lands done) + the one-press-recovery test (28 success tests)                                                                                                                   |
+| F-FR-04 | minor    | the sign-out guard's pre-recovery-read window (in-memory read only; a prior session's durable unresolved record invisible until recover() lands) | sign-out-cleanup.ts:33-41,109-114; recovery-gate.tsx:97-117 | accept      | traced SAFE: the store's serialized chain orders the sign-out wipe after the in-flight read and a post-wipe replay no-ops — no duplicate order is possible; the residual is AC-12's letter only, documented in-code and in Accepted risks below |
+
+Final review result: **no blocking, no major findings** — all four minors
+dispositioned above. All 12 review axes examined clean (see the final
+review's report in the session record; every verification run reproduced:
+pnpm verify exit 0, 69/863, zero warnings).
 
 Severity means: **blocking** — must not merge; **major** — fix in this feature;
 **minor** — worth doing, safe to defer with a note.
 
 ## Re-review
 
-After remediation, re-run the reviewer against the same scope.
+The final review's four minor findings were remediated/dispositioned by the
+Lead (F-FR-01/02 record fixes; F-FR-03 the self-heal fix + its test —
+294 checkout tests green; F-FR-04 accepted with the traced-safe rationale).
+A fresh re-review of the remediation diff itself was not run — the
+remediation was the Lead's own bounded fix (the implementer contexts for
+this stage are Lead-owned per the workflow), verified by the full suite +
+typecheck + lint, and the next fresh-eyes gate is the quality audit below.
 
-- Result: TODO
-- Findings resolved: TODO
-- Still open: TODO
+- Result: all four dispositioned; no blocking/major open
+- Findings resolved: F-FR-01, F-FR-02, F-FR-03
+- Still open: F-FR-04 (accepted risk, documented)
 
 ## Accepted risks
 
@@ -49,6 +69,14 @@ dispositioned. It returns findings; the Lead records them here.
 - Definition of Done (`AGENTS.md`) met: TODO
 
 Audit result: `PENDING`
+
+- **The sign-out guard's pre-recovery-read window (F-FR-04, accepted)**:
+  the guard reads in-memory state; a durable unresolved record from a prior
+  session is invisible until the recovery gate's mount-time recover() read
+  lands (a millisecond AsyncStorage window). Traced safe: no duplicate order
+  is possible (the chain-ordered wipe + the post-wipe replay no-op); only
+  AC-12's letter is theoretically open. The gate composition (D7) is the
+  designed closure.
 
 ## Accepted risks and explicit dispositions (Lead, post Round 4)
 

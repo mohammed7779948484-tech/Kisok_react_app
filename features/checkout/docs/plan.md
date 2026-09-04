@@ -354,7 +354,15 @@ files are where parallel agents collide.
   checkout plan D7 listed the layout edit).
 - `features/catalog/index.ts`, `features/catalog/queries/use-customer-settings.ts`
   (+ test) — the narrow settings seam (D6, AC-14).
-- Shared `core/` / `components/` files: **none** — no new shared primitives
+- `core/testing/query.tsx` — ONE shared test-infra option (added at T09):
+  `mutations: { gcTime: Infinity }` on the shared test QueryClient. Root
+  cause (verified): a completed mutation schedules a 5-minute GC setTimeout
+  when its last observer unmounts (RNTL cleanup runs after the file's
+  afterEach destroy loop), keeping jest alive invisibly. Additive,
+  test-only, mirrors the file's own queries rationale. [Reconciled into
+  this list at the final review — F-FR-01.]
+- Shared `core/` / `components/` files: otherwise **none** — no new shared
+  primitives
   (the UI research confirmed everything needed exists).
 
 ## Required skills

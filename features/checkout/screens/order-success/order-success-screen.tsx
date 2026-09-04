@@ -141,6 +141,9 @@ export function OrderSuccessScreen() {
   // and hooks order is unconditional (this screen's own convention).
   const confirmedRecord = record !== null && record.status === "confirmed" ? record : null;
   const isValidSuccess = confirmedRecord !== null && phase === "confirmed";
+  // Derived BEFORE the presentation early-returns: the F-FR-03 self-heal
+  // effect below reads it, and hooks order is unconditional.
+  const cartClear = confirmedRecord?.cleanup.cartClear ?? null;
 
   // R3-02 (AC-14's back-navigation half): the hardware-back guard for the
   // confirmed presentation. The countdown owns the session here — its expiry
@@ -169,6 +172,18 @@ export function OrderSuccessScreen() {
    * is cleared with it. A refused result surfaces the unsafe-cleanup warning
    * (the failed durable remove keeps the record for the next attempt).
    */
+  // F-FR-03 self-heal: `resetRefused` is sticky only while the refusal's
+  // CAUSE persists. A reset refused because the clear was still PENDING
+  // (e.g. the countdown expired mid-clear) becomes stale the moment the
+  // tracker lands "done" — the destructive presentation must not outlive
+  // the condition that justified it. A refusal while the clear genuinely
+  // FAILED keeps `selectorUnsafe` true on its own, so this effect only
+  // ever clears a stale refusal, never masks a real one.
+  const clearLandedDone = cartClear === "done" && persistence !== "clearFailed";
+  useEffect(() => {
+    if (clearLandedDone) setResetRefused(false);
+  }, [clearLandedDone]);
+
   const handleReset = async () => {
     if (resetInFlightRef.current) return;
     resetInFlightRef.current = true;
@@ -263,7 +278,6 @@ export function OrderSuccessScreen() {
   // - `resetRefused` — a reset this screen attempted was refused;
   // - pending — the clear has not finished yet (in flight in-session, or a
   //   restart landed here before T12's gate resolved it).
-  const cartClear = confirmedRecord.cleanup.cartClear;
   const selectorUnsafe = cartClear === "failed" || persistence === "clearFailed";
   const cleanupUnsafe = selectorUnsafe || resetRefused;
   const cleanupPending = cartClear === "pending" && !cleanupUnsafe;
