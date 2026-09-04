@@ -12,4 +12,13 @@
  * outside the feature renders it — which, from the generator, means a route.
  * `pnpm generate screen` alone does not widen this file.
  */
+
+// Plan decision 10 (the cart index precedent): the registration side-effect,
+// not a value the index needs. Importing this file loads
+// `state/sign-out-cleanup`, which registers checkout's sign-out guard and
+// destructive cleanup with core/auth's public registry — features register
+// from their own modules, and the layout/route module loads make the
+// registration live (D7: the customer layout imports this entry).
+import "./state/sign-out-cleanup";
+
 export {};

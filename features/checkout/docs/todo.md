@@ -17,9 +17,9 @@ is the first thing the next agent reads.
 ```
 Current round     : 1
 Current task      : — (round complete)
-Current stage     : T06 GATE PASS — next T07 (sign-out guard)
-Last gate         : T06 GATE PASS
-Next legal action : delegate T07 (sign-out guard registration — manual)
+Current stage     : T07 GATE PASS — Round 2 complete; ROUND GATE pending
+Last gate         : T07 GATE PASS (Round 2 tasks complete)
+Next legal action : Round 2 gate — accumulated diff review + fresh Round reviewer
 Blocked by        : —
 ```
 

@@ -568,3 +568,71 @@ features/checkout/state/attempt-store.test.ts (new)
 Nothing outside the task's allowed scope.
 
 GATE: PASS
+
+### T07 — Sign-out guard + cleanup registration
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-12
+
+SCAFFOLD (Lead — N/A for this task)
+manual module (plan Allowed manual files); registration side-effect
+pattern per the cart precedent (plan D7 / decision 10).
+
+RED (behavior)
+$ npx jest features/checkout/state/sign-out-cleanup.test.ts
+Two captures: (1) module missing — Cannot find module; (2) module present
+with the guard/cleanup functions but NO registration calls:
+Tests: 4 failed, 3 passed — runSignOutGuards() resolved {status:"ok"}
+with an unresolved record in the store (no guard registered); the cleanup
+did not wipe; the failure did not propagate; the index did not make the
+guard live. Every failure is "registration is missing".
+
+IMPLEMENT
+state/sign-out-cleanup.ts — guard "checkout": reads useAttemptStore
+getState() only (side-effect-free); record?.status === "unresolved" →
+blocked with the exact contract reason string; else ok. Only unresolved
+blocks (confirmed is server-side, nothing left to replay — documented).
+Edge-timing honestly documented: in-memory read; the recovery gate (T12)
+owns closing the restart window. Cleanup "checkout-cleanup"
+(clearCheckoutForSignOut, exported for test only): ungated
+storage.remove(kisok:checkout:attempt) + full envelope reset BEFORE the
+throw on rejection (persistence honest; core's emergency wipe owns disk).
+Known interleaving documented: the raw remove bypasses the store's chain;
+a confirmed-tail write can follow; bounded, accepted (confirmed records
+are never replayed; recover() self-heals).
+state/sign-out-cleanup.test.ts — 7 tests: blocked + byte-level
+side-effect-free proof (reference identity + JSON deep copy); approvals;
+registry-level cleanup; failure path (toEqual exact failures — checkout
+by name AND the cart's real remove succeeded through the spy); direct
+success; index liveness via jest.isolateModules.
+index.ts — the side-effect import only (export {} retained).
+
+GREEN
+$ npx jest features/checkout/state → 2 suites / 54 tests
+$ npx jest features/checkout → 8 suites / 221 tests
+$ pnpm test (full) → 62 suites / 781 tests
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean
+$ npx eslint <3 files> → exit 0 (4 one-line no-require-imports disables,
+generator-template precedent)
+$ npx prettier --check <3 files> → clean
+
+TASK REVIEW (fresh code-reviewer, agent-cb8b4f14)
+Verified: AC-12/D7 conformance; the reason string surfaces verbatim
+through the existing auth mechanism; the guard's side-effect-free proof
+is real (both mechanisms have teeth); cleanup ordering vs guards airtight
+(blocked guard returns before any cleanup); no double registration incl.
+isolateModules; scope clean; RED empirically re-derived in a /tmp copy.
+Findings: F-07-01 minor (edge-timing comment overstated safety),
+F-07-02 minor (raw remove bypasses the store chain — documented tradeoff),
+F-07-03 minor (toContain → toEqual).
+Remediation (same-implementer resume): honest residual-window wording;
+KNOWN INTERLEAVING paragraph; exact-equality failure assertion.
+
+DIFF
+features/checkout/state/sign-out-cleanup.ts (new)
+features/checkout/state/sign-out-cleanup.test.ts (new)
+features/checkout/index.ts (side-effect import only)
+
+GATE: PASS
