@@ -855,3 +855,59 @@ core/testing/query.tsx (shared, justified above — listed in the PR's
 shared-files section)
 
 GATE: PASS
+
+### T10 — Catalog settings seam (useCustomerCatalogSettings)
+
+MODE: behavior
+ACCEPTANCE: Supporting AC-14
+
+SCAFFOLD (Lead — N/A for this task)
+manual thin selector (plan D6; generating a query capability would
+create a second RPC path — explicitly rejected).
+
+RED (behavior)
+$ npx jest features/catalog/queries/use-customer-settings.test.tsx
+Test suite failed to run — Cannot find module './use-customer-settings'
+The declared entry evidence: the hook does not exist. (Reviewer noted
+the claim is plausible-only from the repo; the direct-import shape
+guarantees module-not-found — accepted as the RED for a planned manual
+artifact, consistent with T02's precedent.)
+
+IMPLEMENT
+features/catalog/queries/use-customer-settings.ts — a separate useQuery
+with the SAME catalogKeys.all key + fetchCatalog queryFn + a module-
+stable narrow select (raw snapshot → { customerSuccessResetSeconds:
+number | undefined }; `in`-narrowed union access, undefined for the {}
+member; the caller applies the 25s fallback). TanStack dedupes the
+observers: mounting beside useCatalog() fires NO second RPC; renders
+scoped to the settings object.
+features/catalog/queries/use-customer-settings.test.tsx — 5 tests:
+configured seconds (40); undefined for the {} member; the D6 dedup
+proof (both hooks mounted → ONE fetchCatalog AND getQueryData identity
+= the raw snapshot); pending-state honesty (deferred promise); error
+passthrough.
+features/catalog/index.ts — additive: one export + doc lines citing
+checkout plan D6.
+
+GREEN
+$ npx jest features/catalog → 27 suites / 240 tests
+$ pnpm test (full, reviewer-rerun) → 65 suites / 817 tests
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean
+$ npx eslint <3 files> --max-warnings=0 → exit 0
+$ npx prettier --check <3 files> → clean
+
+TASK REVIEW (fresh code-reviewer, agent-70faacad)
+Verified: D6 fidelity (same key + queryFn + narrow select; all rejected
+alternatives avoided; no behavior delta vs useCatalog); union handling
+sound; dedup proof real (call count AND cache identity); index additive;
+scope clean; all claims reproduced independently; nothing missing for
+the T11 consumer. One finding: F-T10-01 minor (this entry).
+
+DIFF
+features/catalog/queries/use-customer-settings.ts (new)
+features/catalog/queries/use-customer-settings.test.tsx (new)
+features/catalog/index.ts (additive export)
+
+GATE: PASS
