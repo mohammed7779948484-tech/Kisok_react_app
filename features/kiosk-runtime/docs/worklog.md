@@ -2153,3 +2153,27 @@ mdm-upload` (upload job) with the human-migration follow-up comments.
   clean; no invented contracts.
 - **GATE: PASS** — the operational contract matches the remediated
   pipeline. ALL SEVEN remediation tasks (T14–T20) are now gated PASS.
+
+---
+
+## Round 4 gate — post-review remediation (T14–T20)
+
+- **Subsystem checks**: `pnpm verify` exit 0 — 68 suites / 881 tests; all
+  guards green (run on the clean tree at the round head before review).
+- **Accumulated round diff**: 8604a51..8354b5a — 22 files, +2958/−429
+  (the seven task commits 1a30a5a..8354b5a + the review-row commit).
+- **Fresh round reviewer** (agent-5dd85f16): **0 blocking / 0 major /
+  1 minor** — R4-1: mdm-operations.md §4/§9 still described the TWO-signal
+  kiosk derivation, missing T14's RD-02 third signal (`lockTaskModeState
+=== "locked"`, exempt from provisional suppression). Fixed in-task by the
+  T20 implementer (two passages rewritten to the three-signal derivation +
+  precise pending semantics, matched to the derive code's doc comment).
+  Round reviewer's cross-task seams examined CLEAN: runtime isolation
+  (T14 × tools), T15×T16 retry/error interaction (404+numeric-code → group
+  missing, not retried), T17×T18 step coherence, T19 pins × with-inputs,
+  the combined MDM flow (all read-only validation precedes the first
+  mutation; every step fail-closed), docs-vs-code message quotes, AC-01…
+  AC-10 end-to-end.
+- **ROUND 4 GATE: PASS** — IR-01/03/04/05/06/07/08 closed at code level
+  with fresh evidence; IR-02 documented REJECTED; R5 drifts fixed. IR-09
+  (develop integration) remains, scheduled next per the plan.

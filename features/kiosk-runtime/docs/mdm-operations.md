@@ -154,13 +154,22 @@ Enterprise pages, last updated 2026-07/08]
 
 - `kiosk_device_role` — set to `customer_kiosk` on store Customer tablets.
   **The app derives the device role fail-closed: only affirmative signals
-  yield kiosk** — the explicit `customer_kiosk` value, or the DPC lock-task
-  allowlist corroborating it. A missing, pending, invalid or empty value
-  leaves the device **standard** (a provisioned-but-unconfigured tablet
-  fails closed, never half-kiosk). One deliberate asymmetry: an explicit
-  `standard` combined with a DPC allowlist resolves **toward kiosk** —
-  downgrading a store tablet is an MDM action (remove it from the kiosk
-  allowlist), not an app-configuration toggle.
+  yield kiosk** — the explicit `customer_kiosk` value, the DPC lock-task
+  allowlist, or live full lock task mode (`lockTaskModeState === "locked"`
+  — a live OS query, DPC-enforced, unreachable by an app that is not
+  allowlisted). A missing, invalid or empty value leaves the device
+  **standard** (a provisioned-but-unconfigured tablet fails closed, never
+  half-kiosk). Pending semantics are precise: a provisional snapshot
+  (`restrictions_pending`) never latches a kiosk signal from the
+  restrictions bundle or the allowlist — pending WITHOUT lock evidence
+  derives **standard** — while the live lock-task state is current OS
+  evidence and the one exemption from provisional suppression: pending
+  WITH live LOCKED already derives **kiosk** (on a real kiosk that means
+  the mismatch screen, not a hold, for a `preparation` account). One
+  deliberate asymmetry: an explicit `standard` combined with a DPC
+  allowlist or live LOCKED resolves **toward kiosk** — downgrading a store
+  tablet is an MDM action (remove it from the kiosk allowlist / end lock
+  task mode), not an app-configuration toggle.
 - `maintenance_unlock_code` — the store-staff maintenance credential, not a
   Supabase credential. It is visible to MDM admins in the console
   (deliberately a plain, settable string — a `hidden` type risks the console
@@ -637,11 +646,12 @@ These are recorded as unverified — never claimed as verified:
   managed-config push actually sets that marker on real devices is
   unverified.
 - **Whether ManageEngine always pushes `kiosk_device_role`.** The kiosk
-  derivation requires an affirmative `customer_kiosk` value or DPC
-  lock-task corroboration and fails closed to standard otherwise; whether
-  the MDM always delivers the explicit `kiosk_device_role` value on
-  Customer kiosks — rather than relying on lock-task corroboration alone —
-  is unverified.
+  derivation accepts any of three affirmative signals — the explicit
+  `customer_kiosk` value, the DPC lock-task allowlist, or live full lock
+  task mode — and fails closed to standard otherwise (pending without lock
+  evidence included); whether the MDM always delivers the explicit
+  `kiosk_device_role` value on Customer kiosks — rather than the device
+  deriving kiosk from lock evidence alone — is unverified.
 
 ## 10. Edition note
 
