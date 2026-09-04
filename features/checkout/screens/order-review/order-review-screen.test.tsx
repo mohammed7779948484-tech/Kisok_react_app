@@ -403,18 +403,23 @@ describe("OrderReviewScreen", () => {
     // The full-cart suite could not observe this transient frame (R-T11-01:
     // the mock-auth + AsyncStorage chains are pure microtasks that settle
     // inside RNTL v14's awaited render). Here the cart's durable read is
-    // delayed by ONE macrotask through the real storage seam — the awaited
-    // render drains microtasks but cannot drain a pending timer — so the
-    // `!hydrated` presentation is genuinely observable, then gives way. The
-    // delay is scoped to the cart key ONLY (the sign-out-cleanup spy
-    // precedent): the auth chain's handoff-marker read must not be delayed
-    // past the test, or its resolution lands outside every act window.
+    // PARKED on a test-controlled deferred through the real storage seam —
+    // the read cannot resolve until THIS test releases it, so the
+    // `!hydrated` presentation is genuinely observable and DETERMINISTIC
+    // (the original one-macrotask setTimeout delay raced the awaited render
+    // under parallel worker load — the suite flaked ~2 runs in 6; a parked
+    // promise cannot fire early, whatever the scheduler does). The gate is
+    // scoped to the cart key ONLY (the sign-out-cleanup spy precedent): the
+    // auth chain's handoff-marker read must not be parked, or its
+    // resolution lands outside every act window.
+    let releaseCartRead!: () => void;
+    const cartReadGate = new Promise<void>((resolve) => {
+      releaseCartRead = resolve;
+    });
     const realRead = storage.read;
     const readSpy = jest.spyOn(storage, "read").mockImplementation(async (key, parse) => {
       if (key !== KEY) return realRead(key, parse);
-      await new Promise((resolve) => {
-        setTimeout(resolve, 0);
-      });
+      await cartReadGate;
       return realRead(key, parse);
     });
 
@@ -432,13 +437,11 @@ describe("OrderReviewScreen", () => {
       expect(screen.queryByRole("button", { name: "Back to Cart" })).toBeNull();
       expect(screen.queryByRole("button", { name: "Confirm Order" })).toBeNull();
 
-      // Settle the delayed read inside act, then the honest landing: nothing
+      // Release the parked read inside act, then the honest landing: nothing
       // is on disk (beforeEach removed the key), so the review lands on its
       // empty escape — restored only by the screen's own runtime wiring.
       await act(async () => {
-        await new Promise((resolve) => {
-          setTimeout(resolve, 0);
-        });
+        releaseCartRead();
       });
       await screen.findByText("Your cart is empty");
     } finally {

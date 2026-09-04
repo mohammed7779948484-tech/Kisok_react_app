@@ -1004,3 +1004,103 @@ features/checkout/screens/order-success/components/success-countdown.tsx (new)
 features/checkout/screens/order-success/components/success-countdown.test.tsx (new)
 
 GATE: PASS
+
+### T12 — recovery-gate + customer layout mounting
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-13
+
+SCAFFOLD (Lead, before delegating)
+$ pnpm generate component checkout recovery-gate
+created : features/checkout/components/recovery-gate.tsx (placeholder;
+no test file generated — the colocated test is planned)
+
+RED (behavior)
+$ npx jest features/checkout/components/recovery-gate.test.tsx
+9 failed / 0 passed — every failure showed the placeholder tree
+("TODO: build RecoveryGate"): children never rendered, no recovery
+surface, no navigation, the index export undefined. (First run failed
+on module resolution — the colocated test sits one directory shallower
+than the T09/T11 suites — fixed, then the right missing-behavior RED.)
+
+IMPLEMENT
+components/recovery-gate.tsx — RecoveryGate({ children }): useActiveProfile
+
+- a ref-guarded mount effect running recover(profile.id) once per session
+  (D7 — closes the sign-out guard's restart window and lifts prepare's
+  recovery-pending gate); auto-replay ONCE for the unresolved outcome with
+  the STORED identity; phase-driven recovery surfaces over a full-screen
+  BlockingOverlay-language overlay (aria-modal, touch-claiming, conditional
+  z-50 stacking above the provider's affordance); success handoffs via
+  router.replace("/checkout-success") for confirmed outcomes; the
+  conflict join + Return to Cart / Check Again / Try Clearing Again
+  surfaces; episodeEnded inertness after any way out (later in-session
+  submissions belong to the review screen).
+  components/recovery-gate.test.tsx — 9 tests: no-record pass-through;
+  auto-replay with the stored id → success handoff; conflict join +
+  Return to Cart; network AppError → unknown + Check Again replays the
+  same id; definite failure; cleanup-pending → retryCleanup clears the
+  REAL cart key → handoff; cleanup-done immediate handoff; foreign-owner
+  discard without replay; the index export pin.
+  index.ts — export RecoveryGate (+ D7 doc line; the T07 side-effect
+  import kept).
+  app/(customer)/\_layout.tsx — CatalogCartProvider > RecoveryGate > Stack
+  (thin, D7 comment; the checkout index import also makes the T07 guard
+  registration live for the session).
+
+GREEN
+$ npx jest features/checkout → 13 suites / 282 tests
+$ npx jest features/catalog-cart-integration → 5 suites / 46 tests (after
+the Lead's pin remediation below)
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean
+$ npx eslint <all touched> --max-warnings=0 → exit 0
+$ npx prettier --check → clean
+
+TASK REVIEW (fresh code-reviewer, agent-eb87e340)
+Verified: D7/AC-13 complete (all six outcomes route; all five phase
+surfaces; each AC-13 block has an owner — cart lock, prepare refusals,
+sign-out guard, reset gate); episode inertness; the overlay semantics
+(BlockingOverlay-matched, z-index composition verified); boundaries;
+the stress runs (3× full checkout + 6× the formerly-flaky suite, all
+green after the Lead's flake fix).
+Findings: F-T12-01 MAJOR (no positive pin that the layout mounts
+RecoveryGate — the sanctioned-set check is one-directional),
+F-T12-02 minor (records), F-T12-03 minor (ConflictRow duplicated
+line-for-line between the gate and the review panel),
+F-T12-04 minor (stale test titles), F-T12-05 minor (defensive
+effect-re-invocation hardening — unreachable in the delivered runtime,
+deferred with the reviewer's note).
+Remediation (Lead, directly — the implementer's honest out-of-scope
+reports):
+A. the two stale thin-mount pins updated (+ @/features/checkout in the
+sanctioned sets, comment-justified by checkout plan D7 — a pin
+refresh, not a weakening: the set still rejects everything else);
+B. the T08 restore-pending test's one-macrotask delay raced under
+parallel worker load (2/6 runs) → replaced with a test-controlled
+parked-promise gate (deterministic; 8/8 stress runs green after);
+C. F-T12-01: positive mount pins added to both thin-mount tests
+(specifiers contain @/features/checkout AND the layout source
+contains RecoveryGate);
+D. F-T12-03: ConflictRow promoted to features/checkout/components/
+(the ownership rule: two real consumers) — both call sites consume
+the shared row; F-T12-04: both titles reworded to the
+sanctioned-indexes truth. One import-path slip during the promotion
+was caught immediately by the suite (module-not-found) and fixed.
+
+DIFF
+features/checkout/components/recovery-gate.tsx (new) + test (new)
+features/checkout/components/conflict-row.tsx (new, promoted per
+F-T12-03)
+features/checkout/screens/order-review/components/outcome-panels.tsx
+(consumes the shared row)
+features/checkout/index.ts (export)
+app/(customer)/\_layout.tsx (mount)
+features/catalog-cart-integration/{components/catalog-cart-provider.test,
+convergence.test} (the Lead's pin remediations A + C + D — planned
+external changes, added to plan.md's list in this update)
+features/checkout/screens/order-review/order-review-screen.test.tsx
+(the Lead's flake fix B)
+
+GATE: PASS

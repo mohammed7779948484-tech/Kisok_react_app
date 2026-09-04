@@ -21,4 +21,7 @@
 // registration live (D7: the customer layout imports this entry).
 import "./state/sign-out-cleanup";
 
-export {};
+// D7: the session-level recovery composition the customer layout mounts
+// around its Stack — recover() at layout mount (before any checkout surface
+// is reachable) plus the recovery surfaces for the outcomes that need one.
+export { RecoveryGate } from "./components/recovery-gate";

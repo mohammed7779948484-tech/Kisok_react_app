@@ -1,9 +1,11 @@
-import { ScrollView, View } from "react-native";
+import { ScrollView } from "react-native";
 
-import { Alert, Text } from "@/components/ui";
+import { Alert } from "@/components/ui";
 import type { CartLine } from "@/features/cart";
 
 import type { AttemptFailure, StockConflictItem } from "../../../state/attempt-store";
+
+import { ConflictRow } from "../../../components/conflict-row";
 
 /**
  * The review screen's OUTCOME panels (T09, AC-08/AC-09/AC-10) — screen-local
@@ -78,36 +80,6 @@ export function StockConflictPanel({
  * message: a customer standing at a kiosk needs to read "you asked for 2,
  * there is 1".
  */
-function ConflictRow({ entry, lines }: { entry: StockConflictItem; lines: CartLine[] }) {
-  // The join, case-insensitive on the uuid exactly like the RPC and T02's
-  // normalization compare them. Multiple lines can share a variant (one per
-  // option selection — the request merged them), so ALL matching captions
-  // render, each on its own line; the product name they share renders once.
-  const matches = lines.filter(
-    (line) => line.variantId.toLowerCase() === entry.variant_id.toLowerCase(),
-  );
-  // Defensive: the server echoes the submitted variant_ids, so a miss means
-  // a payload this screen cannot explain — render the id itself, never a
-  // blank row (an empty <Text> is invisible on a shared tablet).
-  const title = matches[0]?.productDisplayName ?? entry.variant_id;
-  return (
-    <View className="flex-row items-center gap-3">
-      <View className="flex-1 gap-1">
-        <Text variant="h3">{title}</Text>
-        {matches.map((line) => (
-          <Text key={line.lineId} variant="caption">
-            {[line.variantLabel, ...line.optionSelections.map((s) => s.optionValueLabel)].join(
-              " · ",
-            )}
-          </Text>
-        ))}
-      </View>
-      <Text variant="body">
-        {`Requested ${entry.requested_quantity} · Available ${entry.available_quantity}`}
-      </Text>
-    </View>
-  );
-}
 
 /**
  * The unknown-result panel's alert (AC-09): deliberately a WARNING, not a

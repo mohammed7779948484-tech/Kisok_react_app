@@ -343,6 +343,11 @@ files are where parallel agents collide.
   Review Order CTA (AC-01): an owning-feature edit the brief explicitly
   scopes ("A Checkout entry from Cart is an expected cross-feature
   integration seam").
+- `features/catalog-cart-integration/components/catalog-cart-provider.test.tsx`
+  and `features/catalog-cart-integration/convergence.test.tsx` — thin-mount
+  pin refreshes + positive RecoveryGate mount pins (added at T12 review:
+  the layout now imports `@/features/checkout`, which those pins police;
+  checkout plan D7 listed the layout edit).
 - `features/catalog/index.ts`, `features/catalog/queries/use-customer-settings.ts`
   (+ test) — the narrow settings seam (D6, AC-14).
 - Shared `core/` / `components/` files: **none** — no new shared primitives
