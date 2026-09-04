@@ -1278,3 +1278,71 @@ features/cart/screens/full-cart/full-cart-screen.tsx (edit)
 features/cart/screens/full-cart/full-cart-screen.test.tsx (edit)
 
 GATE: PASS
+
+### T15 — Customer journey integration test
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-16
+
+SCAFFOLD (Lead — N/A for this task)
+the planned manual integration test at the feature root
+(convergence.test.tsx precedent).
+
+RED (behavior — a NEW test file)
+$ npx jest features/checkout/checkout-journey.test.tsx
+"No tests found … 0 matches" — the missing file is the failing state;
+every behavior it asserts was built and gated in T09/T11/T12/T14.
+Non-vacuity then proven by the implementer with FIVE temporary
+implementation mutations, each reverted immediately (tree verified
+clean after every one): the review's success push target → it 1
+failed; the gate's handoff replace → it 2 failed; the success screen
+ignoring the configured seconds → it 1 failed; the cart's Review Order
+CTA target → it 1 failed; the store skipping the post-confirm cart
+clear → BOTH failed. (The reviewer logically re-verified each pin by
+reading the assertions.)
+
+IMPLEMENT
+features/checkout/checkout-journey.test.tsx (2 tests + the portrait
+leg): the REAL composition end-to-end — the real cart store (public API
+only), the real attempt store with its default cart deps, the real
+FullCart/Review/Success screens and RecoveryGate, real providers; the
+sanctioned five module mocks only (lucide, expo-router, expo-crypto,
+the api module, the catalog settings holder). Journey 1: cart restore →
+Review Order → review → Confirm against a parked deferred flight
+(durable-before-network read mid-flight) → confirmed + cart cleared
+(memory and disk) → success with the CONFIGURED 10s countdown → the
+gated next-customer reset (record gone, replace("/")) → compact
+(480×900) + PORTRAIT (800×1180, the medium bucket — F-T15-02) review
+re-renders. Journey 2: the restart recovery — a seeded UNRESOLVED
+record + preserved cart; the gate's mount recover + auto-replay with
+the STORED id; the unknown hold (locked cart, Check Again only); the
+second flight re-sends the SAME id → confirmed, cart cleared, cleanup
+done, replace("/checkout-success").
+
+GREEN
+$ npx jest features/checkout/checkout-journey.test.tsx → 2/2
+$ npx jest features/checkout → 14 suites / 293 tests
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean
+$ npx eslint <the file> --max-warnings=0 → exit 0
+$ npx prettier --check → clean
+
+TASK REVIEW (fresh code-reviewer, agent-5af4764c)
+Verified: the composition is real (the bindings read end-to-end; the
+mock set is exactly the sanctioned five; ONE api mock covers both
+transport paths — proven by the stored-id assertions); the identity
+assertions are reuse-proofs (the counter can never mint the stored id);
+the durable-before-network pin; the configured-seconds + reset-effect
+pins; the fake-timers scoping reasoning; the honest compact/portrait
+re-seeds; all resets/hygiene; all suites re-run green. No defect found
+in the test.
+Findings: F-T15-01 major (records — this entry), F-T15-02 minor (the
+medium bucket unexercised — the portrait leg added above; the
+three-literal-size + touch-target + zero-console browser pass remains
+the Round 4 gate's runtime evidence).
+
+DIFF
+features/checkout/checkout-journey.test.tsx (new)
+
+GATE: PASS

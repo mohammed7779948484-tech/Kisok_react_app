@@ -17,9 +17,9 @@ is the first thing the next agent reads.
 ```
 Current round     : 3
 Current task      : — (round complete)
-Current stage     : T14 GATE PASS — next T15 (journey test)
-Last gate         : T14 GATE PASS
-Next legal action : delegate T15 (customer journey integration test)
+Current stage     : T15 GATE PASS — Round 4 complete; ROUND GATE pending
+Last gate         : T15 GATE PASS (Round 4 tasks complete)
+Next legal action : Round 4 gate — pnpm verify + browser runtime evidence + fresh Round reviewer
 Blocked by        : —
 ```
 
@@ -40,23 +40,23 @@ Blocked by        : —
 
 Scan this first. Detail is below.
 
-| Task | Mode     | Acceptance                            | Objective                                                  | Deps                    | Stage       | Gate    |
-| ---- | -------- | ------------------------------------- | ---------------------------------------------------------- | ----------------------- | ----------- | ------- |
-| T01  | behavior | Supporting AC-07, AC-08               | create-order-response schema                               | —                       | done        | PASS    |
-| T02  | behavior | Acceptance: AC-05                     | normalized-request pure rules                              | —                       | done        | PASS    |
-| T03  | behavior | Supporting AC-06, AC-07               | checkout-attempt record schema                             | T02                     | done        | PASS    |
-| T04  | behavior | Supporting AC-07–AC-10                | submit-order api + mutation hook                           | T01                     | done        | PASS    |
-| T05  | behavior | Supporting AC-07, AC-11               | Cart `clearCartDurable()` extension                        | —                       | done        | PASS    |
-| T06  | behavior | Acceptance: AC-04, AC-06, AC-09–AC-11 | Checkout attempt store (state machine + durable lifecycle) | T02, T03, T04, T05      | done        | PASS    |
-| T07  | behavior | Acceptance: AC-12                     | Sign-out guard + cleanup registration                      | T06                     | done        | PASS    |
-| T08  | behavior | Acceptance: AC-02, AC-03              | Order Review screen + order-line-row                       | —                       | done        | PASS    |
-| T09  | behavior | Acceptance: AC-04, AC-08–AC-10        | Review submission flow + outcome panels                    | T04, T06, T08           | done        | PASS    |
-| T10  | behavior | Supporting AC-14                      | Catalog settings seam                                      | —                       | done        | PASS    |
-| T11  | behavior | Acceptance: AC-07, AC-14, AC-15       | Order Success screen + countdown                           | T06, T08, T10           | done        | PASS    |
-| T12  | behavior | Acceptance: AC-13                     | recovery-gate + layout mounting                            | T06, T07                | done        | PASS    |
-| T13  | config   | N/A — routing                         | Routes + hardware-back guard (R3-02)                       | T08, T11                | done        | PASS    |
-| T14  | behavior | Acceptance: AC-01                     | Full Cart Review Order CTA                                 | T13                     | done        | PASS    |
-| T15  | behavior | Acceptance: AC-16                     | Customer journey integration test                          | T09, T11, T12, T13, T14 | not started | PENDING |
+| Task | Mode     | Acceptance                            | Objective                                                  | Deps                    | Stage | Gate |
+| ---- | -------- | ------------------------------------- | ---------------------------------------------------------- | ----------------------- | ----- | ---- |
+| T01  | behavior | Supporting AC-07, AC-08               | create-order-response schema                               | —                       | done  | PASS |
+| T02  | behavior | Acceptance: AC-05                     | normalized-request pure rules                              | —                       | done  | PASS |
+| T03  | behavior | Supporting AC-06, AC-07               | checkout-attempt record schema                             | T02                     | done  | PASS |
+| T04  | behavior | Supporting AC-07–AC-10                | submit-order api + mutation hook                           | T01                     | done  | PASS |
+| T05  | behavior | Supporting AC-07, AC-11               | Cart `clearCartDurable()` extension                        | —                       | done  | PASS |
+| T06  | behavior | Acceptance: AC-04, AC-06, AC-09–AC-11 | Checkout attempt store (state machine + durable lifecycle) | T02, T03, T04, T05      | done  | PASS |
+| T07  | behavior | Acceptance: AC-12                     | Sign-out guard + cleanup registration                      | T06                     | done  | PASS |
+| T08  | behavior | Acceptance: AC-02, AC-03              | Order Review screen + order-line-row                       | —                       | done  | PASS |
+| T09  | behavior | Acceptance: AC-04, AC-08–AC-10        | Review submission flow + outcome panels                    | T04, T06, T08           | done  | PASS |
+| T10  | behavior | Supporting AC-14                      | Catalog settings seam                                      | —                       | done  | PASS |
+| T11  | behavior | Acceptance: AC-07, AC-14, AC-15       | Order Success screen + countdown                           | T06, T08, T10           | done  | PASS |
+| T12  | behavior | Acceptance: AC-13                     | recovery-gate + layout mounting                            | T06, T07                | done  | PASS |
+| T13  | config   | N/A — routing                         | Routes + hardware-back guard (R3-02)                       | T08, T11                | done  | PASS |
+| T14  | behavior | Acceptance: AC-01                     | Full Cart Review Order CTA                                 | T13                     | done  | PASS |
+| T15  | behavior | Acceptance: AC-16                     | Customer journey integration test                          | T09, T11, T12, T13, T14 | done  | PASS |
 
 Stage is one of: `not started` · `scaffolding` · `red/baseline` ·
 `implementing` · `green` · `checks` · `diff review` · `done`.
