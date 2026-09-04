@@ -133,7 +133,11 @@ beforeEach(() => {
   // never inherit a verdict or a pending-failure error a previous test left
   // behind (the cold-start defaults are "pending" and null).
   useDevicePolicyStore.setState({
-    policy: { role: "standard", maintenance: { code: null, timeoutSeconds: 90 } },
+    policy: {
+      role: "standard",
+      restrictionsSettled: true,
+      maintenance: { code: null, timeoutSeconds: 90 },
+    },
     maintenance: LOCKED_SESSION,
     readiness: "pending",
     readError: null,
@@ -219,6 +223,7 @@ describe("mount", () => {
     expect(applySnapshotSpy).not.toHaveBeenCalled();
     expect(useDevicePolicyStore.getState().policy).toEqual({
       role: "standard",
+      restrictionsSettled: true,
       maintenance: { code: null, timeoutSeconds: 90 },
     });
     expect(useDevicePolicyStore.getState().maintenance).toEqual(LOCKED_SESSION);
@@ -612,6 +617,7 @@ describe("readiness transitions (RD-01)", () => {
     expect(useDevicePolicyStore.getState().readiness).toBe("resolved");
     expect(useDevicePolicyStore.getState().policy).toEqual({
       role: "standard",
+      restrictionsSettled: true,
       maintenance: { code: null, timeoutSeconds: 90 },
     });
     // AC-04 (byte-identical web rows): expected module absence is the
@@ -643,6 +649,7 @@ describe("readiness transitions (RD-01)", () => {
     expect(useDevicePolicyStore.getState().readiness).toBe("pending");
     expect(useDevicePolicyStore.getState().policy).toEqual({
       role: "standard",
+      restrictionsSettled: true,
       maintenance: { code: null, timeoutSeconds: 90 },
     });
     // The amended AC-03 row, composed from the store state the hook leaves
@@ -710,6 +717,7 @@ describe("readiness transitions (RD-01)", () => {
     expect(useDevicePolicyStore.getState().readiness).toBe("pending");
     expect(useDevicePolicyStore.getState().policy).toEqual({
       role: "standard",
+      restrictionsSettled: true,
       maintenance: { code: null, timeoutSeconds: 90 },
     });
     // RD5-03 / R5-08: the silent hold now names itself — the failure is

@@ -159,7 +159,11 @@ beforeEach(async () => {
   subscribeMock.mockImplementation(() => jest.fn());
 
   useDevicePolicyStore.setState({
-    policy: { role: "standard", maintenance: { code: null, timeoutSeconds: 90 } },
+    policy: {
+      role: "standard",
+      restrictionsSettled: true,
+      maintenance: { code: null, timeoutSeconds: 90 },
+    },
     maintenance: LOCKED_SESSION,
     readiness: "pending",
     readError: null,

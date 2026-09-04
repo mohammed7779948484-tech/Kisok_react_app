@@ -2441,3 +2441,48 @@ typecheck/lint/format all clean (Lead re-run).
 
 GATE: PASS (R5-08 remediation closed). Commit + push attempt follows (push
 still requires the human's GitHub token — recorded prerequisite).
+
+### T23 — settled-restrictions maintenance gating + sheet lifecycle (Round 5)
+
+RED (fresh feature-implementer, agent-00b6a155, behavior-change): derivation
+suite 9 failed (restrictionsSettled undefined); store suite 8 failed —
+primary: `tryUnlock(KIOSK_CODE)` on provisional+LOCKED Expected false /
+Received true (the RD-02 corollary being superseded); overlay suite 3
+failed — the sheet still OPEN after kiosk→standard→kiosk (the R5-10 bug) +
+settling state missing; sheet suite 1 failed (settling note missing).
+Reviewer later confirmed RED-by-construction against HEAD for all three
+failure families.
+
+IMPLEMENT: `DevicePolicy.restrictionsSettled: boolean` (top-level, =
+`!isProvisionalSnapshot`, one definition shared with the store's readiness
+logic; code extraction UNCHANGED — the policy self-describes; the pinned
+RD-02 row honestly amended recording the supersession); `tryUnlock` gains
+the settled-ness gate (silent same-shape false; nothing changes; nothing
+logged — a failed attempt must not reveal whether a code exists); the
+overlay gains the sheetOpen reset effect (before the early return) and
+passes settled-ness to the sheet; the sheet gains the settling variant
+(announced info Alert "Managed settings are updating…", disabled
+input/Unlock, Close stays enabled; settle-back flips without closing). A
+Lead re-scope extension (explicit) covered the mechanical compile ripple:
+`restrictionsSettled: true` in two beforeEach fixtures + 4 toEqual policy
+assertions (same class), plus the hook catch-comment half of the T22-R1
+fold-in (comment-only).
+
+REVIEW (fresh code-reviewer, agent-1cacb098): **0 blocking / 0 major / 2
+minor** — T23-R1 stale-rejection-message-on-settling-flip ACCEPTED as
+cosmetic (stale-but-truthful, non-actionable, self-healing, discloses
+nothing — recorded in review.md; optional one-liner documented); T23-R2
+gate-time bookkeeping (this entry). Routing verified byte-identical
+(root-guard/use-root-target untouched; settled-ness never enters the
+resolver — consumers grepped); unreachable-state check (unlocked &&
+!settled cannot coexist — every policy-changing path clears the session);
+the sync-source change verified comment-only; the RD-02 supersession
+recorded in test names + source docs + plan + review.
+
+GREEN: 4 suites 109 tests; `pnpm test:ci` **69 suites / 942 tests**
+(927+15); typecheck exit 0 (after the re-scoped fixture fixes); lint clean;
+format clean (Lead re-ran test:ci/typecheck).
+
+GATE: PASS (R5-10/R5-11 closed; the RD-02 credential corollary superseded
+with evidence). Commit + push attempt follows (push still blocked —
+human token prerequisite recorded).

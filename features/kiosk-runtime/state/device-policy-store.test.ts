@@ -142,7 +142,10 @@ function provisionalSnapshot() {
 }
 
 /** Provisional bundle + live LOCKED corroboration — derives kiosk, stays pending (RD-02).
- *  Carries the maintenance credential: a kiosk role derived via LOCKED exposes it. */
+ *  Carries the maintenance credential: the policy self-describes (code still
+ *  derived), but RD5-04 supersedes the Round 4 RD-02 credential corollary —
+ *  an unsettled bundle is NOT final credential material, so tryUnlock gates
+ *  it (R5-11). */
 function provisionalLockedSnapshot() {
   return {
     restrictions: {
@@ -150,6 +153,20 @@ function provisionalLockedSnapshot() {
       maintenance_unlock_code: KIOSK_CODE,
       maintenance_unlock_timeout_seconds: TIMEOUT_SECONDS,
       restrictions_pending: true,
+    },
+    lockTaskPermitted: true,
+    lockTaskModeState: "locked",
+  };
+}
+
+/** The SAME bundle after settling: identical minus the pending marker — what
+ *  the re-read delivers once the restrictions land (R5-11). */
+function settledKioskSnapshot() {
+  return {
+    restrictions: {
+      kiosk_device_role: "customer_kiosk",
+      maintenance_unlock_code: KIOSK_CODE,
+      maintenance_unlock_timeout_seconds: TIMEOUT_SECONDS,
     },
     lockTaskPermitted: true,
     lockTaskModeState: "locked",
@@ -173,6 +190,7 @@ describe("device-policy store (initial state)", () => {
 
     expect(useStore.getState().policy).toEqual({
       role: "standard",
+      restrictionsSettled: true,
       maintenance: { code: null, timeoutSeconds: 90 },
     });
     expect(useStore.getState().maintenance).toEqual(LOCKED_SESSION);
@@ -194,6 +212,7 @@ describe("applySnapshot", () => {
 
     expect(useStore.getState().policy).toEqual({
       role: "customer-kiosk",
+      restrictionsSettled: true,
       maintenance: { code: KIOSK_CODE, timeoutSeconds: TIMEOUT_SECONDS },
     });
     expect(useStore.getState().maintenance).toEqual(LOCKED_SESSION);
@@ -207,6 +226,7 @@ describe("applySnapshot", () => {
 
     expect(useStore.getState().policy).toEqual({
       role: "standard",
+      restrictionsSettled: true,
       maintenance: { code: null, timeoutSeconds: 90 },
     });
   });
@@ -224,6 +244,7 @@ describe("applySnapshot", () => {
     // timeout, not whatever the previously-valid snapshot had set.
     expect(useStore.getState().policy).toEqual({
       role: "standard",
+      restrictionsSettled: true,
       maintenance: { code: null, timeoutSeconds: 90 },
     });
     expect(useStore.getState().maintenance).toEqual(LOCKED_SESSION);
@@ -307,6 +328,7 @@ describe("readiness verdict (RD-01)", () => {
 
     expect(useStore.getState().policy).toEqual({
       role: "standard",
+      restrictionsSettled: true,
       maintenance: { code: null, timeoutSeconds: 90 },
     });
     expect(useStore.getState().readiness).toBe("pending");
@@ -510,17 +532,52 @@ describe("tryUnlock", () => {
     expect(useStore.getState().maintenance).toEqual(LOCKED_SESSION);
   });
 
-  it("unlocks on a provisional+LOCKED kiosk snapshot — the credential is exposed because the role is kiosk however derived (RD-02)", () => {
+  it("returns false for the bundle's own code on a provisional+LOCKED kiosk — an unsettled bundle is not final credential material (RD5-04 supersedes the Round 4 RD-02 credential corollary; R5-11)", () => {
     const useStore = createDevicePolicyStore();
     useStore.getState().applySnapshot(provisionalLockedSnapshot());
+    const policyBefore = useStore.getState().policy;
+    const callsBefore = loggedCallArgs().length;
 
+    // The policy self-describes: kiosk role (live LOCKED corroboration —
+    // routing is unchanged), code still derived, restrictionsSettled false.
+    expect(useStore.getState().policy.role).toBe("customer-kiosk");
     expect(useStore.getState().policy.maintenance.code).toBe(KIOSK_CODE);
-    expect(useStore.getState().tryUnlock(KIOSK_CODE)).toBe(true);
-    expect(useStore.getState().isMaintenanceUnlocked()).toBe(true);
+    expect(useStore.getState().policy.restrictionsSettled).toBe(false);
+
+    // KEY_RESTRICTIONS_PENDING means restrictions "may be applied in the
+    // near future but are not available yet" — the bundle's code is not yet
+    // the MDM-managed maintenance code, so the unlock is refused with the
+    // same silent shape as every other refusal: false, nothing changes.
+    expect(useStore.getState().tryUnlock(KIOSK_CODE)).toBe(false);
+
+    expect(useStore.getState().policy).toEqual(policyBefore);
+    expect(useStore.getState().maintenance).toEqual(LOCKED_SESSION);
+    expect(useStore.getState().isMaintenanceUnlocked()).toBe(false);
+    // No partial state, no log — a failed attempt must not reveal whether a
+    // code exists.
+    expect(loggedCallArgs().length).toBe(callsBefore);
+    expect(JSON.stringify(loggedCallArgs())).not.toContain(KIOSK_CODE);
     // The verdict is still pending — the credential and the readiness are
     // independent dimensions (a live LOCKED query is affirmative evidence
-    // for the role; a provisional bundle is not for the verdict).
+    // for the role; a provisional bundle is not for the verdict NOR for the
+    // credential).
     expect(useStore.getState().readiness).toBe("pending");
+  });
+
+  it("unlocks on a settled re-read of the SAME bundle — the restrictions landed, so the code is now the MDM-managed credential", () => {
+    const useStore = createDevicePolicyStore();
+    useStore.getState().applySnapshot(provisionalLockedSnapshot());
+    expect(useStore.getState().tryUnlock(KIOSK_CODE)).toBe(false);
+
+    useStore.getState().applySnapshot(settledKioskSnapshot());
+
+    expect(useStore.getState().policy.restrictionsSettled).toBe(true);
+    expect(useStore.getState().tryUnlock(KIOSK_CODE)).toBe(true);
+    expect(useStore.getState().maintenance).toEqual({
+      unlocked: true,
+      expiresAt: BASE_TIME + TIMEOUT_SECONDS * 1000,
+    });
+    expect(useStore.getState().isMaintenanceUnlocked()).toBe(true);
   });
 
   it("returns false for an empty-string attempt", () => {
@@ -598,6 +655,7 @@ describe("clearMaintenance", () => {
     // Only the session is cleared — the derived policy survives.
     expect(useStore.getState().policy).toEqual({
       role: "customer-kiosk",
+      restrictionsSettled: true,
       maintenance: { code: KIOSK_CODE, timeoutSeconds: TIMEOUT_SECONDS },
     });
   });

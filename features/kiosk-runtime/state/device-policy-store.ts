@@ -145,9 +145,12 @@ export type DevicePolicyState = {
    * Called by the sync hook on a current (non-superseded) read rejection and
    * on Android's unexpected module absence. A NO-OP while a verdict is
    * resolved — "readError is set ONLY while pending" is a store invariant,
-   * not a caller promise, so no future caller can surface a retry to a user
-   * who is not actually held. Never logged: the reason is a code, but the
-   * discipline (AC-05) is that nothing from a failed read travels anywhere.
+   * not a caller promise: the guard enforces readiness-pending and nothing
+   * more, which is enough because the field's only reader is the startup
+   * gate, mounted only in the root startup case — anywhere else the surface
+   * is rendered by nothing and thus invisible. Never logged: the reason is a
+   * code, but the discipline (AC-05) is that nothing from a failed read
+   * travels anywhere.
    */
   setReadError(reason: PolicyReadErrorReason): void;
   /**
@@ -158,9 +161,13 @@ export type DevicePolicyState = {
   clearReadError(): void;
   /**
    * Attempt a maintenance unlock. Returns true ONLY when the current policy
-   * is a customer kiosk, the derived code is non-null, and `code` equals it.
-   * On failure: false, and NOTHING changes — no partial state, no log (a
-   * failed attempt must not even reveal whether a code exists).
+   * is a customer kiosk with SETTLED restrictions (RD5-04 / R5-11: a
+   * provisional bundle's code is not final enforced credential material —
+   * KEY_RESTRICTIONS_PENDING — so an unsettled policy exposes no usable
+   * credential, mirroring the standard-device gate), the derived code is
+   * non-null, and `code` equals it. On failure: false, and NOTHING changes —
+   * no partial state, no log (a failed attempt must not even reveal whether
+   * a code exists).
    */
   tryUnlock(code: string): boolean;
   /**
@@ -276,10 +283,13 @@ export function createDevicePolicyStore() {
     },
 
     setReadError(reason: PolicyReadErrorReason) {
-      // The store owns the invariant: the error surface may exist ONLY
-      // while a verdict is missing, i.e. only while somebody is actually
-      // held at the startup target. While a verdict is resolved the
-      // last-known-good stands and no user is held — nothing to surface.
+      // The store owns the invariant: the error surface may exist ONLY while
+      // a verdict is missing — the guard is readiness-only, it does not check
+      // where the user is. That is sufficient because the surface's only
+      // reader is the startup gate, which mounts only in the root startup
+      // case: anywhere else the field may be set but is rendered by nothing.
+      // While a verdict is resolved the last-known-good stands — nothing to
+      // surface.
       if (get().readiness !== "pending") {
         return;
       }
@@ -296,6 +306,17 @@ export function createDevicePolicyStore() {
 
       // Standard devices (and code-less kiosks) expose no credential at all.
       if (policy.role !== "customer-kiosk" || policy.maintenance.code === null) {
+        return false;
+      }
+
+      // An UNSETTLED restrictions bundle is not final credential material
+      // either (RD5-04 / R5-11, superseding the Round 4 RD-02 credential
+      // corollary): KEY_RESTRICTIONS_PENDING means restrictions "may be
+      // applied in the near future but are not available yet", so the code
+      // the bundle carries is not yet the MDM-managed maintenance code.
+      // Same silent refusal shape as every other gate: false, NOTHING
+      // changes — a failed attempt must not reveal whether a code exists.
+      if (!policy.restrictionsSettled) {
         return false;
       }
 

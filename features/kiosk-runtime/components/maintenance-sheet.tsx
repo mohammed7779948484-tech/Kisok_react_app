@@ -22,6 +22,16 @@ export type MaintenanceSheetProps = {
   /** Whether the maintenance session is currently unlocked (store is truth). */
   unlocked: boolean;
   /**
+   * Whether the policy's restrictions bundle is settled (RD5-04 / R5-11).
+   * While false — a kiosk policy derived from a provisional bundle — the
+   * locked form renders its SETTLING variant: the code input and Unlock are
+   * disabled and a brief note explains. The bundle's code is not yet the
+   * MDM-managed credential (the store's `tryUnlock` refuses it too), but the
+   * entry stays long-pressable and the sheet may OPEN — only the unlock is
+   * gated. The overlay owns this fact (the store is truth); the sheet renders it.
+   */
+  restrictionsSettled: boolean;
+  /**
    * Attempt an unlock with the typed code. Returns whether it succeeded; the
    * session itself comes back through `unlocked` (the overlay re-renders from
    * the store). A false return must reveal nothing beyond "didn't work" —
@@ -40,6 +50,7 @@ export type MaintenanceSheetProps = {
 const CODE_LABEL = "Maintenance code";
 const RETRY_MESSAGE = "That code didn't work.";
 const LOCKED_PROMPT = "Enter the maintenance code to continue.";
+const SETTLING_NOTE = "Managed settings are updating… Try again in a moment.";
 const PANEL_PROMPT = "Switch to a different customer account, or close to return to browsing.";
 const UNLOCK = "Unlock";
 const SWITCH_ACCOUNT = "Switch customer account";
@@ -52,7 +63,11 @@ const CLOSE = "Close";
  * - LOCKED — a code-entry form. The typed value is the USER's entry, masked;
  *   there is no reveal toggle because there is no stored value to reveal (the
  *   code lives only in the managed config consumed by the store). A rejected
- *   code shows the same words every time.
+ *   code shows the same words every time. While the policy's restrictions
+ *   are UNSETTLED the locked form renders its settling variant instead: the
+ *   note explains, the input and Unlock are disabled (RD5-04 / R5-11 — a
+ *   genuinely reachable state, a real kiosk mid-provisioning with LOCKED
+ *   active); a settled re-read flips it back without closing the sheet.
  * - UNLOCKED — the maintenance panel. Switch customer account runs the
  *   SHARED sign-out pipeline via `useSignOutAction` (the same contract as the
  *   kiosk mismatch screen): pending disables the control, and a blocked or
@@ -69,6 +84,7 @@ export function MaintenanceSheet({
   open,
   onOpenChange,
   unlocked,
+  restrictionsSettled,
   onTryUnlock,
   onAccountSwitched,
 }: MaintenanceSheetProps) {
@@ -114,6 +130,11 @@ export function MaintenanceSheet({
     signOut.run();
   }
 
+  // RD5-04 / R5-11: the settling variant of the locked form — the policy is
+  // kiosk but its restrictions bundle is not yet final enforced credential
+  // material, so the unlock surface is inert until a settled read lands.
+  const settling = !restrictionsSettled;
+
   // Every dismissal the dialog primitive offers — scrim tap, Android
   // hardware back, accessibility escape — funnels through this handler, as
   // does the Close button (whose `disabled` state is belt-and-braces on top).
@@ -156,13 +177,21 @@ export function MaintenanceSheet({
           </View>
         ) : (
           <View className="gap-4 px-5 pb-5">
-            <Text variant="body" tone="muted">
-              {LOCKED_PROMPT}
-            </Text>
+            {settling ? (
+              // Announced through the design system's Alert (role="alert" +
+              // a polite live region), like every outcome surface here: the
+              // state is carried by WORDS, not colour.
+              <Alert variant="info" title={SETTLING_NOTE} />
+            ) : (
+              <Text variant="body" tone="muted">
+                {LOCKED_PROMPT}
+              </Text>
+            )}
             <Input
               label={CODE_LABEL}
               value={code}
               onChangeText={setCode}
+              editable={!settling}
               secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
@@ -171,7 +200,7 @@ export function MaintenanceSheet({
               onSubmitEditing={handleSubmit}
               returnKeyType="go"
             />
-            <Button size="large" block onPress={handleSubmit}>
+            <Button size="large" block disabled={settling} onPress={handleSubmit}>
               <Text>{UNLOCK}</Text>
             </Button>
             {outcomeMessage}

@@ -167,7 +167,7 @@ describe("deriveDevicePolicy (maintenance credential)", () => {
       90,
     ],
     [
-      "provisional + locked with code → code derived (the kiosk role comes from live LOCKED corroboration, so the credential is exposed — RD-02)",
+      "provisional + locked with code → code still DERIVED (the policy self-describes) but restrictionsSettled: false — the bundle is not final credential material, the gate is the store's tryUnlock (RD5-04 supersedes the Round 4 RD-02 credential corollary)",
       snapshot(
         {
           kiosk_device_role: "customer_kiosk",
@@ -196,6 +196,59 @@ describe("deriveDevicePolicy (maintenance credential)", () => {
 
     expect(policy.maintenance.code).toBe(expectedCode);
     expect(policy.maintenance.timeoutSeconds).toBe(expectedTimeout);
+  });
+});
+
+describe("deriveDevicePolicy (restrictionsSettled — RD5-04, R5-11)", () => {
+  it.each([
+    ["settled kiosk snapshot → settled", snapshot({ kiosk_device_role: "customer_kiosk" }), true],
+    [
+      "settled standard snapshot → settled (settled-ness describes the SNAPSHOT, not the role — routing never consumes it)",
+      snapshot({ kiosk_device_role: "standard" }),
+      true,
+    ],
+    ["empty snapshot (the fail-closed default) → settled", snapshot(), true],
+    [
+      "explicit restrictions_pending false → settled",
+      snapshot({ kiosk_device_role: "customer_kiosk", restrictions_pending: false }),
+      true,
+    ],
+    [
+      "provisional snapshot → unsettled",
+      snapshot({ kiosk_device_role: "customer_kiosk", restrictions_pending: true }),
+      false,
+    ],
+    [
+      "truthy drifted pending marker (1) → unsettled (one definition, drift included)",
+      snapshot({ kiosk_device_role: "customer_kiosk", restrictions_pending: 1 }),
+      false,
+    ],
+    [
+      "provisional + LOCKED → unsettled (live LOCKED is ROUTING corroboration only; the bundle is still not credential material)",
+      snapshot({ restrictions_pending: true }, { lockTaskModeState: "locked" }),
+      false,
+    ],
+  ])("%s", (_name, given, expectedSettled) => {
+    expect(deriveDevicePolicy(given).restrictionsSettled).toBe(expectedSettled);
+  });
+
+  it("provisional+LOCKED with a code self-describes completely: role kiosk (routing unchanged), code derived, restrictionsSettled false — the credential GATE lives in the store's tryUnlock (RD5-04 supersedes the Round 4 RD-02 credential corollary)", () => {
+    expect(
+      deriveDevicePolicy(
+        snapshot(
+          {
+            kiosk_device_role: "customer_kiosk",
+            maintenance_unlock_code: "4481",
+            restrictions_pending: true,
+          },
+          { lockTaskModeState: "locked" },
+        ),
+      ),
+    ).toEqual({
+      role: "customer-kiosk",
+      restrictionsSettled: false,
+      maintenance: { code: "4481", timeoutSeconds: 90 },
+    });
   });
 });
 
@@ -282,6 +335,7 @@ describe("deriveDevicePolicy (purity)", () => {
       ),
     ).toEqual({
       role: "customer-kiosk",
+      restrictionsSettled: true,
       maintenance: { code: "4481", timeoutSeconds: 120 },
     });
   });

@@ -162,11 +162,13 @@ export function useDevicePolicySync(): void {
           log.error(
             "Failed to read the device-policy snapshot; keeping the last-known-good policy",
           );
-          // RD5-03: a CURRENT failure surfaces only when it actually HOLDS
-          // somebody — readiness pending, no verdict. While a verdict is
-          // resolved the last-known-good stands and there is no error surface
-          // (an AppState re-read failure on a working device is invisible).
-          // The store enforces the same invariant in setReadError.
+          // RD5-03: a CURRENT failure surfaces only when readiness is
+          // pending (no verdict) — the guard is readiness-only, and the
+          // surface is invisible anywhere the startup gate is not mounted.
+          // While a verdict is resolved the last-known-good stands and there
+          // is no error surface (an AppState re-read failure on a working
+          // device is invisible). The store enforces the same invariant in
+          // setReadError.
           if (useDevicePolicyStore.getState().readiness === "pending") {
             useDevicePolicyStore.getState().setReadError("read-failed");
           }

@@ -44,10 +44,12 @@ const CODE_LABEL = "Maintenance code";
 const RETRY_MESSAGE = "That code didn't work.";
 const UNLOCK = "Unlock";
 const SWITCH_ACCOUNT = "Switch customer account";
+const CLOSE = "Close";
 
 const KIOSK_CODE = "4481";
 const WRONG_CODE = "not-the-code-7741";
 const TIMEOUT_SECONDS = 120;
+const SETTLING_NOTE = "Managed settings are updating… Try again in a moment.";
 
 /** Same fixture shape the store tests use (T03) — applied, never injected. */
 function kioskSnapshot() {
@@ -67,6 +69,35 @@ function standardSnapshot() {
     restrictions: { kiosk_device_role: "standard" },
     lockTaskPermitted: false,
     lockTaskModeState: "none",
+  };
+}
+
+/** Provisional bundle + live LOCKED corroboration — kiosk role (RD-02),
+ *  unsettled restrictions: the derivation still carries the code (the policy
+ *  self-describes) but it is not yet credential material (RD5-04 / R5-11). */
+function provisionalLockedSnapshot() {
+  return {
+    restrictions: {
+      kiosk_device_role: "customer_kiosk",
+      maintenance_unlock_code: KIOSK_CODE,
+      maintenance_unlock_timeout_seconds: TIMEOUT_SECONDS,
+      restrictions_pending: true,
+    },
+    lockTaskPermitted: true,
+    lockTaskModeState: "locked",
+  };
+}
+
+/** The SAME bundle after settling: identical minus the pending marker. */
+function settledKioskSnapshot() {
+  return {
+    restrictions: {
+      kiosk_device_role: "customer_kiosk",
+      maintenance_unlock_code: KIOSK_CODE,
+      maintenance_unlock_timeout_seconds: TIMEOUT_SECONDS,
+    },
+    lockTaskPermitted: true,
+    lockTaskModeState: "locked",
   };
 }
 
@@ -190,6 +221,83 @@ describe("KioskMaintenanceOverlay — unlock flow", () => {
     expect(screen.getByRole("button", { name: SWITCH_ACCOUNT })).toBeOnTheScreen();
     // The managed code never renders anywhere.
     expect(screen.queryByText(KIOSK_CODE)).toBeNull();
+  });
+});
+
+describe("KioskMaintenanceOverlay — settled-ness gating (R5-11)", () => {
+  it("opens the sheet on a provisional+LOCKED kiosk but shows the settling state — the bundle's code is not yet the MDM-managed credential", async () => {
+    useDevicePolicyStore.getState().applySnapshot(provisionalLockedSnapshot());
+    await renderOverlay();
+    const user = userEvent.setup();
+
+    // Routing is unchanged: the entry is long-pressable (live LOCKED
+    // corroborates the kiosk role), and the sheet OPENING is fine — only the
+    // unlock is gated while the restrictions are unsettled.
+    await openSheet(user);
+
+    expect(screen.getByText(SETTLING_NOTE)).toBeOnTheScreen();
+    expect(screen.getByLabelText(CODE_LABEL)).toBeDisabled();
+    expect(screen.getByRole("button", { name: UNLOCK })).toBeDisabled();
+    expect(screen.getByRole("button", { name: CLOSE })).toBeEnabled();
+
+    // Nothing leaked either way (AC-05 discipline): the note names no code.
+    expect(screen.queryByText(KIOSK_CODE)).toBeNull();
+  });
+
+  it("a settled re-read of the same bundle re-enables the unlock, and the code then works", async () => {
+    useDevicePolicyStore.getState().applySnapshot(provisionalLockedSnapshot());
+    await renderOverlay();
+    const user = userEvent.setup();
+    await openSheet(user);
+    expect(screen.getByRole("button", { name: UNLOCK })).toBeDisabled();
+
+    await act(async () => {
+      useDevicePolicyStore.getState().applySnapshot(settledKioskSnapshot());
+    });
+
+    expect(screen.queryByText(SETTLING_NOTE)).toBeNull();
+    expect(screen.getByRole("button", { name: UNLOCK })).toBeEnabled();
+
+    await user.type(screen.getByLabelText(CODE_LABEL), KIOSK_CODE);
+    await user.press(screen.getByRole("button", { name: UNLOCK }));
+
+    expect(useDevicePolicyStore.getState().isMaintenanceUnlocked()).toBe(true);
+    expect(screen.getByRole("button", { name: SWITCH_ACCOUNT })).toBeOnTheScreen();
+  });
+});
+
+describe("KioskMaintenanceOverlay — sheet lifecycle across role transitions (R5-10)", () => {
+  it("a kiosk→standard→kiosk transition within one mounted overlay leaves the sheet CLOSED on return", async () => {
+    useDevicePolicyStore.getState().applySnapshot(kioskSnapshot());
+    await renderOverlay();
+    const user = userEvent.setup();
+
+    // Open the sheet AND unlock, so both halves of the maintenance UI hold
+    // live state the transition must not preserve.
+    await unlock(user);
+    expect(screen.getByRole("button", { name: SWITCH_ACCOUNT })).toBeOnTheScreen();
+
+    // kiosk → standard (a snapshot application). React PRESERVES component
+    // state while the overlay stays mounted — returning null does not
+    // unmount it — so `sheetOpen` would survive the transition (R5-10).
+    await act(async () => {
+      useDevicePolicyStore.getState().applySnapshot(standardSnapshot());
+    });
+    expect(screen.queryByRole("button", { name: ENTRY_NAME })).toBeNull();
+    // The snapshot application already cleared the session (existing
+    // behavior — assert it holds).
+    expect(useDevicePolicyStore.getState().isMaintenanceUnlocked()).toBe(false);
+
+    // standard → kiosk (another snapshot application): the entry is back…
+    await act(async () => {
+      useDevicePolicyStore.getState().applySnapshot(kioskSnapshot());
+    });
+    expect(screen.getByRole("button", { name: ENTRY_NAME })).toBeOnTheScreen();
+
+    // …but the sheet is NOT open, and the session is still locked.
+    expect(screen.queryByText(TITLE)).toBeNull();
+    expect(screen.queryByLabelText(CODE_LABEL)).toBeNull();
+    expect(useDevicePolicyStore.getState().isMaintenanceUnlocked()).toBe(false);
   });
 });
 

@@ -10,8 +10,15 @@ import { MaintenanceSheet } from "./maintenance-sheet";
  *
  * - Renders NOTHING unless the derived policy role is `customer-kiosk`
  *   (employee tablets keep today's app exactly; the overlay is invisible).
+ *   A kiosk role derived from an UNSETTLED (provisional) bundle still mounts
+ *   the overlay — routing is routing — but the sheet's unlock surface shows
+ *   its settling state until a settled read lands (RD5-04 / R5-11).
  * - Renders the corner entry; a long press opens the sheet. The sheet's
- *   open/close state lives here.
+ *   open/close state lives here — and it RESETS when the role leaves
+ *   `customer-kiosk` (R5-10): React preserves this component's state for as
+ *   long as it stays mounted, and returning null on a standard role does NOT
+ *   unmount it, so an open sheet would otherwise survive a kiosk→standard→kiosk
+ *   transition and reappear over the kiosk UI on return.
  * - The sheet's unlock attempts go through the store's `tryUnlock`; the
  *   session state comes back through `isMaintenanceUnlocked` — the store is
  *   the truth, this component only wires it to the sheet.
@@ -28,6 +35,7 @@ import { MaintenanceSheet } from "./maintenance-sheet";
  */
 export function KioskMaintenanceOverlay() {
   const role = useDevicePolicyStore((state) => state.policy.role);
+  const restrictionsSettled = useDevicePolicyStore((state) => state.policy.restrictionsSettled);
   const tryUnlock = useDevicePolicyStore((state) => state.tryUnlock);
   const expiresAt = useDevicePolicyStore((state) => state.maintenance.expiresAt);
   const unlocked = useDevicePolicyStore((state) => state.isMaintenanceUnlocked());
@@ -53,6 +61,16 @@ export function KioskMaintenanceOverlay() {
     return () => clearTimeout(timer);
   }, [expiresAt]);
 
+  // R5-10: the overlay stays MOUNTED while the role is standard (it returns
+  // null — React preserves the component's state at its position in the
+  // tree), so `sheetOpen` would survive a kiosk→standard→kiosk round trip
+  // and the sheet would reappear, open, over the kiosk UI. Reset it when the
+  // role leaves `customer-kiosk` — before the early return, with the other
+  // hooks.
+  useEffect(() => {
+    if (role !== "customer-kiosk") setSheetOpen(false);
+  }, [role]);
+
   // Standard devices render nothing at all: no entry, no sheet.
   if (role !== "customer-kiosk") return null;
 
@@ -63,6 +81,7 @@ export function KioskMaintenanceOverlay() {
         open={sheetOpen}
         onOpenChange={setSheetOpen}
         unlocked={unlocked}
+        restrictionsSettled={restrictionsSettled}
         onTryUnlock={tryUnlock}
         onAccountSwitched={handleAccountSwitched}
       />

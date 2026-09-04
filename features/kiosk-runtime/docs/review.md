@@ -112,6 +112,14 @@ T29 so the operational contract no longer carries the stale claim.
   (b), CORRECT.** The event is a world-change signal, not a read outcome;
   the post-event re-read's outcome decides the surface.
 
+- **T23-R1 (stale rejection message on the settling flip) — ACCEPTED as
+  cosmetic (T23 fresh review verdict).** A wrong-code message surviving the
+  restrictions-change settling flip is stale-but-truthful, non-actionable
+  (input inert), self-healing (next submit/close replaces it), and discloses
+  nothing (the unsettled refusal is the same silent `false` as a wrong
+  code). Optional one-line prop gate documented for any future touching of
+  the sheet.
+
 ### Live-tenant / hardware items that remain unverifiable from this sandbox
 
 Live MDM dry-run; whether the server enforces Accept/app*name/app_type/

@@ -33,6 +33,8 @@ import { MaintenanceSheet, type MaintenanceSheetProps } from "./maintenance-shee
 const TITLE = "Maintenance";
 const CODE_LABEL = "Maintenance code";
 const RETRY_MESSAGE = "That code didn't work.";
+const LOCKED_PROMPT = "Enter the maintenance code to continue.";
+const SETTLING_NOTE = "Managed settings are updating… Try again in a moment.";
 const UNLOCK = "Unlock";
 const SWITCH_ACCOUNT = "Switch customer account";
 const CLOSE = "Close";
@@ -57,6 +59,7 @@ function defaultProps(overrides: Partial<MaintenanceSheetProps>) {
   return {
     open: true,
     unlocked: false,
+    restrictionsSettled: true,
     onTryUnlock: jest.fn(() => false),
     onOpenChange: jest.fn(),
     ...overrides,
@@ -170,6 +173,47 @@ describe("MaintenanceSheet — locked state", () => {
     await user.press(screen.getByRole("button", { name: CLOSE }));
 
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});
+
+describe("MaintenanceSheet — settling state (RD5-04 / R5-11)", () => {
+  it("replaces the locked prompt with the settling note and disables the code input and Unlock while the restrictions are unsettled", async () => {
+    await renderSheet({ restrictionsSettled: false });
+
+    expect(screen.getByText(SETTLING_NOTE)).toBeOnTheScreen();
+    expect(screen.queryByText(LOCKED_PROMPT)).toBeNull();
+    // Announced, not colour-only: the note rides the design system's Alert
+    // (role="alert" + a polite live region), the same announced surface the
+    // pipeline outcomes use.
+    const note = screen.getByText(SETTLING_NOTE).parent;
+    expect(note).toHaveProp("accessibilityRole", "alert");
+    expect(note).toHaveProp("accessibilityLiveRegion", "polite");
+    // The unlock surface is gated: the input is not editable and the submit
+    // is disabled. The sheet OPENING is fine — only the unlock is gated.
+    expect(screen.getByLabelText(CODE_LABEL)).toBeDisabled();
+    expect(screen.getByRole("button", { name: UNLOCK })).toBeDisabled();
+    expect(screen.getByRole("button", { name: CLOSE })).toBeEnabled();
+  });
+
+  it("still reports open/close normally while settling — only the unlock is gated", async () => {
+    const onOpenChange = jest.fn();
+    const user = userEvent.setup();
+    await renderSheet({ restrictionsSettled: false, onOpenChange });
+
+    await user.press(screen.getByRole("button", { name: CLOSE }));
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("re-enables the unlock controls and drops the note once the restrictions settle", async () => {
+    const view = await renderSheet({ restrictionsSettled: false });
+
+    await view.rerender(<MaintenanceSheet {...defaultProps({ restrictionsSettled: true })} />);
+
+    expect(screen.queryByText(SETTLING_NOTE)).toBeNull();
+    expect(screen.getByText(LOCKED_PROMPT)).toBeOnTheScreen();
+    expect(screen.getByLabelText(CODE_LABEL)).toBeEnabled();
+    expect(screen.getByRole("button", { name: UNLOCK })).toBeEnabled();
   });
 });
 
