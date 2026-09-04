@@ -17,9 +17,9 @@ is the first thing the next agent reads.
 ```
 Current round     : 2
 Current task      : — (round complete)
-Current stage     : T08 GATE PASS — next T09 (submission flow)
-Last gate         : T08 GATE PASS
-Next legal action : delegate T09 (submission flow + outcome panels — wiring task)
+Current stage     : T09 GATE PASS — next T10 (catalog settings seam)
+Last gate         : T09 GATE PASS
+Next legal action : delegate T10 (catalog settings seam — owning-feature edit)
 Blocked by        : —
 ```
 
@@ -50,7 +50,7 @@ Scan this first. Detail is below.
 | T06  | behavior | Acceptance: AC-04, AC-06, AC-09–AC-11 | Checkout attempt store (state machine + durable lifecycle) | T02, T03, T04, T05      | done        | PASS    |
 | T07  | behavior | Acceptance: AC-12                     | Sign-out guard + cleanup registration                      | T06                     | done        | PASS    |
 | T08  | behavior | Acceptance: AC-02, AC-03              | Order Review screen + order-line-row                       | —                       | not started | PENDING |
-| T09  | behavior | Acceptance: AC-04, AC-08–AC-10        | Review submission flow + outcome panels                    | T04, T06, T08           | not started | PENDING |
+| T09  | behavior | Acceptance: AC-04, AC-08–AC-10        | Review submission flow + outcome panels                    | T04, T06, T08           | done        | PASS    |
 | T10  | behavior | Supporting AC-14                      | Catalog settings seam                                      | —                       | not started | PENDING |
 | T11  | behavior | Acceptance: AC-07, AC-14, AC-15       | Order Success screen + countdown                           | T06, T08, T10           | not started | PENDING |
 | T12  | behavior | Acceptance: AC-13                     | recovery-gate + layout mounting                            | T06, T07                | not started | PENDING |

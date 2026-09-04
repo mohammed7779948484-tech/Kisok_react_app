@@ -1,6 +1,8 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { Dimensions } from "react-native";
 
 import { useAuth } from "@/core/auth";
+import { AppError } from "@/core/errors";
 import { resetLogging, setLogSink } from "@/core/logging";
 import { storage, storageKey } from "@/core/storage";
 import {
@@ -10,16 +12,23 @@ import {
   screen,
   TEST_PROFILE,
   userEvent,
+  waitFor,
 } from "@/core/testing";
 import {
   addItem,
   clearCartDurable,
+  getCartSnapshot,
   hydrateCart,
   lockCart,
   setLineQuantity,
   type AddToCartInput,
   type CartLine,
 } from "@/features/cart";
+
+import { submitOrder } from "../../api/submit-order";
+import type { CreateOrderResponse } from "../../model/create-order-response.schema";
+import { checkoutAttemptSchema } from "../../model/checkout-attempt.schema";
+import { useAttemptStore } from "../../state/attempt-store";
 
 import { OrderReviewScreen } from "./order-review-screen";
 
@@ -63,8 +72,41 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
 }));
 
+/**
+ * The attempt store's default idFactory mints through expo-crypto, and
+ * jest-expo's ExpoCrypto native-module mock stubs `randomUUID()` to return
+ * `undefined` — which would persist a record the attempt schema must reject
+ * (the sign-out-cleanup suite's precedent). The factory below is COUNTER-
+ * backed rather than fixed: every mint is schema-valid AND distinct, so the
+ * identity assertions below prove REUSE — a re-mint under the unknown hold,
+ * or a fresh id after a definite failure, shows up as a different counter
+ * value. The holder is reset per test so each test's first mint is ...001.
+ */
+const mockUuidCounter = { current: 0 };
+jest.mock("expo-crypto", () => ({
+  randomUUID: () => {
+    mockUuidCounter.current += 1;
+    return `00000000-0000-4000-8000-${String(mockUuidCounter.current).padStart(12, "0")}`;
+  },
+}));
+
+/**
+ * The feature's own api door, mocked at the module (the tests.md seam): ONE
+ * mock covers BOTH transport paths — the mutation hook the screen submits
+ * through (plan D13) and the attempt store's default `submit` dep bound at
+ * module load — so the replay path in the unknown test drives the same jest
+ * fn the confirm path does.
+ */
+jest.mock("../../api/submit-order", () => ({
+  submitOrder: jest.fn(),
+}));
+const mockSubmitOrder = submitOrder as jest.MockedFunction<typeof submitOrder>;
+
 /** The single durable key the cart store's restore reads (cart plan decision 1). */
 const KEY = storageKey("cart", "lines");
+
+/** The single durable key the attempt store owns (plan decision D1). */
+const ATTEMPT_KEY = storageKey("checkout", "attempt");
 
 /**
  * Store control through the PUBLIC API only: `useCartStore` is deliberately
@@ -119,6 +161,30 @@ const waterLine: CartLine = {
   quantity: 1,
 };
 
+/**
+ * A programmatic over-capacity cart (the normalize-refusal branch's fixture):
+ * 101 lines of 101 DISTINCT variants. The cart rules cap each line's
+ * QUANTITY (1..99, addLine) but never the line count, so this payload is
+ * fully restorable through the persisted-cart schema — deterministic
+ * zero-padded canonical uuids, unique per line; no-option lines make the
+ * derived lineId just the lowercased variantId, exactly like waterLine —
+ * and it passes every press-time guard. T02's normalizeCartLines refuses
+ * exactly this shape: more than 100 distinct variants after grouping.
+ */
+const OVER_CAPACITY_LINES: CartLine[] = Array.from({ length: 101 }, (_, index) => {
+  const variantId = `${String(index + 1).padStart(8, "0")}-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+  return {
+    lineId: variantId,
+    variantId,
+    productId: variantId,
+    productDisplayName: `Menu Item ${index + 1}`,
+    variantLabel: "Regular",
+    optionSelections: [],
+    imageUri: null,
+    quantity: 1,
+  };
+});
+
 /** The same cappuccino selection as an add-to-cart input (identity is derived). */
 const cappuccinoInput: AddToCartInput = {
   variantId: cappuccinoLine.variantId,
@@ -170,6 +236,35 @@ async function seedDurableEnvelope(lines: CartLine[]) {
 }
 
 /**
+ * The exact items payload `create_order` must receive for the seeded lines —
+ * T02's output over [cappuccinoLine, waterLine]: unique variants, quantities
+ * summed per variant, rows sorted by variant_id ("3a7f…" sorts before
+ * "9c2…"). Pinned LITERALLY: the screen's submission must run the REAL
+ * normalization rules, and a rules change fails here instead of at the
+ * server.
+ */
+const SUBMITTED_ITEMS = [
+  { variant_id: "3a7f2c1d-9b4e-4d6a-8f2c-7e1b5d9a4c3f", quantity: 2 },
+  { variant_id: "9c2d5e1a-3f4b-4a8c-b7d6-8e9f0a1b2c3d", quantity: 1 },
+];
+
+/** The success-family response fixture (the store suite's shape). */
+const SUCCESS_RESPONSE: Extract<CreateOrderResponse, { kind: "success" }> = {
+  kind: "success",
+  order_id: "d0a1b2c3-4d5e-4f60-8a7b-8c9d0e1f2a3b",
+  display_number: "KX7QR9",
+  created_at: "2026-02-01T10:15:30+00:00",
+};
+
+/** A one-variant stock-conflict family return — a normal 2xx JSON, no order. */
+const CONFLICT_RESPONSE: Extract<CreateOrderResponse, { kind: "stock_conflict" }> = {
+  kind: "stock_conflict",
+  conflicts: [
+    { variant_id: cappuccinoLine.variantId, requested_quantity: 2, available_quantity: 1 },
+  ],
+};
+
+/**
  * The installed mock auth client, restored after every test — use-cart's
  * holder pattern: installMockAuth() places a client in core/supabase's module
  * state, and no test may leave one behind for the next file-shared render.
@@ -190,9 +285,27 @@ function AuthedReviewScreen() {
   return <OrderReviewScreen />;
 }
 
+/** The client renderWithProviders built, held for afterEach cleanup (see below). */
+const queryClientRef: { current: QueryClient | null } = { current: null };
+
 async function renderScreen(frame: Frame = LANDSCAPE) {
   setFrame(frame);
-  return renderWithProviders(<AuthedReviewScreen />, { withAuth: true });
+  const result = await renderWithProviders(<AuthedReviewScreen />, { withAuth: true });
+  queryClientRef.current = result.queryClient;
+  return result;
+}
+
+/**
+ * T12's RecoveryGate stand-in: in the delivered app the gate mounted in the
+ * customer layout runs `recover()` for the active profile before any review
+ * screen is reachable (plan D7) — which is what lifts prepareAttempt's
+ * recovery-pending gate (F-06-02). T09 precedes T12, so the suite drives the
+ * same public action directly; the asserted "none" pins that the beforeEach
+ * wipe really landed and every submission starts from a clean machine.
+ */
+async function recoverAttemptStore() {
+  const outcome = await useAttemptStore.getState().recover(TEST_PROFILE.id);
+  expect(outcome).toBe("none");
 }
 
 /**
@@ -227,6 +340,12 @@ describe("OrderReviewScreen", () => {
     // persistence status — the public-API equivalent of full-cart's
     // resetCartSingleton, which reached the store directly.
     await hydrateCart(SCRATCH_OWNER);
+    // The attempt-store singleton reset, the same way the screen suite reaches
+    // everything: a public action, not `setState` (the store is not exported
+    // frozen for that). `clearForSignOut` is the store's own ungated wipe —
+    // durable key AND the full memory envelope (record, phase, recordLoaded,
+    // outcome payloads) — which the sign-out cleanup drives in production.
+    await useAttemptStore.getState().clearForSignOut();
   });
   afterEach(() => {
     resetLogging();
@@ -236,6 +355,15 @@ describe("OrderReviewScreen", () => {
     jest.restoreAllMocks();
     mockAuthHolder.current?.restore();
     mockAuthHolder.current = null;
+    // TanStack schedules a five-minute GC timer for each completed mutation
+    // the moment its observer unmounts — the shared test client caps gcTime
+    // for QUERIES only (the use-submit-order-mutation suite's precedent).
+    // Destroying the mutations cancels those timers; without this the suite
+    // passes but jest never exits.
+    for (const mutation of queryClientRef.current?.getMutationCache().getAll() ?? []) {
+      mutation.destroy();
+    }
+    queryClientRef.current = null;
   });
 
   it("renders the hydrated cart as the final review: rows, captions, quantities, the totals summary, and both footer actions (AC-02)", async () => {
@@ -457,5 +585,389 @@ describe("OrderReviewScreen", () => {
     expect(screen.getByLabelText("Quantity: 1")).toBeOnTheScreen();
     expect(screen.getByText("1 item · 1 line")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Confirm Order" })).toBeOnTheScreen();
+  });
+
+  // T09 — the submission flow (AC-04, AC-08, AC-09, AC-10). The store owns
+  // every phase transition (plan D8); this surface owns the orchestration:
+  // guard → normalize (T02) → prepare (durable-before-network, AC-06) →
+  // submit through the generated mutation hook (plan D13) → classify (D3's
+  // single ambiguity boundary) → resolve through the store's actions. The
+  // outcome panels render from the store's per-field selectors, never from
+  // screen-local loading/error flags.
+  describe("submission flow (T09)", () => {
+    beforeEach(() => {
+      // Each test's FIRST mint is deterministic (...001): the counter-backed
+      // expo-crypto mock (see its factory comment) resets per test, while the
+      // api mock drops any previous test's implementations.
+      mockUuidCounter.current = 0;
+      mockSubmitOrder.mockReset();
+    });
+
+    it("submits through the real flow: one api call with the exact normalized request, the durable record written before the network resolves, confirmed phase, cleared cart, one success push (AC-04/AC-06/AC-07)", async () => {
+      await seedDurableEnvelope([cappuccinoLine, waterLine]);
+      await recoverAttemptStore();
+      mockAuthHolder.current = installMockAuth();
+      // The flight stays open until THIS test resolves it, so the mid-flight
+      // invariants are observed while they hold, not reconstructed after.
+      let resolveSubmit!: (value: CreateOrderResponse) => void;
+      mockSubmitOrder.mockImplementation(
+        () =>
+          new Promise<CreateOrderResponse>((resolve) => {
+            resolveSubmit = resolve;
+          }),
+      );
+      const user = userEvent.setup();
+      await renderScreen();
+
+      await user.press(await screen.findByRole("button", { name: "Confirm Order" }));
+
+      // THE T09 RED case, made specific: the press reached the api exactly
+      // once, with the freshly minted id and the T02-normalized items.
+      expect(mockSubmitOrder).toHaveBeenCalledTimes(1);
+      expect(mockSubmitOrder).toHaveBeenCalledWith({
+        clientRequestId: "00000000-0000-4000-8000-000000000001",
+        items: SUBMITTED_ITEMS,
+      });
+
+      // Mid-flight (AC-04): the blocking overlay owns the screen, and the cart
+      // is locked against edits. The footer buttons beneath the overlay are
+      // asserted UNREACHABLE by accessibility queries — that is the overlay's
+      // documented design working, not a gap: `BlockingOverlay` sets
+      // `aria-modal`, and RNTL (mirroring screen-reader semantics) marks every
+      // element whose host sibling carries `aria-modal` as inaccessible, so
+      // neither getByRole nor userEvent can touch the buttons while the
+      // overlay is up. Unreachable + disabled beneath is exactly the
+      // UI-layer double-press and back-navigation prevention of AC-04; the
+      // server's idempotency contract remains the actual duplicate guard.
+      expect(screen.getByLabelText("Submitting your order…")).toBeOnTheScreen();
+      expect(useAttemptStore.getState().phase).toBe("submitting");
+      expect(screen.queryByRole("button", { name: "Confirm Order" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Back to Cart" })).toBeNull();
+      expect(getCartSnapshot().locked).toBe(true);
+
+      // Durable-before-network (AC-06), observed mid-flight: while the
+      // network promise is still pending, the UNRESOLVED record is already
+      // on disk under the attempt key, carrying the exact id in flight.
+      const midFlight = await storage.read(ATTEMPT_KEY, (raw) => checkoutAttemptSchema.parse(raw));
+      if (midFlight.status !== "hit") {
+        throw new Error("the attempt record was not on disk while the submit was in flight");
+      }
+      expect(midFlight.value.status).toBe("unresolved");
+      expect(midFlight.value.ownerId).toBe(TEST_PROFILE.id);
+      expect(midFlight.value.clientRequestId).toBe("00000000-0000-4000-8000-000000000001");
+
+      // Let the flight land: capture → durably confirm → clear (D4), the
+      // machine reaches "confirmed", the cart is cleared through the REAL
+      // cart store, and the success route push fires EXACTLY once — the
+      // re-render after the clear must not re-navigate.
+      await act(async () => {
+        resolveSubmit(SUCCESS_RESPONSE);
+      });
+      await waitFor(() => expect(getCartSnapshot().lines).toEqual([]));
+      await act(async () => {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 0);
+        });
+      });
+      expect(useAttemptStore.getState().phase).toBe("confirmed");
+      expect(mockRouterPush).toHaveBeenCalledTimes(1);
+      expect(mockRouterPush).toHaveBeenCalledWith("/checkout-success");
+    });
+
+    it("ignores a second Confirm press while the submission is in flight — one api call, no second order (AC-04)", async () => {
+      await seedDurableEnvelope([cappuccinoLine, waterLine]);
+      await recoverAttemptStore();
+      mockAuthHolder.current = installMockAuth();
+      let resolveSubmit!: (value: CreateOrderResponse) => void;
+      mockSubmitOrder.mockImplementation(
+        () =>
+          new Promise<CreateOrderResponse>((resolve) => {
+            resolveSubmit = resolve;
+          }),
+      );
+      const user = userEvent.setup();
+      await renderScreen();
+
+      const confirm = await screen.findByRole("button", { name: "Confirm Order" });
+      await user.press(confirm);
+
+      // In flight: the overlay is up and the trigger is disabled beneath it —
+      // the second press below is a no-op at every layer (the overlay's touch
+      // interception, the disabled affordance, the handler's phase guard).
+      expect(screen.getByLabelText("Submitting your order…")).toBeOnTheScreen();
+      expect(confirm).toBeDisabled();
+      await user.press(confirm);
+      expect(mockSubmitOrder).toHaveBeenCalledTimes(1);
+
+      // Settle the flight so no dangling mutation state leaks past this test.
+      await act(async () => {
+        resolveSubmit(SUCCESS_RESPONSE);
+      });
+      await waitFor(() => expect(useAttemptStore.getState().phase).toBe("confirmed"));
+    });
+
+    it("resolves a stock_conflict response into the conflict panel: joined rows, requested/available in words and numbers, preserved unlocked cart, Return to Cart instead of Confirm (AC-08)", async () => {
+      await seedDurableEnvelope([cappuccinoLine, waterLine]);
+      await recoverAttemptStore();
+      mockAuthHolder.current = installMockAuth();
+      mockSubmitOrder.mockResolvedValue(CONFLICT_RESPONSE);
+      const user = userEvent.setup();
+      await renderScreen();
+
+      await user.press(await screen.findByRole("button", { name: "Confirm Order" }));
+
+      // The panel (AC-08): the honest warning, the conflict rows joined to
+      // the cart's display data, and requested/available as words AND
+      // numbers — never colour alone.
+      await screen.findByText("Some items aren't available in the requested quantities");
+      expect(
+        screen.getByText(
+          "No order was submitted, and your cart wasn't changed. Return to your cart to adjust the quantities.",
+        ),
+      ).toBeOnTheScreen();
+      expect(screen.getByText("Cappuccino")).toBeOnTheScreen();
+      expect(screen.getByText("Hot · Large · Oat Milk")).toBeOnTheScreen();
+      expect(screen.getByText("Requested 2 · Available 1")).toBeOnTheScreen();
+      // The cart is preserved without silent mutation and the interaction
+      // lock is released — the store owns both at resolve time.
+      expect(getCartSnapshot().lines).toHaveLength(2);
+      expect(getCartSnapshot().locked).toBe(false);
+      // The only way forward is the explicit return; the confirm affordance
+      // is gone in this phase, and nothing auto-retried the RPC.
+      expect(screen.getByRole("button", { name: "Return to Cart" })).toBeOnTheScreen();
+      expect(screen.queryByRole("button", { name: "Confirm Order" })).toBeNull();
+      expect(mockSubmitOrder).toHaveBeenCalledTimes(1);
+    });
+
+    it("holds an ambiguous network result as unknown: locked cart, honest copy, no Back to Cart, and Check Again replays the SAME identity (AC-09)", async () => {
+      await seedDurableEnvelope([cappuccinoLine, waterLine]);
+      await recoverAttemptStore();
+      mockAuthHolder.current = installMockAuth();
+      // The first flight never gets a definitive answer; the replay does.
+      mockSubmitOrder
+        .mockRejectedValueOnce(
+          new AppError({
+            kind: "network",
+            userMessage: "We couldn't reach the network. Check the connection and try again.",
+          }),
+        )
+        .mockResolvedValueOnce(SUCCESS_RESPONSE);
+      const user = userEvent.setup();
+      await renderScreen();
+
+      await user.press(await screen.findByRole("button", { name: "Confirm Order" }));
+
+      // The unknown panel — deliberately NOT the failure panel (AC-09): a
+      // warning, not a destructive presentation, with copy that says what
+      // "check again" actually does.
+      await screen.findByText("We couldn't confirm whether your order went through");
+      expect(
+        screen.getByText(
+          "It may already exist — we'll check safely without submitting a duplicate.",
+        ),
+      ).toBeOnTheScreen();
+      // The cart stays locked: editing is unsafe while the outcome is unknown.
+      expect(getCartSnapshot().locked).toBe(true);
+      // Movement in this phase is the panel's action ONLY — no Back to Cart.
+      expect(screen.queryByRole("button", { name: "Back to Cart" })).toBeNull();
+      const checkAgain = screen.getByRole("button", { name: "Check Again" });
+      expect(checkAgain).not.toBeDisabled();
+
+      await user.press(checkAgain);
+
+      // The identity-reuse proof (AC-09): the replay re-sends the SAME
+      // client_request_id — the counter-backed id factory would surface a
+      // different value if the flow had re-minted instead of replaying.
+      await waitFor(() => expect(mockSubmitOrder).toHaveBeenCalledTimes(2));
+      expect(mockSubmitOrder).toHaveBeenNthCalledWith(2, {
+        clientRequestId: "00000000-0000-4000-8000-000000000001",
+        items: SUBMITTED_ITEMS,
+      });
+      // The replay resolves through the store's own path — the same machine
+      // and the same classifier — landing on confirmed + the success push.
+      await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith("/checkout-success"));
+      expect(useAttemptStore.getState().phase).toBe("confirmed");
+    });
+
+    it("resolves a retryable server failure into the failure panel, and Try Again mints a NEW attempt identity (AC-10)", async () => {
+      await seedDurableEnvelope([cappuccinoLine, waterLine]);
+      await recoverAttemptStore();
+      mockAuthHolder.current = installMockAuth();
+      mockSubmitOrder
+        .mockRejectedValueOnce(
+          new AppError({
+            kind: "server",
+            userMessage: "Something went wrong on our side. Please try again.",
+          }),
+        )
+        .mockResolvedValueOnce(SUCCESS_RESPONSE);
+      const user = userEvent.setup();
+      await renderScreen();
+
+      await user.press(await screen.findByRole("button", { name: "Confirm Order" }));
+
+      // The failure panel (AC-10): the mapped userMessage, destructive and
+      // distinct from the unknown panel, with the retry affordance the kind
+      // allows (server failures are retryable) and the way back.
+      await screen.findByText("Something went wrong on our side. Please try again.");
+      expect(screen.getByRole("button", { name: "Try Again" })).toBeOnTheScreen();
+      expect(screen.getByRole("button", { name: "Back to Cart" })).not.toBeDisabled();
+      // A definite failure released the interaction lock.
+      expect(getCartSnapshot().locked).toBe(false);
+
+      await user.press(screen.getByRole("button", { name: "Try Again" }));
+
+      // The distinction from the unknown-state retry: the definite failure's
+      // identity was DISCARDED at resolve, so the new attempt mints a fresh
+      // id (...002) — a same-identity replay here would be the K1003 bug.
+      await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith("/checkout-success"));
+      expect(mockSubmitOrder).toHaveBeenCalledTimes(2);
+      expect(mockSubmitOrder).toHaveBeenNthCalledWith(2, {
+        clientRequestId: "00000000-0000-4000-8000-000000000002",
+        items: SUBMITTED_ITEMS,
+      });
+    });
+
+    it("renders a non-retryable validation failure without any Try Again affordance (AC-10)", async () => {
+      await seedDurableEnvelope([cappuccinoLine, waterLine]);
+      await recoverAttemptStore();
+      mockAuthHolder.current = installMockAuth();
+      mockSubmitOrder.mockRejectedValueOnce(
+        new AppError({
+          kind: "validation",
+          userMessage: "We couldn't process that request. Please try again.",
+        }),
+      );
+      const user = userEvent.setup();
+      await renderScreen();
+
+      await user.press(await screen.findByRole("button", { name: "Confirm Order" }));
+
+      await screen.findByText("We couldn't process that request. Please try again.");
+      // Retrying the same payload fails identically — the kind is honest
+      // about that, and the affordance is absent, not merely disabled.
+      expect(screen.queryByRole("button", { name: "Try Again" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Back to Cart" })).toBeOnTheScreen();
+      expect(mockSubmitOrder).toHaveBeenCalledTimes(1);
+    });
+
+    it("surfaces a K1003 idempotency-conflict honestly: its message renders, nothing re-submits, nothing re-mints (AC-10)", async () => {
+      await seedDurableEnvelope([cappuccinoLine, waterLine]);
+      await recoverAttemptStore();
+      mockAuthHolder.current = installMockAuth();
+      mockSubmitOrder.mockRejectedValueOnce(
+        new AppError({
+          kind: "idempotency-conflict",
+          userMessage: "This order was already submitted with different items.",
+        }),
+      );
+      const user = userEvent.setup();
+      await renderScreen();
+
+      await user.press(await screen.findByRole("button", { name: "Confirm Order" }));
+
+      // The honest message (D11): never auto-resolved by re-minting.
+      await screen.findByText("This order was already submitted with different items.");
+      expect(screen.queryByRole("button", { name: "Try Again" })).toBeNull();
+      // The ONE api call is all that ever happened.
+      expect(mockSubmitOrder).toHaveBeenCalledTimes(1);
+      // The machine treated it as definite: the attempt is discarded and the
+      // cart unlocked — no unresolved hold, no automatic replay.
+      expect(useAttemptStore.getState().record).toBeNull();
+      expect(getCartSnapshot().locked).toBe(false);
+    });
+
+    it("surfaces a failed pre-submit durable write as a local warning — the network call never happens (AC-06's screen half)", async () => {
+      await seedDurableEnvelope([cappuccinoLine, waterLine]);
+      await recoverAttemptStore();
+      mockAuthHolder.current = installMockAuth();
+      const user = userEvent.setup();
+      await renderScreen();
+
+      // Reject ONLY the attempt key's write (the sign-out suite's filtered
+      // spy precedent): the pre-submit durable write fails, and the honest
+      // refusal must stop the flow BEFORE any network call.
+      const realWrite = storage.write;
+      const writeSpy = jest
+        .spyOn(storage, "write")
+        .mockImplementation(async (key: string, value: unknown) => {
+          if (key !== ATTEMPT_KEY) return realWrite(key, value);
+          return { status: "rejected", error: new Error("disk full") };
+        });
+      try {
+        await user.press(await screen.findByRole("button", { name: "Confirm Order" }));
+
+        await screen.findByText("We couldn't save your order details to this tablet");
+        expect(mockSubmitOrder).not.toHaveBeenCalled();
+        // The store stayed idle — a pre-submission refusal is a local
+        // warning, never an outcome phase.
+        expect(useAttemptStore.getState().phase).toBe("idle");
+      } finally {
+        writeSpy.mockRestore();
+      }
+    });
+
+    it("refuses a 101-distinct-variant cart as a local validation warning — no network call, the store stays idle (AC-05's hard stop)", async () => {
+      await seedDurableEnvelope(OVER_CAPACITY_LINES);
+      await recoverAttemptStore();
+      mockAuthHolder.current = installMockAuth();
+      const user = userEvent.setup();
+      await renderScreen();
+
+      // Every press-time guard PASSES — hydrated, 101 populated lines,
+      // unlocked, owned — because the cart caps line quantity, not the line
+      // count: the press reaches normalization, which refuses the
+      // over-capacity cart (T02: at most 100 distinct variants).
+      const confirm = await screen.findByRole("button", { name: "Confirm Order" });
+      expect(confirm).not.toBeDisabled();
+      await user.press(confirm);
+
+      // The catch's local warning renders with the review — never a crash,
+      // never an outcome phase owning the screen.
+      await screen.findByText("We couldn't prepare your order");
+      expect(
+        screen.getByText("Please try again. If it keeps happening, please let store staff know."),
+      ).toBeOnTheScreen();
+      // Hard-stopped before anything left the device: no submit, no minted
+      // durable attempt — the machine never left idle.
+      expect(mockSubmitOrder).not.toHaveBeenCalled();
+      expect(useAttemptStore.getState().record).toBeNull();
+      expect(useAttemptStore.getState().phase).toBe("idle");
+    });
+
+    it("resets a stale stock-conflict outcome when the review is re-entered — the panel does not survive a fresh mount", async () => {
+      await seedDurableEnvelope([cappuccinoLine, waterLine]);
+      await recoverAttemptStore();
+      mockAuthHolder.current = installMockAuth();
+      mockSubmitOrder.mockResolvedValue(CONFLICT_RESPONSE);
+      const user = userEvent.setup();
+      const firstMount = await renderScreen();
+
+      await user.press(await screen.findByRole("button", { name: "Confirm Order" }));
+      await screen.findByText("Some items aren't available in the requested quantities");
+      // The customer's exit: the panel's own way back to the (preserved) cart.
+      await user.press(screen.getByRole("button", { name: "Return to Cart" }));
+      expect(mockRouterPush).toHaveBeenCalledWith("/cart");
+      // RNTL v14's `unmount` is an ASYNC act (the use-cart suite's precedent):
+      // it must be awaited. Left un-awaited, the second renderScreen() below
+      // opens its act while the unmount's is still draining — React's
+      // overlapping-act() warnings, and the second AuthProvider's mount
+      // effects then flush through the orphaned act queue outside any act
+      // window ("not configured to support act"). Awaiting settles the first
+      // tree completely before the second one mounts.
+      await firstMount.unmount();
+
+      // Re-entry — a fresh Review push from the corrected cart: the
+      // mount-time reset (enterReview) clears the STALE outcome phase, so
+      // the panel cannot greet the corrected cart. The reset is mount-time
+      // ONLY by design: while this screen stays mounted, a resolved panel
+      // persists instead of flickering away.
+      await renderScreen();
+      await screen.findByRole("button", { name: "Confirm Order" });
+      expect(useAttemptStore.getState().phase).toBe("idle");
+      expect(
+        screen.queryByText("Some items aren't available in the requested quantities"),
+      ).toBeNull();
+    });
   });
 });

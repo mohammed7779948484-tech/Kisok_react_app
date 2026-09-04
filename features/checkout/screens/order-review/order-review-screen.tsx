@@ -1,14 +1,32 @@
+import { useEffect, useRef, useState } from "react";
+
 import { ShoppingCart } from "lucide-react-native";
 import { ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { EmptyState, SkeletonList } from "@/components/feedback";
+import { BlockingOverlay, EmptyState, SkeletonList } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
 import { Alert, Button, Text } from "@/components/ui";
-import { useCart } from "@/features/cart";
+import { createLogger } from "@/core/logging";
+import { getCartSnapshot, useCart } from "@/features/cart";
 
 import { OrderLineRow } from "../../components/order-line-row";
+import { normalizeCartLines, type NormalizedRequest } from "../../model/normalized-request";
+import { useSubmitOrderMutation } from "../../queries/use-submit-order-mutation";
+import {
+  classifySubmitOutcome,
+  useAttemptStore,
+  type AttemptPhase,
+} from "../../state/attempt-store";
+
+import {
+  FailureOutcomePanel,
+  StockConflictPanel,
+  UnknownOutcomePanel,
+} from "./components/outcome-panels";
+
+const log = createLogger("checkout.review");
 
 // The Screen primitive's edges contract (R-T09-01): the bottom inset has
 // exactly ONE owner per presentation — the fixed footer's own bottom-edge
@@ -19,49 +37,51 @@ const FOOTER_EDGES = ["top", "left", "right"] as const;
 const FOOTERLESS_EDGES = ["top", "bottom", "left", "right"] as const;
 
 /**
- * The routed Checkout Review screen's CONTENT (T08, AC-02/AC-03): the hydrated
- * cart as a final read-only review before submission. The submission flow
- * itself is T09 — here the screen renders what will be submitted (per-line
- * product name, variant/options label, quantity), the totals summary, the
- * escapes, and the Confirm Order affordance with its real enablement but a
- * deliberately inert press.
+ * The routed Checkout Review screen (T08 content, T09 submission flow):
+ * the final read-only review AND the orchestration that submits it.
  *
- * It consumes `useCart()` from `@/features/cart`'s public API — the narrow
- * view plus bound actions (that feature's plan decisions 11+15): the
- * per-slice subscriptions and the selector-derived totals live in the hook,
- * and mounting this screen under an authenticated profile IS the owner-scoped
- * restore trigger, exactly like the Full Cart screen — the screen itself
- * never hydrates and never touches the store beyond that one hook. No
- * Supabase, no deep feature imports, no checkout store: T08 is content only.
+ * Division of labour (plan D8): the ATTEMPT STORE owns every phase
+ * transition — `review → submitting → {confirmed | stock-conflict | unknown |
+ * failed}` — and this screen owns the sequence: guard → normalize (T02) →
+ * `prepareAttempt` (durable-before-network, AC-06) → submit through the
+ * generated mutation hook (plan D13 — the screen's transport; the store's
+ * replay path calls the api module directly) → `classifySubmitOutcome` (D3's
+ * single ambiguity boundary) → the store's resolve actions. No screen-local
+ * `isLoading + error`: the six states are the store's, so the recovery gate
+ * and every surface render the SAME machine.
  *
- * States (capability-aware — the review is a local-state-driven screen, so
- * there is no server loading/error/retry here): restore-pending (async local
- * read) → `SkeletonList`, no rows, no empty state, no summary guess; empty →
- * shared `EmptyState` with the Back to Cart escape (nothing to submit, and a
- * dead end on a kiosk means an employee gets asked for help); populated → a
- * plain ScrollView of the shared read-only `OrderLineRow` + the fixed footer.
- * Persistence honesty (AC-03, the cart's exact contract and copy):
- * `memoryOnly` → warning Alert, `clearFailed` → destructive Alert — a safety
- * issue is never undersold as a memory-only nuisance. While locked, the
- * Confirm Order trigger renders DISABLED (the submission lock presentation —
- * full-cart's locked convention); the lock blocks submission and cart edits,
- * never movement, so Back to Cart stays enabled.
+ * It consumes `useCart()` from `@/features/cart`'s public API for the
+ * content, `getCartSnapshot()` for the press-time defensive read, and the
+ * attempt store through per-field selectors — the narrow imports sanctioned
+ * for this feature (the store import is relative and inside `features/
+ * checkout`; no Supabase anywhere near a screen).
  *
- * The fixed footer follows the Screen primitive's own edges contract: while
- * the cart is populated, Screen omits the bottom edge and the fixed footer
- * wraps itself in a bottom-edge SafeAreaView (the primitive's documented
- * mechanism — "Omit 'bottom' when a fixed footer handles it"); in the
- * footer-less presentations (restore-pending, empty) Screen itself takes all
- * four edges. One bottom owner at a time, never two, never none.
+ * States (capability-aware — exactly the six the machine can reach plus the
+ * review's pre-submission cart states): restore-pending → `SkeletonList`;
+ * empty → shared `EmptyState` escape; populated → rows + summary + footer.
+ * The outcome phases render from the store: submitting → the shared
+ * `BlockingOverlay` over the screen with BOTH footer actions disabled
+ * beneath it (the double-press and touch-interception mechanism, AC-04 —
+ * the doc comment on BlockingOverlay names this exact use); stock-conflict
+ * → the conflict panel replaces the rows and Return to Cart replaces
+ * Confirm (AC-08); unknown → the warning alert + Check Again, and NO Back
+ * to Cart (the cart is locked while the outcome is unknown — movement
+ * stays possible only through the panel's action, which is exactly why the
+ * panel is the only affordance); failed → the destructive alert + Try Again
+ * only where the kind is retryable, always Back to Cart (AC-10). Confirmed
+ * → navigate to `/checkout-success` (the route materializes in T13; the
+ * push string is the contract).
  *
- * Back to Cart navigates EXPLICITLY (`router.push("/cart")`, AC-02): the
- * review must work from any entry — pushed from the cart's CTA, a deep link,
- * or a recovery return — so it never assumes a back stack. The summary line
- * above the actions derives its totals from the view's hook (the cart
- * feature's module selectors inside `useCart()`) — never a mirrored total.
+ * Persistence honesty (AC-03, unchanged from T08): `memoryOnly` → warning
+ * Alert, `clearFailed` → destructive Alert. Pre-submission REFUSALS
+ * (normalization throw, a failed durable write, a defensive prepare
+ * refusal) are screen-LOCAL warnings — the store stayed idle, so they never
+ * masquerade as outcome phases — held in local React state that clears on
+ * the next attempt or Back.
  *
- * Use design-system components and semantic token classes — never a raw hex
- * colour or an inline dimension that should be a token.
+ * The fixed footer follows the Screen primitive's edges contract (see
+ * R-T09-01 above). Use design-system components and semantic token classes
+ * — never a raw hex colour or an inline dimension that should be a token.
  */
 export function OrderReviewScreen() {
   const router = useRouter();
@@ -72,6 +92,189 @@ export function OrderReviewScreen() {
   // screen under an authenticated profile IS the restore trigger.
   const view = useCart();
   const { lines, persistence, locked, hydrated, totalQuantity, distinctLineCount } = view;
+
+  // The store is the single phase authority (D8): per-field subscriptions so
+  // this screen re-renders only when the fields it renders change — the
+  // phase (which presentation), the conflict payload, the failure payload.
+  const phase = useAttemptStore((state) => state.phase);
+  const conflict = useAttemptStore((state) => state.conflict);
+  const failure = useAttemptStore((state) => state.failure);
+  // D13: the screen's transport — the generated mutation hook. Deliberately
+  // thin; the attempt lifecycle lives in the store.
+  const submitOrderMutation = useSubmitOrderMutation();
+
+  // A pre-submission refusal (a local validation throw, a failed durable
+  // write, a defensive prepare refusal): screen-local, cleared on the next
+  // attempt or Back. The store stayed idle — this is a warning, never an
+  // outcome phase.
+  const [prepareNotice, setPrepareNotice] = useState<{ title: string; description: string } | null>(
+    null,
+  );
+
+  // Mount reset (T09): re-entering review from the cart after a previous
+  // DEFINITE outcome must not greet the corrected cart with the stale
+  // panel. `enterReview` is the store's own action (resets to idle + clears
+  // the payloads; it refuses from unknown/submitting/confirmed, which is
+  // exactly the right refusal — those phases own the session until the
+  // recovery gate or the success flow resolves them).
+  //
+  // Mount-time ONLY, read through `getState()` inside the effect with empty
+  // deps: resetting on phase CHANGES while mounted would destroy a panel the
+  // customer is still reading — the machine persists an outcome until the
+  // customer leaves (or a fresh mount resets it).
+  useEffect(() => {
+    const { phase: phaseAtMount } = useAttemptStore.getState();
+    if (phaseAtMount === "stock-conflict" || phaseAtMount === "failed") {
+      useAttemptStore.getState().enterReview();
+    }
+  }, []);
+
+  // Confirmed → the success route. Fires ONCE per phase TRANSITION (the ref
+  // holds the previous phase), not once per render: the re-renders that
+  // follow confirmation (the cart clear, the cleanup tracker) must not
+  // re-navigate, while a legitimate SECOND confirmation on a later attempt
+  // still would.
+  const lastPhaseRef = useRef<AttemptPhase>("idle");
+  useEffect(() => {
+    if (phase === "confirmed" && lastPhaseRef.current !== "confirmed") {
+      router.push("/checkout-success");
+    }
+    lastPhaseRef.current = phase;
+  }, [phase, router]);
+
+  /**
+   * The submission orchestration (T09). One press = guard → normalize →
+   * prepare (durable-before-network) → submit through the hook → classify →
+   * resolve. Everything that can refuse does so honestly and locally; the
+   * store owns every phase flip in between.
+   */
+  const handleConfirm = async () => {
+    // AC-04 duplicate suppression, handler layer: while a submission (first
+    // attempt or replay) is in flight the machine is "submitting" and this
+    // press is ignored. The overlay and the disabled affordance are the two
+    // UI layers of the same guarantee; this guard holds when a press slips
+    // through them (and for a Try Again double-press during the failed →
+    // submitting window).
+    if (useAttemptStore.getState().phase === "submitting") return;
+
+    // Defensive press-time re-check of the live cart. The button's
+    // enablement encodes this rule for the footer's own press, but Try
+    // Again reaches the same flow, and the future's entry points are not
+    // all known: nothing is submitted from an unrestored, empty, or locked
+    // cart, whatever pressed the button.
+    const snapshot = getCartSnapshot();
+    if (
+      !snapshot.hydrated ||
+      snapshot.lines.length === 0 ||
+      snapshot.locked ||
+      snapshot.ownerId === null
+    ) {
+      log.warn("Confirm Order ignored: the cart is not safely submittable");
+      return;
+    }
+
+    // A previous attempt's pre-submission notice clears on the next attempt.
+    setPrepareNotice(null);
+
+    // T02's pure rules. The guards above preclude the EMPTY cart only: the
+    // cart caps each line's QUANTITY (1..99, cart-rules addLine), never the
+    // line count, so a cart with more than 100 DISTINCT variants passes
+    // them and reaches this call — where normalizeCartLines legitimately
+    // refuses it (as it does any per-variant quantity outside the RPC
+    // ceiling). Every throw is handled as a LOCAL validation refusal: the
+    // warning below, the store stays idle, no network call — never a
+    // crash, never a silent reshape of what the customer confirmed
+    // (AC-05's hard stops).
+    let normalized: NormalizedRequest;
+    try {
+      normalized = normalizeCartLines(snapshot.lines);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      log.warn("Confirm Order refused: the cart could not be normalized into a request", {
+        reason,
+      });
+      setPrepareNotice({
+        title: "We couldn't prepare your order",
+        description: "Please try again. If it keeps happening, please let store staff know.",
+      });
+      return;
+    }
+
+    // Durable-before-network (AC-06): prepareAttempt mints the idempotency
+    // identity and persists the record BEFORE it hands back a request to
+    // submit — an ambiguous result is always recoverable by replaying the
+    // durable id.
+    const prepare = await useAttemptStore.getState().prepareAttempt({
+      ownerId: snapshot.ownerId,
+      lines: snapshot.lines,
+      normalized,
+    });
+    if (!prepare.ok) {
+      if (prepare.reason === "persist-failed") {
+        // The pre-submit durable write was rejected: the network call never
+        // happened (AC-06) — the honest, specific warning.
+        setPrepareNotice({
+          title: "We couldn't save your order details to this tablet",
+          description: "Your order wasn't submitted — please try again.",
+        });
+      } else {
+        // recovery-pending / unresolved-attempt-exists / confirmed-attempt-
+        // present — unreachable through this screen's own phase gating in
+        // the delivered app: T12's RecoveryGate runs `recover()` at layout
+        // mount before any review is reachable, and unknown/confirmed never
+        // render this footer's Confirm. Defensive, logged, generic.
+        log.warn("Confirm Order refused by the attempt store", { reason: prepare.reason });
+        setPrepareNotice({
+          title: "We couldn't start your submission",
+          description: "Please try again in a moment.",
+        });
+      }
+      return;
+    }
+
+    // D13: the screen path submits through the generated hook; the store's
+    // replay path (Check Again) calls the api module directly — both end at
+    // the same classifier below.
+    try {
+      const response = await submitOrderMutation.mutateAsync(prepare.request);
+      const outcome = classifySubmitOutcome({ response });
+      if (outcome.kind === "success") {
+        await useAttemptStore.getState().resolveSuccess({
+          orderId: outcome.response.order_id,
+          displayNumber: outcome.response.display_number,
+          createdAt: outcome.response.created_at,
+        });
+      } else if (outcome.kind === "stock-conflict") {
+        await useAttemptStore.getState().resolveStockConflict(outcome.conflicts);
+      } else {
+        // Unreachable by the classifier's contract (a response means the
+        // server answered — only success and stock_conflict families
+        // validate). Fail SAFE, not silent: hold the attempt unresolved
+        // rather than leave the machine stuck in "submitting" with a locked
+        // cart and no way out.
+        log.warn("Classified a response as a non-response outcome; holding the attempt", {
+          outcomeKind: outcome.kind,
+        });
+        useAttemptStore.getState().resolveUnknown();
+      }
+    } catch (error) {
+      const outcome = classifySubmitOutcome({ error });
+      if (outcome.kind === "definite-failure") {
+        await useAttemptStore.getState().resolveDefiniteFailure(outcome.error);
+      } else {
+        // Ambiguous (network / unknown / an unclassifiable rejection): the
+        // durable record IS the safety net — the store holds it unresolved
+        // and keeps the cart locked (AC-09); Check Again replays it.
+        useAttemptStore.getState().resolveUnknown();
+      }
+    }
+  };
+
+  /** Back to Cart — explicit navigation, and the notice-clearing escape. */
+  const handleBackToCart = () => {
+    setPrepareNotice(null);
+    router.push("/cart");
+  };
 
   // Restore-pending: an async local read is in flight. Nothing else renders —
   // no rows to show, and an empty state or a summary derived from an
@@ -95,12 +298,13 @@ export function OrderReviewScreen() {
     distinctLineCount === 1 ? "line" : "lines"
   }`;
 
-  // AC-03's no-unsafe-submit rule: the confirm affordance exists only when
-  // the cart is hydrated, populated, and not locked. Inside the footer the
-  // first two are structural (the footer mounts only with lines, and this
-  // branch is only reached hydrated), but the guard stays explicit so the
-  // enablement rule lives in one place when T09 wires the press.
-  const canSubmit = hydrated && lines.length > 0 && !locked;
+  // AC-03's no-unsafe-submit rule, extended for T09 (the machine's phase):
+  // the confirm affordance exists only when the cart is hydrated, populated,
+  // unlocked AND the machine is idle — any other phase owns the footer.
+  const canSubmit = hydrated && lines.length > 0 && !locked && phase === "idle";
+  // While a submission (or replay) is in flight both footer actions render
+  // disabled beneath the overlay (AC-04: back navigation is prevented too).
+  const submitting = phase === "submitting";
 
   return (
     // The footer renders only while there are lines, so the edges follow it:
@@ -125,14 +329,31 @@ export function OrderReviewScreen() {
               description="A previous cart may still be stored on this tablet. Please let store staff know."
             />
           ) : null}
+          {/* Outcome alerts render with the review content (the cart is
+              preserved in both phases — the customer is still looking at
+              what they submitted); the conflict panel REPLACES the rows
+              because its rows ARE the affected lines. */}
+          {phase === "unknown" ? <UnknownOutcomePanel /> : null}
+          {phase === "failed" && failure !== null ? (
+            <FailureOutcomePanel failure={failure} />
+          ) : null}
+          {prepareNotice !== null ? (
+            <Alert
+              variant="warning"
+              title={prepareNotice.title}
+              description={prepareNotice.description}
+            />
+          ) : null}
         </View>
 
-        {lines.length === 0 ? (
+        {phase === "stock-conflict" && conflict !== null ? (
+          <StockConflictPanel conflicts={conflict} lines={lines} />
+        ) : lines.length === 0 ? (
           <EmptyState
             icon={ShoppingCart}
             title="Your cart is empty"
             description="There's nothing to review or submit yet."
-            action={{ label: "Back to Cart", onPress: () => router.push("/cart") }}
+            action={{ label: "Back to Cart", onPress: handleBackToCart }}
           />
         ) : (
           // No virtualization: the cart is bounded at 100 lines by the
@@ -147,7 +368,9 @@ export function OrderReviewScreen() {
       </View>
 
       {/* Summary + actions exist only with something to submit; the empty
-          state's escape is the empty cart's way forward. */}
+          state's escape is the empty cart's way forward. The footer's
+          actions follow the machine's phase — the store decides which
+          affordance owns the way forward. */}
       {lines.length > 0 ? (
         // The Screen primitive omits the "bottom" safe-area edge (FOOTER_EDGES)
         // while this footer is mounted, so this SafeAreaView is the bottom
@@ -157,28 +380,87 @@ export function OrderReviewScreen() {
             <Text variant="body" tone="muted">
               {summary}
             </Text>
-            <Button variant="outline" size="large" onPress={() => router.push("/cart")}>
-              <Text>Back to Cart</Text>
-            </Button>
-            <Button
-              variant="primary"
-              size="large"
-              block
-              disabled={!canSubmit}
-              onPress={() => {
-                // TODO(T09): the submission flow owns this press — confirm →
-                // submitting (lock, overlay, duplicate suppression) → outcome
-                // panels (conflict join, unknown retry, definite failure).
-                // Until then this is a deliberate no-op: the button renders
-                // its real enablement (AC-03) while wiring NO store, NO api,
-                // and NO navigation — T08 is the review's content only.
-              }}
-            >
-              <Text>Confirm Order</Text>
-            </Button>
+            {phase === "stock-conflict" ? (
+              // The one way forward (AC-08): the store already unlocked the
+              // cart at resolve; this button only moves. Replaces Confirm —
+              // and Back with it: two buttons pushing the same route is not
+              // a choice, it is noise on a kiosk.
+              <Button variant="primary" size="large" block onPress={() => router.push("/cart")}>
+                <Text>Return to Cart</Text>
+              </Button>
+            ) : phase === "unknown" ? (
+              // The ONLY movement in this phase (AC-09): the cart is locked
+              // because the outcome is unknown, so Back to Cart is absent —
+              // the panel's action is the customer's way through, and it
+              // replays the SAME idempotency identity through the store
+              // (never a fresh id, which could create a second order).
+              <Button
+                variant="primary"
+                size="large"
+                block
+                onPress={() => {
+                  void useAttemptStore.getState().replayAttempt();
+                }}
+              >
+                <Text>Check Again</Text>
+              </Button>
+            ) : phase === "failed" ? (
+              <>
+                {failure !== null && failure.retryable ? (
+                  // A NEW attempt is legitimate after a definite failure:
+                  // the old identity was discarded at resolve, so the next
+                  // prepare mints a fresh id. The deliberate distinction
+                  // from the unknown phase's same-identity replay — minting
+                  // THERE would be the K1003 duplicate-order bug.
+                  <Button
+                    variant="primary"
+                    size="large"
+                    block
+                    onPress={() => {
+                      void handleConfirm();
+                    }}
+                  >
+                    <Text>Try Again</Text>
+                  </Button>
+                ) : null}
+                <Button variant="outline" size="large" onPress={handleBackToCart}>
+                  <Text>Back to Cart</Text>
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  size="large"
+                  disabled={submitting}
+                  onPress={handleBackToCart}
+                >
+                  <Text>Back to Cart</Text>
+                </Button>
+                <Button
+                  variant="primary"
+                  size="large"
+                  block
+                  disabled={!canSubmit}
+                  onPress={() => {
+                    void handleConfirm();
+                  }}
+                >
+                  <Text>Confirm Order</Text>
+                </Button>
+              </>
+            )}
           </View>
         </SafeAreaView>
       ) : null}
+
+      {/* The submitting overlay (AC-04): covers content AND footer, claims
+          the touch on native, and announces the in-flight state — the
+          double-press and back-navigation-prevention mechanism, on top of
+          the disabled affordances beneath it. The server's idempotency
+          contract is what actually prevents a duplicate; this makes the
+          double press not happen. */}
+      <BlockingOverlay visible={submitting} label="Submitting your order…" />
     </Screen>
   );
 }

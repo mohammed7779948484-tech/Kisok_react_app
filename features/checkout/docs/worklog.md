@@ -759,3 +759,99 @@ features/checkout/screens/order-review/order-review-screen.tsx (new)
 features/checkout/screens/order-review/order-review-screen.test.tsx (new)
 
 GATE: PASS
+
+### T09 — Review submission flow + outcome panels
+
+MODE: behavior
+ACCEPTANCE: Acceptance: AC-04, AC-08, AC-09, AC-10
+
+SCAFFOLD (Lead — N/A for this task)
+wiring task over T08's screen + the T04/T06 contracts; the outcome
+panels are screen-local components (planned manual files).
+
+NOTE ON DELIVERY: this task's implementer contexts were killed by Super Z
+harness deadlines TWICE mid-task; the work landed incrementally and the
+Lead completed the final bounded fixes directly (both test-side, both with
+verified root causes — see TASK REVIEW). The fresh independent reviewer
+then reviewed the ENTIRE diff including the Lead's edits.
+
+RED (behavior)
+$ npx jest features/checkout/screens/order-review -t "submits through the real flow"
+The T08 inert placeholder: pressing Confirm made NO api call — the RED
+case is inside the landed test ("the press reached the api exactly once
+…" failed against the no-op onPress). Captured by the interrupted
+implementer's run and re-verified by the reviewer's independent RED
+re-derivation of the placeholder behavior.
+
+IMPLEMENT
+order-review-screen.tsx — the confirm handler: phase-guard duplicate
+suppression + snapshot re-check → normalizeCartLines (throw handled as a
+LOCAL validation refusal — comment corrected per F-T09-02: the guards
+preclude the empty cart only; the >100-distinct-variant refusal is
+reachable and tested) → prepareAttempt (durable-before-network; !ok
+surfaced as a local warning alert, never an outcome phase) →
+mutateAsync → classifySubmitOutcome → the matching resolve action.
+Mount-reset enterReview (stale definite outcomes only); confirmed-
+navigation effect (transition-edge, exactly-once push to
+/checkout-success); BlockingOverlay while submitting; the phase-driven
+footer mapping (stock-conflict → Return to Cart only; unknown → Check
+Again replay only, no Back — cart locked; failed → Try Again iff
+retryable + Back to Cart).
+components/outcome-panels.tsx — conflict join (store conflicts × live
+cart lines; lock guarantees the lines are the submission context —
+documented), requested/available in words+numbers, uuid-case-insensitive
+join + defensive fallback; unknown panel's distinct copy; failure panel
+renders userMessage with the retryable distinction (K1003 non-retryable,
+never re-mints).
+order-review-screen.test.tsx — 18 tests (8 T08 content + 10 submission):
+the deferred-submit mid-flight proofs (durable record on disk BEFORE the
+network resolves; overlay owns the screen; cart locked), identity-reuse
+on Check-Again (...001 twice) vs fresh mint after definite failure
+(...002), duplicate suppression (press disabled via phase — Pressability
+blocks before onPress), K1003 no-re-mint, the failed pre-submit write
+(no network call), the stale-panel mount reset (awaited unmount — zero
+console), the 101-distinct-variant local refusal (new, F-T09-02).
+core/testing/query.tsx — ONE shared-file change (Lead, justified):
+mutations gcTime Infinity. Root cause (verified in TanStack source +
+jest-circus hook ordering): a completed mutation schedules a 5-minute GC
+setTimeout when its last observer unmounts — RNTL cleanup runs AFTER the
+file's afterEach destroy loop, so the timer survived and kept jest alive
+invisibly (timers are not handles — --detectOpenHandles shows nothing).
+Additive, mirrors the file's own queries rationale, per-test clients
+bound retention. 811→812 tests repo-wide unaffected.
+
+GREEN
+$ npx jest features/checkout → 10 suites / 252 tests, exits cleanly (~8s)
+$ pnpm test (full) → 812 tests green
+
+AFFECTED CHECKS
+$ pnpm typecheck → clean
+$ npx eslint <T09 files + query.tsx> --max-warnings=0 → exit 0
+$ npx prettier --check <same> → clean
+
+TASK REVIEW (fresh code-reviewer, agent-c769a644)
+Verified: the flow matches the store's contracts argument-for-argument;
+the non-response branch fails SAFE via resolveUnknown; exactly-once
+navigation; no dead-end phases; the live-lines conflict join sound (lock
+documented); the Lead's fix #1 verified against RNTL's actual aria-modal
+sibling rule (inaccessible siblings = the overlay's documented design —
+the unreachable-by-a11y assertions are the CORRECT mid-flight contract);
+the Lead's fix #2 verified against TanStack's removable.ts + jest-circus
+hook ordering; duplicate suppression passes for the right reason
+(Pressability's disabled check). All suites re-run green.
+Findings: F-T09-01 minor (one noisy test — act warnings from an
+un-awaited unmount), F-T09-02 minor (comment overstated the guards + the
+reachable refusal untested), F-T09-03 minor (docs — this entry).
+Remediation (fresh implementer, agent-0a4df913): awaited unmount (the
+use-cart precedent; zero console output restored — verified raw);
+comment corrected + the 101-distinct-variant test with RED proof via a
+temporary mutation (reverted byte-identical). 17 → 18 tests.
+
+DIFF
+features/checkout/screens/order-review/order-review-screen.tsx (edit)
+features/checkout/screens/order-review/order-review-screen.test.tsx (edit)
+features/checkout/screens/order-review/components/outcome-panels.tsx (new)
+core/testing/query.tsx (shared, justified above — listed in the PR's
+shared-files section)
+
+GATE: PASS
