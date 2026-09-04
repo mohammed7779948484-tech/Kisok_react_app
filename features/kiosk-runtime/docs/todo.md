@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : 5 — post-review remediation (R5-01…R5-13)
-Current task      : — (all Round 5 remediation tasks T21–T29 PASS; Round 5 round review next)
-Current stage     : ROUND 5 ROUND GATE — all tasks T21–T29 PASS (980 tests green); fresh round reviewer over the accumulated Round 5 diff next
-Last gate         : FEATURE GATE REOPENED (Round 5) — the Round 4 PASS at 527a7e6 is historical; see review.md Round 5 sections
-Next legal action : launch the T21 fresh feature-implementer (bounded packet per plan Round 5 tasks)
+Current task      : — (Round 5 complete: tasks T21–T29, round gate, final verification, final review, quality audit all done)
+Current stage     : NEW FEATURE GATE — Round 5 earned (see the Round 5 feature-gate checklist below); PR #9 body update + push are the human's credentials away
+Last gate         : ROUND 5 FEATURE GATE: PASS (this commit) — the Round 4 PASS at 527a7e6 and its reopening are history (review.md)
+Next legal action : HUMAN — provide a GitHub push token (or push the local branch) so the Round 5 commits (ca8531e..HEAD) reach origin/feature/kiosk-runtime; then CI + the label-gated Android build run on the exact HEAD and the PR #9 body is updated (text ready in the worklog's handoff note). Then: review Draft PR #9 (base develop) and decide the merge. Never merged by an agent.
 
 REMEDIATION (Round 5) START SHAs (workspace restored from GitHub 2026-09-04; prior sandbox lost):
   origin/feature/kiosk-runtime = 527a7e6d3d07781c5cb125b1e205912f8daa1025 (the Round 4 gate commit; code-identical to 7d6702d)
@@ -289,7 +289,11 @@ audit → NEW Feature Gate → PR #9 update → HUMAN_HANDOFF.
 
 Round gates: Round 1 `PASS` · Round 2 `PASS` · Round 3 `PASS` (recovered) · Round 4 `PASS` (fresh round review agent-5dd85f16; R4-1 fixed)
 
-## Feature gate (the NEW gate, 2026-09-04 — earned on the remediated + integrated HEAD)
+## Feature gate (Round 4's NEW gate, 2026-09-04 — HISTORICAL: superseded by the
+
+## Round 5 reopening and the Round 5 gate in the next section; the PASS below
+
+## was earned on 7d6702d/527a7e6 and is preserved as history only)
 
 Every line is a box, and `pnpm verify` alone is not the authority — several
 of these depend on an environment only CI has. See `review.md` for the
@@ -317,20 +321,83 @@ quality audit ("the delivery is sound"). The PRIOR gate pass at b71c828 was
 historical evidence, reopened by the independent IR-01..IR-09 review, and is
 preserved as history in review.md.\*\*
 
-## Remediation (post-gate review)
+## Round 5 Feature gate (the CURRENT gate, 2026-09-04 — earned after the Round 5 remediation)
 
-The prior pass is reopened. New bounded remediation tasks (stable new IDs,
-appended after T13, never renumbering T01–T13) will be defined in `plan.md`
-AFTER the seven read-only researchers return and the Lead synthesis produces
-the IR-01..IR-09 verdict matrix. No remediation implementation may start while
-`plan.md` is DRAFT.
+Every line evidence-backed; the Round 4 PASS above is history (reopened by the
+R5-01…R5-13 review; no PASS backfilled).
+
+- [x] Every Task Gate PASS (T01–T20 historical, preserved; T21–T29 each with a
+      FRESH implementer → Lead verification (RED independently re-verified where
+      meaningful) → FRESH task review → remediation where flagged → re-review;
+      every gate commit attempted push — remote push credential-blocked, all
+      commits local, honestly recorded)
+- [x] Round Gates PASS (Rounds 1–4 historical; Round 5 round review 0 blocking /
+      0 major / 1 doc-seam minor closed in-round)
+- [x] Every AC verified (AC-01…AC-10; AC-03 as amended 2026-09-04 — the
+      final reviewer verified each row against the CODE; AC-06's mapping is via
+      the shared-sign-out design decision + test strategy rather than a task
+      column — audit note S-4, accepted)
+- [x] `pnpm verify` PASS after the final local change — 69 suites / 980 tests
+      (re-run by the Lead, the final reviewer, AND the quality auditor)
+- [x] Fast GitHub CI on the final HEAD: **UNVERIFIED — push blocked** (external
+      prerequisite; the Round 5 diff is JS/workflow/docs-only — Kotlin and
+      android-release.yml untouched — and pnpm verify + CNG prebuild are green
+      locally; the label-gated Android build must run on the exact HEAD after
+      the human pushes). NOT claimed PASS.
+- [x] Runtime evidence recorded (browser regression on the final HEAD: web
+      resolves instantly through the T21/T22 changes; customer + preparation
+      journeys; /kiosk-mismatch fail-closed; zero console errors; tablet
+      landscape + portrait)
+- [x] Native tier: CNG prebuild green on the final HEAD; the label-gated build
+      on the exact Round 5 HEAD UNVERIFIED (push blocked) — the Round 4 native
+      SUCCESS (run 33857102920) covers the unchanged native surfaces; physical
+      kiosk explicitly unverified (unchanged list)
+- [x] Reviewer findings dispositioned (T21–T29 reviews, the round review, the
+      final full review FF-01 accepted-with-rationale / FF-02 fixed (this
+      commit) / FF-03 rejected false-positive (byte-level proof); all
+      review.md rows terminal)
+- [x] blocking/major fixes re-reviewed (T21-R1: fresh re-review 0/0; every
+      other remediation closed in-task with reviewer confirmation)
+- [x] Quality Audit clean — fresh auditor: "the Round 5 delivery is sound and
+      honestly recorded"; no not-delivered; no false remote/CI claims;
+      remediation integrity verified (no backfilled PASS); the four
+      record-hygiene items (E-1, S-1..S-3, P-1, S-4) closed/accepted in THIS
+      commit
+- [x] Anything not verified explicitly recorded (worklog final-verification
+      entry + brief Evidence + mdm-operations.md §9: live MDM, CI/native on the
+      Round 5 HEAD pending push, environment/variable setup incl. the three new
+      MDM*BETA*\*/MDM_PRODUCTION_GROUP_ID variables, hardware)
+- [x] Shared/core changes justified (core/**, shared components/**, supabase/\*\*
+      untouched — audit- and review-verified; the only app/ change is the
+      planned app/index.tsx gate wiring)
+- [x] PR evidence vs worklog: PR #9 open/Draft/base develop at remote HEAD
+      527a7e6 — the Round 5 evidence lives in the worklog and the local
+      commits; the PR body update is staged for the human (push-gated). No
+      false PR claims made.
+
+**ROUND 5 FEATURE GATE: PASS** (2026-09-04 — earned on the Round 5
+remediated HEAD after: the seven-researcher gate → R5 verdict matrix →
+T21–T29 gates → round gate → develop check (unchanged 3a25640) → final
+verification (69/980 + runtime + CNG) → fresh final review (0 blocking /
+0 major) → dispositions → fresh quality audit ("sound and honestly
+recorded"). Terminal state: HUMAN_HANDOFF — the human pushes, lets CI and
+the label-gated build run on the exact HEAD, updates the PR body (text
+ready), reviews Draft PR #9, and decides the merge. An agent never
+merges.)
 
 ## Blocked
 
 What cannot proceed, and what it is waiting for. Empty is good.
 
-- GitHub push credentials were provided by the user (session 2). Branch
-  `feature/kiosk-runtime` is pushed; Draft PR #9 (base `develop`) is open and
-  receives every Lead gate-commit. Still external/human-only:
-  the live ManageEngine MDM dry-run (needs the customer's MDM tenant), and
-  physical-kiosk verification (no physical tablet exists in this environment).
+- GitHub push credentials: the prior session's token did NOT survive the
+  sandbox loss — this restored workspace has none (verified by dry-run).
+  Every Round 5 gate commit attempted push and failed with the recorded
+  "could not read Username" error; the commits ca8531e..HEAD are LOCAL
+  (remote feature HEAD is still 527a7e6, the Round 4 gate commit). The
+  human must push (any method) to restore remote durability; CI + the
+  label-gated Android build on the exact Round 5 HEAD and the PR #9 body
+  update then follow (all explicitly UNVERIFIED until then). Still
+  external/human-only: the live ManageEngine MDM dry-run (needs the
+  customer's MDM tenant; also needs the three new mdm-upload environment
+  variables configured first), and physical-kiosk verification (no
+  physical tablet exists in this environment).

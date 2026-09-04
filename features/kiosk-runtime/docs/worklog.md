@@ -2799,3 +2799,107 @@ android --no-install --clean` exit 0 on the final HEAD; the generated
   33857102920 SUCCESS) remains the native evidence; the label-gated build
   on the EXACT Round 5 HEAD could not run (push blocked) — recorded
   honestly as UNVERIFIED pending the human's push + dispatch.
+
+## Round 5 quality audit + NEW FEATURE GATE (2026-09-04)
+
+### Quality audit (fresh, agent-068989be)
+
+Verdict: **"The Round 5 delivery is sound and honestly recorded. No
+not-delivered code scope; no false remote/CI claims; the
+external-unverifiable items are labeled UNVERIFIED, not PASS."** The
+auditor re-ran `pnpm verify` itself (69 suites / 980 tests, exit 0 — the
+third independent re-run), re-verified the full-feature diff
+(52 commits / 51 files / +20219−32 vs the plan's three file lists), the
+workflow allowlist, the tool contracts, the remediation integrity (no
+backfilled PASS; T01–T20 history preserved; new evidence per task; the
+894→…→980 chain arithmetically consistent), and the external honesty
+(CI/native on the Round 5 HEAD explicitly UNVERIFIED pending push; R5-13
+develop check verified: origin/develop = 3a25640 = merge-base). Four
+record-hygiene items required before the gate — ALL CLOSED/ACCEPTED in
+this commit: E-1+S-1+S-2+S-3 (the final-review section committed together
+with a REAL todo close-out: checkpoint refreshed; the stale session-2
+credentials statement in `## Blocked` rewritten to the current
+push-blocked truth; the bottom Round 4 gate section annotated HISTORICAL);
+P-1 (the plan's generator-bypass justification for policy-startup-gate
+corrected to the honest judgment — the capability exists but its template
+does not model composing another feature's screen); S-4 (AC-06's task
+mapping note recorded in the gate checklist — accepted, delivered via the
+shared-sign-out design decision + tests).
+
+### ROUND 5 FEATURE GATE: PASS
+
+Checklist in todo.md ("Round 5 Feature gate"). Earned on the remediated
+HEAD after: seven-researcher gate (batches 3+2+2; verdict matrix R5-01…
+R5-13; IR-02 contradiction resolved) → plan amendment + Lead Planning
+Review → T21–T29 (each: fresh implementer, Lead verification, fresh task
+review, remediations where flagged, gate, commit, push attempt) → Round 5
+round gate (0/0, R5R-F01 closed) → R5-13 develop check (unchanged) →
+final verification (pnpm verify 69/980 + runtime browser regression + CNG
+prebuild) → fresh final full review (0 blocking / 0 major; FF-01
+accepted-with-rationale / FF-02 fixed / FF-03 rejected false-positive
+byte-level proof) → fresh quality audit (sound and honestly recorded).
+
+### HUMAN_HANDOFF (terminal state)
+
+The human's next actions, in order:
+
+1. **Push** the local branch (13 commits, ca8531e..HEAD, are local-only;
+   remote feature HEAD is 527a7e6). Any method: provide a token to the
+   agent session, or run `git push origin feature/kiosk-runtime` from a
+   machine with credentials (the branch is at
+   /home/z/my-project/repos/Kisok_react_app).
+2. Let **CI and the label-gated Android build** run on the exact HEAD
+   (add the `android-build` label to PR #9 as before). These are honestly
+   UNVERIFIED until then.
+3. **Update the PR #9 body** with the Round 5 summary (text below).
+4. Review **Draft PR #9** (base develop) and decide the merge. The agent
+   never merges.
+
+PR #9 body text (ready to paste; replace the previous body's status
+sections):
+
+> ## Round 5 — post-review remediation complete (Feature Gate re-earned)
+>
+> A new independent review reopened the prior gate with findings
+> R5-01…R5-13. Round 5 closed every confirmed finding with
+> research-backed, fail-closed changes:
+>
+> - **Policy readiness hardened** (R5-01/02/08/10/11): platform-
+>   discriminated module absence (Android + missing module can never
+>   resolve permissively — fail-closed startup hold with a named error +
+>   manual retry); restrictions-change events synchronously invalidate a
+>   permissive verdict (+ an epoch guard discards superseded in-flight
+>   reads); the maintenance credential requires SETTLED restrictions
+>   (provisional + LOCKED routes to the mismatch screen but never unlocks);
+>   the maintenance sheet resets on role exit.
+> - **MDM contract aligned to the current official cloud docs** (R5-03/04/
+>   05/06/07): the documented two-phase file-upload lifecycle (PENDING →
+>   bounded status polling); the documented-Mandatory Update App body
+>   (app_name + app_type); Accept: application/json on every MDM JSON
+>   call; retry classes split (mutations never auto-replay ambiguous 5xx);
+>   the Beta target is an ADMIN-CONTROLLED allowlist (three mdm-upload
+>   environment variables — dispatch can no longer aim the upload at any
+>   group) + group_type 6 (Device Group) validated pre-mutation.
+> - **Release provenance** (R5-12): the upload workflow validates the run
+>   (workflow identity, conclusion, head_branch ∈ {main, develop}) before
+>   the artifact download — defense-in-depth on top of the existing
+>   package/version/cert re-verification.
+> - **R5-09 rejected with evidence**: RECEIVER_NOT_EXPORTED for the
+>   protected system broadcast is the documented-correct pattern — no
+>   change.
+>
+> Evidence: 69 suites / 980 tests (re-run independently by the final
+> reviewer AND the quality auditor); runtime browser regression (both
+> tablet viewports, zero console errors); CNG prebuild green; fresh final
+> full review 0 blocking / 0 major; fresh quality audit: "the Round 5
+> delivery is sound and honestly recorded."
+>
+> **Honest unverified list**: GitHub CI + the label-gated Android build on
+> this exact HEAD (the agent's sandbox lost push credentials — the commits
+> are pushed by the human first); the live MDM dry-run (needs the tenant +
+> the three new environment variables configured: MDM_BETA_GROUP_ID,
+> MDM_BETA_GROUP_NAME, MDM_PRODUCTION_GROUP_ID); physical-kiosk behavior.
+> Full details: features/kiosk-runtime/docs/{worklog,review,plan}.md.
+>
+> Do not merge before the CI/native runs land on this HEAD. The agent
+> never merges.

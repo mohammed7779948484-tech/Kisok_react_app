@@ -1110,7 +1110,15 @@ sandbox — recorded as an external prerequisite; local commits preserved).
   Round 5 manual artifact (RD5-03; Lead naming amendment at T22 delivery:
   the component is a gate that composes StartupScreen for the no-error case
   and owns the ErrorState+Retry surface — the plan's earlier
-  "policy-error-surface" name is superseded).
+  "policy-error-surface" name is superseded). Justification corrected at
+  the quality audit (P-1): the component GENERATOR would create this path,
+  but its generic template adds nothing here — the gate composes another
+  feature's screen (StartupScreen) and reads the feature store directly,
+  which the template does not model; the artifact is planned by name,
+  in-scope, reviewed, and tested. (The Round 5 amendment's earlier "no
+  generator capability covers a root-held error state" wording was
+  inaccurate — the capability exists; the JUDGMENT is that it does not fit
+  this composition.)
 - `features/kiosk-runtime/index.ts` — export widening for the retry hook /
   error surface (app/\*\* may not import the store).
 - `app/index.tsx` — the startup case renders the policy error surface when

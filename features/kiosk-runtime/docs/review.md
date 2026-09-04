@@ -127,6 +127,47 @@ T29 so the operational contract no longer carries the stale claim.
   status; 500+COM0002 is a server contradiction) and the ambiguity
   diagnostic is the safer guidance. Precedence documented in the code.
 
+## Final full-feature review (Round 5 close-out, 2026-09-04)
+
+A FRESH final reviewer (agent-b8161ce6, new context — no implementation
+watched; ran its own pnpm test:ci 69/980, tsc, lint, check:docs, boundary
+greps, secret scan) reviewed the COMPLETE feature diff (3a25640..HEAD, 52
+commits, 51 files, +20219/−32) against brief/plan/code/workflow/docs:
+**0 blocking / 0 major / 3 minor.**
+
+- **FF-01 (minor, behavioral hygiene) — ACCEPTED with rationale.** An
+  unlocked maintenance session survives a sign-out performed OUTSIDE the
+  maintenance panel (unlock → close sheet → sign out via the mismatch
+  screen → ≤timeout window remains). Rationale: the residual is bounded
+  (≤90 s default / ≤600 s max), benign (the panel's only action is the
+  SAME shared sign-out the mismatch screen already offers publicly; a
+  successful switch clears the session), and AC-05's clear-list (timeout /
+  background / account switch) is met AS WRITTEN. One-line future fix
+  documented: clear the maintenance session on the auth signed-out
+  transition.
+- **FF-02 (minor, record hygiene) — FIXED** in the Feature-Gate commit
+  (todo.md checkpoint refreshed to the close-out state).
+- **FF-03 (minor, citation mangling) — REJECTED: false positive with
+  byte-level proof.** "anageengine" is `manageengine[1:]` — plain grep
+  matches the INTACT word 21×; and the tool-output renderer eats the
+  leading `[m` (SGR-reset-shaped) when displaying lines, making intact
+  citations LOOK mangled. Byte evidence: every named line starts `5b 6d`
+  ("[m"); `grep -c '^[[:space:]]*anageengine'` = 0 in the working tree,
+  HEAD, T29, T20, AND the original T13 commit; brackets balance 25/25.
+  The prescribed sed would have CORRUPTED 21 intact citations — the
+  resumed implementer correctly STOPPED at the wrong premise (the role
+  discipline working as designed). Harness note recorded: verify citation
+  bytes with od/grep -c, never rendered line output.
+
+The reviewer's clean verdicts: all ten ACs verified against the CODE
+(AC-01…AC-10 point-by-point); the policy state machine traced end-to-end
+with NO hole; boundary/scope checks clean (core/components/supabase/other
+features untouched; the 51-file diff maps exactly to the plan's three file
+lists); MDM delivery safety end-to-end (read-before-mutation, retry
+classes, allowlist, truthful dry-run, zero production ops); the release
+path fail-closed; test quality genuine (no fabricated/weakened rows);
+security scan clean.
+
 ### Live-tenant / hardware items that remain unverifiable from this sandbox
 
 Live MDM dry-run; whether the server enforces Accept/app*name/app_type/
