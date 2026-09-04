@@ -210,8 +210,17 @@ api/` tree (MDM Plus, on-prem build markers), which genuinely lacks the
   deliberate long-press on the corner affordance opens the unlock prompt;
   the right code opens the maintenance panel, whose "Switch customer
   account" runs the app's shared fail-closed sign-out pipeline. The unlock
-  is ephemeral — it clears on timeout, when the app goes to background, and
-  when the account is switched.
+  is ephemeral — it clears on timeout, when the app goes to background,
+  when the account is switched, and on the restrictions-changed broadcast
+  itself: a restrictions change is a policy event, so any unlocked session
+  clears immediately (Round 5, RD5-02) — an admin rotating the unlock code
+  in the console locks the running kiosk the moment the push lands, before
+  the new code could be needed. The code is only ever compared while the
+  restrictions are SETTLED: a provisional bundle
+  (`restrictions_pending` — "may be applied in the near future but are not
+  available yet") is not final credential material, so while it is in force
+  the unlock is refused outright and the sheet shows its settling state
+  (Round 5, RD5-04) — the pending marker never becomes a usable code.
 - `maintenance_unlock_timeout_seconds` — how long an unlock lasts. The app
   clamps the value to 15–600 seconds and defaults to 90 when unset.
 

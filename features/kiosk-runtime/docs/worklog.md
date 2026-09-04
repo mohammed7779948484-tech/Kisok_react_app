@@ -2738,3 +2738,31 @@ unchanged — docs-only); prettier clean.
 GATE: PASS (R5-13 remains as the develop-freshness procedural step; AC-10
 re-aligned to the current contract). Commit + push attempt follows (push
 still blocked — human token prerequisite recorded).
+
+## ROUND 5 ROUND GATE — kiosk-runtime (2026-09-04)
+
+ROUND REVIEW (fresh round-scope code-reviewer, agent-d2a1b417, over the
+accumulated Round 5 diff 4840497..HEAD — 9 gate commits, +4138/−356, 24
+files): **0 blocking / 0 major / 1 minor** — R5R-F01: mdm-operations.md
+§4's maintenance lifecycle was two Round 5 behaviors behind the code (the
+RD5-02(b) restrictions-change force-clear of an unlocked session; the
+RD5-04 unsettled-credential refusal + settling state) — a doc-only seam
+(task-graph: T29 depended on T24–T28, so no task owned aligning the
+T21/T23 policy-side changes in the ops doc). CLOSED by a T29-implementer
+resume (§4 patched: both behaviors stated, +11/−2; pnpm verify green).
+The reviewer's composite verification: the full readiness state machine
+(readiness × readError × restrictionsSettled × role × epoch × single-
+flight) traced with NO hole; the cold-start matrix per platform class;
+the MDM chain end-to-end under split retry classes; the workflow↔tool
+wiring; AC coverage (AC-02/03/04/05); every deferred/accepted disposition
+verified to hold; scope discipline confirmed (the diff touches exactly the
+plan's Round 5 file list — root-guard.ts, core/**, shared components/**,
+supabase/\*\*, the Kotlin module, and android-release.yml UNTOUCHED);
+69 suites / 980 tests green.
+
+**ROUND 5 GATE: PASS** (all nine task gates + the round review converged
+0 blocking / 0 major with the one doc-seam minor closed in-round).
+
+Next: develop re-fetch/integration (R5-13) → final verification on the
+integrated HEAD → fresh full final code review → fresh quality audit →
+NEW Feature Gate → PR #9 update → HUMAN_HANDOFF.
