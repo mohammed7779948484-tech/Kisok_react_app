@@ -2118,3 +2118,38 @@ mdm-upload` (upload job) with the human-migration follow-up comments.
 - **GATE: PASS** — the documented supply-chain hardening for the two
   secret-bearing workflows, with the environment migration recorded as the
   human follow-up (T20 documents the procedure).
+
+---
+
+## T20 — mdm-operations.md remediation alignment (remediation Round 4, FINAL task)
+
+**Mode**: config · **Acceptance**: Supporting AC-10 · **Deps**: T15–T19
+(PASS) · **Scaffold**: N/A (documentation)
+
+- **IMPLEMENT** (fresh implementer agent-266c9ca5; ONE file — 216
+  insertions / 73 deletions): all 11 checklist items landed — the three
+  assigned rewords (T16-R2 Zoho-policy provenance → engineering
+  discipline; T16-R3 ca/cn token-host exception; T18-R1 versionCode
+  reality + the "Expo's exact defaulting" clause), the required group-name
+  dispatch input, the ANDROID_UPLOAD_CERT_SHA256 PUBLIC-variable
+  procedure (cross-referenced from §7a/§7b/§7d), the environment
+  migration human follow-up (android-signing + mdm-upload, seven
+  secrets, SHA-pinned actions note), Beta-label reuse semantics, the
+  documented pagination + pre-mutation group validation read-path notes,
+  the IR-02 verdict (single-phase fileStatus; the 2026-09-04 zero
+  -occurrence sweep), five new live-tenant unknowns (duplicate-label POST,
+  groups/{id} error shape, actual app-list envelope, actual /emsapi/files
+  values, restrictions_pending / kiosk_device_role push behavior), and
+  the original unverified items byte-identical.
+- **GREEN**: `pnpm verify` exit 0 (68 suites / 881 tests; check:docs 79
+  files); prettier clean.
+- **Fresh review** (agent-3f51934d): **0 blocking / 0 major / 1 minor**
+  (T20-R1: "before any checkout" over-claim — the validation step runs
+  after checkout). Implementer resumed: both sentences reworded to
+  "immediately after checkout, before any toolchain…". Reviewer verified
+  11/11 checklist items against the SHIPPED CODE (pagination precedence,
+  group validation, label reuse, DC hosts, versionCode, dispatch inputs,
+  cert wiring, environments, pins) — all accurate; stale-claim sweep
+  clean; no invented contracts.
+- **GATE: PASS** — the operational contract matches the remediated
+  pipeline. ALL SEVEN remediation tasks (T14–T20) are now gated PASS.
