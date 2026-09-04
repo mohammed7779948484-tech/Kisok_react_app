@@ -1346,3 +1346,101 @@ DIFF
 features/checkout/checkout-journey.test.tsx (new)
 
 GATE: PASS
+
+### Round 4 — browser runtime evidence (hosted TEST, the real journey)
+
+ENVIRONMENT: `pnpm web` (Metro :8081, stdin held open — expo exits on
+closed stdin), agent-browser headless, the committed hosted TEST project
+(docs/environment.md), the documented Customer account.
+
+THE REAL JOURNEY (one real TEST order — the minimal intended footprint):
+
+- Sign-in: Customer@gmail.com → the real catalog home renders (brands,
+  categories, products from the hosted snapshot).
+- Product "Float 3k" → variant "Flavor: Blue Raspberry ce" → Add to cart →
+  the QuickCart sheet (quantity 1) → +1 (quantity 2) → View Full Cart →
+  the full cart shows "2 items · 1 line" + the NEW Review Order CTA.
+- Review Order → /checkout: "Review Your Order", the row (Float 3k,
+  Flavor · Blue Raspberry ce, quantity 2), the summary, Back to Cart +
+  Confirm Order.
+- **Confirm Order → the REAL create_order against the hosted TEST
+  project → SUCCESS**: /checkout-success, "Order Confirmed", the real
+  display number **SL329M** (order_id
+  62ff5696-11f5-408c-bf3e-7a95f9cbf31c, created 2026-09-04T12:57:03Z),
+  the submitted snapshot rows, "2 items · 1 line", the CONFIGURED
+  countdown "Order resets in 20 seconds" (the store's
+  customer_success_reset_seconds = 20 — NOT the 25s fallback: the setting
+  read live), Next Customer, and the cart badge EMPTY (cleared after
+  confirmed success).
+- The durable record (localStorage, read directly): status "confirmed",
+  the success fields, cleanup cartClear "done", the exact T02 fingerprint
+  — and kisok:cart:lines ABSENT (durable clear).
+- **The inactivity auto-reset fired LIVE**: the 20s countdown expired
+  while evidence was being captured (the Next Customer click lost the
+  race) — the kiosk returned to the customer home "/" and the attempt
+  record was removed, exactly the designed AC-14 behavior.
+- Responsive: 800×1180 (portrait/medium) — the full journey to the review
+  screen renders (rows + summary + both actions; screenshot
+  /tmp/evidence-portrait-\*.png); 480×900 (compact) — the review renders
+  (screenshot /tmp/evidence-compact-review.png). No layout breakage; all
+  queries by role/name.
+- Console: ONE expected log line ([auth] SIGNED_IN) — **zero errors, zero
+  warnings** across the whole session.
+- Tidy-up: the second (unsubmitted) compact cart cleared through the
+  app's own Clear Cart flow; the test account left clean. One real TEST
+  order + its inventory deduction remain on the hosted project as the
+  honest feature footprint (recorded, not treated as a fixture).
+
+VERIFICATION notes: the live stock-conflict and ambiguous-network flows
+were NOT forced on the shared hosted project (destructive setup would be
+required); both are covered deterministically by the T09/T12 suites. The
+same-request idempotent replay was not exercised live (would require
+transport-level interruption mid-flight on the shared project — covered
+deterministically by the store/journey suites).
+
+Round 4 local DoD: `pnpm verify` exit 0 (typecheck, lint, format:check,
+test:ci 68 suites / 856 tests, check:docs, check:commits, check:e2e-appid,
+check:ci-scripts, generate:smoke; db:verify SKIPS honestly — no local
+PostgreSQL; CI runs the real check on the PR).
+
+### ROUND 4 GATE — routes, entry & journey
+
+ROUND DIFF REVIEW (Lead)
+bab97dc..HEAD + the records: T13 (routes + the BackHandler guard +
+the F-T11-04 replace disposition), T14 (the cart entry CTA + the
+reading-order pin), T15 (the journey suite + the portrait leg), the
+browser runtime evidence, the develop-integration check (origin/
+develop UNCHANGED at 3a25640 — the base is current; the unrelated
+PR #9 branch moved, read-only per the instructions).
+
+ROUND CHECKS
+$ pnpm verify → exit 0 (CORRECTED final-HEAD counts per F-R4-02:
+typecheck, lint, format:check, test:ci 69 suites / 863 tests,
+check:docs, check:commits, check:e2e-appid, check:ci-scripts,
+generate:smoke; db:verify SKIPS honestly — no local PostgreSQL, CI
+runs the real check)
+Browser runtime evidence (recorded above) — now complete at ALL THREE
+literal sizes: 1280×800 (the landscape leg re-captured: sign-in →
+product → cart → review renders + screenshot; the main journey's
+original session ran at the default viewport = the same expanded
+bucket), 800×1180, 480×900. Zero app-level console errors/warnings
+(only the standard React dev-mode info lines).
+
+ROUND REVIEW (fresh code-reviewer, agent-ff33696d)
+Verified: the routes thin + byte-identical to the template; every
+navigation intent resolves to an existing route; the entry seam's
+rule provably agrees with the review screen; the BackHandler guards'
+composition; the replace disposition consistent; the journey suite
+honest (the five sanctioned mocks, reuse-proof identities,
+durable-before-network); the round diff inside the plan's
+expected-changes; all local checks reproduced green at HEAD
+(69/863); the runtime evidence corroborated (screenshots on disk,
+honest dispositions).
+Findings (all minor): F-R4-01 (stale todo ledger — fixed in this
+update), F-R4-02 (stale DoD counts — corrected above to 69/863),
+F-R4-03 (the 1280×800 leg missing — captured and recorded), F-R4-04
+(the native UNVERIFIED line — written into review.md's dispositions),
+F-R4-05 (back-stack growth — accepted-risk disposition), F-R4-06
+(web back unguarded — accepted-risk disposition).
+
+ROUND 4 GATE: PASS

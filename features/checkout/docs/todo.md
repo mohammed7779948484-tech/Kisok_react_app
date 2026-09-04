@@ -15,11 +15,11 @@ The single answer to "where are we?". Update it whenever any of it changes; it
 is the first thing the next agent reads.
 
 ```
-Current round     : 3
+Current round     : 4
 Current task      : — (round complete)
-Current stage     : T15 GATE PASS — Round 4 complete; ROUND GATE pending
-Last gate         : T15 GATE PASS (Round 4 tasks complete)
-Next legal action : Round 4 gate — pnpm verify + browser runtime evidence + fresh Round reviewer
+Current stage     : ROUND 4 GATE PASS — final verification phase
+Last gate         : ROUND 4 GATE PASS
+Next legal action : FINAL full code review → remediation → quality audit → FEATURE GATE
 Blocked by        : —
 ```
 
@@ -276,7 +276,10 @@ it — two summaries disagree the moment one is updated and the other is not.
 - **Allowed manual files**: —
 - **Scaffold status**: `READY` (ran by the Lead; SCAFFOLD block in worklog)
 - **Allowed file scope**: `app/(customer)/checkout.tsx`,
-  `app/(customer)/checkout-success.tsx`, `features/checkout/index.ts`
+  `app/(customer)/checkout-success.tsx`, `features/checkout/index.ts`,
+  `features/checkout/screens/order-review/**` and
+  `features/checkout/screens/order-success/**` (the BackHandler guard —
+  R3-02, sanctioned by the note above; scope widened per F-T13-02)
 
 ### T14 — Full Cart Review Order CTA
 

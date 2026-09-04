@@ -49,3 +49,28 @@ dispositioned. It returns findings; the Lead records them here.
 - Definition of Done (`AGENTS.md`) met: TODO
 
 Audit result: `PENDING`
+
+## Accepted risks and explicit dispositions (Lead, post Round 4)
+
+- **Native tier (Android build, Maestro): UNVERIFIED** — no device or
+  emulator exists in this environment. Browser evidence only; never
+  equated with native evidence. The BackHandler guards are
+  deterministic-test-verified but not device-verified.
+- **Web-tier back affordance unguarded (F-R4-06)**: BackHandler is an
+  inert stub on react-native-web, so the narrow-web browser back can
+  still leave a submitting review or kill the success countdown.
+  Accepted: Android is the delivery target; the flows self-heal (server
+  idempotency, locked cart, the recovery gate's next-mount resolution);
+  zero console errors across the full web journey.
+- **Back-stack growth on the cart↔review correction loop (F-R4-05)**: the
+  flow's Back/Return-to-Cart pushes grow history across a shift (the
+  gated reset prunes only the success entry). No duplicate-order or data
+  risk — every reachable presentation has an escape; the Next-Customer
+  reset lands on the home with the empty-review escape beneath. Accepted
+  as polish; a dismissTo-style prune would need expo-router APIs outside
+  this feature's scope.
+- **Live hosted coverage limits**: the stock-conflict, ambiguous-network,
+  and same-request idempotent-replay flows were not forced live on the
+  shared hosted TEST project (destructive setup would be required); all
+  three are covered deterministically (T09/T12/the journey suites) and
+  dispositioned in the worklog's runtime-evidence section.
