@@ -328,9 +328,12 @@ export type AttemptState = {
    * F-05: the in-memory fail-closed hold marker — set when `recover` found
    * a corrupt, foreign, or foreign-unclean durable record. Non-null means
    * the session is HELD: no prepare, no replay, no cleanup, no review
-   * re-entry (phase `"unsafe-recovery"`). Cleared only by the sign-out wipe
-   * and by the one proven-inert foreign discard — never by a submission,
-   * because none can start from under it.
+   * re-entry (phase `"unsafe-recovery"`), and the sign-out GUARD blocks the
+   * wipe (R5-T04: the staff-hold family). Cleared only by the one
+   * proven-inert foreign discard — never by a submission, because none can
+   * start from under it, and never by the sign-out wipe, which the guard
+   * refuses while the hold stands: the exit is staff intervention, by
+   * design.
    */
   unsafeHold: { reason: UnsafeHoldReason } | null;
   prepareAttempt: (input: PrepareInput) => Promise<PrepareResult>;
@@ -481,8 +484,9 @@ export function createAttemptStore(
         // exists for the persisted identity (under a different actor or
         // fingerprint); minting a fresh client_request_id here could create a
         // SECOND order for the same logical request. The hold is durable
-        // evidence and is never resolved client-side — only the sign-out
-        // wipe (guarded elsewhere) clears it.
+        // evidence and is never resolved client-side — the sign-out guard
+        // (R5-T04) blocks the wipe while it stands, so the exit is staff
+        // intervention, by design.
         log.warn("prepareAttempt refused: a held attempt owns this session");
         return { ok: false, reason: "held-attempt-present" };
       }
@@ -1294,10 +1298,11 @@ export function createAttemptStore(
      * after its backend op resolves, never in flight with it).
      * `recordLoaded: false` is deliberate: the next session's `recover()`
      * must run a REAL read against whatever disk holds then, never a
-     * shortcut on pre-sign-out memory. `unsafeHold: null` is the sanctioned
-     * exit from an F-05 fail-closed hold: the wipe owns DISK, so the hold's
-     * in-memory marker goes with it (the sign-out GUARD — sign-out-
-     * cleanup.ts, R5-T04 — is what decides the wipe is legal). On a rejected
+     * shortcut on pre-sign-out memory. `unsafeHold: null` resets the
+     * in-memory marker with the envelope (the sign-out GUARD — sign-out-
+     * cleanup.ts, R5-T04 — decides the wipe is legal, and it REFUSES while
+     * a hold stands: the staff-hold family has no client-side exit, so this
+     * path runs for the hold-free shapes only). On a rejected
      * remove the reset still
      * runs — BEFORE the rejection can propagate (the cleanup throws on it,
      * and after the throw core/auth's emergency wipe owns DISK, so nothing

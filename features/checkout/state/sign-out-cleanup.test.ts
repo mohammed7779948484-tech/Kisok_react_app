@@ -5,7 +5,12 @@ import { unlockCart, type CartLine } from "@/features/cart";
 
 import { checkoutAttemptSchema, type CheckoutAttempt } from "../model/checkout-attempt.schema";
 import { deriveRequestFingerprint, normalizeCartLines } from "../model/normalized-request";
-import { useAttemptStore, type AttemptState, type PrepareResult } from "./attempt-store";
+import {
+  useAttemptStore,
+  type AttemptState,
+  type PrepareResult,
+  type StockConflictItem,
+} from "./attempt-store";
 // The module under test. Its import IS the behaviour under test: checkout's
 // sign-out guard + cleanup register here, as a module side-effect.
 import { clearCheckoutForSignOut } from "./sign-out-cleanup";
@@ -145,6 +150,77 @@ const CONFIRMED_RECORD: CheckoutAttempt = checkoutAttemptSchema.parse({
   cleanup: { cartClear: "pending" },
 });
 
+/**
+ * R5-T04 (F-04 carry): a HELD record — the K1003 fail-closed hold the state
+ * machine now persists. Schema-valid at construction like every fixture
+ * above: the guard branches on `record.status`, and a held record a real
+ * restart could never restore would test nothing.
+ */
+const HELD_RECORD: CheckoutAttempt = checkoutAttemptSchema.parse({
+  ...UNRESOLVED_RECORD,
+  status: "held",
+  hold: { reason: "k1003" },
+});
+
+/**
+ * R5-T04 (F-05 carry): a payload the attempt schema must REJECT — the
+ * corrupt durable record whose fail-closed hold the guard must respect.
+ * Deliberately `unknown`, not schema-typed: exactly what a drifted build or
+ * a truncated write leaves on disk, and precisely what `recover()` must
+ * refuse to interpret.
+ */
+const CORRUPT_PAYLOAD: unknown = { version: 999, garbage: "not an attempt record" };
+
+/** A different profile — the foreign-evidence fixtures' owner. */
+const FOREIGN_OWNER = "aaaaaaa1-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+
+/** R5-T04 remediation: another profile's UNRESOLVED record — held as evidence. */
+const FOREIGN_UNRESOLVED_RECORD: CheckoutAttempt = checkoutAttemptSchema.parse({
+  ...UNRESOLVED_RECORD,
+  ownerId: FOREIGN_OWNER,
+});
+
+/**
+ * R5-T04 remediation: a FOREIGN confirmed record with cleanup DONE — the one
+ * provably-inert foreign shape recover safely discards.
+ */
+const FOREIGN_CONFIRMED_DONE_RECORD: CheckoutAttempt = checkoutAttemptSchema.parse({
+  ...CONFIRMED_RECORD,
+  ownerId: FOREIGN_OWNER,
+  cleanup: { cartClear: "done" },
+});
+
+/** R5-T04 remediation: a TERMINAL definite-failure record — inert by verdict. */
+const TERMINAL_FAILURE_RECORD: CheckoutAttempt = checkoutAttemptSchema.parse({
+  ...UNRESOLVED_RECORD,
+  status: "terminal",
+  outcome: {
+    kind: "definite-failure",
+    failure: {
+      kind: "server",
+      userMessage: "Something went wrong on our side. Please try again.",
+      retryable: true,
+    },
+  },
+});
+
+/**
+ * One wire-shape stock-conflict row for the definite resolve in the F-01
+ * lifecycle test — `StockConflictItem`, exactly what `create_order` returns.
+ */
+const STOCK_CONFLICTS: StockConflictItem[] = [
+  { variant_id: VARIANT_ID, requested_quantity: 3, available_quantity: 1 },
+];
+
+/** Read the attempt key back WITHOUT the schema — the corrupt-evidence check. */
+async function readRawPersisted(): Promise<unknown> {
+  const result = await storage.read<unknown>(KEY, (raw) => raw);
+  if (result.status !== "hit") {
+    throw new Error("expected a raw persisted payload under the attempt key");
+  }
+  return result.value;
+}
+
 /** Read the attempt key back through the app's real storage API. */
 async function readPersistedAttempt() {
   return storage.read(KEY, (raw) => checkoutAttemptSchema.parse(raw));
@@ -157,18 +233,23 @@ async function readPersistedAttempt() {
  */
 type AttemptData = Pick<
   AttemptState,
-  "record" | "recordLoaded" | "persistence" | "phase" | "conflict" | "failure"
+  "record" | "recordLoaded" | "persistence" | "phase" | "conflict" | "failure" | "unsafeHold"
 >;
 
 function snapshotAttemptData(): AttemptData {
-  const { record, recordLoaded, persistence, phase, conflict, failure } =
+  const { record, recordLoaded, persistence, phase, conflict, failure, unsafeHold } =
     useAttemptStore.getState();
   return JSON.parse(
-    JSON.stringify({ record, recordLoaded, persistence, phase, conflict, failure }),
+    JSON.stringify({ record, recordLoaded, persistence, phase, conflict, failure, unsafeHold }),
   );
 }
 
-/** Reset the singleton's memory between tests (disk is cleared in afterEach). */
+/**
+ * Reset the singleton's memory between tests (disk is cleared in afterEach).
+ * `unsafeHold` is reset too (R5-T04): the new guard tests put the singleton
+ * into an F-05 hold, and a leaked hold would block every later test's
+ * sign-out for a record that is no longer there.
+ */
 function resetAttemptSingleton() {
   useAttemptStore.setState({
     record: null,
@@ -177,6 +258,7 @@ function resetAttemptSingleton() {
     phase: "idle",
     conflict: null,
     failure: null,
+    unsafeHold: null,
   });
 }
 
@@ -560,6 +642,165 @@ describe("checkout sign-out guard + cleanup (AC-12)", () => {
         await preparePromise?.catch(() => undefined);
         unlockCart();
       }
+    });
+  });
+
+  describe("R5-T04 — F-01: the guard fails CLOSED before the durable recovery truth", () => {
+    /**
+     * The finding, reproduced end-to-end on the real singleton + real storage:
+     * a prior session left an UNRESOLVED attempt on disk; this session has not
+     * run `recover()` yet, so memory honestly shows `record: null`,
+     * `phase: "idle"` — and `recordLoaded: false`. The OLD guard read only
+     * memory and APPROVED in exactly this window (the module's own doc
+     * admitted it: "EDGE TIMING, honestly"), so the chain-enqueued
+     * `clearForSignOut` remove could land after the in-flight recovery read
+     * and destroy a durable identity whose submission may have committed —
+     * the next session mints a fresh `client_request_id` and duplicates the
+     * order. The guard is the fail-closed AUTHORITY for sign-out safety; it
+     * must not guess while disk truth is unknown. (The phase-"submitting" and
+     * approval-when-clean pins live in the tests above — R2-01(a) and
+     * "approves sign-out when no attempt record exists".)
+     */
+    it("THE F-01 window: unresolved on disk, no recovery read yet → BLOCKED with the recovery-pending reason, then honest through resolve", async () => {
+      await expect(storage.write(KEY, UNRESOLVED_RECORD)).resolves.toEqual({ status: "persisted" });
+      try {
+        // (a) THE WINDOW ITSELF — recordLoaded === false, memory empty. The
+        // guard must block with the recovery-pending reason: approving here
+        // is exactly the F-01 defect.
+        await expect(runSignOutGuards()).resolves.toEqual({
+          status: "blocked",
+          reason: "We're still checking this tablet for an unfinished order submission.",
+        });
+
+        // (b) The recovery read lands: this profile's own UNRESOLVED record.
+        // The block is now the DOCUMENTED unresolved-family reason (the
+        // contract text in docs/state-management.md).
+        await expect(useAttemptStore.getState().recover(OWNER)).resolves.toBe("unresolved");
+        await expect(runSignOutGuards()).resolves.toEqual({
+          status: "blocked",
+          reason: "An order submission is still unresolved.",
+        });
+
+        // (c) Resolved away — the definite stock conflict's discard succeeds,
+        // the identity is provably gone — the guard APPROVES. The full
+        // lifecycle: pending → unresolved → clear, never approving while
+        // disk truth was unknown.
+        await useAttemptStore.getState().resolveStockConflict(STOCK_CONFLICTS);
+        expect((await readPersistedAttempt()).status).toBe("miss");
+        const state = useAttemptStore.getState();
+        expect(state.record).toBeNull();
+        expect(state.phase).toBe("stock-conflict");
+        await expect(runSignOutGuards()).resolves.toEqual({ status: "ok" });
+      } finally {
+        // recover() locked the REAL cart for the unresolved record (and the
+        // conflict resolve unlocked it — this hands it back either way, the
+        // R2-01 precedent for direct calls that bypass runSignOutCleanup()).
+        unlockCart();
+      }
+    });
+
+    it("F-04 carry: a HELD record blocks sign-out with the staff-attention reason — wiping the K1003 hold would enable a fresh mint", async () => {
+      await expect(storage.write(KEY, HELD_RECORD)).resolves.toEqual({ status: "persisted" });
+      try {
+        await expect(useAttemptStore.getState().recover(OWNER)).resolves.toBe("held");
+        const state = useAttemptStore.getState();
+        expect(state.record?.status).toBe("held");
+        expect(state.phase).toBe("held");
+
+        // The staff-hold family's OWN reason (R5-T04 remediation): a held
+        // record is NOT "still unresolved" — the server PROVED an order
+        // exists — so the honest text is that this tablet needs staff help.
+        await expect(runSignOutGuards()).resolves.toEqual({
+          status: "blocked",
+          reason: "This tablet needs staff help before signing out.",
+        });
+
+        // The refused sign-out destroyed nothing: the hold's evidence record
+        // is still exactly on disk (sign-out would have wiped it — letting
+        // the same customer re-sign-in, rebuild the request, and mint a
+        // fresh identity: F-04's duplicate via sign-out).
+        const persisted = await readPersistedAttempt();
+        if (persisted.status !== "hit") {
+          throw new Error("expected the held record to remain durable after the refused sign-out");
+        }
+        expect(persisted.value.status).toBe("held");
+      } finally {
+        // recover() locked the REAL cart for the held record; hand it back.
+        unlockCart();
+      }
+    });
+
+    it("F-05 carry: phase unsafe-recovery blocks sign-out with the staff-attention reason — the held evidence survives", async () => {
+      // A corrupt durable payload: unreadable evidence this session must
+      // HOLD, never delete. recover() refuses to interpret it and moves the
+      // session to "unsafe-recovery" with unsafeHold carrying the reason.
+      await expect(storage.write(KEY, CORRUPT_PAYLOAD)).resolves.toEqual({ status: "persisted" });
+      await expect(useAttemptStore.getState().recover(OWNER)).resolves.toBe("unsafe-recovery");
+      const state = useAttemptStore.getState();
+      expect(state.phase).toBe("unsafe-recovery");
+      expect(state.unsafeHold).toEqual({ reason: "corrupt" });
+
+      // The staff-hold family's OWN reason (R5-T04 remediation).
+      await expect(runSignOutGuards()).resolves.toEqual({
+        status: "blocked",
+        reason: "This tablet needs staff help before signing out.",
+      });
+
+      // The refused sign-out destroyed nothing: the corrupt payload —
+      // evidence a newer build or store staff may still need — is intact.
+      expect(await readRawPersisted()).toEqual(CORRUPT_PAYLOAD);
+      expect(useAttemptStore.getState().unsafeHold).toEqual({ reason: "corrupt" });
+    });
+
+    it("F-05 carry: a FOREIGN-UNRESOLVED evidence hold blocks sign-out with the staff-attention reason", async () => {
+      // Another profile's unresolved record is held as evidence: wiping it
+      // on THIS profile's sign-out would destroy THAT customer's
+      // idempotency identity — the duplicate-order hazard for THEM.
+      await expect(storage.write(KEY, FOREIGN_UNRESOLVED_RECORD)).resolves.toEqual({
+        status: "persisted",
+      });
+      try {
+        await expect(useAttemptStore.getState().recover(OWNER)).resolves.toBe("unsafe-recovery");
+        expect(useAttemptStore.getState().unsafeHold).toEqual({ reason: "foreign-unresolved" });
+
+        await expect(runSignOutGuards()).resolves.toEqual({
+          status: "blocked",
+          reason: "This tablet needs staff help before signing out.",
+        });
+
+        const persisted = await readPersistedAttempt();
+        if (persisted.status !== "hit") {
+          throw new Error("expected the foreign evidence to remain durable");
+        }
+        expect(persisted.value.ownerId).toBe(FOREIGN_OWNER);
+      } finally {
+        unlockCart();
+      }
+    });
+
+    it("the guard APPROVES the proven-inert loaded shape: discarded-foreign", async () => {
+      // A foreign CONFIRMED record with cleanup done is the ONE safe
+      // foreign discard (order server-confirmed, cart cleared, nothing left
+      // to replay): recover discards it, and the guard approves the (now
+      // no-op) wipe.
+      await expect(storage.write(KEY, FOREIGN_CONFIRMED_DONE_RECORD)).resolves.toEqual({
+        status: "persisted",
+      });
+      await expect(useAttemptStore.getState().recover(OWNER)).resolves.toBe("discarded-foreign");
+      expect((await readPersistedAttempt()).status).toBe("miss");
+      await expect(runSignOutGuards()).resolves.toEqual({ status: "ok" });
+    });
+
+    it("the guard APPROVES a terminal record — a definite no-order verdict is inert by design", async () => {
+      // A TERMINAL record is a definite no-order verdict for its id — the
+      // F-06 design itself lets a fresh confirmation mint over it, so there
+      // is nothing to protect from the sign-out wipe either.
+      await expect(storage.write(KEY, TERMINAL_FAILURE_RECORD)).resolves.toEqual({
+        status: "persisted",
+      });
+      await expect(useAttemptStore.getState().recover(OWNER)).resolves.toBe("terminal");
+      expect(useAttemptStore.getState().phase).toBe("failed");
+      await expect(runSignOutGuards()).resolves.toEqual({ status: "ok" });
     });
   });
 });

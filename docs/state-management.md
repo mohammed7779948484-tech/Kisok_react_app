@@ -170,6 +170,16 @@ while a submission's outcome is unknown could produce a duplicate order. A guard
 that throws is treated exactly like `blocked` — uncertainty is never permission
 to destroy recovery state.
 
+The checkout guard's blocked set was extended in the R5 remediation round
+(findings F-01/F-04/F-05): beyond an unresolved record or a live submission, it
+now also blocks while the session's first durable recovery read is still pending
+(disk may hold an attempt this session has never seen — approving would let the
+sign-out wipe destroy its idempotency identity), while a K1003 hold owns the
+session (a held record or phase `held`), and while an unsafe-recovery hold owns
+it (phase `unsafe-recovery`). The recovery-pending case surfaces its own reason
+text ("We're still checking this tablet for an unfinished order submission.");
+the unresolved-family reason above is unchanged contract.
+
 ### Handoff marker — durable before auth is removed
 
 After all guards pass, `core/auth` writes a durable `kisok:auth:*` handoff marker
