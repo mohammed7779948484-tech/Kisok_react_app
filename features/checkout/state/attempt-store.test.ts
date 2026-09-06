@@ -1650,14 +1650,16 @@ describe("recover — F-05: foreign and unclean records are HELD, never deleted"
   });
 });
 
-describe("resolveDefiniteFailure — ambiguous kinds are refused at the action boundary (RT03-6)", () => {
-  it.each([networkError, unknownKindError])(
+describe("resolveDefiniteFailure — ambiguous kinds are refused at the action boundary (RT03-6, FR-1)", () => {
+  it.each([networkError, unknownKindError, rpcSchemaMismatchError])(
     "holds the attempt unresolved instead of persisting a terminal verdict (%p)",
     async (error) => {
       // The classifier routes the ambiguous kinds to the unknown outcome,
       // but the action is public: a direct caller passing a network/unknown
       // AppError must never have it persisted as a DEFINITE terminal verdict
-      // (F-03's harm, live). Fail safe: unresolved + locked.
+      // (F-03's harm, live). FR-1: RPC_SCHEMA_MISMATCH is the THIRD
+      // ambiguous shape (the server answered but the payload did not
+      // validate — rollback NOT proven), so it joins the refusal set.
       const store = await preparedStore({ submits: [] });
 
       await store.useStore.getState().resolveDefiniteFailure(error);

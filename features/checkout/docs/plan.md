@@ -543,7 +543,9 @@ Set the status at the top to `READY` only when every line here is true.
 Appended by the Round-5 recovery session (PATH B: the previous local
 remediation was lost with its sandbox and was rebuilt). These decisions govern
 the code as it now stands; they extend — and where they conflict, supersede —
-the original design decisions above.
+the original design decisions above. (The session's working notes numbered the
+remediation design D-R1..D-R16; they are consolidated here into D-R1..D-R9 —
+same decisions, grouped by seam; nothing was dropped.)
 
 ## D-R1 — Persisted record statuses
 

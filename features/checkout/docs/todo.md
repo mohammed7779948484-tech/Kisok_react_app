@@ -418,8 +418,8 @@ R5-T04 `95e7071`, R5-T05 `af4fe8f`.
 
 - [x] R5-T01..R5-T05 task gates PASS, each with fresh implementer + reviewer
 - [x] All eight findings dispositioned (F-01..F-08 CLOSED; evidence in worklog)
-- [ ] Full deterministic verification on the final HEAD (pnpm verify, web export, doctor)
-- [ ] Live browser journey on the hosted TEST project
+- [x] Full deterministic verification on the final HEAD (pnpm verify exit 0 — typecheck/lint/format/69 suites/953 tests/docs/commits/e2e-appid/ci-scripts/db:types/generator-smoke; export:web exit 0; doctor 18/18)
+- [x] Live browser journey on the hosted TEST project (worklog Round-5 live section: 4 real orders, natural stock conflict, ambiguous-network retention, stale routes, three sizes, zero console errors)
 - [ ] Fresh full-scope code review: 0 blocking / 0 major
 - [ ] Fresh quality audit
 - [ ] Pushed to origin/feature/checkout; PR #13 HEAD == local HEAD; CI green on that exact SHA

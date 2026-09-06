@@ -769,8 +769,15 @@ export function createAttemptStore(
         // Both the discard AND the terminal write failed: do NOT present a
         // safe definite state (F-06: fail closed). Keep the unresolved
         // record, phase unknown, cart locked — a restart replays the SAME
-        // id, which the server deduplicates.
-        reportWriteFailure(write.error.message);
+        // id, which the server deduplicates. `persistence` is deliberately
+        // untouched (FR-2): memory and disk both still hold the SAME
+        // unresolved record — memory is not ahead of disk, so "memoryOnly"
+        // would be dishonest copy on the review screen, and a standing
+        // "clearFailed" must not be downgraded.
+        log.error(
+          "The definite conflict verdict could not be made durable; keeping the attempt unresolved",
+          { key: STORAGE_KEY, reason: write.error.message },
+        );
         set({ phase: "unknown", conflict: null, failure: null });
       }
     };
@@ -793,14 +800,23 @@ export function createAttemptStore(
         return;
       }
 
-      if (error.kind === "network" || error.kind === "unknown") {
-        // RT03-6: the classifier routes the ambiguous kinds to the unknown
-        // outcome, but this action is public — a future caller passing a
-        // network/unknown AppError directly must not have it persisted as a
-        // definite terminal verdict. Fail safe: hold the attempt unresolved.
+      const isAmbiguousError =
+        error.kind === "network" ||
+        error.kind === "unknown" ||
+        // FR-1: the third ambiguous shape the repo itself defines (D-R2): the
+        // server ANSWERED but the response payload did not validate — a
+        // malformed response does not prove the order transaction rolled
+        // back, so it must never be persisted as a definite terminal verdict.
+        (error.kind === "server" && error.code === "RPC_SCHEMA_MISMATCH");
+      if (isAmbiguousError) {
+        // RT03-6/FR-1: the classifier routes the ambiguous kinds to the
+        // unknown outcome, but this action is public — a future caller
+        // passing a network/unknown/RPC_SCHEMA_MISMATCH AppError directly
+        // must not have it persisted as a definite terminal verdict. Fail
+        // safe: hold the attempt unresolved.
         log.warn(
-          "resolveDefiniteFailure refused an ambiguous error kind; holding the attempt unresolved",
-          { kind: error.kind },
+          "resolveDefiniteFailure refused an ambiguous error; holding the attempt unresolved",
+          { kind: error.kind, code: error.code },
         );
         applyResolveUnknown();
         return;
@@ -892,8 +908,13 @@ export function createAttemptStore(
       } else {
         // Both the discard AND the terminal write failed: do NOT present a
         // safe definite state (F-06: fail closed). Keep the unresolved
-        // record, phase unknown, cart locked.
-        reportWriteFailure(write.error.message);
+        // record, phase unknown, cart locked. `persistence` deliberately
+        // untouched (FR-2 — same reasoning as the conflict branch: memory
+        // and disk hold the SAME unresolved record).
+        log.error(
+          "The definite failure verdict could not be made durable; keeping the attempt unresolved",
+          { key: STORAGE_KEY, reason: write.error.message },
+        );
         set({ phase: "unknown", conflict: null, failure: null });
       }
     };
@@ -1313,6 +1334,18 @@ export function createAttemptStore(
      * `recover()` to find out.
      */
     const applyClearForSignOut = async (): Promise<StorageWriteResult> => {
+      // FR-4 (final-review finding, ACCEPTED with trace): the guard
+      // snapshots memory at approval time, so a prepareAttempt enqueued
+      // between the guard's approval and this wipe's execution would have
+      // its freshly minted identity destroyed. Traced UNREACHABLE in the
+      // delivered app: sign-out is reachable only from OUTSIDE the customer
+      // group (unmounting the review screen — its Confirm cannot fire during
+      // teardown), and any prepare enqueued BEFORE the guard runs flips
+      // phase "submitting" synchronously, which the guard refuses. The wipe
+      // stays deliberately UNGATED here (the guard owns legality — its
+      // contract is pinned by the R2-01 suites); a belt-and-braces
+      // execution-time re-check was prototyped and reverted because it
+      // broke the documented ungated-wipe contract those suites pin.
       const removed = await runSerialized(() => backend.remove(STORAGE_KEY));
       set({
         record: null,

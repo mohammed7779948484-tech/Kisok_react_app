@@ -162,3 +162,33 @@ Pending — see todo.md's Round 5 gate checklist for the remaining items
 (full-scope fresh review, quality audit, browser journey, push + CI on the
 exact final HEAD). The Round-4 "final review result" above is superseded by
 this round and is retained as history only.
+
+## Round 5 FINAL full-scope review (fresh reviewer, post-implementation)
+
+A completely fresh READ-ONLY reviewer attacked the cumulative diff
+(`git diff 055e674..HEAD`) against the full 27-item axis list (duplicate-order
+paths, id lifecycle, fingerprint lifecycle, actual Supabase shapes verified
+against the installed postgrest-js source, network ambiguity, RPC schema
+mismatch, K1003, corrupt state, foreign-owner shapes, pre-recovery sign-out,
+terminal persistence, remove failure/restart/auto-replay, cart locking,
+success-before-clear, failed clear, Next Customer, sign-out, shared-kiosk
+privacy, raw table access, RLS, server cart, cross-feature seams, core/errors
+collateral, test realism, route/back, accessibility, runtime evidence).
+Verification re-run: 69 suites / 952 tests, typecheck, lint, format, docs,
+commits, e2e-appid, ci-scripts, generator smoke — all green.
+
+Findings and dispositions:
+
+| ID   | Severity                    | Finding                                                                                                                                                                                                                                        | Disposition                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-1 | major (defensive boundary)  | resolveDefiniteFailure's action-boundary guard refused network/unknown but NOT the third ambiguous shape (server + RPC_SCHEMA_MISMATCH) — a direct public-action call could persist a definite terminal verdict for a possibly-committed order | fixed — the guard refuses all three ambiguous shapes; the RT03-6 test row set extended with the RPC_SCHEMA_MISMATCH error                                                                                                                                                                                                                                                                            |
+| FR-2 | minor                       | the double-storage-failure branches set persistence "memoryOnly" though memory and disk hold the SAME unresolved record                                                                                                                        | fixed — persistence deliberately untouched (RT03-7 reasoning), honest log instead                                                                                                                                                                                                                                                                                                                    |
+| FR-3 | minor                       | plan.md documented D-R1..D-R9 vs the session's D-R1..D-R16 notes; todo.md's live-journey box unchecked despite recorded evidence                                                                                                               | fixed — consolidation note added; checklist checked with the evidence summary                                                                                                                                                                                                                                                                                                                        |
+| FR-4 | minor (theoretical, latent) | the sign-out wipe's legality rests entirely on the guard's memory snapshot; a prepare enqueued between approval and execution would be wiped                                                                                                   | accepted with trace — UNREACHABLE in the delivered app (sign-out exists only outside the customer group, unmounting the review screen; any pre-guard prepare flips "submitting" synchronously, which the guard refuses). A belt-and-braces execution-time re-check was implemented and REVERTED: it broke the documented ungated-wipe contract the R2-01 suites pin. Documented in-code at the wipe. |
+
+Final review verdict: **0 blocking, 0 unresolved major** (FR-1 fixed and
+re-verified — full suite 69/953 green after the fix), 3 minors dispositioned
+above (2 fixed, 1 accepted with trace). All 27 axes answered clean.
+
+Post-review re-verification: full `pnpm test` 69 suites / 953 tests, typecheck,
+lint green at the final remediation commit.
