@@ -1567,12 +1567,23 @@ at round start: 69 suites / 864 tests green at 055e674.
   surfaces → condition restructured + post-episode held pinning test; RT05-2
   third-reason copy test. GREEN: 69/952. Commit `af4fe8f`.
 
-## Round 5 gate evidence (in progress)
+## Round 5 gate evidence
 
-- 69 suites / 952 tests, typecheck/lint/format green at `af4fe8f`.
+- Full deterministic verification on the FINAL HEAD `ada4ddf` (re-run after
+  the final-review remediation, 2026-09-06): `pnpm verify` **exit 0** —
+  typecheck, lint, format:check, test:ci (69 suites / 954 tests), check:docs
+  (78 files), check:commits, check:e2e-appid, check:ci-scripts, db:verify
+  (db:types vs generated — SQLite-free type check), generator smoke. Also
+  `pnpm export:web` **exit 0** (dist exported, all routes) and Expo Doctor
+  **18/18 checks passed**.
+- Earlier full-verification run at af4fe8f (pre-final-review): same result
+  (69/952 at that head).
 - F-01..F-08 all CLOSED with fresh-reviewer evidence per task.
-- Pending: full `pnpm verify`, web export, Expo Doctor, live hosted-TEST
-  browser journey, fresh full-scope review, fresh quality audit, push + CI.
+- Fresh final full-scope review: 0 blocking, 0 unresolved major (FR-1 fixed +
+  re-reviewed CLEAN by a second fresh reviewer; FR-2/FR-3 fixed; FR-4
+  accepted with the in-code unreachability trace).
+- Remaining: fresh quality audit, push to origin/feature/checkout + CI on the
+  exact final HEAD.
 
 ## Round 5 gate evidence — LIVE hosted-TEST browser journey
 
