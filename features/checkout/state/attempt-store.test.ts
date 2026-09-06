@@ -113,6 +113,36 @@ const serverError = new AppError({
 
 const unknownKindError = new AppError({ kind: "unknown", userMessage: "Something went wrong." });
 
+/**
+ * F-03: the exact shape `callRpc` throws when the server ANSWERED but the
+ * response payload did not validate against the RPC schema.
+ */
+const rpcSchemaMismatchError = new AppError({
+  kind: "server",
+  code: "RPC_SCHEMA_MISMATCH",
+  userMessage: "Something went wrong on our side. Please try again.",
+});
+
+/**
+ * A K1006-mapped server failure — kind "server" WITHOUT the
+ * RPC_SCHEMA_MISMATCH code: the server's own honest "could not complete the
+ * write" answer, a definite no-order verdict.
+ */
+const k1006ServerError = new AppError({
+  kind: "server",
+  code: "K1006",
+  userMessage: "Something went wrong on our side. Please try again.",
+});
+
+/**
+ * F-04: the K1003 idempotency conflict — the server PROVED an order already
+ * exists for this client_request_id under a different actor or fingerprint.
+ */
+const k1003Error = new AppError({
+  kind: "idempotency-conflict",
+  userMessage: "This order was already submitted with different items.",
+});
+
 const CLEAR_OK: StorageWriteResult = { status: "persisted" };
 const CLEAR_REJECTED: StorageWriteResult = {
   status: "rejected",
@@ -184,6 +214,9 @@ function createFakeDeps(options?: {
       clear: clearCount,
       hydrate: hydrateCount,
     }),
+    // F-04: how many fresh idempotency identities were minted — a refusal
+    // must never mint (no fresh UUID means no fresh possible second order).
+    mints: () => counter,
     submitCalls: () => [...submitCalls],
     hydratedOwners: () => [...hydratedOwners],
   };
@@ -255,6 +288,27 @@ function flakyWriteBackend() {
     return baseSetItem(key, value);
   };
   return { raw, failWrites: () => (failing = true) };
+}
+
+/**
+ * A backend whose removes AND writes start failing once `startFailing()` is
+ * called — the F-06 double-failure window: the attempt record's discard
+ * fails, and the terminal write that must replace it fails too.
+ */
+function flakyRemoveAndWriteBackend() {
+  const raw = createMemoryStore();
+  const baseSetItem = raw.setItem;
+  const baseRemoveItem = raw.removeItem;
+  let failing = false;
+  raw.setItem = async (key: string, value: string) => {
+    if (failing) throw new Error("disk full");
+    return baseSetItem(key, value);
+  };
+  raw.removeItem = async (key: string) => {
+    if (failing) throw new Error("remove rejected");
+    return baseRemoveItem(key);
+  };
+  return { raw, startFailing: () => (failing = true) };
 }
 
 /**
@@ -664,6 +718,9 @@ describe("resolveSuccess — capture, durably confirm, THEN clear (D4, AC-07/AC-
     expect(store.useStore.getState().phase).toBe("confirmed");
     expect(requireConfirmedRecord(store.useStore).cleanup.cartClear).toBe("failed");
     expect(readPersistedRecord(store.raw)).toEqual(confirmedRecord("failed"));
+    // F-07: the cart stays LOCKED — the already-submitted cart must not become
+    // editable while its durable clear is unproven.
+    expect(store.counts().unlock).toBe(0);
     // The reset gate must refuse until cleanup is proven safe.
     const reset = await store.useStore.getState().resetForNextCustomer();
     expect(reset.status).toBe("rejected");
@@ -725,6 +782,57 @@ describe("resolveSuccess — capture, durably confirm, THEN clear (D4, AC-07/AC-
   });
 });
 
+describe("resolveSuccess — F-07: the cart unlocks only when the clear is proven done", () => {
+  it("keeps the cart LOCKED when the durable cart clear fails after a confirmed order", async () => {
+    // F-07: the OLD code called unlockCart() unconditionally at the end of
+    // resolveSuccess — so a confirmed order whose cart clear FAILED left the
+    // already-submitted cart editable again (Quick Cart rows and full-cart
+    // edits). Editing a submitted cart invites a second submission. The cart
+    // must stay PROTECTED until the retried clear is proven done.
+    const store = await preparedStore({ clearResults: [CLEAR_REJECTED] });
+
+    await store.useStore.getState().resolveSuccess({
+      orderId: SUCCESS_RESPONSE.order_id,
+      displayNumber: SUCCESS_RESPONSE.display_number,
+      createdAt: SUCCESS_RESPONSE.created_at,
+    });
+
+    expect(store.useStore.getState().phase).toBe("confirmed");
+    expect(requireConfirmedRecord(store.useStore).cleanup.cartClear).toBe("failed");
+    expect(store.counts().unlock).toBe(0);
+  });
+
+  it("unlocks when a retried cleanup proves the clear done", async () => {
+    // The recovery path out of the F-07 hold: retryCleanup unlocks on
+    // success (its existing design) — the protection is lifted only when
+    // the durable clear is proven.
+    const store = await preparedStore({ clearResults: [CLEAR_REJECTED, CLEAR_OK] });
+
+    await store.useStore.getState().resolveSuccess({
+      orderId: SUCCESS_RESPONSE.order_id,
+      displayNumber: SUCCESS_RESPONSE.display_number,
+      createdAt: SUCCESS_RESPONSE.created_at,
+    });
+    await store.useStore.getState().retryCleanup();
+
+    expect(requireConfirmedRecord(store.useStore).cleanup.cartClear).toBe("done");
+    expect(store.counts().unlock).toBe(1);
+  });
+
+  it("unlocks when the clear succeeds on the first try (existing behavior pinned)", async () => {
+    const store = await preparedStore({ clearResults: [CLEAR_OK] });
+
+    await store.useStore.getState().resolveSuccess({
+      orderId: SUCCESS_RESPONSE.order_id,
+      displayNumber: SUCCESS_RESPONSE.display_number,
+      createdAt: SUCCESS_RESPONSE.created_at,
+    });
+
+    expect(requireConfirmedRecord(store.useStore).cleanup.cartClear).toBe("done");
+    expect(store.counts().unlock).toBe(1);
+  });
+});
+
 describe("resolveStockConflict — a definite no-order outcome (AC-08)", () => {
   it("discards the record, preserves the cart, and unlocks for editing", async () => {
     const store = await preparedStore();
@@ -740,25 +848,146 @@ describe("resolveStockConflict — a definite no-order outcome (AC-08)", () => {
     expect(store.counts().unlock).toBe(1);
   });
 
-  it("reports clearFailed — never memoryOnly — when the discard cannot remove the key (F-06-05)", async () => {
-    // removeItem fails: there is no way left to prove the attempt left the
-    // disk. The OUTCOME is still definite (the server answered: no order),
-    // so the machine resolves to stock-conflict with the conflict payload —
-    // but the honesty is clearFailed, and the stale unresolved record stays
-    // on disk (safe: a later replay re-sends the same id, which the server
-    // deduplicates).
+  it("persists a TERMINAL record when the discard cannot remove the key, then unlocks (F-06)", async () => {
+    // F-06 contract change: the OLD behavior left memory saying "definite"
+    // (record null, cart unlocked) while DISK still held status "unresolved"
+    // — a restart then auto-replayed it through the recovery gate and
+    // created an order WITHOUT fresh confirmation. The discard failing no
+    // longer ends the story: the definite no-order verdict is PERSISTED as a
+    // terminal record BEFORE the machine presents it, so a restart restores
+    // the verdict instead of replaying the submission.
     const store = await preparedStore({ raw: createMemoryStore({ failOn: "removeItem" }) });
 
     await store.useStore.getState().resolveStockConflict(CONFLICTS);
 
     expect(store.useStore.getState().phase).toBe("stock-conflict");
     expect(store.useStore.getState().conflict).toEqual(CONFLICTS);
-    expect(store.useStore.getState().persistence).toBe("clearFailed");
-    // The in-memory machine state is the definite outcome; the durable key
-    // could not be removed and is honestly reported as still there.
-    expect(store.useStore.getState().record).toBeNull();
-    expect(readPersistedRecord(store.raw).status).toBe("unresolved");
+    // The terminal record replaces the unremovable unresolved record on disk.
+    const durable = readPersistedRecord(store.raw);
+    expect(durable.status).toBe("terminal");
+    if (durable.status !== "terminal") throw new Error("narrowing guard for outcome");
+    expect(durable.outcome).toEqual({ kind: "stock-conflict", conflicts: CONFLICTS });
+    expect(store.useStore.getState().record?.status).toBe("terminal");
+    expect(store.useStore.getState().persistence).toBe("persisted");
+    // The no-order verdict is now proven durably — editing is safe.
     expect(store.counts().unlock).toBe(1);
+  });
+});
+
+describe("resolveStockConflict / resolveDefiniteFailure — F-06: terminal persistence on discard failure", () => {
+  it("keeps the unresolved record and presents unknown, cart locked, when BOTH the discard and the terminal write fail", async () => {
+    // The double-failure window: fail closed. Do NOT present a safe definite
+    // state (the verdict could not be made durable — a restart would replay
+    // the unresolved record as though the conflict never happened). Keep the
+    // record, phase unknown, cart locked, honesty clearFailed (never
+    // memoryOnly: the discard failure outranks the write failure).
+    const flaky = flakyRemoveAndWriteBackend();
+    const store = createStore({ raw: flaky.raw });
+    await store.useStore.getState().recover(OWNER_A);
+    await store.useStore
+      .getState()
+      .prepareAttempt({ ownerId: OWNER_A, lines: LINES, normalized: NORMALIZED });
+    flaky.startFailing();
+
+    await store.useStore.getState().resolveStockConflict(CONFLICTS);
+
+    expect(readPersistedRecord(store.raw).status).toBe("unresolved");
+    expect(store.useStore.getState().record?.status).toBe("unresolved");
+    expect(store.useStore.getState().phase).toBe("unknown");
+    expect(store.useStore.getState().conflict).toBeNull();
+    expect(store.useStore.getState().failure).toBeNull();
+    expect(store.useStore.getState().persistence).toBe("clearFailed");
+    expect(store.counts().unlock).toBe(0);
+  });
+
+  it("restart from a TERMINAL conflict record: recover reports terminal, restores the conflict, and NEVER submits", async () => {
+    // THE F-06 regression: the old machine's restart auto-replayed the stale
+    // unresolved record through the recovery gate → create_order fired
+    // WITHOUT fresh confirmation. The terminal record breaks that: the
+    // restart restores the verdict itself.
+    const first = await preparedStore({ raw: createMemoryStore({ failOn: "removeItem" }) });
+    await first.useStore.getState().resolveStockConflict(CONFLICTS);
+
+    const second = createStore({ raw: first.raw, submits: [{ response: SUCCESS_RESPONSE }] });
+    const outcome = await second.useStore.getState().recover(OWNER_A);
+
+    expect(outcome).toBe("terminal");
+    expect(second.useStore.getState().phase).toBe("stock-conflict");
+    expect(second.useStore.getState().conflict).toEqual(CONFLICTS);
+    expect(second.useStore.getState().failure).toBeNull();
+    expect(second.useStore.getState().record?.status).toBe("terminal");
+    // ZERO submit calls — the auto-replay must not fire.
+    expect(second.submitCalls()).toEqual([]);
+    // The conflict flow's design: the customer returns to the (preserved)
+    // cart and adjusts — no lock is taken.
+    expect(second.counts().lock).toBe(0);
+  });
+
+  it("definite failure: persists a TERMINAL record when the discard fails, then unlocks", async () => {
+    const store = await preparedStore({ raw: createMemoryStore({ failOn: "removeItem" }) });
+
+    await store.useStore.getState().resolveDefiniteFailure(serverError);
+
+    const durable = readPersistedRecord(store.raw);
+    expect(durable.status).toBe("terminal");
+    if (durable.status !== "terminal") throw new Error("narrowing guard for outcome");
+    expect(durable.outcome).toEqual({
+      kind: "definite-failure",
+      failure: {
+        kind: "server",
+        userMessage: "Something went wrong on our side. Please try again.",
+        retryable: true,
+      },
+    });
+    expect(store.useStore.getState().record?.status).toBe("terminal");
+    expect(store.useStore.getState().phase).toBe("failed");
+    expect(store.useStore.getState().failure).toEqual({
+      kind: "server",
+      userMessage: "Something went wrong on our side. Please try again.",
+      retryable: true,
+    });
+    expect(store.useStore.getState().persistence).toBe("persisted");
+    // The no-order verdict is proven durably — editing is safe.
+    expect(store.counts().unlock).toBe(1);
+  });
+
+  it("definite failure: keeps the unresolved record and presents unknown, locked, when BOTH writes fail", async () => {
+    const flaky = flakyRemoveAndWriteBackend();
+    const store = createStore({ raw: flaky.raw });
+    await store.useStore.getState().recover(OWNER_A);
+    await store.useStore
+      .getState()
+      .prepareAttempt({ ownerId: OWNER_A, lines: LINES, normalized: NORMALIZED });
+    flaky.startFailing();
+
+    await store.useStore.getState().resolveDefiniteFailure(serverError);
+
+    expect(readPersistedRecord(store.raw).status).toBe("unresolved");
+    expect(store.useStore.getState().record?.status).toBe("unresolved");
+    expect(store.useStore.getState().phase).toBe("unknown");
+    expect(store.useStore.getState().failure).toBeNull();
+    expect(store.useStore.getState().persistence).toBe("clearFailed");
+    expect(store.counts().unlock).toBe(0);
+  });
+
+  it("restart from a TERMINAL failure record: recover reports terminal, restores the failure, and NEVER submits", async () => {
+    const first = await preparedStore({ raw: createMemoryStore({ failOn: "removeItem" }) });
+    await first.useStore.getState().resolveDefiniteFailure(serverError);
+
+    const second = createStore({ raw: first.raw, submits: [{ response: SUCCESS_RESPONSE }] });
+    const outcome = await second.useStore.getState().recover(OWNER_A);
+
+    expect(outcome).toBe("terminal");
+    expect(second.useStore.getState().phase).toBe("failed");
+    expect(second.useStore.getState().failure).toEqual({
+      kind: "server",
+      userMessage: "Something went wrong on our side. Please try again.",
+      retryable: true,
+    });
+    expect(second.useStore.getState().conflict).toBeNull();
+    expect(second.useStore.getState().record?.status).toBe("terminal");
+    expect(second.submitCalls()).toEqual([]);
+    expect(second.counts().lock).toBe(0);
   });
 });
 
@@ -778,6 +1007,124 @@ describe("resolveDefiniteFailure — a definite server-answered failure (AC-10)"
     });
     expect(store.counts().clear).toBe(0);
     expect(store.counts().unlock).toBe(1);
+  });
+});
+
+describe("resolveDefiniteFailure — K1003 fails CLOSED into a held record (F-04)", () => {
+  /** A store whose replay resolved K1003 — the held state the finding demands. */
+  async function heldStore(options?: { raw?: RawStore }) {
+    const store = await preparedStore({ raw: options?.raw, submits: [{ error: k1003Error }] });
+    await store.useStore.getState().replayAttempt();
+    return store;
+  }
+
+  it("persists a held record (hold reason k1003) on disk, phase held, cart NEVER unlocked", async () => {
+    // The OLD behavior treated K1003 as an ordinary definite failure: discard
+    // + unlock + phase "failed" — leaving the customer free to re-confirm and
+    // mint a FRESH client_request_id, which could create a SECOND order for
+    // a request the server just PROVED already has one. The hold is the only
+    // safe answer: identity + evidence persist, the session holds.
+    const store = await heldStore();
+
+    const durable = readPersistedRecord(store.raw);
+    expect(durable.status).toBe("held");
+    if (durable.status !== "held") throw new Error("narrowing guard for hold");
+    expect(durable.hold).toEqual({ reason: "k1003" });
+    expect(durable.clientRequestId).toBe("00000000-0000-4000-8000-000000000001");
+    expect(store.useStore.getState().record?.status).toBe("held");
+    expect(store.useStore.getState().phase).toBe("held");
+    expect(store.useStore.getState().failure).toEqual({
+      kind: "idempotency-conflict",
+      userMessage: "This order was already submitted with different items.",
+      retryable: false,
+    });
+    expect(store.useStore.getState().conflict).toBeNull();
+    expect(store.useStore.getState().persistence).toBe("persisted");
+    // The cart is evidence/context for the hold: NEVER unlocked, never cleared.
+    expect(store.counts().unlock).toBe(0);
+    expect(store.counts().clear).toBe(0);
+  });
+
+  it("keeps the record unresolved, phase unknown, and the cart locked when the held write itself fails", async () => {
+    // Fail-closed fallback: the hold could not be recorded durably. The
+    // identity is NOT discarded — disk keeps the unresolved record, so a
+    // restart auto-replays the SAME id → K1003 again → held again,
+    // deterministic and server-side. Present unknown (honest: the outcome
+    // cannot be safely recorded) and keep the cart locked.
+    const flaky = flakyWriteBackend();
+    const store = createStore({ raw: flaky.raw, submits: [{ error: k1003Error }] });
+    await store.useStore.getState().recover(OWNER_A);
+    await store.useStore
+      .getState()
+      .prepareAttempt({ ownerId: OWNER_A, lines: LINES, normalized: NORMALIZED });
+    flaky.failWrites();
+
+    await store.useStore.getState().replayAttempt();
+
+    expect(store.useStore.getState().record?.status).toBe("unresolved");
+    expect(store.useStore.getState().phase).toBe("unknown");
+    expect(readPersistedRecord(store.raw).status).toBe("unresolved");
+    expect(store.counts().unlock).toBe(0);
+  });
+
+  it("refuses a fresh prepare while a held record exists: no new identity is minted", async () => {
+    const store = await heldStore();
+    const before = store.raw.map.get(KEY);
+
+    const result = await store.useStore
+      .getState()
+      .prepareAttempt({ ownerId: OWNER_A, lines: LINES, normalized: NORMALIZED });
+
+    expect(result).toMatchObject({ ok: false, reason: "held-attempt-present" });
+    // idFactory was called exactly ONCE — for the original mint. A fresh UUID
+    // here would be a fresh possible second order.
+    expect(store.mints()).toBe(1);
+    expect(store.raw.map.get(KEY)).toBe(before);
+    expect(store.counts().lock).toBe(1); // only the original submission's lock
+  });
+
+  it("restores a held record across a restart: recover reports held, phase held, NO submit", async () => {
+    const first = await heldStore();
+
+    // A COLD START over the same durable backend.
+    const second = createStore({ raw: first.raw, submits: [{ response: SUCCESS_RESPONSE }] });
+    const outcome = await second.useStore.getState().recover(OWNER_A);
+
+    expect(outcome).toBe("held");
+    expect(second.useStore.getState().phase).toBe("held");
+    expect(second.useStore.getState().record?.status).toBe("held");
+    // The hold owns the session: the cart stays protected...
+    expect(second.counts().lock).toBe(1);
+    // ...and NO auto-replay fires — a held record must never be resubmitted.
+    expect(second.submitCalls()).toEqual([]);
+    // An EXPLICIT replay must refuse too (defensive: the gate keys off the
+    // "held" outcome, but the store is the authority).
+    await second.useStore.getState().replayAttempt();
+    expect(second.submitCalls()).toEqual([]);
+  });
+
+  it("refuses every resolver against a held record: the record is never re-resolved", async () => {
+    const store = await heldStore();
+    const before = store.raw.map.get(KEY);
+
+    await store.useStore.getState().resolveStockConflict(CONFLICTS);
+    await store.useStore.getState().resolveSuccess({
+      orderId: SUCCESS_RESPONSE.order_id,
+      displayNumber: SUCCESS_RESPONSE.display_number,
+      createdAt: SUCCESS_RESPONSE.created_at,
+    });
+    store.useStore.getState().resolveUnknown();
+    await store.useStore.getState().replayAttempt();
+    await store.useStore.getState().retryCleanup();
+
+    // Nothing moved: the held record (memory and disk) and the held phase are
+    // exactly what the K1003 resolution left, and no submit/clear fired.
+    expect(store.raw.map.get(KEY)).toBe(before);
+    expect(store.useStore.getState().record?.status).toBe("held");
+    expect(store.useStore.getState().phase).toBe("held");
+    expect(store.submitCalls()).toHaveLength(1); // only the K1003 flight itself
+    expect(store.counts().clear).toBe(0);
+    expect(store.counts().unlock).toBe(0);
   });
 });
 
@@ -835,6 +1182,43 @@ describe("classifySubmitOutcome — the D3 ambiguity boundary", () => {
     expect(classifySubmitOutcome({ error: new TypeError("raw transport error") })).toEqual({
       kind: "unknown",
     });
+  });
+
+  it("classifies kind 'server' with code RPC_SCHEMA_MISMATCH as unknown (F-03)", () => {
+    // F-03: callRpc throws this exact shape when the server ANSWERED but the
+    // response payload did not validate. A malformed response does NOT prove
+    // the create_order transaction rolled back — the order may exist. Hold
+    // the attempt ambiguous; a same-id replay resolves the truth (an
+    // idempotent success or a definite K-code).
+    expect(classifySubmitOutcome({ error: rpcSchemaMismatchError })).toEqual({ kind: "unknown" });
+  });
+
+  it("still classifies kind 'server' WITHOUT the code as definite-failure (F-03 surgical)", () => {
+    // Not every server error is ambiguous: K1006 is the server's own honest
+    // "could not complete the write" answer — a definite no-order verdict.
+    // Only the schema-mismatch code flips to unknown.
+    expect(classifySubmitOutcome({ error: k1006ServerError })).toEqual({
+      kind: "definite-failure",
+      error: k1006ServerError,
+    });
+  });
+});
+
+describe("replayAttempt — F-03: a malformed response stays ambiguous", () => {
+  it("keeps the record unresolved, the phase unknown, and the cart locked when the payload was malformed", async () => {
+    // The OLD behavior discarded the identity and unlocked the cart on a
+    // schema-mismatch error — treating "the server answered, but we could not
+    // parse the answer" as "no order exists". The order may exist: the only
+    // safe presentation is unknown, record kept, cart locked.
+    const store = await preparedStore({ submits: [{ error: rpcSchemaMismatchError }] });
+
+    await store.useStore.getState().replayAttempt();
+
+    expect(store.useStore.getState().phase).toBe("unknown");
+    expect(store.useStore.getState().record?.status).toBe("unresolved");
+    expect(readPersistedRecord(store.raw).status).toBe("unresolved");
+    expect(store.counts().unlock).toBe(0);
+    expect(store.useStore.getState().failure).toBeNull();
   });
 });
 
@@ -939,31 +1323,46 @@ describe("recover — restart recovery (AC-13, D7)", () => {
     expect(store.counts().lock).toBe(1);
   });
 
-  it("durably discards a foreign-owner record WITHOUT replaying it (D7)", async () => {
+  it("durably discards a foreign CONFIRMED record with cleanup done — the ONE safe foreign case (F-05)", async () => {
+    // F-05 contract change: a foreign record is only discarded when it is
+    // PROVEN inert — the order is confirmed AND the cart clear is done, so
+    // there is nothing left to replay and nothing left to clean. This is the
+    // old behavior's only surviving branch (D7, pinned).
     const store = createStore();
-    seedRecord(store.raw, unresolvedRecord({ ownerId: OWNER_B }));
+    seedRecord(store.raw, confirmedRecord("done", OWNER_B));
 
     const outcome = await store.useStore.getState().recover(OWNER_A);
 
     expect(outcome).toBe("discarded-foreign");
     expect(store.raw.map.has(KEY)).toBe(false);
     expect(store.useStore.getState().record).toBeNull();
+    expect(store.useStore.getState().phase).toBe("idle");
+    expect(store.useStore.getState().unsafeHold).toBeNull();
     // No path from a foreign-owner replay can be safe — submit never fired.
     expect(store.submitCalls()).toEqual([]);
     expect(store.counts().lock).toBe(0);
   });
 
-  it("durably discards a corrupt payload and reports discarded-corrupt", async () => {
+  it("holds a corrupt payload fail-closed instead of deleting it (F-05)", async () => {
+    // F-05 contract change: the OLD code deleted the corrupt record (and
+    // every future one it could not parse). Deleting evidence a session
+    // cannot interpret enables fresh mints — and if the corrupt payload held
+    // a real unresolved order, a fresh submission could duplicate it. The
+    // record is HELD: not deleted, not parsed, session fail-closed.
     const store = createStore();
     seedRecord(store.raw, { version: 1, status: "unresolved" });
+    const before = store.raw.map.get(KEY);
 
     const outcome = await store.useStore.getState().recover(OWNER_A);
 
-    expect(outcome).toBe("discarded-corrupt");
-    // A corrupt record cannot be replayed and must not trip the next restore.
-    expect(store.raw.map.has(KEY)).toBe(false);
+    expect(outcome).toBe("unsafe-recovery");
+    // Read it back RAW — the corrupt payload is still exactly there.
+    expect(store.raw.map.get(KEY)).toBe(before);
     expect(store.useStore.getState().record).toBeNull();
-    expect(store.useStore.getState().phase).toBe("idle");
+    expect(store.useStore.getState().phase).toBe("unsafe-recovery");
+    expect(store.useStore.getState().unsafeHold).toEqual({ reason: "corrupt" });
+    expect(store.useStore.getState().recordLoaded).toBe(true);
+    expect(store.submitCalls()).toEqual([]);
   });
 
   it("restores a confirmed record with unsafe cleanup locked, pending its outcome", async () => {
@@ -1033,6 +1432,156 @@ describe("recover — restart recovery (AC-13, D7)", () => {
     expect(store.counts().lock).toBe(0);
     expect(store.useStore.getState().record).toEqual(unresolvedRecord());
     expect(store.useStore.getState().recordLoaded).toBe(true);
+  });
+});
+
+describe("recover — F-05: foreign and unclean records are HELD, never deleted", () => {
+  it("holds a foreign UNRESOLVED record in memory, fail-closed, without replaying it", async () => {
+    // F-05: deleting a foreign unresolved record enabled fresh mints — the
+    // previous owner's ambiguous submission could then land a duplicate
+    // order under a NEW id. The record is kept as evidence, the session
+    // holds fail-closed, and nothing is replayed.
+    const store = createStore();
+    seedRecord(store.raw, unresolvedRecord({ ownerId: OWNER_B }));
+    const before = store.raw.map.get(KEY);
+
+    const outcome = await store.useStore.getState().recover(OWNER_A);
+
+    expect(outcome).toBe("unsafe-recovery");
+    expect(store.raw.map.get(KEY)).toBe(before); // NOT deleted
+    expect(store.useStore.getState().record).toEqual(unresolvedRecord({ ownerId: OWNER_B }));
+    expect(store.useStore.getState().recordLoaded).toBe(true);
+    expect(store.useStore.getState().phase).toBe("unsafe-recovery");
+    expect(store.useStore.getState().unsafeHold).toEqual({ reason: "foreign-unresolved" });
+    expect(store.submitCalls()).toEqual([]);
+    expect(store.counts().lock).toBe(0);
+  });
+
+  it("holds a foreign CONFIRMED record whose cleanup is not done (F-05)", async () => {
+    // Deleting a foreign confirmed record with a pending/failed clear would
+    // orphan the previous owner's UNCLEAN cart — their next session could
+    // re-submit a fresh id and duplicate THEIR order. Held instead.
+    const store = createStore();
+    seedRecord(store.raw, confirmedRecord("pending", OWNER_B));
+    const before = store.raw.map.get(KEY);
+
+    const outcome = await store.useStore.getState().recover(OWNER_A);
+
+    expect(outcome).toBe("unsafe-recovery");
+    expect(store.raw.map.get(KEY)).toBe(before); // NOT deleted
+    expect(store.useStore.getState().record?.status).toBe("confirmed");
+    expect(store.useStore.getState().phase).toBe("unsafe-recovery");
+    expect(store.useStore.getState().unsafeHold).toEqual({
+      reason: "foreign-confirmed-unsafe-cleanup",
+    });
+    expect(store.submitCalls()).toEqual([]);
+  });
+
+  it("holds a foreign HELD record and a foreign TERMINAL record (evidence-hold)", async () => {
+    // A foreign hold is still a hold, and a foreign terminal verdict is
+    // still evidence: neither is this session's to delete.
+    const held = createStore();
+    seedRecord(held.raw, {
+      ...unresolvedRecord({ ownerId: OWNER_B }),
+      status: "held",
+      hold: { reason: "k1003" },
+    });
+    const heldBefore = held.raw.map.get(KEY);
+    expect(await held.useStore.getState().recover(OWNER_A)).toBe("unsafe-recovery");
+    expect(held.raw.map.get(KEY)).toBe(heldBefore);
+    expect(held.useStore.getState().phase).toBe("unsafe-recovery");
+    expect(held.useStore.getState().unsafeHold).toEqual({ reason: "foreign-unresolved" });
+
+    const terminal = createStore();
+    seedRecord(terminal.raw, {
+      ...unresolvedRecord({ ownerId: OWNER_B }),
+      status: "terminal",
+      outcome: {
+        kind: "definite-failure",
+        failure: { kind: "server", userMessage: "x", retryable: true },
+      },
+    });
+    const terminalBefore = terminal.raw.map.get(KEY);
+    expect(await terminal.useStore.getState().recover(OWNER_A)).toBe("unsafe-recovery");
+    expect(terminal.raw.map.get(KEY)).toBe(terminalBefore);
+    expect(terminal.useStore.getState().unsafeHold).toEqual({ reason: "foreign-unresolved" });
+  });
+
+  it("is idempotent: a second recover re-classifies the unsafe hold from memory", async () => {
+    const store = createStore();
+    seedRecord(store.raw, { version: 1, status: "unresolved" });
+    await store.useStore.getState().recover(OWNER_A);
+
+    const again = await store.useStore.getState().recover(OWNER_A);
+
+    expect(again).toBe("unsafe-recovery");
+    expect(store.useStore.getState().phase).toBe("unsafe-recovery");
+    expect(store.useStore.getState().unsafeHold).toEqual({ reason: "corrupt" });
+  });
+
+  it("keeps the loaded classification without a phase mutation when a submission is in flight (F-06-03 pattern)", async () => {
+    // The preserveInFlight pattern: a submission in flight owns the phase;
+    // the unsafe-hold classification still lands (recordLoaded + unsafeHold)
+    // so the NEXT recover re-classifies it and every gated action is refused
+    // from then on.
+    const store = createStore();
+    seedRecord(store.raw, { version: 1, status: "unresolved" });
+    store.useStore.setState({ phase: "submitting" });
+
+    const outcome = await store.useStore.getState().recover(OWNER_A);
+
+    expect(outcome).toBe("unsafe-recovery");
+    expect(store.useStore.getState().phase).toBe("submitting"); // not clobbered
+    expect(store.useStore.getState().recordLoaded).toBe(true);
+    expect(store.useStore.getState().unsafeHold).toEqual({ reason: "corrupt" });
+  });
+
+  it("refuses every gated action from the unsafe-recovery hold (F-05)", async () => {
+    const store = createStore();
+    seedRecord(store.raw, { version: 1, status: "unresolved" });
+    await store.useStore.getState().recover(OWNER_A);
+
+    // A fresh submission is refused — no mint, no write, no lock.
+    const prepared = await store.useStore
+      .getState()
+      .prepareAttempt({ ownerId: OWNER_A, lines: LINES, normalized: NORMALIZED });
+    expect(prepared).toMatchObject({ ok: false, reason: "unsafe-recovery" });
+    expect(store.mints()).toBe(0);
+
+    // The local machine is not flipped into the unknown presentation.
+    store.useStore.getState().resolveUnknown();
+    expect(store.useStore.getState().phase).toBe("unsafe-recovery");
+
+    // No replay under the wrong actor, no cleanup driven from this session.
+    await store.useStore.getState().replayAttempt();
+    expect(store.submitCalls()).toEqual([]);
+    await store.useStore.getState().retryCleanup();
+    expect(store.counts().clear).toBe(0);
+
+    // And no way back to review — the hold owns the session.
+    store.useStore.getState().enterReview();
+    expect(store.useStore.getState().phase).toBe("unsafe-recovery");
+    expect(store.useStore.getState().unsafeHold).toEqual({ reason: "corrupt" });
+  });
+
+  it("foreign-unresolved hold: the record in memory is never replayed or re-resolved from this session", async () => {
+    // The foreign-unresolved variant of the refusal set: the record IS in
+    // memory (evidence), so every resolver that keys on record.status must
+    // still be blocked by the unsafe hold.
+    const store = createStore();
+    seedRecord(store.raw, unresolvedRecord({ ownerId: OWNER_B }));
+    await store.useStore.getState().recover(OWNER_A);
+
+    await store.useStore.getState().replayAttempt();
+    expect(store.submitCalls()).toEqual([]);
+    store.useStore.getState().resolveUnknown();
+    expect(store.useStore.getState().phase).toBe("unsafe-recovery");
+    await store.useStore.getState().retryCleanup();
+    expect(store.counts().clear).toBe(0);
+
+    // The evidence record is untouched, in memory and on disk.
+    expect(store.useStore.getState().record?.status).toBe("unresolved");
+    expect(store.useStore.getState().record?.ownerId).toBe(OWNER_B);
   });
 });
 

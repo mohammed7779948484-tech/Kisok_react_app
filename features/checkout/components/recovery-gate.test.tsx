@@ -499,19 +499,26 @@ describe("RecoveryGate", () => {
     expect(screen.queryByText("We're checking your last order submission")).toBeNull();
   });
 
-  it("discards a foreign-owner attempt without replay: children render, nothing submits, nothing navigates (AC-13)", async () => {
+  it("holds a foreign-owner attempt fail-closed without replay: children render, nothing submits, nothing navigates (AC-13, F-05)", async () => {
     await seedAttempt(foreignAttempt());
     mockAuthHolder.current = installMockAuth();
     await renderGate();
 
-    // No path from a foreign-owner replay can be safe (D7): the store
-    // discarded the record at recover and the gate rendered children only.
+    // No path from a foreign-owner replay can be safe (D7). F-05 contract
+    // change: a foreign UNRESOLVED record is no longer discarded — deleting
+    // it would let its owner's next session mint a fresh id and duplicate
+    // THEIR order. The store holds it fail-closed (evidence kept on disk and
+    // in memory); the gate still renders children only — the dedicated
+    // unsafe-recovery surface is R5-T05's.
     await screen.findByText(CHILDREN_TEXT);
     expect(screen.queryByText("We're checking your last order submission")).toBeNull();
     expect(mockSubmitOrder).not.toHaveBeenCalled();
     expect(mockRouterReplace).not.toHaveBeenCalled();
+    // The durable record is KEPT — byte-identical evidence, not a miss.
     const attemptKey = await storage.read(ATTEMPT_KEY, (raw) => raw);
-    expect(attemptKey.status).toBe("miss");
+    expect(attemptKey.status).toBe("hit");
+    expect(useAttemptStore.getState().phase).toBe("unsafe-recovery");
+    expect(useAttemptStore.getState().unsafeHold).toEqual({ reason: "foreign-unresolved" });
   });
 
   it("exports RecoveryGate from the feature's public index — the customer layout's import (D7)", () => {

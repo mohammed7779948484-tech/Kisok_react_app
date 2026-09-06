@@ -156,10 +156,14 @@ const ITEMS_NOT_CANONICAL_MESSAGE =
 function itemsAreCanonical(items: readonly NormalizedOrderItem[]): boolean {
   return (
     items.every((item) => item.variant_id === item.variant_id.toLowerCase()) &&
-    items.every(
-      (item, index) =>
-        index === 0 || items[index - 1].variant_id.toLowerCase() < item.variant_id.toLowerCase(),
-    )
+    items.every((item, index) => {
+      const previous = items[index - 1];
+      return (
+        index === 0 ||
+        (previous !== undefined &&
+          previous.variant_id.toLowerCase() < item.variant_id.toLowerCase())
+      );
+    })
   );
 }
 

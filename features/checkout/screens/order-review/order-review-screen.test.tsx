@@ -918,7 +918,7 @@ describe("OrderReviewScreen", () => {
       expect(mockSubmitOrder).toHaveBeenCalledTimes(1);
     });
 
-    it("surfaces a K1003 idempotency-conflict honestly: its message renders, nothing re-submits, nothing re-mints (AC-10)", async () => {
+    it("fails CLOSED on a K1003 idempotency-conflict: the attempt is HELD, nothing re-submits, nothing re-mints (AC-10, F-04)", async () => {
       await seedDurableEnvelope([cappuccinoLine, waterLine]);
       await recoverAttemptStore();
       mockAuthHolder.current = installMockAuth();
@@ -933,15 +933,31 @@ describe("OrderReviewScreen", () => {
 
       await user.press(await screen.findByRole("button", { name: "Confirm Order" }));
 
-      // The honest message (D11): never auto-resolved by re-minting.
-      await screen.findByText("This order was already submitted with different items.");
+      // F-04 contract change: the server PROVED an order exists for this
+      // client_request_id (different actor or fingerprint) — the old
+      // definite-discard unlocked the cart and allowed a fresh mint (a
+      // possible SECOND order). The attempt now becomes a durable HELD
+      // record; the dedicated held presentation is the recovery gate's
+      // (R5-T05), so the screen-level contract is the machine's state.
+      await waitFor(() => expect(useAttemptStore.getState().phase).toBe("held"));
+      const state = useAttemptStore.getState();
+      expect(state.record?.status).toBe("held");
+      expect(state.failure).toEqual({
+        kind: "idempotency-conflict",
+        userMessage: "This order was already submitted with different items.",
+        retryable: false,
+      });
+      // The honest message (D11): never auto-resolved by re-minting — the
+      // held record keeps the exact identity the ONE submit used.
+      expect(state.record?.clientRequestId).toBe(
+        mockSubmitOrder.mock.calls[0]?.[0]?.clientRequestId,
+      );
+      // The hold owns the session: the cart stays LOCKED, and no retry is
+      // offered (a K1003 never resolves by submitting again).
+      expect(getCartSnapshot().locked).toBe(true);
       expect(screen.queryByRole("button", { name: "Try Again" })).toBeNull();
       // The ONE api call is all that ever happened.
       expect(mockSubmitOrder).toHaveBeenCalledTimes(1);
-      // The machine treated it as definite: the attempt is discarded and the
-      // cart unlocked — no unresolved hold, no automatic replay.
-      expect(useAttemptStore.getState().record).toBeNull();
-      expect(getCartSnapshot().locked).toBe(false);
     });
 
     it("surfaces a failed pre-submit durable write as a local warning — the network call never happens (AC-06's screen half)", async () => {

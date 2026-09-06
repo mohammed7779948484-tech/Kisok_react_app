@@ -25,6 +25,19 @@ import { submitOrder, type SubmitOrderInput } from "../api/submit-order";
 
 const log = createLogger("checkout.attempt");
 
+/**
+ * The TERMINAL record's failure kind: the DEFINITE subset of AppErrorKind —
+ * exactly the seven kinds the attempt schema's terminal branch accepts
+ * (`checkout-attempt.schema.ts` failureKindSchema; ambiguous kinds are an
+ * oxymoron there, RT02-1). By construction only definite kinds reach the
+ * terminal write: the classifier routes `network`/`unknown` errors to the
+ * unknown outcome, and the K1003 branch returns before it. The cast
+ * documents that invariant; the schema is the runtime backstop if it is
+ * ever violated (a violating record would fail the next restore loudly and
+ * land in the fail-closed unsafe hold).
+ */
+type TerminalFailureKind = Exclude<AppErrorKind, "network" | "unknown">;
+
 // Plan decision D1: ONE durable attempt record under ONE key. At most one
 // attempt is ever on disk, and the payload itself (T03's schema) carries the
 // owner — the restore can always tell whose attempt it is.
@@ -54,7 +67,7 @@ function asError(value: unknown): Error {
 export type PersistenceStatus = "unknown" | "persisted" | "memoryOnly" | "clearFailed";
 
 /**
- * The six phases of the checkout state machine (plan D8 — the store is the
+ * The phases of the checkout state machine (plan D8 — the store is the
  * single phase authority; screens and the recovery gate render THIS machine):
  *
  * - `idle` — review; nothing in flight this session.
@@ -68,6 +81,14 @@ export type PersistenceStatus = "unknown" | "persisted" | "memoryOnly" | "clearF
  *   (AC-10).
  * - `confirmed` — a server-confirmed order (AC-07/AC-11); the record carries
  *   the success payload and the cleanup tracker.
+ * - `held` — the K1003 fail-closed hold (F-04): the server proved an order
+ *   already exists for this client_request_id under a different actor or
+ *   fingerprint. The record is durable evidence (status "held"), the cart
+ *   stays locked, and nothing may be re-resolved or re-minted from under it.
+ * - `unsafe-recovery` — the F-05 fail-closed load: a corrupt, foreign, or
+ *   foreign-unclean record was found on disk and is being HELD, not deleted;
+ *   `state.unsafeHold` carries the reason. No submission, replay, or cleanup
+ *   may run from under this phase.
  */
 export type AttemptPhase =
   | "idle"
@@ -75,7 +96,9 @@ export type AttemptPhase =
   | "stock-conflict"
   | "unknown"
   | "failed"
-  | "confirmed";
+  | "confirmed"
+  | "held"
+  | "unsafe-recovery";
 
 /** One stock-conflict entry, exactly the wire shape `create_order` returns. */
 export type StockConflictItem = Extract<
@@ -111,6 +134,12 @@ export type AttemptFailure = {
  *   in flight; an identity is never silently rebound.
  * - `"confirmed-attempt-present"` — the success flow owns the session until
  *   the Next Customer reset.
+ * - `"held-attempt-present"` (F-04) — a K1003 hold owns the session: the
+ *   server proved an order exists for the persisted identity, so minting a
+ *   fresh one here could create a SECOND order. Never resolved client-side.
+ * - `"unsafe-recovery"` (F-05) — a fail-closed recovery hold owns the
+ *   session (corrupt, foreign, or foreign-unclean durable record): the
+ *   record is held as evidence and nothing may be submitted from under it.
  * - `"persist-failed"` — the pre-submit durable write was rejected; the
  *   network call never happens (AC-06), and `error` carries the honest
  *   AppError.
@@ -123,7 +152,9 @@ export type PrepareResult =
         | "persist-failed"
         | "recovery-pending"
         | "unresolved-attempt-exists"
-        | "confirmed-attempt-present";
+        | "confirmed-attempt-present"
+        | "held-attempt-present"
+        | "unsafe-recovery";
       error?: AppError;
     };
 
@@ -147,8 +178,27 @@ export type RecoveryOutcome =
   | "unresolved"
   | "confirmed-cleanup-pending"
   | "confirmed-cleanup-done"
-  | "discarded-foreign"
-  | "discarded-corrupt";
+  | "held"
+  | "terminal"
+  | "unsafe-recovery"
+  | "discarded-foreign";
+
+/**
+ * Why a session is held in the `unsafe-recovery` phase (F-05) — plain data
+ * in state, never an Error instance (the AttemptFailure precedent). The
+ * durable record that caused the hold is KEPT (evidence), never deleted.
+ */
+export type UnsafeHoldReason =
+  /** The durable payload failed the attempt schema — unreadable evidence. */
+  | "corrupt"
+  /**
+   * A foreign owner's unresolved record (or foreign held/terminal verdict —
+   * a foreign hold is still a hold): an in-flight identity or durable
+   * evidence that belongs to another profile.
+   */
+  | "foreign-unresolved"
+  /** A foreign confirmed record whose cart clear is not proven done. */
+  | "foreign-confirmed-unsafe-cleanup";
 
 /**
  * The classified result of ONE submit attempt — the D3 ambiguity boundary in
@@ -169,6 +219,12 @@ export type SubmitOutcome =
  * - an `AppError` is DEFINITE (the server answered with an exception) for
  *   every kind EXCEPT `network` and `unknown`, which are AMBIGUOUS — the
  *   request never provably reached (or failed to reach) the server.
+ *   One more AppError shape is ambiguous (F-03): kind `server` with code
+ *   `RPC_SCHEMA_MISMATCH` — the server answered, but the RESPONSE payload
+ *   failed validation; a malformed response does not prove the
+ *   `create_order` transaction rolled back, so the order may exist. Every
+ *   OTHER `server` error (K1006 and the like) is the server's own honest
+ *   no-order verdict and stays definite.
  * - a non-AppError error is classified `unknown` — fail-safe ambiguous. The
  *   `api/` contract (submit-order.ts) promises every rejection is an AppError;
  *   this classifier deliberately does not trust that promise, because the
@@ -192,6 +248,15 @@ export function classifySubmitOutcome(result: {
   }
   if (isAppError(result.error)) {
     if (result.error.kind === "network" || result.error.kind === "unknown") {
+      return { kind: "unknown" };
+    }
+    if (result.error.kind === "server" && result.error.code === "RPC_SCHEMA_MISMATCH") {
+      // F-03: the server ANSWERED but the payload did not validate. A
+      // malformed response does not prove the order transaction rolled
+      // back — the order may exist. Hold ambiguous; the same-id replay
+      // resolves the truth (an idempotent success or a definite K-code).
+      // Strict runtime validation is unchanged: callRpc still THROWS on a
+      // malformed payload — only the safety classification changes.
       return { kind: "unknown" };
     }
     return { kind: "definite-failure", error: result.error };
@@ -259,6 +324,15 @@ export type AttemptState = {
   conflict: StockConflictItem[] | null;
   /** Ephemeral failure payload for the UI (AC-10), plain data. */
   failure: AttemptFailure | null;
+  /**
+   * F-05: the in-memory fail-closed hold marker — set when `recover` found
+   * a corrupt, foreign, or foreign-unclean durable record. Non-null means
+   * the session is HELD: no prepare, no replay, no cleanup, no review
+   * re-entry (phase `"unsafe-recovery"`). Cleared only by the sign-out wipe
+   * and by the one proven-inert foreign discard — never by a submission,
+   * because none can start from under it.
+   */
+  unsafeHold: { reason: UnsafeHoldReason } | null;
   prepareAttempt: (input: PrepareInput) => Promise<PrepareResult>;
   resolveSuccess: (response: OrderSuccessCapture) => Promise<void>;
   resolveStockConflict: (conflicts: StockConflictItem[]) => Promise<void>;
@@ -392,6 +466,27 @@ export function createAttemptStore(
 
       const { record } = get();
 
+      if (get().phase === "unsafe-recovery" || get().unsafeHold !== null) {
+        // F-05: a fail-closed recovery hold owns the session (a corrupt,
+        // foreign, or foreign-unclean record is being HELD on disk). No
+        // submission may start from under it — a mint here would overwrite
+        // evidence of a possibly-live foreign identity and could create a
+        // duplicate order for its real owner.
+        log.warn("prepareAttempt refused: an unsafe recovery hold owns this session");
+        return { ok: false, reason: "unsafe-recovery" };
+      }
+
+      if (record?.status === "held") {
+        // F-04: a K1003 hold owns the session. The server PROVED an order
+        // exists for the persisted identity (under a different actor or
+        // fingerprint); minting a fresh client_request_id here could create a
+        // SECOND order for the same logical request. The hold is durable
+        // evidence and is never resolved client-side — only the sign-out
+        // wipe (guarded elsewhere) clears it.
+        log.warn("prepareAttempt refused: a held attempt owns this session");
+        return { ok: false, reason: "held-attempt-present" };
+      }
+
       if (record?.status === "unresolved") {
         if (
           record.fingerprint === input.normalized.fingerprint &&
@@ -428,8 +523,13 @@ export function createAttemptStore(
         return { ok: false, reason: "confirmed-attempt-present" };
       }
 
-      // No record: mint the identity and PERSIST BEFORE SUBMIT (AC-06 — the
-      // safety core). The screen only gets a request to submit once this
+      // No record, or a TERMINAL record (F-06): mint the identity and PERSIST
+      // BEFORE SUBMIT (AC-06 — the safety core). A terminal record is a
+      // PROVEN no-order verdict — it deliberately falls through to the mint:
+      // a FRESH confirmation is a new logical request that legitimately
+      // mints a new identity (the terminal record is overwritten by the new
+      // unresolved one; the verdict has no recovery value left to lose).
+      // The screen only gets a request to submit once this
       // write has landed, so an ambiguous result can always be recovered by
       // replaying the durable id.
       //
@@ -495,12 +595,16 @@ export function createAttemptStore(
     // ---- resolveSuccess (D4: capture → durably confirm → clear) -------------
     const applyResolveSuccess = async (response: OrderSuccessCapture): Promise<void> => {
       const record = get().record;
-      if (!record) {
-        log.warn("resolveSuccess ignored: there is no attempt record to confirm");
-        return;
-      }
-      if (record.status === "confirmed") {
-        log.warn("resolveSuccess ignored: the attempt is already confirmed");
+      if (!record || record.status !== "unresolved") {
+        // Fail-closed enforcement: ONLY an unresolved attempt may be
+        // confirmed. A confirmed record is already the success payload (the
+        // duplicate-resolve no-op); a HELD record is durable evidence the
+        // server proved a DIFFERENT order exists for this identity (F-04) and
+        // must never be re-resolved into success; a TERMINAL record already
+        // carries its verdict (F-06); no record → nothing to confirm (the
+        // defensive R2-05 branch — fabricating a confirmed record would pin
+        // a success payload to a dead identity).
+        log.warn("resolveSuccess ignored: only an unresolved attempt can be confirmed");
         return;
       }
 
@@ -583,48 +687,164 @@ export function createAttemptStore(
       }
 
       // (d) The flow is over: the cart is empty, or the cleanup failure is
-      // surfaced by the confirmed state + tracker.
-      deps.unlockCart();
+      // surfaced by the confirmed state + tracker. F-07: unlock ONLY when
+      // the durable clear is proven done — the OLD unconditional unlock left
+      // the already-submitted cart editable again (Quick Cart rows,
+      // full-cart edits) while its clear was still unproven, inviting a
+      // second submission. The retried clear (`retryCleanup`) unlocks on
+      // success.
+      if (cartClear === "done") {
+        deps.unlockCart();
+      } else {
+        log.warn("cart stays locked after a confirmed order: the durable clear is not done");
+      }
     };
 
     // ---- definite outcomes (AC-08, AC-10, D11) --------------------------------
     const applyResolveStockConflict = async (conflicts: StockConflictItem[]): Promise<void> => {
-      if (get().record?.status === "confirmed") {
-        // A confirmed record IS the Order Success payload (D1) — a defensive
-        // late conflict resolve must never destroy it.
+      const record = get().record;
+      if (!record || record.status !== "unresolved") {
+        // Fail-closed enforcement: only an UNRESOLVED attempt can resolve to
+        // a conflict. A confirmed record IS the Order Success payload (D1) —
+        // a defensive late conflict resolve must never destroy it; a HELD
+        // record is durable evidence the server proved an order exists
+        // (F-04); a TERMINAL record already carries its verdict.
         log.error(
-          "resolveStockConflict refused: the attempt is already confirmed; its record is kept",
+          "resolveStockConflict refused: only an unresolved attempt can resolve to a conflict; its record is kept",
         );
         return;
       }
-      // A definite no-order outcome: the record is discarded (a stale
-      // unresolved record from a failed remove would replay idempotently to
-      // the same conflict — safe), the cart is NEVER cleared (AC-08), and the
-      // cart unlocks so the customer can correct it.
-      await discardRecord();
-      set({ record: null, phase: "stock-conflict", conflict: conflicts, failure: null });
-      deps.unlockCart();
+      // A definite no-order outcome: the cart is NEVER cleared (AC-08), and
+      // the cart unlocks so the customer can correct it. The discard is the
+      // FIRST step, not the whole story (F-06): if it fails, the verdict is
+      // persisted as a TERMINAL record before the machine presents it.
+      const discard = await discardRecord();
+      if (discard.status === "persisted") {
+        set({ record: null, phase: "stock-conflict", conflict: conflicts, failure: null });
+        deps.unlockCart();
+        return;
+      }
+      // discard FAILED → F-06: persist a TERMINAL record BEFORE treating the
+      // outcome as terminal. The old machine left DISK holding status
+      // "unresolved" while memory said "definite" + unlocked — a restart then
+      // auto-replayed the stale record through the recovery gate and fired
+      // create_order WITHOUT fresh confirmation. The terminal record makes
+      // the restart restore the verdict instead.
+      const terminal: CheckoutAttempt = {
+        ...record,
+        status: "terminal",
+        outcome: { kind: "stock-conflict", conflicts },
+      };
+      const write = await backend.write(STORAGE_KEY, terminal);
+      if (write.status === "persisted") {
+        set({
+          record: terminal,
+          phase: "stock-conflict",
+          conflict: conflicts,
+          failure: null,
+          persistence: "persisted",
+        });
+        deps.unlockCart(); // definite no-order proven durably — editing is safe
+      } else {
+        // Both the discard AND the terminal write failed: do NOT present a
+        // safe definite state (F-06: fail closed). Keep the unresolved
+        // record, phase unknown, cart locked — a restart replays the SAME
+        // id, which the server deduplicates.
+        reportWriteFailure(write.error.message);
+        set({ phase: "unknown", conflict: null, failure: null });
+      }
     };
 
     const applyResolveDefiniteFailure = async (error: AppError): Promise<void> => {
-      if (get().record?.status === "confirmed") {
-        log.error(
-          "resolveDefiniteFailure refused: the attempt is already confirmed; its record is kept",
-        );
+      const record = get().record;
+      if (!record || record.status !== "unresolved") {
+        // Fail-closed enforcement: a held record is never re-resolved (F-04);
+        // a confirmed record keeps its success payload; a terminal record
+        // already carries its verdict; no record → nothing to resolve.
+        log.warn("resolveDefiniteFailure ignored: no unresolved attempt to resolve");
         return;
       }
-      // Same discard semantics as a conflict: the server answered, the
-      // identity has no recovery value (D1). The failure surfaces as plain
-      // data (AC-10) — kind/userMessage/retryable — including K1003
-      // idempotency conflicts, which are definite and never re-minted (D11).
-      await discardRecord();
-      set({
-        record: null,
-        phase: "failed",
-        conflict: null,
-        failure: { kind: error.kind, userMessage: error.userMessage, retryable: error.retryable },
-      });
-      deps.unlockCart();
+
+      if (error.kind === "idempotency-conflict") {
+        // F-04 — K1003: the server PROVED an order exists for this
+        // client_request_id under a different actor or fingerprint. Fail
+        // CLOSED: persist a HELD record (identity + evidence), never discard,
+        // keep the cart locked, phase "held". The old discard-and-unlock
+        // behavior let a later fresh confirmation mint a new
+        // client_request_id — a possible SECOND order for a request the
+        // server just said already has one (D11: a K1003 is never resolved
+        // by re-minting).
+        const held: CheckoutAttempt = { ...record, status: "held", hold: { reason: "k1003" } };
+        const write = await backend.write(STORAGE_KEY, held);
+        if (write.status === "persisted") {
+          set({
+            record: held,
+            phase: "held",
+            conflict: null,
+            failure: { kind: error.kind, userMessage: error.userMessage, retryable: false },
+            persistence: "persisted",
+          });
+        } else {
+          // Fail closed: could not durably record the hold. The identity is
+          // NOT discarded (a restart auto-replays the SAME id → K1003 again
+          // → held attempt again — deterministic, server-side). Present
+          // unknown (honest: the outcome cannot be safely recorded), keep
+          // the cart locked.
+          reportWriteFailure(write.error.message);
+          set({ phase: "unknown", conflict: null, failure: null });
+        }
+        return; // NEVER unlock on the K1003 path — the cart is evidence/context.
+      }
+
+      // Non-K1003 definite failure — same discard semantics as a conflict,
+      // with F-06's terminal persistence when the discard fails. The
+      // failure surfaces as plain data (AC-10) — kind/userMessage/retryable.
+      const failurePayload: AttemptFailure = {
+        kind: error.kind,
+        userMessage: error.userMessage,
+        retryable: error.retryable,
+      };
+      const discard = await discardRecord();
+      if (discard.status === "persisted") {
+        // discard succeeded → the identity is gone; the server answered, it
+        // has no recovery value (D1).
+        set({ record: null, phase: "failed", conflict: null, failure: failurePayload });
+        deps.unlockCart();
+        return;
+      }
+      // discard FAILED → F-06: persist a TERMINAL record BEFORE treating the
+      // outcome as terminal, so a restart restores the definite verdict
+      // instead of auto-replaying an unresolved record (see the conflict
+      // resolver above for the full reasoning).
+      const terminal: CheckoutAttempt = {
+        ...record,
+        status: "terminal",
+        outcome: {
+          kind: "definite-failure",
+          failure: {
+            kind: error.kind as TerminalFailureKind,
+            userMessage: error.userMessage,
+            retryable: error.retryable,
+          },
+        },
+      };
+      const write = await backend.write(STORAGE_KEY, terminal);
+      if (write.status === "persisted") {
+        set({
+          record: terminal,
+          phase: "failed",
+          conflict: null,
+          failure: failurePayload,
+          persistence: "persisted",
+        });
+        deps.unlockCart(); // definite no-order proven durably — editing is safe
+      } else {
+        // Both the discard AND the terminal write failed: do NOT present a
+        // safe definite state (F-06: fail closed). Keep the unresolved
+        // record, phase unknown, cart locked.
+        reportWriteFailure(write.error.message);
+        set({ phase: "unknown", conflict: null, failure: null });
+      }
     };
 
     // ---- resolveUnknown (AC-09) -----------------------------------------------
@@ -633,7 +853,15 @@ export function createAttemptStore(
     // only work is the phase transition. The cart STAYS locked — editing is
     // unsafe while the outcome is unknown.
     const applyResolveUnknown = () => {
-      const { record } = get();
+      const { record, unsafeHold } = get();
+      if (unsafeHold !== null) {
+        // F-05: a foreign/corrupt record must not flip the local machine
+        // into its unknown presentation — the unsafe-recovery surface owns
+        // the hold, and "unknown" would invite a replay this session must
+        // never fire.
+        log.warn("resolveUnknown ignored: an unsafe recovery hold owns this session");
+        return;
+      }
       if (!record || record.status !== "unresolved") {
         log.warn("resolveUnknown ignored: there is no unresolved attempt to preserve");
         return;
@@ -644,6 +872,14 @@ export function createAttemptStore(
     // ---- replayAttempt (AC-09 safe retry; AC-13 recovery replay) --------------
     const applyReplay = async (): Promise<void> => {
       const record = get().record;
+      if (get().unsafeHold !== null) {
+        // F-05: a foreign unresolved record must never replay under the
+        // wrong actor (it would submit the order for the wrong profile, or
+        // trip K1003); a corrupt hold has nothing safe to replay. The
+        // unsafe-recovery surface owns the session.
+        log.debug("replayAttempt skipped: an unsafe recovery hold owns this session");
+        return;
+      }
       if (!record || record.status !== "unresolved") {
         log.debug("replayAttempt skipped: there is no unresolved attempt to replay");
         return;
@@ -687,12 +923,27 @@ export function createAttemptStore(
     // ---- recover (AC-13, D7) ----------------------------------------------------
     /** What the CURRENT in-memory record classifies as (idempotent recover). */
     const classifyLoaded = (): RecoveryOutcome => {
-      const { record } = get();
+      const { record, unsafeHold } = get();
+      // F-05: an unsafe hold outranks everything — the session stays
+      // fail-closed until the sign-out wipe (or the one proven-inert foreign
+      // discard) clears it. Checked FIRST: a foreign record is deliberately
+      // kept in memory (evidence), so the record-based branches below must
+      // never answer for it.
+      if (unsafeHold !== null) return "unsafe-recovery";
       if (!record) return "none";
       if (record.status === "unresolved") return "unresolved";
-      return record.cleanup.cartClear === "done"
-        ? "confirmed-cleanup-done"
-        : "confirmed-cleanup-pending";
+      if (record.status === "confirmed") {
+        return record.cleanup.cartClear === "done"
+          ? "confirmed-cleanup-done"
+          : "confirmed-cleanup-pending";
+      }
+      if (record.status === "held") {
+        // F-04: a held record re-classifies as held — the hold is durable
+        // session state, never re-read, re-replayed, or re-discarded.
+        return "held";
+      }
+      // record.status === "terminal" (F-06): the durable verdict.
+      return "terminal";
     };
 
     const applyRecover = async (ownerId: string): Promise<RecoveryOutcome> => {
@@ -709,14 +960,43 @@ export function createAttemptStore(
       // submission in flight owns the phase until it resolves.
       const preserveInFlight = get().phase === "submitting";
 
-      /** The post-load reset shared by the miss/corrupt/foreign branches. */
+      /** The post-load reset shared by the miss and safe-discard branches. */
       const loadEmpty = () => {
         if (preserveInFlight) {
           // Keep the in-flight phase; only mark the read complete.
-          set({ recordLoaded: true, record: null });
+          set({ recordLoaded: true, record: null, unsafeHold: null });
           return;
         }
-        set({ recordLoaded: true, record: null, phase: "idle" });
+        set({ recordLoaded: true, record: null, phase: "idle", unsafeHold: null });
+      };
+
+      /**
+       * F-05's fail-closed load: a durable record this session must NOT
+       * consume (corrupt, foreign, or foreign-unclean) is HELD, never
+       * deleted — deleting evidence enables fresh mints, and a foreign
+       * record's owner may still need it. The record is kept in memory as
+       * evidence (null when it is unparseable), `unsafeHold` carries the
+       * reason, and the phase moves to "unsafe-recovery" so no gated action
+       * can run from under it. When a submission is in flight
+       * (preserveInFlight), the loaded state lands WITHOUT the phase
+       * mutation — the submission owns the phase until it resolves, and the
+       * NEXT recover/classifyLoaded re-answers "unsafe-recovery".
+       */
+      const holdUnsafe = (
+        reason: UnsafeHoldReason,
+        evidence: CheckoutAttempt | null,
+      ): RecoveryOutcome => {
+        if (preserveInFlight) {
+          set({ recordLoaded: true, record: evidence, unsafeHold: { reason } });
+        } else {
+          set({
+            recordLoaded: true,
+            record: evidence,
+            phase: "unsafe-recovery",
+            unsafeHold: { reason },
+          });
+        }
+        return "unsafe-recovery";
       };
 
       const result = await readDurableRecord();
@@ -728,47 +1008,58 @@ export function createAttemptStore(
       }
 
       if (result.status === "rejected") {
-        // A corrupt record (schema-drifted, foreign build, or truly corrupt):
-        // log + treat as absent AND durably discard it. TRADEOFF, documented
-        // (D1/cart corrupt-payload precedent): the record may have held a real
-        // unresolved order, but an unparseable record cannot be replayed — we
-        // cannot even read its id — so keeping it would block every future
-        // restore while recovering nothing. Discarding is the only safe move;
-        // the server's own idempotency ledger still holds the truth.
-        log.warn("The persisted checkout attempt was unreadable; discarding it", {
+        // F-05: a corrupt record (schema-drifted, foreign build, or truly
+        // corrupt) is NOT deleted. The old discard reasoning ("keeping it
+        // would block every future restore while recovering nothing") was
+        // the defect: deleting evidence a session cannot interpret enables
+        // fresh mints — the record may have held a real unresolved order,
+        // and a fresh submission under a new client_request_id could
+        // duplicate it. The record is HELD fail-closed for whoever CAN read
+        // it (a newer build, store staff); this session refuses to act.
+        log.warn("The persisted checkout attempt was unreadable; holding it fail-closed", {
           key: STORAGE_KEY,
           reason: result.error.message,
         });
-        const discarded = await backend.remove(STORAGE_KEY);
-        if (discarded.status === "rejected") {
-          log.error("Failed to durably discard the corrupt attempt record", {
-            key: STORAGE_KEY,
-            reason: discarded.error.message,
-          });
-          set({ persistence: "clearFailed" });
-        }
-        loadEmpty();
-        return "discarded-corrupt";
+        return holdUnsafe("corrupt", null);
       }
 
       const record = result.value;
       if (record.ownerId !== ownerId) {
-        // Foreign owner (D7): discard WITHOUT replay — no path from a
-        // foreign-owner replay can be safe (it would create the order under
-        // the wrong actor or K1003). Log, durably discard, continue.
-        log.warn(
-          "The persisted checkout attempt belongs to a different profile; discarding it without replay",
-        );
-        const discarded = await backend.remove(STORAGE_KEY);
-        if (discarded.status === "rejected") {
-          log.error("Failed to durably discard the foreign-owner attempt record", {
-            key: STORAGE_KEY,
-            reason: discarded.error.message,
-          });
-          set({ persistence: "clearFailed" });
+        // Foreign owner (D7/F-05). EXACTLY ONE case is safe to discard: a
+        // CONFIRMED record whose cart clear is DONE — the order exists, the
+        // cart is clean, there is nothing left to replay and nothing left
+        // to clean.
+        if (record.status === "confirmed" && record.cleanup.cartClear === "done") {
+          log.warn(
+            "The persisted checkout attempt belongs to a different profile and is fully cleaned; discarding it without replay",
+          );
+          const discarded = await backend.remove(STORAGE_KEY);
+          if (discarded.status === "rejected") {
+            log.error("Failed to durably discard the inert foreign attempt record", {
+              key: STORAGE_KEY,
+              reason: discarded.error.message,
+            });
+            set({ persistence: "clearFailed" });
+          }
+          loadEmpty();
+          return "discarded-foreign";
         }
-        loadEmpty();
-        return "discarded-foreign";
+        // Every OTHER foreign record is HELD (F-05): a foreign UNRESOLVED
+        // record is a possibly-live idempotency identity — deleting it lets
+        // its owner's next session mint a fresh id and duplicate THEIR
+        // order; a foreign CONFIRMED record with a pending/failed clear is
+        // an unclean cart whose owner still needs the cleanup; a foreign
+        // held/terminal verdict is durable evidence. None of these is this
+        // session's to delete, and none may be replayed under the wrong
+        // actor.
+        log.warn(
+          "The persisted checkout attempt belongs to a different profile and is not provably inert; holding it fail-closed without replay",
+          { ownerId: record.ownerId, status: record.status },
+        );
+        return holdUnsafe(
+          record.status === "confirmed" ? "foreign-confirmed-unsafe-cleanup" : "foreign-unresolved",
+          record,
+        );
       }
 
       // This profile's own attempt: the record IS the state. It is provably
@@ -786,24 +1077,56 @@ export function createAttemptStore(
         }
         return "unresolved";
       }
+      if (record.status === "confirmed") {
+        if (!preserveInFlight) {
+          set({ phase: "confirmed" });
+        }
+        if (record.cleanup.cartClear === "done") {
+          // Safe to show the success flow straight away; the reset gate opens.
+          return "confirmed-cleanup-done";
+        }
+        // Pending or failed cleanup: the success flow must finish cleanup
+        // before the kiosk resets (AC-11/AC-13) — keep the cart locked.
+        if (!preserveInFlight) {
+          deps.lockCart();
+        }
+        return "confirmed-cleanup-pending";
+      }
+      // record.status === "held" (F-04): the hold owns the session — NO
+      // replay (a held record must never be resubmitted), NO discard (the
+      // record is the evidence), and the cart stays protected.
+      if (record.status === "held") {
+        if (!preserveInFlight) {
+          set({ phase: "held" });
+          deps.lockCart();
+        }
+        return "held";
+      }
+      // record.status === "terminal" (F-06): restore the durable definite
+      // verdict WITHOUT auto-replay — a restart must land on the definite
+      // surface (conflict or failure), never on a fresh submission. No
+      // lockCart: the conflict flow's design is a return to the preserved
+      // cart, and a failed verdict has nothing left to protect.
       if (!preserveInFlight) {
-        set({ phase: "confirmed" });
+        if (record.outcome.kind === "stock-conflict") {
+          set({ phase: "stock-conflict", conflict: record.outcome.conflicts, failure: null });
+        } else {
+          set({ phase: "failed", failure: record.outcome.failure, conflict: null });
+        }
       }
-      if (record.cleanup.cartClear === "done") {
-        // Safe to show the success flow straight away; the reset gate opens.
-        return "confirmed-cleanup-done";
-      }
-      // Pending or failed cleanup: the success flow must finish cleanup
-      // before the kiosk resets (AC-11/AC-13) — keep the cart locked.
-      if (!preserveInFlight) {
-        deps.lockCart();
-      }
-      return "confirmed-cleanup-pending";
+      return "terminal";
     };
 
     // ---- retryCleanup (AC-11) ----------------------------------------------------
     const applyRetryCleanup = async (): Promise<void> => {
       const record = get().record;
+      if (get().unsafeHold !== null) {
+        // F-05: a foreign confirmed record's cleanup must not be driven from
+        // this session — the unsafe-recovery surface owns the hold, and this
+        // profile must not act on another profile's record.
+        log.debug("retryCleanup skipped: an unsafe recovery hold owns this session");
+        return;
+      }
       if (!record || record.status !== "confirmed" || record.cleanup.cartClear === "done") {
         log.debug("retryCleanup skipped: no confirmed attempt with pending or failed cleanup");
         return;
@@ -873,6 +1196,7 @@ export function createAttemptStore(
           phase: "idle",
           conflict: null,
           failure: null,
+          unsafeHold: null,
           persistence: "persisted",
         });
         return removed;
@@ -923,7 +1247,11 @@ export function createAttemptStore(
      * after its backend op resolves, never in flight with it).
      * `recordLoaded: false` is deliberate: the next session's `recover()`
      * must run a REAL read against whatever disk holds then, never a
-     * shortcut on pre-sign-out memory. On a rejected remove the reset still
+     * shortcut on pre-sign-out memory. `unsafeHold: null` is the sanctioned
+     * exit from an F-05 fail-closed hold: the wipe owns DISK, so the hold's
+     * in-memory marker goes with it (the sign-out GUARD — sign-out-
+     * cleanup.ts, R5-T04 — is what decides the wipe is legal). On a rejected
+     * remove the reset still
      * runs — BEFORE the rejection can propagate (the cleanup throws on it,
      * and after the throw core/auth's emergency wipe owns DISK, so nothing
      * else would ever reset MEMORY) — and `persistence` is "unknown", NOT
@@ -940,6 +1268,7 @@ export function createAttemptStore(
         phase: "idle",
         conflict: null,
         failure: null,
+        unsafeHold: null,
         persistence: removed.status === "persisted" ? "persisted" : "unknown",
       });
       return removed;
@@ -952,6 +1281,7 @@ export function createAttemptStore(
       phase: "idle",
       conflict: null,
       failure: null,
+      unsafeHold: null,
 
       // Every durable-touching action runs its backend IO as ONE serialized
       // op: see the chain above. `clearForSignOut` enqueues its remove the
