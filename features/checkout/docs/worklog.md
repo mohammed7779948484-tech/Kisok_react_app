@@ -1590,9 +1590,10 @@ at round start: 69 suites / 864 tests green at 055e674.
   accepted with the in-code unreachability trace).
 - Fresh quality audit: delivery sound; all record-accuracy findings applied
   (this commit).
-- FINAL LOCAL HEAD after this records commit: `__FINAL_SHA__` (docs-only on
-  top of the code-final `ada4ddf`). Remaining: push to
-  origin/feature/checkout + CI on the exact final HEAD.
+- FINAL LOCAL HEAD after the records commits: `a9df477` / full
+  `a9df47710cf5c84d423ea840238ed91b160d401c` (docs-only commits on top of
+  the code-final `ada4ddf`; the code at HEAD is identical to ada4ddf's).
+  Remaining: push to origin/feature/checkout + CI on the exact final HEAD.
 
 ## Round 5 gate evidence — LIVE hosted-TEST browser journey
 
