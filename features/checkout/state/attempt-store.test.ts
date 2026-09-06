@@ -1651,6 +1651,19 @@ describe("recover — F-05: foreign and unclean records are HELD, never deleted"
 });
 
 describe("resolveDefiniteFailure — ambiguous kinds are refused at the action boundary (RT03-6, FR-1)", () => {
+  it("still resolves a CODED server error as definite at the action boundary (RRF-3 control)", async () => {
+    // The negative control for the refusal set: K1006 (the server's own
+    // honest "could not complete the write") is a DEFINITE no-order verdict —
+    // the guard must never swallow the server-answered definite family.
+    const store = await preparedStore({ submits: [] });
+
+    await store.useStore.getState().resolveDefiniteFailure(k1006ServerError);
+
+    expect(store.useStore.getState().phase).toBe("failed");
+    expect(store.useStore.getState().record).toBeNull();
+    expect(store.counts().unlock).toBe(1);
+  });
+
   it.each([networkError, unknownKindError, rpcSchemaMismatchError])(
     "holds the attempt unresolved instead of persisting a terminal verdict (%p)",
     async (error) => {
