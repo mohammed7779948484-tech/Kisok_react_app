@@ -1573,3 +1573,57 @@ at round start: 69 suites / 864 tests green at 055e674.
 - F-01..F-08 all CLOSED with fresh-reviewer evidence per task.
 - Pending: full `pnpm verify`, web export, Expo Doctor, live hosted-TEST
   browser journey, fresh full-scope review, fresh quality audit, push + CI.
+
+## Round 5 gate evidence — LIVE hosted-TEST browser journey
+
+Run at local HEAD af4fe8f (web export served locally; the real hosted Supabase
+TEST project; Customer@gmail.com). All PASS unless noted:
+
+- Sign-in → Home (Demo Store; Brands/Categories/Featured populated); refresh
+  while signed in; session cleared → sign-in gate; re-auth → home.
+- Products grid; Search ("Zyn" → 3 matches, live); Brands pages; Product
+  details (Zyn 15mg 3 variants; Float 3k 4+); brand/category links.
+- Out-of-stock variant (after a test order depleted stock): "Out of stock"
+  label + Add to cart DISABLED.
+- Add to cart → Quick Cart opens; same-selection re-add merges (1 line, qty
+  increments); second product/variant → distinct lines; badge counts; Quick
+  Cart open/close/reopen.
+- Full Cart: increment/decrement (bounds disabled), remove (confirm dialog),
+  re-add, browser RELOAD persistence ("5 items · 2 lines" survived).
+- Review: correct names/variant labels/quantities/summary; immutable rows; NO
+  price/subtotal/payment/shipping anywhere; Back to Cart; Confirm.
+- REAL hosted create_order — four orders created this session:
+  Y3FSB6 (Zyn Tropical ×3 + Float Aloe ×1), 3LCKAC (Float Blue Raspberry ×1 +
+  Cotton candy ×1), NV24NM (Float Guava ×1), KNTBQX (Float Aloe ×1, the
+  ambiguous-network recovered order, client_request_id
+  930188a7-44ea-45d5-be1c-e259955c6ae4).
+- NATURAL LIVE stock conflict (first confirm, Zyn Tropical qty 4 vs 3 in
+  stock): no order, cart retained, "Requested 4 · Available 3" row, explicit
+  Return to Cart — the server's real stock_conflict family, live.
+- Duplicate-press suppression: rapid TRIPLE Confirm press → ONE flight (the
+  BlockingOverlay intercepted presses 2 and 3), one order.
+- Success: display number, immutable captured snapshots, countdown (live
+  customer_success_reset_seconds = 25), auto-expiry → Next Customer reset
+  (storage wiped, no cart resurrection); reload mid-success → recovered
+  confirmed record + fresh countdown; explicit Next Customer also verified.
+- LIVE ambiguous network (browser offline around submit): the durable
+  attempt was written and RETAINED unresolved with the SAME
+  client_request_id while offline; cart locked; NO fresh mint; on reconnect
+  the SAME request completed → exactly ONE order (no duplicate; the server's
+  idempotency ledger agreed). NOTE: the visible unknown/Check-Again panel was
+  NOT reachable live — in this environment the app's in-flight fetch HUNG
+  under Playwright's offline emulation instead of rejecting (an eval-probe
+  fetch rejected in ~1s; the app's preflighted CORS POST did not). The
+  unknown-panel presentation + same-ID Check-Again recovery are covered by
+  the deterministic suites (attempt-store + recovery-gate).
+- Direct routes: /checkout with empty cart → empty state, no confirm;
+  /checkout-success without a confirmed record → "This order can't be shown
+  here." + safe escape, no fake success, no resubmission encouragement.
+- Responsive: 1280×800, 800×1180, 480×900 — zero horizontal overflow on
+  catalog/detail/cart.
+- Browser console + page errors: ZERO for the whole journey. Network: only
+  get_customer_catalog / current_active_profile reads and create_order POSTs
+  — no orders/order_items/inventory/tracking reads. 6 create_order POSTs =
+  5 logical confirmations + 1 same-ID completion (idempotent), zero
+  duplicates. One transient get_customer_catalog 401 mid-session (recovered
+  by the auth refresh; no user-facing effect, no console error).
