@@ -1484,3 +1484,92 @@ The gate-record commit cd2942c (docs-only) re-triggered CI:
 label-gated). FINAL_HEAD = cd2942c; all final evidence corresponds to it
 (the code-identical 6721600 CI run 33880375499 remains the
 code-bearing-head evidence; the docs-only delta cannot change it).
+
+---
+
+# Round 5 — safety remediation (F-01..F-08), PATH B recovery session
+
+Context: an independent safety review of the REMOTE PR #13 HEAD (055e674) found
+eight VALID safety defects. The prior session's local remediation was lost with
+its sandbox (PATH B); this round rebuilt it with the same workflow (fresh
+feature-implementer + fresh READ-ONLY reviewer per task, Lead gates). Baseline
+at round start: 69 suites / 864 tests green at 055e674.
+
+## R5-T01 — F-02 PostgREST transport classification
+
+- RED: 6 failures — the exact postgrest-js 2.112.4 transport object
+  (`{ message: "TypeError: Network request failed", code: "", details, hint: "" }`)
+  classified `server` (definite) instead of `network` (ambiguous); evidence
+  includes dist/index.cjs lines 394–437.
+- Fix in `core/errors/index.ts`: canonical `NETWORK_FAILURE_PATTERN`
+  (anchored name prefixes + errno family), empty-code gate before the server
+  fallback; `looksLikeNetworkFailure` delegates to the same predicate.
+- Reviewer (fresh): 0 blocking; RT01-1 major (empty-code gate unpinned) +
+  minors → all remediated (57014/XX000 rows, anchored prefixes, rpc boundary
+  test). GREEN: 69/875. Commit `1aef2ca`.
+
+## R5-T02 — F-08 semantic integrity + held/terminal schema
+
+- RED: 18 failures (corrupt-but-structurally-valid records parse; held/
+  terminal branches absent).
+- `deriveRequestFingerprint` extracted (ONE canonical derivation); schema
+  refines: canonical fingerprint, per-variant quantity aggregate, mint-form
+  items (RT02-3), conflicts-belong-to-items (RT02-2), held (`hold.reason`
+  enum k1003) + terminal (definite kinds only) branches.
+- Typecheck carry (TS2339 ×2 in attempt-store.ts) accepted BY DESIGN → closed
+  in R5-T03.
+- Reviewer (fresh): 0 blocking; RT02-1 major (terminal enum admits
+  network/unknown) → fixed + pinned. GREEN: 69/902. Commit `564a131`.
+
+## R5-T03 — F-03/F-04/F-05/F-06/F-07 state machine
+
+- RED per finding (55 → 78 store tests): classifier treats RPC_SCHEMA_MISMATCH
+  as definite; K1003 discards the identity; corrupt/foreign records silently
+  deleted; discard-failure leaves disk `unresolved` (restart auto-replays);
+  resolveSuccess unlocks unconditionally.
+- Fixes exactly per the R5 design (worklog session record): classifier
+  ambiguity branch; K1003 → HELD record (phase `held`, cart locked, restart-
+  stable, held-write failure fails closed to unknown+locked); corrupt/foreign
+  → `unsafe-recovery` holds with `unsafeHold` reason (evidence kept, disk
+  untouched; only foreign-confirmed-done discarded); definite outcomes persist
+  TERMINAL records on discard failure (restart → verdict restored, ZERO
+  submits; terminal-write failure → fail-closed unknown); unlock only when
+  `cartClear === "done"`.
+- Reviewer (fresh, 10 attacks answered; completeness matrix 11 actions × all
+  phases/statuses): 0 blocking; majors RT03-1 (terminal enum backstop hole →
+  idempotency-conflict excluded), RT03-2 (three async resolvers missed the
+  unsafeHold refusal → added + tested), RT03-3 (mint-over-terminal unpinned →
+  two journey tests) — all remediated with minors RT03-5/6/7. RT03-4 (no
+  in-session K1003 surface) deferred to R5-T05 by design. GREEN: 69/938.
+  Commits `edff3f4` + `b718919`.
+
+## R5-T04 — F-01 sign-out guard fails closed
+
+- RED: 3 failures — guard APPROVED in the pre-recovery window (`recordLoaded
+=== false` with an unresolved record on disk), for a held record, and for a
+  corrupt payload.
+- Guard now: recovery-pending block (own reason), unresolved family (contract
+  reason), staff-hold family (held/unsafe-recovery/unsafeHold, own reason).
+- Reviewer (fresh): 0 blocking; RT04-1 major — holds now have NO client-side
+  exit (permanent until staff). Lead decision: ACCEPT permanence (sign-out is
+  unreachable from inside the customer group; passive expiry bypasses guards;
+  fail-closed purity retained); stale "sanctioned exit" comments reconciled;
+  boundary tests added (foreign-unresolved blocks; discarded-foreign and
+  terminal approve). GREEN: 69/944. Commit `95e7071`.
+
+## R5-T05 — recovery-gate surfaces (RT03-4)
+
+- RED: 7 failures (no panels/copy for held, unsafe-recovery, terminal).
+- Phase-scoped held/unsafe-recovery panels (no actions — staff exit; unsafeHold
+  reason-specific copy), terminal joins the outcome-scored panels; in-session
+  stock-conflict/failed/unknown/submitting stay review-screen-owned.
+- Reviewer (fresh): 0 blocking; RT05-1 major — `episodeEnded` suppressed hold
+  surfaces → condition restructured + post-episode held pinning test; RT05-2
+  third-reason copy test. GREEN: 69/952. Commit `af4fe8f`.
+
+## Round 5 gate evidence (in progress)
+
+- 69 suites / 952 tests, typecheck/lint/format green at `af4fe8f`.
+- F-01..F-08 all CLOSED with fresh-reviewer evidence per task.
+- Pending: full `pnpm verify`, web export, Expo Doctor, live hosted-TEST
+  browser journey, fresh full-scope review, fresh quality audit, push + CI.

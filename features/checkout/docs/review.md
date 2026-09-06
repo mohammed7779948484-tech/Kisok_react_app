@@ -122,3 +122,43 @@ base unchanged.
   shared hosted TEST project (destructive setup would be required); all
   three are covered deterministically (T09/T12/the journey suites) and
   dispositioned in the worklog's runtime-evidence section.
+
+---
+
+# Round 5 — independent safety review findings and remediation (supersedes the Round-4 final-review state)
+
+## The eight findings (F-01..F-08) — all VALID, all re-derived from the remote HEAD
+
+An independent safety review of PR #13's remote HEAD (055e674) found the eight
+defects below. They were re-derived against the CURRENT code in the Round-5
+recovery session (the prior local remediation had been lost) and every one
+validated. F-FR-04's Round-4 "accept" disposition — the sign-out guard's
+pre-recovery window traced "SAFE" — is hereby OVERTURNED by F-01: the trace
+missed that the sign-out wipe is chain-enqueued AFTER the in-flight read only
+when a guard approved it, and the guard approved on empty memory.
+
+| ID   | Finding (short)                                                                       | Severity | Disposition                                                                                                                                                                        |
+| ---- | ------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F-01 | Sign-out approved before the durable recovery read lands (recordLoaded === false)     | blocking | fixed — R5-T04: guard fails closed (recovery-pending + staff-hold families); lifecycle test walks pending → unresolved → ok                                                        |
+| F-02 | postgrest-js transport-failure error objects classified definite `server`             | blocking | fixed — R5-T01: canonical transport signatures → `network` (ambiguous); pinned at the rpc boundary                                                                                 |
+| F-03 | RPC_SCHEMA_MISMATCH treated as definite failure → identity discarded                  | blocking | fixed — R5-T03: classifier routes it to the ambiguous unknown outcome; validation itself unchanged                                                                                 |
+| F-04 | K1003 treated as ordinary definite failure → fresh mint possible → second order       | blocking | fixed — R5-T03: durable HELD record, phase `held`, cart locked, no fresh mint, restart-stable, no client-side exit (staff); surfaces in R5-T05                                     |
+| F-05 | Corrupt/foreign records silently deleted → fresh mint / lost evidence                 | blocking | fixed — R5-T03: unsafe-recovery holds (corrupt / foreign-unresolved / foreign-confirmed-unsafe-cleanup); only foreign-confirmed-done discarded; store actions cannot escape a hold |
+| F-06 | Definite outcome + failed discard → restart auto-replays (order without confirmation) | blocking | fixed — R5-T03: TERMINAL record persisted before the verdict is presented; restart restores the verdict with ZERO create_order calls; double-failure fails closed                  |
+| F-07 | Cart unlocked after a FAILED post-success clear → submitted cart editable again       | blocking | fixed — R5-T03: unlock only when cartClear === "done"; retryCleanup releases                                                                                                       |
+| F-08 | Persisted record semantic integrity (fingerprint / quantity aggregate) unchecked      | major    | fixed — R5-T02: ONE canonical derivation + schema refines on every status; RT02/RT03 review remediations tightened further                                                         |
+
+## Per-task fresh reviews (Round 5)
+
+Every remediation task was reviewed by a FRESH READ-ONLY code-reviewer; every
+blocking/major finding was remediated and re-verified (evidence per task in
+worklog.md Round 5): RT01-1, RT02-1, RT03-1/2/3, RT04-1 (design decision:
+hold permanence accepted, documented), RT05-1/2. Task gates: R5-T01..R5-T05
+all PASS.
+
+## Round 5 final review + quality audit
+
+Pending — see todo.md's Round 5 gate checklist for the remaining items
+(full-scope fresh review, quality audit, browser journey, push + CI on the
+exact final HEAD). The Round-4 "final review result" above is superseded by
+this round and is retained as history only.

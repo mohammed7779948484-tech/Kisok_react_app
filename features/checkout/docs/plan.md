@@ -535,3 +535,88 @@ Set the status at the top to `READY` only when every line here is true.
 - [x] Route mappings known, target screen named
 - [x] Changes outside `features/checkout/` listed and justified
 - [x] No unnecessary capability or folder planned
+
+---
+
+# Round 5 addendum — the fail-closed remediation design (F-01..F-08)
+
+Appended by the Round-5 recovery session (PATH B: the previous local
+remediation was lost with its sandbox and was rebuilt). These decisions govern
+the code as it now stands; they extend — and where they conflict, supersede —
+the original design decisions above.
+
+## D-R1 — Persisted record statuses
+
+Four durable statuses: `unresolved`, `confirmed` (as originally planned), plus
+`held` (K1003 fail-closed hold; `hold.reason` enum `["k1003"]`) and `terminal`
+(a durable definite no-order verdict: `outcome` is a stock-conflict's wire
+entries or a definite-failure payload whose kind excludes the ambiguous
+`network`/`unknown` and the `idempotency-conflict` family).
+
+## D-R2 — The ambiguity boundary is closed at every seam
+
+- Transport failures: postgrest-js RETURNS an empty-code error object (never a
+  thrown TypeError) — `toAppError` classifies it `network` via the canonical
+  transport signatures (anchored name prefixes postgrest-js constructs).
+- RPC_SCHEMA_MISMATCH: the server answered but the payload is unparseable —
+  rollback is NOT proven; the classifier holds the attempt ambiguous. Strict
+  runtime validation is unchanged: malformed responses are never accepted.
+- The resolvers refuse ambiguous kinds at the action boundary (a direct caller
+  cannot persist a terminal verdict for an ambiguous outcome).
+
+## D-R3 — K1003 fails closed into a HELD record
+
+The server PROVED an order exists for the identity. The record persists as
+evidence, phase `held`, cart locked; prepare refuses (`held-attempt-present`);
+no resolver or replay escapes it; restart restores the hold with no
+auto-replay. The exit is staff intervention by design — the sign-out guard
+refuses while it stands (the guard's staff-hold family). Write-failure fails
+closed (unknown + locked; identity never discarded — a restart replays the
+SAME id and K1003s deterministically again).
+
+## D-R4 — Corrupt/foreign records are HELD, never silently deleted
+
+`unsafe-recovery` phase + `unsafeHold` reason: `corrupt`, `foreign-unresolved`,
+`foreign-confirmed-unsafe-cleanup`. Evidence stays on disk and in memory; every
+store action refuses from under the hold; the guard blocks sign-out. The ONE
+safe discard remains foreign-confirmed-done. Deleting a foreign-confirmed-unclean
+record would orphan that owner's unclean cart — a fresh-ID re-submission risk
+for THEM.
+
+## D-R5 — Definite outcomes persist their verdict when the discard fails
+
+discard-failure → TERMINAL record write (the verdict payload) BEFORE the
+outcome is presented; restart restores the verdict (phase + payload) with ZERO
+create_order calls — the no-confirmation auto-replay is gone. Terminal-write
+failure fails closed (unknown + locked). A terminal record is mint-overwritable
+by a fresh confirmation (the verdict proves no order exists for its id).
+
+## D-R6 — The cart unlocks only on proven cleanup
+
+resolveSuccess unlocks only when `cartClear === "done"`; retryCleanup releases
+on proven success. A failed clear keeps the submitted cart protected (rows
+disabled by the cart lock).
+
+## D-R7 — The sign-out guard is the fail-closed authority
+
+Blocks: `recordLoaded === false` (F-01 window), the unresolved family
+(unresolved record / submitting), and the staff-hold family (held /
+unsafe-recovery / unsafeHold). Reason strings are accurate per family.
+Holds have no client-side exit — accepted trade (bounded: sign-out is
+unreachable from inside the customer group; passive expiry bypasses guards).
+
+## D-R8 — Persisted semantic integrity (F-08)
+
+ONE canonical `deriveRequestFingerprint`; the schema enforces canonical
+fingerprint, per-variant snapshot quantity aggregate, mint-form items, and
+conflicts-belong-to-items on every status branch — a structurally-valid but
+semantically-corrupt record fails restore into the unsafe-recovery hold.
+
+## D-R9 — Recovery-gate surfaces
+
+Phase-scoped hold panels (held / unsafe-recovery) rise over ANY screen,
+including mid-session over the review screen, and are NOT suppressed by the
+episode flag; hold panels carry no actions (staff exit). The terminal outcome
+joins the outcome-scoped conflict/failure panels with Return to Cart and no
+auto-replay. In-session stock-conflict/failed/unknown/submitting stay
+review-screen-owned (no double presentation).

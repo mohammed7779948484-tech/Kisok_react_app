@@ -15,13 +15,24 @@ The single answer to "where are we?". Update it whenever any of it changes; it
 is the first thing the next agent reads.
 
 ```
-Current round     : 4
-Current task      : — (round complete)
-Current stage     : FEATURE GATE PASS — HUMAN_HANDOFF
-Last gate         : FEATURE GATE PASS
-Next legal action : HUMAN_HANDOFF — review Draft PR #13; a human decides the merge into develop
+Current round     : 5 (safety remediation — independent review findings F-01..F-08)
+Current task      : — (round complete at the implementation level; verification/browser/reviews in flight)
+Current stage     : FEATURE GATE REOPENED — the Round-4 PASS claim was INVALIDATED by the independent safety review (eight findings) and is superseded by Round 5
+Last gate         : Round 5 task gates PASS (R5-T01..R5-T05); Round 5 gate in progress
+Next legal action : deterministic full verification → live browser journey → fresh full-scope review + quality audit → push to PR #13
 Blocked by        : —
 ```
+
+### Round 4's Feature Gate claim — superseded (honesty note)
+
+The Feature gate checklist below still shows its Round-4 state, including
+`FEATURE GATE: PASS`. That claim was made while the remote HEAD still
+contained eight safety defects (F-01..F-08) found later by an independent
+safety review: the local remediation of that review's session was never
+pushed. The claim is therefore **not evidence about the current remote HEAD**
+and is superseded by Round 5. The checklist will be re-earned on the final
+Round-5 HEAD with fresh evidence; nothing below this note should be read as
+the current gate state.
 
 ## Rules
 
@@ -40,23 +51,28 @@ Blocked by        : —
 
 Scan this first. Detail is below.
 
-| Task | Mode     | Acceptance                            | Objective                                                  | Deps                    | Stage | Gate |
-| ---- | -------- | ------------------------------------- | ---------------------------------------------------------- | ----------------------- | ----- | ---- |
-| T01  | behavior | Supporting AC-07, AC-08               | create-order-response schema                               | —                       | done  | PASS |
-| T02  | behavior | Acceptance: AC-05                     | normalized-request pure rules                              | —                       | done  | PASS |
-| T03  | behavior | Supporting AC-06, AC-07               | checkout-attempt record schema                             | T02                     | done  | PASS |
-| T04  | behavior | Supporting AC-07–AC-10                | submit-order api + mutation hook                           | T01                     | done  | PASS |
-| T05  | behavior | Supporting AC-07, AC-11               | Cart `clearCartDurable()` extension                        | —                       | done  | PASS |
-| T06  | behavior | Acceptance: AC-04, AC-06, AC-09–AC-11 | Checkout attempt store (state machine + durable lifecycle) | T02, T03, T04, T05      | done  | PASS |
-| T07  | behavior | Acceptance: AC-12                     | Sign-out guard + cleanup registration                      | T06                     | done  | PASS |
-| T08  | behavior | Acceptance: AC-02, AC-03              | Order Review screen + order-line-row                       | —                       | done  | PASS |
-| T09  | behavior | Acceptance: AC-04, AC-08–AC-10        | Review submission flow + outcome panels                    | T04, T06, T08           | done  | PASS |
-| T10  | behavior | Supporting AC-14                      | Catalog settings seam                                      | —                       | done  | PASS |
-| T11  | behavior | Acceptance: AC-07, AC-14, AC-15       | Order Success screen + countdown                           | T06, T08, T10           | done  | PASS |
-| T12  | behavior | Acceptance: AC-13                     | recovery-gate + layout mounting                            | T06, T07                | done  | PASS |
-| T13  | config   | N/A — routing                         | Routes + hardware-back guard (R3-02)                       | T08, T11                | done  | PASS |
-| T14  | behavior | Acceptance: AC-01                     | Full Cart Review Order CTA                                 | T13                     | done  | PASS |
-| T15  | behavior | Acceptance: AC-16                     | Customer journey integration test                          | T09, T11, T12, T13, T14 | done  | PASS |
+| Task   | Mode                | Acceptance                                   | Objective                                                    | Deps                    | Stage | Gate |
+| ------ | ------------------- | -------------------------------------------- | ------------------------------------------------------------ | ----------------------- | ----- | ---- |
+| T01    | behavior            | Supporting AC-07, AC-08                      | create-order-response schema                                 | —                       | done  | PASS |
+| T02    | behavior            | Acceptance: AC-05                            | normalized-request pure rules                                | —                       | done  | PASS |
+| T03    | behavior            | Supporting AC-06, AC-07                      | checkout-attempt record schema                               | T02                     | done  | PASS |
+| T04    | behavior            | Supporting AC-07–AC-10                       | submit-order api + mutation hook                             | T01                     | done  | PASS |
+| T05    | behavior            | Supporting AC-07, AC-11                      | Cart `clearCartDurable()` extension                          | —                       | done  | PASS |
+| T06    | behavior            | Acceptance: AC-04, AC-06, AC-09–AC-11        | Checkout attempt store (state machine + durable lifecycle)   | T02, T03, T04, T05      | done  | PASS |
+| T07    | behavior            | Acceptance: AC-12                            | Sign-out guard + cleanup registration                        | T06                     | done  | PASS |
+| T08    | behavior            | Acceptance: AC-02, AC-03                     | Order Review screen + order-line-row                         | —                       | done  | PASS |
+| T09    | behavior            | Acceptance: AC-04, AC-08–AC-10               | Review submission flow + outcome panels                      | T04, T06, T08           | done  | PASS |
+| T10    | behavior            | Supporting AC-14                             | Catalog settings seam                                        | —                       | done  | PASS |
+| T11    | behavior            | Acceptance: AC-07, AC-14, AC-15              | Order Success screen + countdown                             | T06, T08, T10           | done  | PASS |
+| T12    | behavior            | Acceptance: AC-13                            | recovery-gate + layout mounting                              | T06, T07                | done  | PASS |
+| T13    | config              | N/A — routing                                | Routes + hardware-back guard (R3-02)                         | T08, T11                | done  | PASS |
+| T14    | behavior            | Acceptance: AC-01                            | Full Cart Review Order CTA                                   | T13                     | done  | PASS |
+| T15    | behavior            | Acceptance: AC-16                            | Customer journey integration test                            | T09, T11, T12, T13, T14 | done  | PASS |
+| R5-T01 | bug                 | Safety finding F-02                          | PostgREST transport-failure objects → network (ambiguous)    | —                       | done  | PASS |
+| R5-T02 | bug                 | Safety finding F-08 (+ held/terminal schema) | Canonical fingerprint + semantic persisted-record invariants | R5-T01                  | done  | PASS |
+| R5-T03 | bug+behavior-change | Findings F-03, F-04, F-05, F-06, F-07        | Attempt-store fail-closed state machine                      | R5-T02                  | done  | PASS |
+| R5-T04 | bug                 | Safety finding F-01                          | Sign-out guard fails closed pre-recovery + hold families     | R5-T03                  | done  | PASS |
+| R5-T05 | behavior-change     | RT03-4 carry (user-facing hold surfaces)     | Recovery-gate held/terminal/unsafe-recovery surfaces         | R5-T03, R5-T04          | done  | PASS |
 
 Stage is one of: `not started` · `scaffolding` · `red/baseline` ·
 `implementing` · `green` · `checks` · `diff review` · `done`.
@@ -337,3 +353,75 @@ FEATURE GATE: **PASS**
 What cannot proceed, and what it is waiting for. Empty is good.
 
 - —
+
+## Round 5 — safety remediation (independent review findings F-01..F-08)
+
+Opened because an independent safety review of the REMOTE PR #13 HEAD (055e674)
+found eight VALID duplicate-order/unsafe-recovery defects the Round-4 record had
+already claimed past. PATH B recovery: the previous local remediation was lost
+with its sandbox, and was rebuilt in this round with fresh task gates.
+
+Each remediation task had a FRESH feature-implementer (RED → implement → GREEN)
+and a FRESH READ-ONLY code-reviewer, with the Lead dispositioning every finding.
+Commits: R5-T01 `1aef2ca`, R5-T02 `564a131`, R5-T03 `edff3f4`+`b718919`,
+R5-T04 `95e7071`, R5-T05 `af4fe8f`.
+
+### R5-T01 — F-02: PostgREST transport-failure classification (core/errors)
+
+- **Mode**: bug
+- **Finding**: `@supabase/postgrest-js` 2.112.4 RETURNS (does not throw) an
+  error object with an EMPTY code on fetch rejection; `toAppError` mapped the
+  unmapped empty-code family to the DEFINITE `server` kind, so Checkout
+  discarded the idempotency identity on transport failures that cannot prove
+  rollback.
+- **Fix**: canonical transport signatures (incl. anchored `FetchError:`/
+  `TypeError:`/`AbortError:` name prefixes postgrest-js constructs) →
+  `network` (ambiguous, retryable); mapped codes and unmapped non-transport
+  codes unchanged. Pinned at the rpc boundary and in the checkout api suite.
+
+### R5-T02 — F-08: persisted-record semantic integrity (+ held/terminal shapes)
+
+- **Mode**: bug
+- **Fix**: ONE canonical `deriveRequestFingerprint`; the persisted schema
+  enforces canonical fingerprint, per-variant snapshot quantity aggregate,
+  mint-form items, and (terminal) conflicts-belong-to-items on ALL FOUR
+  statuses; two new durable statuses `held` (K1003) and `terminal` (definite
+  no-order verdict, kind excludes network/unknown/idempotency-conflict).
+
+### R5-T03 — F-03/F-04/F-05/F-06/F-07: the fail-closed state machine
+
+- **Mode**: bug + behavior-change
+- **Fixes**: RPC_SCHEMA_MISMATCH → ambiguous; K1003 → durable HELD record +
+  phase `held` + cart locked + no fresh mint + restart-stable; corrupt/foreign
+  records HELD as evidence (never silently deleted; only foreign-confirmed-
+  done discarded); definite outcomes persist a TERMINAL record when the
+  discard fails (restart restores the verdict with ZERO create_order calls);
+  the cart unlocks only when the durable clear is proven done.
+
+### R5-T04 — F-01: sign-out guard fails closed
+
+- **Mode**: bug
+- **Fix**: the guard blocks while `recordLoaded === false` (the pre-recovery
+  window), and blocks the staff-hold family (held/unsafe-recovery/unsafeHold)
+  with its own accurate reason. Holds exit only via staff intervention (the
+  documented design trade).
+
+### R5-T05 — Recovery-gate surfaces (RT03-4 carry)
+
+- **Mode**: behavior-change
+- **Fix**: phase-scoped `held` (in-session AND restored) and `unsafe-recovery`
+  staff panels — no actions by design; the terminal outcome joins the
+  outcome-scoped conflict/failure panels (no auto-replay); the episode flag
+  never suppresses a hold.
+
+### Round 5 gate
+
+- [x] R5-T01..R5-T05 task gates PASS, each with fresh implementer + reviewer
+- [x] All eight findings dispositioned (F-01..F-08 CLOSED; evidence in worklog)
+- [ ] Full deterministic verification on the final HEAD (pnpm verify, web export, doctor)
+- [ ] Live browser journey on the hosted TEST project
+- [ ] Fresh full-scope code review: 0 blocking / 0 major
+- [ ] Fresh quality audit
+- [ ] Pushed to origin/feature/checkout; PR #13 HEAD == local HEAD; CI green on that exact SHA
+
+Round 5 gate: **IN PROGRESS**
