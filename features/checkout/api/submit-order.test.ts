@@ -192,6 +192,34 @@ describe("submitOrder", () => {
     expect(failure).toMatchObject({ kind: "network", retryable: true });
   });
 
+  it("classifies the postgrest-js transport-failure error OBJECT as network — never a definite server failure that would discard the idempotency identity (F-02)", async () => {
+    // postgrest-js 2.112.4 does NOT throw when the fetch rejects: it RETURNS
+    // { data: null, error: {...} } with code "" and a NAME-prefixed message
+    // (dist/index.cjs ~lines 394–437). callRpc sees `error` truthy and maps it
+    // through toAppError; this boundary must let that family escape as kind
+    // "network" (ambiguous — the request may have committed and the response
+    // was lost), so the attempt store preserves the client_request_id instead
+    // of discarding it and enabling a duplicate order.
+    supabase = installMockSupabase({
+      rpc: {
+        create_order: () => ({
+          data: null,
+          error: {
+            message: "TypeError: Network request failed",
+            details: "TypeError: Network request failed\n    at fetch (native)",
+            hint: "",
+            code: "",
+          },
+        }),
+      },
+    });
+
+    const failure = await submitOrder(input).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(AppError);
+    expect(failure).toMatchObject({ kind: "network", retryable: true });
+  });
+
   it("converts an unrecognized rejection to an AppError of kind unknown, preserving its detail", async () => {
     supabase = installMockSupabase({
       rpc: {

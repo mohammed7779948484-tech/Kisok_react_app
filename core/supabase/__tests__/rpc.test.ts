@@ -65,6 +65,32 @@ describe("callRpc", () => {
     supabase.restore();
   });
 
+  it("classifies a RETURNED postgrest-js transport-failure object as network (F-02)", async () => {
+    // The exact shape @supabase/postgrest-js 2.112.4 returns (does NOT throw)
+    // when the underlying fetch rejects: empty code, message built from the
+    // fetch error's name. A read path must see this as `network` (ambiguous,
+    // retryable) — never a definite `server` failure.
+    const supabase = installMockSupabase({
+      rpc: {
+        get_customer_catalog: () => ({
+          data: null,
+          error: {
+            code: "",
+            message: "TypeError: Network request failed",
+            details: "TypeError: Network request failed",
+            hint: "",
+          },
+        }),
+      },
+    });
+
+    await expect(callRpc("get_customer_catalog", schema)).rejects.toMatchObject({
+      kind: "network",
+      retryable: true,
+    });
+    supabase.restore();
+  });
+
   it("REJECTS a payload that does not match its schema", async () => {
     // A contract break must surface here, loudly, rather than propagating as
     // `undefined` into a screen.
