@@ -13,6 +13,7 @@ import {
 import { getCartSnapshot, hydrateCart, type CartLine } from "@/features/cart";
 
 import type { CheckoutAttempt } from "../../model/checkout-attempt.schema";
+import { deriveRequestFingerprint } from "../../model/normalized-request";
 import { useAttemptStore } from "../../state/attempt-store";
 
 import { OrderSuccessScreen } from "./order-success-screen";
@@ -222,7 +223,9 @@ function confirmedAttempt(cleanup: "pending" | "done" | "failed"): CheckoutAttem
     ownerId: TEST_PROFILE.id,
     clientRequestId: "00000000-0000-4000-8000-000000000001",
     items: SUBMITTED_ITEMS,
-    fingerprint: "seeded-fingerprint-cappuccino-water",
+    // The canonical fingerprint of the embedded items — the invariant every
+    // real record carries by construction (F-08).
+    fingerprint: deriveRequestFingerprint(SUBMITTED_ITEMS),
     lineSnapshots: [cappuccinoLine, waterLine],
     status: "confirmed",
     success: {
@@ -241,7 +244,7 @@ function unresolvedAttempt(): CheckoutAttempt {
     ownerId: TEST_PROFILE.id,
     clientRequestId: "00000000-0000-4000-8000-000000000001",
     items: SUBMITTED_ITEMS,
-    fingerprint: "seeded-fingerprint-cappuccino-water",
+    fingerprint: deriveRequestFingerprint(SUBMITTED_ITEMS),
     lineSnapshots: [cappuccinoLine, waterLine],
     status: "unresolved",
   };

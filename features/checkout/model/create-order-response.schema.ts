@@ -47,7 +47,16 @@ export const displayNumberSchema = z.string().regex(/^[A-HJ-NP-Z2-9]{6}$/, {
  */
 export const createdAtSchema = z.iso.datetime({ offset: true });
 
-const stockConflictItemSchema = z.strictObject({
+/**
+ * One wire `stock_conflict` entry — the RPC's own row shape (migration lines
+ * 187–206: the variant, the requested quantity, and the available quantity).
+ * Exported (the module header's consolidation pattern, extended to the fourth
+ * shape): the persisted attempt record's TERMINAL branch embeds the same
+ * conflict entries (R5 design — the durable definite no-order outcome), so
+ * the wire contract and the persisted copy of it are mechanically one shape —
+ * a change to a conflict field fails both modules' suites, not just this one.
+ */
+export const stockConflictItemSchema = z.strictObject({
   variant_id: postgresUuidSchema,
   requested_quantity: z.number().int().positive(),
   available_quantity: z.number().int().nonnegative(),

@@ -1,6 +1,10 @@
 import type { CartLine } from "@/features/cart";
 
-import { MAX_NORMALIZED_ITEMS, normalizeCartLines } from "./normalized-request";
+import {
+  MAX_NORMALIZED_ITEMS,
+  deriveRequestFingerprint,
+  normalizeCartLines,
+} from "./normalized-request";
 
 /**
  * Behavior tests for the pure checkout normalization rules (AC-05): cart
@@ -225,6 +229,16 @@ describe("normalizeCartLines", () => {
         "kiosk.checkout.lean.v1\n" + `${CAPPUCCINO_VARIANT_ID}:5\n` + `${WATER_VARIANT_ID}:1`,
       );
       expect(request.fingerprint.endsWith("\n")).toBe(false);
+    });
+
+    it("exposes the fingerprint derivation as ONE canonical export shared with the attempt record schema (F-08)", () => {
+      // The attempt record's restore boundary re-derives the fingerprint from
+      // the stored items to reject a tampered binding (F-08); this pins that
+      // the export IS the derivation the normalizer stamps, so a record the
+      // store writes satisfies its own restore invariant by construction.
+      const request = normalizeCartLines([cappuccinoLine(2), waterLine(1)]);
+
+      expect(deriveRequestFingerprint(request.items)).toBe(request.fingerprint);
     });
 
     it("changes the fingerprint when the logical request changes (D2 binding)", () => {

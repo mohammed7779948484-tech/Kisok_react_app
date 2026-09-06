@@ -21,6 +21,7 @@ import { submitOrder } from "./api/submit-order";
 import { OrderReviewScreen, OrderSuccessScreen, RecoveryGate } from "./index";
 import { checkoutAttemptSchema, type CheckoutAttempt } from "./model/checkout-attempt.schema";
 import type { CreateOrderResponse } from "./model/create-order-response.schema";
+import { deriveRequestFingerprint } from "./model/normalized-request";
 import { useAttemptStore } from "./state/attempt-store";
 
 /**
@@ -236,7 +237,9 @@ function unresolvedAttempt(): CheckoutAttempt {
     ownerId: TEST_PROFILE.id,
     clientRequestId: STORED_CLIENT_REQUEST_ID,
     items: SUBMITTED_ITEMS,
-    fingerprint: "seeded-fingerprint-cappuccino-water",
+    // The canonical fingerprint of the embedded items — the invariant every
+    // real record carries by construction (F-08).
+    fingerprint: deriveRequestFingerprint(SUBMITTED_ITEMS),
     lineSnapshots: [cappuccinoLine, waterLine],
     status: "unresolved",
   };

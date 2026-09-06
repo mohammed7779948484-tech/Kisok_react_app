@@ -4,7 +4,7 @@ import { storage, storageKey } from "@/core/storage";
 import { unlockCart, type CartLine } from "@/features/cart";
 
 import { checkoutAttemptSchema, type CheckoutAttempt } from "../model/checkout-attempt.schema";
-import { normalizeCartLines } from "../model/normalized-request";
+import { deriveRequestFingerprint, normalizeCartLines } from "../model/normalized-request";
 import { useAttemptStore, type AttemptState, type PrepareResult } from "./attempt-store";
 // The module under test. Its import IS the behaviour under test: checkout's
 // sign-out guard + cleanup register here, as a module side-effect.
@@ -109,17 +109,22 @@ const WATER_SNAPSHOT: CartLine = {
   quantity: 3,
 };
 
+/** The record's embedded items — the water line's normalized form. */
+const UNRESOLVED_ITEMS = [{ variant_id: VARIANT_ID, quantity: 3 }];
+
 /**
  * Fixtures are proven schema-valid at construction (`checkoutAttemptSchema.parse`
  * throws at load time if not): the guard branches on `record.status`, and a
- * record that could never exist on disk would test nothing.
+ * record that could never exist on disk would test nothing. The fingerprint
+ * is the canonical derivation of the embedded items (F-08) — the binding a
+ * real record always carries.
  */
 const UNRESOLVED_RECORD: CheckoutAttempt = checkoutAttemptSchema.parse({
   version: 1,
   ownerId: OWNER,
   clientRequestId: "0a1b2c3d-4e5f-4607-8a8b-9c0d1e2f3a4b",
-  items: [{ variant_id: VARIANT_ID, quantity: 3 }],
-  fingerprint: `${VARIANT_ID}:3`,
+  items: UNRESOLVED_ITEMS,
+  fingerprint: deriveRequestFingerprint(UNRESOLVED_ITEMS),
   lineSnapshots: [WATER_SNAPSHOT],
   status: "unresolved",
 });

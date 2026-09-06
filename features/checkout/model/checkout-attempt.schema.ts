@@ -1,3 +1,4 @@
+import type { AppErrorKind } from "@/core/errors";
 import { z } from "zod";
 
 // The three wire-contract primitives (postgres uuid text, display number,
@@ -5,13 +6,21 @@ import { z } from "zod";
 // gate consolidated the formerly duplicated local definitions, so the
 // persisted record and the RPC contract are now mechanically one shape: a
 // change to a primitive fails this module's suite too, not just the wire
-// schema's own.
+// schema's own. The stock-conflict ITEM shape is imported for the same
+// reason: the TERMINAL record's embedded conflict entries are the wire
+// contract's own rows (R5 design).
 import {
   createdAtSchema,
   displayNumberSchema,
   postgresUuidSchema,
+  stockConflictItemSchema,
 } from "./create-order-response.schema";
-import { MAX_NORMALIZED_ITEMS, MAX_RPC_QUANTITY } from "./normalized-request";
+import {
+  MAX_NORMALIZED_ITEMS,
+  MAX_RPC_QUANTITY,
+  deriveRequestFingerprint,
+  type NormalizedOrderItem,
+} from "./normalized-request";
 
 /**
  * ONE display snapshot of a submitted cart line — checkout-owned, with
@@ -126,14 +135,107 @@ function snapshotVariantParity(record: {
 const SNAPSHOTS_MISMATCH_MESSAGE =
   "checkout attempt lineSnapshots must cover exactly the items' variants";
 
+/** The refinement message a non-canonical stored fingerprint fails with (F-08). */
+const FINGERPRINT_NOT_CANONICAL_MESSAGE =
+  "checkout attempt fingerprint must equal the canonical fingerprint of its items";
+
+/** The refinement message a per-variant snapshot quantity aggregate mismatch fails with (F-08). */
+const SNAPSHOTS_QUANTITY_MESSAGE =
+  "checkout attempt lineSnapshots quantities must aggregate to the items' quantities per variant";
+
+/**
+ * F-08 / RT02-3: the items themselves must be in MINT form — lowercase hex,
+ * sorted by code-unit order of the lowercase uuid text — exactly what
+ * `normalizeCartLines` emits. Consistency alone (a fingerprint recomputed
+ * over the stored rows) would accept reordered or uppercase-hex items no
+ * minting path produces; canonicality closes that.
+ */
+const ITEMS_NOT_CANONICAL_MESSAGE =
+  "checkout attempt items must be lowercase and sorted by variant_id (mint form)";
+
+function itemsAreCanonical(items: readonly NormalizedOrderItem[]): boolean {
+  return (
+    items.every((item) => item.variant_id === item.variant_id.toLowerCase()) &&
+    items.every(
+      (item, index) =>
+        index === 0 || items[index - 1].variant_id.toLowerCase() < item.variant_id.toLowerCase(),
+    )
+  );
+}
+
+/**
+ * F-08 / RT02-2: a TERMINAL stock-conflict record's conflict entries are
+ * computed by the RPC over the REQUEST rows it received (migration lines
+ * 199–204), so every conflict variant is one of the submitted variants. A
+ * conflict naming a variant the request never carried is a record no write
+ * path can produce.
+ */
+const CONFLICTS_NOT_IN_ITEMS_MESSAGE =
+  "checkout attempt terminal conflicts must name the items' variants";
+
+function conflictsBelongToItems(record: {
+  items: readonly { variant_id: string }[];
+  outcome: { kind: string; conflicts?: readonly { variant_id: string }[] };
+}): boolean {
+  if (record.outcome.kind !== "stock-conflict") return true;
+  const requested = new Set(record.items.map((item) => item.variant_id.toLowerCase()));
+  return (record.outcome.conflicts ?? []).every((entry) =>
+    requested.has(entry.variant_id.toLowerCase()),
+  );
+}
+
+/**
+ * F-08: the stored fingerprint must equal the canonical fingerprint of the
+ * stored items — `deriveRequestFingerprint`, the ONE derivation the normalizer
+ * stamps at mint time (normalized-request, D2). A structurally-valid record
+ * whose binding no minting path could have produced (tampered, or minted for
+ * a different logical request) is corrupt and must not restore: the
+ * fingerprint is what binds a persisted idempotency identity to its logical
+ * request, and restoring a drifted binding would replay one request under
+ * another's identity.
+ */
+function fingerprintIsCanonical(record: {
+  items: readonly NormalizedOrderItem[];
+  fingerprint: string;
+}): boolean {
+  return record.fingerprint === deriveRequestFingerprint(record.items);
+}
+
+/**
+ * F-08: per-variant snapshot quantity aggregates must equal the item
+ * quantities. A genuine record cannot disagree: `normalizeCartLines` derives
+ * each item's quantity as the SUM of that variant's line quantities, and the
+ * snapshots persist exactly those lines — so `sum(lineSnapshots quantities
+ * grouped by variant) == the item quantity` holds by construction on every
+ * record the store writes. Variant ids are matched lowercased, the way
+ * PostgreSQL compares uuids (the set-parity precedent above). Set parity
+ * alone would accept a record whose quantities disagree — this refine is
+ * what makes the quantities honest.
+ */
+function snapshotQuantityParity(record: {
+  items: readonly { variant_id: string; quantity: number }[];
+  lineSnapshots: readonly { variantId: string; quantity: number }[];
+}): boolean {
+  const aggregated = new Map<string, number>();
+  for (const snapshot of record.lineSnapshots) {
+    const key = snapshot.variantId.toLowerCase();
+    aggregated.set(key, (aggregated.get(key) ?? 0) + snapshot.quantity);
+  }
+  return record.items.every(
+    (item) => aggregated.get(item.variant_id.toLowerCase()) === item.quantity,
+  );
+}
+
 /**
  * Fields every attempt record carries regardless of status: the versioned
  * envelope, the owner, the idempotency identity, the exact normalized request,
  * its binding fingerprint, and the display snapshots — never empty, and
- * parity-checked against `items` on every branch below. Spread into BOTH
- * branches of the union — shared field definitions, never a shared schema
- * object, so no branch can accidentally validate the other's exclusive
- * payload.
+ * parity-checked against `items` on every branch below (variant-SET parity,
+ * canonical fingerprint, and per-variant quantity aggregate — the F-08
+ * semantic invariants, properties of the record rather than of any lifecycle
+ * state). Spread into EVERY branch of the union — shared field definitions,
+ * never a shared schema object, so no branch can accidentally validate the
+ * other's exclusive payload.
  */
 const attemptRecordFields = {
   // Versioned envelope, the cart's persisted-cart precedent: an exact
@@ -149,10 +251,11 @@ const attemptRecordFields = {
   clientRequestId: postgresUuidSchema,
   items: attemptItemsSchema,
   // The client fingerprint binding this identity to its logical request
-  // (normalized-request, plan D2). Opaque text at this boundary: the binding
-  // discipline (compare before reuse, re-mint on change) is the attempt
-  // store's job at mint and retry time — recomputing T02's canonical form
-  // here would duplicate the algorithm in a second place.
+  // (normalized-request, plan D2). Not opaque at this boundary (F-08): the
+  // per-branch refine below re-derives the canonical fingerprint from the
+  // stored items — through `deriveRequestFingerprint`, the ONE derivation the
+  // normalizer itself uses — so a structurally-valid but semantically-corrupt
+  // record (a tampered or drifted binding) fails loudly instead of restoring.
   fingerprint: z.string().min(1),
   // Never empty: an attempt always embeds at least one submitted line
   // (items.min(1) + the per-branch parity refine). A record with zero
@@ -161,27 +264,64 @@ const attemptRecordFields = {
 };
 
 /**
+ * The TERMINAL record's embedded failure kind — the DEFINITE subset of
+ * AppErrorKind, defined locally with the compile-time tie the repository
+ * already uses (core/supabase/rpc.ts MOBILE_RPC_NAMES precedent: `as const
+ * satisfies …`). A TYPE-ONLY import from `@/core/errors` keeps this a mirror
+ * with zero runtime coupling: the list fails to compile if one of its strings
+ * stops being an AppErrorKind (a rename in core surfaces here at compile
+ * time, never as a runtime restore failure), while core stays free to add
+ * kinds — the terminal record simply keeps accepting the ones it was written
+ * with.
+ *
+ * `"network"` and `"unknown"` are DELIBERATELY ABSENT: they are the AMBIGUOUS
+ * kinds — `classifySubmitOutcome` routes them to the unknown outcome, never a
+ * definite failure — so a record claiming `status: "terminal"` (a durable
+ * DEFINITE no-order verdict) with an ambiguous failure kind is an oxymoron no
+ * write path can produce, and the restore boundary rejects it (RT02-1).
+ */
+const failureKindSchema = z.enum([
+  "auth",
+  "forbidden",
+  "validation",
+  "unavailable",
+  "idempotency-conflict",
+  "state-conflict",
+  "server",
+] as const satisfies readonly [AppErrorKind, ...AppErrorKind[]]);
+
+/**
  * The durable checkout attempt record — the ONE JSON object the attempt store
  * (T06) writes under `storageKey("checkout", "attempt")` through
  * `@/core/storage`, and re-validates with this schema on every restore
- * (plan D1: one record, single key; only `unresolved` and `confirmed` are
- * durable — definite failures and stock conflicts are discarded immediately).
- * The confirmed record doubles as the Order Success payload and is removed at
- * the Next Customer reset.
+ * (plan D1: one record, single key). FOUR statuses are durable (the R5
+ * remediation design): `unresolved` and `confirmed` as originally planned
+ * (definite failures and stock conflicts are discarded immediately when their
+ * discard succeeds), plus `held` and `terminal` for the two cases where the
+ * discard path itself must leave durable evidence. The confirmed record
+ * doubles as the Order Success payload and is removed at the Next Customer
+ * reset.
  *
- * `status` is a DISCRIMINATED UNION over two object shapes, not one object
- * with optional `success`/`cleanup`: status decides what the record MEANS
- * (needs recovery vs. needs cleanup tracking), and the impossible
- * combinations are made UNREPRESENTABLE rather than merely discouraged.
- * Strict mode turns each violation into a loud parse failure at an exact
- * field — an UNRESOLVED record carrying `success`/`cleanup` (claiming
- * knowledge an ambiguous network result never gave us) rejects on the
- * unknown keys, and a CONFIRMED record missing either payload (D4: the
- * success capture and the cleanup tracker are both mandatory once
- * confirmed) rejects on the missing field. Both branches additionally
- * parity-check `lineSnapshots` against `items` (never empty, variant sets
- * equal), so a corrupt record cannot restore into a silently degraded
- * success or conflict surface.
+ * `status` is a DISCRIMINATED UNION over four object shapes, not one object
+ * with optional `success`/`cleanup`/`hold`/`outcome`: status decides what the
+ * record MEANS (needs recovery vs. needs cleanup tracking vs. must block
+ * minting vs. is a durable definite outcome), and the impossible combinations
+ * are made UNREPRESENTABLE rather than merely discouraged. Strict mode turns
+ * each violation into a loud parse failure at an exact field — an UNRESOLVED
+ * record carrying `success`/`cleanup` (claiming knowledge an ambiguous
+ * network result never gave us) rejects on the unknown keys, and a CONFIRMED
+ * record missing either payload (D4: the success capture and the cleanup
+ * tracker are both mandatory once confirmed) rejects on the missing field.
+ *
+ * EVERY branch additionally enforces the same three SEMANTIC invariants
+ * (F-08) — they are properties of the record, not of a lifecycle state:
+ * variant-SET parity between `lineSnapshots` and `items` (never empty,
+ * variant sets equal), a CANONICAL fingerprint (`fingerprint` must equal
+ * `deriveRequestFingerprint(items)`), and per-variant QUANTITY aggregate
+ * (the snapshots' summed quantities must equal each item's quantity). A
+ * structurally-valid but semantically-corrupt record therefore cannot
+ * restore into a silently degraded success or conflict surface, whatever
+ * its status.
  *
  * The restore path is `createJsonStorage.read` → `JSON.parse` → this schema,
  * so the input is wide unknown JSON — a corrupt, foreign, or future-versioned
@@ -197,14 +337,19 @@ export const checkoutAttemptSchema = z.discriminatedUnion("status", [
   // UNRESOLVED — the recovery payload: what an ambiguous transport result
   // leaves behind (AC-09) and what a restart replays with the same
   // idempotency identity (AC-13). Zod 4 keeps a refined strictObject a valid
-  // union option, and a failed base parse short-circuits before the refine,
+  // union option, and a failed base parse short-circuits before the refines,
   // so field-level issues keep their exact paths.
   z
     .strictObject({
       ...attemptRecordFields,
       status: z.literal("unresolved"),
     })
-    .refine(snapshotVariantParity, { message: SNAPSHOTS_MISMATCH_MESSAGE }),
+    .refine(snapshotVariantParity, { message: SNAPSHOTS_MISMATCH_MESSAGE })
+    .refine(fingerprintIsCanonical, { message: FINGERPRINT_NOT_CANONICAL_MESSAGE })
+    .refine(snapshotQuantityParity, { message: SNAPSHOTS_QUANTITY_MESSAGE })
+    .refine((record) => itemsAreCanonical(record.items), {
+      message: ITEMS_NOT_CANONICAL_MESSAGE,
+    }),
   // CONFIRMED — the durable success payload (plan D4: capture → durably
   // confirm → clear). `success` is exactly what create-order-response
   // validated (order_id/display_number/created_at, camelCased into this
@@ -227,10 +372,77 @@ export const checkoutAttemptSchema = z.discriminatedUnion("status", [
         cartClear: z.enum(["pending", "done", "failed"]),
       }),
     })
-    // Same parity invariant as the unresolved branch: the confirmed record
-    // IS the Order Success payload (D1), so a snapshot/items mismatch here
-    // would silently degrade exactly what the customer is shown (AC-07).
-    .refine(snapshotVariantParity, { message: SNAPSHOTS_MISMATCH_MESSAGE }),
+    // Same invariants as the unresolved branch: the confirmed record
+    // IS the Order Success payload (D1), so a snapshot/items or fingerprint
+    // mismatch here would silently degrade exactly what the customer is
+    // shown (AC-07).
+    .refine(snapshotVariantParity, { message: SNAPSHOTS_MISMATCH_MESSAGE })
+    .refine(fingerprintIsCanonical, { message: FINGERPRINT_NOT_CANONICAL_MESSAGE })
+    .refine(snapshotQuantityParity, { message: SNAPSHOTS_QUANTITY_MESSAGE })
+    .refine((record) => itemsAreCanonical(record.items), {
+      message: ITEMS_NOT_CANONICAL_MESSAGE,
+    }),
+  // HELD — the K1003 fail-closed hold (R5 design): the server answered that
+  // an order ALREADY EXISTS for this client_request_id under a different
+  // actor or fingerprint. The record is evidence + a hold: it must survive
+  // restart, must not auto-replay, must block fresh minting. `hold.reason`
+  // is a closed enum — "k1003" is the only hold cause the design defines, so
+  // any other reason text is a record this build never wrote.
+  z
+    .strictObject({
+      ...attemptRecordFields,
+      status: z.literal("held"),
+      hold: z.strictObject({
+        reason: z.enum(["k1003"]),
+      }),
+    })
+    // Same invariants as every branch (F-08): the hold's evidence —
+    // the exact request and its binding — must itself be intact.
+    .refine(snapshotVariantParity, { message: SNAPSHOTS_MISMATCH_MESSAGE })
+    .refine(fingerprintIsCanonical, { message: FINGERPRINT_NOT_CANONICAL_MESSAGE })
+    .refine(snapshotQuantityParity, { message: SNAPSHOTS_QUANTITY_MESSAGE })
+    .refine((record) => itemsAreCanonical(record.items), {
+      message: ITEMS_NOT_CANONICAL_MESSAGE,
+    }),
+  // TERMINAL — the durable definite no-order outcome (R5 design, F-06):
+  // persisted when the attempt record's discard FAILED, so a restart
+  // restores the definite outcome instead of auto-replaying an unresolved
+  // record. The embedded payload is plain data: the store's AttemptFailure
+  // shape for failures (`kind` mirrors AppErrorKind via failureKindSchema,
+  // `userMessage`, `retryable`), and the wire conflict entries for conflicts
+  // (stockConflictItemSchema — create-order-response's own row shape).
+  z
+    .strictObject({
+      ...attemptRecordFields,
+      status: z.literal("terminal"),
+      outcome: z.discriminatedUnion("kind", [
+        z.strictObject({
+          kind: z.literal("stock-conflict"),
+          // min(1) mirrors the wire contract's own rule (create-order-
+          // response: jsonb_agg yields null over zero rows, so a genuine
+          // conflicts array is never empty).
+          conflicts: z.array(stockConflictItemSchema).min(1),
+        }),
+        z.strictObject({
+          kind: z.literal("definite-failure"),
+          failure: z.strictObject({
+            kind: failureKindSchema,
+            userMessage: z.string().min(1),
+            retryable: z.boolean(),
+          }),
+        }),
+      ]),
+    })
+    // Same invariants as every branch (F-08): the durable outcome's
+    // record must carry the intact request it is the verdict on — and its
+    // conflict entries must name that request's own variants (RT02-2).
+    .refine(snapshotVariantParity, { message: SNAPSHOTS_MISMATCH_MESSAGE })
+    .refine(fingerprintIsCanonical, { message: FINGERPRINT_NOT_CANONICAL_MESSAGE })
+    .refine(snapshotQuantityParity, { message: SNAPSHOTS_QUANTITY_MESSAGE })
+    .refine((record) => itemsAreCanonical(record.items), {
+      message: ITEMS_NOT_CANONICAL_MESSAGE,
+    })
+    .refine(conflictsBelongToItems, { message: CONFLICTS_NOT_IN_ITEMS_MESSAGE }),
 ]);
 
 export type CheckoutAttempt = z.infer<typeof checkoutAttemptSchema>;

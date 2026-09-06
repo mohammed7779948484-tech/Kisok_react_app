@@ -1,7 +1,7 @@
 import type { CartLine } from "@/features/cart";
 
 import { checkoutAttemptSchema } from "./checkout-attempt.schema";
-import type { NormalizedOrderItem } from "./normalized-request";
+import { deriveRequestFingerprint, type NormalizedOrderItem } from "./normalized-request";
 
 /**
  * Colocated contract tests for the durable checkout attempt record — the ONE
@@ -91,6 +91,29 @@ const teaSnapshot = {
   optionSelections: [],
   imageUri: null,
   quantity: 3,
+};
+
+/**
+ * A second cappuccino snapshot — the SAME variant under a different option
+ * selection (Regular instead of Large·Oat), so a cart legitimately holds TWO
+ * lines of one variant that normalize into ONE summed item. Shared by the
+ * parity set-equality case and the F-08 aggregate cases below.
+ */
+const regularCappuccinoSnapshot = {
+  lineId: `${CAPPUCCINO_VARIANT_ID}|${REGULAR_OPTION_VALUE_ID}`,
+  variantId: CAPPUCCINO_VARIANT_ID,
+  productId: "0f4a9d3e-2b1c-4f8a-9e7d-5c6b8a3f1d2e",
+  productDisplayName: "Cappuccino",
+  variantLabel: "Regular",
+  optionSelections: [
+    {
+      optionTypeId: "b2e1a4c3-8f7d-4a2b-9c6e-1d3f5a7b9c2d",
+      optionValueId: REGULAR_OPTION_VALUE_ID,
+      optionValueLabel: "Regular",
+    },
+  ],
+  imageUri: null,
+  quantity: 1,
 };
 
 /** Typed as T02's item type — the fixture cannot drift from what T02 emits. */
@@ -370,15 +393,56 @@ describe("checkout-attempt record schema", () => {
     );
   });
 
-  it("accepts an item quantity at the RPC's own 2147483647 ceiling", () => {
-    // T02's sum bound is inclusive of 2147483647 (MAX_RPC_QUANTITY), so a
-    // ceiling quantity is a legitimately normalizable request the record
+  it("accepts an item quantity at the RPC's own 2147483647 ceiling at the item bound itself", () => {
+    // T02's sum bound is inclusive of 2147483647 (MAX_RPC_QUANTITY), so the
+    // ceiling value is a legitimately normalizable request the item bound
     // must keep replayable — the bound accepts exactly what it rejects above.
+    // F-08 made the FULL record a different story: a genuine record's item
+    // quantity is the sum of its snapshots' per-line 1..99 quantities, and
+    // reaching the ceiling would take over 21 million max-quantity lines of
+    // one variant — unreachable through any real cart (T02's own defensive-
+    // invariant premise). So this fixture pins the ITEM bound through the
+    // failure attribution instead: the ceiling quantity produces NO
+    // items-quantity issue (the value above it does, in the case below), and
+    // the record is rejected by the aggregate parity alone — the honest
+    // semantic verdict for snapshots that cannot sum to a ceiling item.
+    const result = checkoutAttemptSchema.safeParse({
+      ...validUnresolvedRecord,
+      items: [{ variant_id: CAPPUCCINO_VARIANT_ID, quantity: 2147483647 }, WATER_ITEM],
+      fingerprint: [
+        "kiosk.checkout.lean.v1",
+        `${CAPPUCCINO_VARIANT_ID}:2147483647`,
+        `${WATER_VARIANT_ID}:1`,
+      ].join("\n"),
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) {
+      return;
+    }
+
+    // The item bound itself accepted the ceiling value...
+    expect(result.error.issues.some((issue) => issue.path.join(".") === "items.0.quantity")).toBe(
+      false,
+    );
+    // ...the fingerprint binding is canonical for these items (no fingerprint
+    // issue)...
     expect(
-      checkoutAttemptSchema.safeParse({
-        ...validUnresolvedRecord,
-        items: [{ variant_id: CAPPUCCINO_VARIANT_ID, quantity: 2147483647 }, WATER_ITEM],
-      }).success,
+      result.error.issues.some(
+        (issue) =>
+          issue.path.length === 0 &&
+          issue.message ===
+            "checkout attempt fingerprint must equal the canonical fingerprint of its items",
+      ),
+    ).toBe(false);
+    // ...and the rejection is the F-08 aggregate parity alone.
+    expect(
+      result.error.issues.some(
+        (issue) =>
+          issue.path.length === 0 &&
+          issue.message ===
+            "checkout attempt lineSnapshots quantities must aggregate to the items' quantities per variant",
+      ),
     ).toBe(true);
   });
 
@@ -448,9 +512,19 @@ describe("checkout-attempt record schema", () => {
   });
 
   it("accepts a line snapshot quantity at the cart's 1..99 bounds", () => {
+    // The snapshot quantity rides a semantically valid record (F-08): the
+    // cappuccino item carries the SAME summed quantity as its snapshot, so
+    // the bound case doubles as an aggregate-valid example — a single
+    // 99-quantity line is a legitimate persisted shape for a 99-quantity item.
     expect(
       checkoutAttemptSchema.safeParse({
         ...validUnresolvedRecord,
+        items: [{ variant_id: CAPPUCCINO_VARIANT_ID, quantity: 99 }, WATER_ITEM],
+        fingerprint: [
+          "kiosk.checkout.lean.v1",
+          `${CAPPUCCINO_VARIANT_ID}:99`,
+          `${WATER_VARIANT_ID}:1`,
+        ].join("\n"),
         lineSnapshots: [{ ...cappuccinoSnapshot, quantity: 99 }, waterSnapshot],
       }).success,
     ).toBe(true);
@@ -547,23 +621,6 @@ describe("checkout-attempt record schema", () => {
       // merge case) while BOTH snapshots persist — so the two arrays
       // legitimately differ in length and only the variant SETS may be
       // compared.
-      const regularCappuccinoSnapshot = {
-        lineId: `${CAPPUCCINO_VARIANT_ID}|${REGULAR_OPTION_VALUE_ID}`,
-        variantId: CAPPUCCINO_VARIANT_ID,
-        productId: "0f4a9d3e-2b1c-4f8a-9e7d-5c6b8a3f1d2e",
-        productDisplayName: "Cappuccino",
-        variantLabel: "Regular",
-        optionSelections: [
-          {
-            optionTypeId: "b2e1a4c3-8f7d-4a2b-9c6e-1d3f5a7b9c2d",
-            optionValueId: REGULAR_OPTION_VALUE_ID,
-            optionValueLabel: "Regular",
-          },
-        ],
-        imageUri: null,
-        quantity: 1,
-      };
-
       const result = checkoutAttemptSchema.safeParse({
         ...validUnresolvedRecord,
         items: [{ variant_id: CAPPUCCINO_VARIANT_ID, quantity: 3 }, WATER_ITEM],
@@ -582,6 +639,283 @@ describe("checkout-attempt record schema", () => {
       // The confirmed branch carries the same refine; without this case a
       // regression that dropped it there would fail no test.
       expectRefinementMessage({ ...validConfirmedRecord, lineSnapshots: [waterSnapshot] });
+    });
+  });
+
+  // --- semantic integrity (F-08) ----------------------------------------------
+  //
+  // Structure is not semantics: a record can pass every field rule and still
+  // be corrupt. TWO invariants make the restore boundary semantic, both
+  // checked on EVERY status branch (they are properties of the record, not of
+  // a lifecycle state): the stored fingerprint must EQUAL the canonical
+  // fingerprint of the stored items (normalized-request's derivation — the
+  // same text the server computes over the items it receives), and the
+  // lineSnapshots quantities must AGGREGATE to the items' quantities per
+  // variant (the variant-SET parity above accepts a record whose quantities
+  // disagree; a genuine record's item quantity IS the sum of its lines'
+  // quantities, because that is what normalization produces).
+  describe("semantic integrity (F-08)", () => {
+    /** The refinement message a non-canonical stored fingerprint fails with. */
+    const FINGERPRINT_NOT_CANONICAL_MESSAGE =
+      "checkout attempt fingerprint must equal the canonical fingerprint of its items";
+
+    /** The refinement message a per-variant quantity aggregate mismatch fails with. */
+    const SNAPSHOTS_QUANTITY_MESSAGE =
+      "checkout attempt lineSnapshots quantities must aggregate to the items' quantities per variant";
+
+    /**
+     * The canonical fingerprint of a DIFFERENT logical request —
+     * cappuccino(3) instead of cappuccino(2). Well-formed fingerprint text
+     * (domain tag, sorted `variant_id:quantity` rows, newline separators)
+     * that no minting path could ever stamp onto THIS record's items: the
+     * realistic shape of a tampered or drifted binding.
+     */
+    const FINGERPRINT_OF_A_DIFFERENT_REQUEST = [
+      "kiosk.checkout.lean.v1",
+      `${CAPPUCCINO_VARIANT_ID}:3`,
+      `${WATER_VARIANT_ID}:1`,
+    ].join("\n");
+
+    /** The aggregate fixtures' items — cappuccino(3) + water(1). */
+    const CAPP3_WATER1_ITEMS: readonly NormalizedOrderItem[] = [
+      { variant_id: CAPPUCCINO_VARIANT_ID, quantity: 3 },
+      WATER_ITEM,
+    ];
+
+    /** The canonical fingerprint for the aggregate fixtures' items. */
+    const CAPP3_WATER1_FINGERPRINT = [
+      "kiosk.checkout.lean.v1",
+      `${CAPPUCCINO_VARIANT_ID}:3`,
+      `${WATER_VARIANT_ID}:1`,
+    ].join("\n");
+
+    /** A schema-valid HELD record — the K1003 fail-closed hold (R5 design). */
+    const validHeldRecord = {
+      ...validUnresolvedRecord,
+      status: "held",
+      hold: { reason: "k1003" },
+    };
+
+    /** A schema-valid TERMINAL record — the stock-conflict definite outcome. */
+    const validTerminalConflictRecord = {
+      ...validUnresolvedRecord,
+      status: "terminal",
+      outcome: {
+        kind: "stock-conflict",
+        conflicts: [
+          { variant_id: CAPPUCCINO_VARIANT_ID, requested_quantity: 2, available_quantity: 1 },
+        ],
+      },
+    };
+
+    /** A schema-valid TERMINAL record — the definite-failure outcome. */
+    const validTerminalFailureRecord = {
+      ...validUnresolvedRecord,
+      status: "terminal",
+      outcome: {
+        kind: "definite-failure",
+        failure: {
+          kind: "server",
+          userMessage: "Something went wrong on our side. Please try again.",
+          retryable: false,
+        },
+      },
+    };
+
+    /** The corruption matrix's four status shapes (terminal twice: both outcome kinds). */
+    const ALL_FOUR_STATUSES = [
+      ["unresolved", validUnresolvedRecord],
+      ["confirmed", validConfirmedRecord],
+      ["held", validHeldRecord],
+      ["terminal (stock-conflict)", validTerminalConflictRecord],
+      ["terminal (definite-failure)", validTerminalFailureRecord],
+    ] as const;
+
+    /** The refinement-message precedent, generalized to an arbitrary message. */
+    function expectRootMessage(payload: unknown, message: string): void {
+      const result = checkoutAttemptSchema.safeParse(payload);
+
+      expect(result.success).toBe(false);
+      if (result.success) {
+        return;
+      }
+
+      expect(
+        result.error.issues.some((issue) => issue.path.length === 0 && issue.message === message),
+      ).toBe(true);
+    }
+
+    it("rejects an unresolved record whose fingerprint is not the canonical fingerprint of its items", () => {
+      // F-08: structurally valid, semantically corrupt. A fingerprint is the
+      // binding between a persisted idempotency identity and its logical
+      // request (D2); one that no minting path could have produced for these
+      // items is a tampered record, and must not restore.
+      expectRootMessage(
+        { ...validUnresolvedRecord, fingerprint: FINGERPRINT_OF_A_DIFFERENT_REQUEST },
+        FINGERPRINT_NOT_CANONICAL_MESSAGE,
+      );
+    });
+
+    it("rejects a record whose snapshots do not aggregate to the items' quantities — set parity alone accepts it", () => {
+      // Items say 3, snapshots sum to 2: the variant SETS are equal, so the
+      // parity refine above accepts this record — only the per-variant
+      // aggregate catches it. A genuine record cannot disagree this way
+      // (the item quantity IS the lines' sum), so this is corruption.
+      expectRootMessage(
+        {
+          ...validUnresolvedRecord,
+          items: CAPP3_WATER1_ITEMS,
+          fingerprint: CAPP3_WATER1_FINGERPRINT,
+        },
+        SNAPSHOTS_QUANTITY_MESSAGE,
+      );
+    });
+
+    it.each(ALL_FOUR_STATUSES)(
+      "rejects a %s record whose fingerprint is not the canonical fingerprint of its items",
+      (_case, base) => {
+        expectRootMessage(
+          { ...base, fingerprint: FINGERPRINT_OF_A_DIFFERENT_REQUEST },
+          FINGERPRINT_NOT_CANONICAL_MESSAGE,
+        );
+      },
+    );
+
+    it.each(ALL_FOUR_STATUSES)(
+      "rejects a %s record whose snapshots do not aggregate to the items' quantities",
+      (_case, base) => {
+        expectRootMessage(
+          { ...base, items: CAPP3_WATER1_ITEMS, fingerprint: CAPP3_WATER1_FINGERPRINT },
+          SNAPSHOTS_QUANTITY_MESSAGE,
+        );
+      },
+    );
+
+    it.each(ALL_FOUR_STATUSES)("accepts a semantically valid %s record", (_case, payload) => {
+      // The valid twins of the two rejections above, one per status branch:
+      // canonical fingerprint, aggregating snapshots. Held carries the k1003
+      // hold; terminal carries each outcome kind (a stock-conflict with one
+      // entry and a definite-failure payload).
+      expect(checkoutAttemptSchema.safeParse(payload).success).toBe(true);
+    });
+
+    it("accepts the aggregate-mismatch record once a second same-variant snapshot restores the sum", () => {
+      // The aggregate rule pinned from its valid side: the cappuccino's
+      // missing quantity 1 rides its OWN snapshot (a different option
+      // selection of the same variant — T02's merge case), and the exact
+      // record that failed the aggregate rejection above restores. Set
+      // parity alone would be insufficient proof — this is the sum.
+      const result = checkoutAttemptSchema.safeParse({
+        ...validUnresolvedRecord,
+        items: CAPP3_WATER1_ITEMS,
+        fingerprint: CAPP3_WATER1_FINGERPRINT,
+        lineSnapshots: [cappuccinoSnapshot, regularCappuccinoSnapshot, waterSnapshot],
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects a terminal stock-conflict record with an empty conflicts array", () => {
+      // min(1) mirrors the wire contract's own rule (create-order-response:
+      // jsonb_agg yields null over zero rows, so a genuine conflicts array is
+      // never empty) — a terminal record must not restore claiming a
+      // conflict outcome it does not carry.
+      expectRejectedAt(
+        { ...validTerminalConflictRecord, outcome: { kind: "stock-conflict", conflicts: [] } },
+        "outcome.conflicts",
+      );
+    });
+
+    it("rejects a held record missing its hold payload", () => {
+      // Strict: a held record without its hold reason claims the status
+      // without its evidence.
+      expectRejectedAt(withoutField(validHeldRecord, "hold"), "hold");
+    });
+
+    it("rejects a held record with an unknown hold reason", () => {
+      // "k1003" is the only hold cause the R5 design defines; any other
+      // reason text is a record this build never wrote.
+      expectRejectedAt({ ...validHeldRecord, hold: { reason: "k5000" } }, "hold.reason");
+    });
+
+    it.each(["network", "unknown"] as const)(
+      "rejects a terminal definite-failure record carrying the AMBIGUOUS kind %s (RT02-1)",
+      (kind) => {
+        // Terminal is a durable DEFINITE no-order verdict; the classifier
+        // routes the ambiguous kinds to the unknown outcome, never a definite
+        // failure. A terminal record claiming an ambiguous failure kind is a
+        // contradiction no write path can produce.
+        const result = checkoutAttemptSchema.safeParse({
+          ...validTerminalFailureRecord,
+          outcome: {
+            kind: "definite-failure",
+            failure: {
+              kind,
+              userMessage: "We couldn't reach the network.",
+              retryable: true,
+            },
+          },
+        });
+
+        expect(result.success).toBe(false);
+      },
+    );
+
+    it("rejects a terminal stock-conflict record whose conflicts name a variant the items never carried (RT02-2)", () => {
+      // The RPC computes conflicts over the REQUEST rows it received, so a
+      // genuine conflict entry always names a submitted variant. A conflict
+      // for an unrequested variant is a record no write path can produce.
+      expectRootMessage(
+        {
+          ...validTerminalConflictRecord,
+          outcome: {
+            kind: "stock-conflict",
+            conflicts: [
+              {
+                variant_id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                requested_quantity: 1,
+                available_quantity: 0,
+              },
+            ],
+          },
+        },
+        "checkout attempt terminal conflicts must name the items' variants",
+      );
+    });
+
+    it("rejects a record whose items are not in mint form — uppercase hex (RT02-3)", () => {
+      // Consistency alone would accept this: the fingerprint below was
+      // recomputed over the uppercase rows. But no minting path emits
+      // uppercase-hex items — normalizeCartLines lowercases — so this is a
+      // record this build never wrote.
+      const upperItems = [
+        { variant_id: CAPPUCCINO_VARIANT_ID.toUpperCase(), quantity: 2 },
+        { variant_id: WATER_VARIANT_ID.toUpperCase(), quantity: 1 },
+      ];
+      expectRootMessage(
+        {
+          ...validUnresolvedRecord,
+          items: upperItems,
+          fingerprint: deriveRequestFingerprint(upperItems),
+        },
+        "checkout attempt items must be lowercase and sorted by variant_id (mint form)",
+      );
+    });
+
+    it("rejects a record whose items are not in mint form — unsorted (RT02-3)", () => {
+      // Same reasoning: the fingerprint is consistent with the unsorted rows,
+      // but mint-form records are sorted by variant_id. Water sorts before
+      // cappuccino? No — '3a7f…' < '9c2d…' code-unit, so reversing the order
+      // is a record no minting path produces.
+      const unsortedItems = [WATER_ITEM, CAPPUCCINO_ITEM];
+      expectRootMessage(
+        {
+          ...validUnresolvedRecord,
+          items: unsortedItems,
+          fingerprint: deriveRequestFingerprint(unsortedItems),
+        },
+        "checkout attempt items must be lowercase and sorted by variant_id (mint form)",
+      );
     });
   });
 

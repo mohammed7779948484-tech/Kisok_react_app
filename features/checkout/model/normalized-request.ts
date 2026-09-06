@@ -40,6 +40,34 @@ export type NormalizedRequest = {
 };
 
 /**
+ * ONE canonical fingerprint derivation — the server-canonical form mirrored
+ * client-side (migration lines 107–114: `'kiosk.checkout.lean.v1' || E'\n' ||
+ * string_agg(variant_id || ':' || quantity, E'\n' order by r.variant_id)`):
+ * the leading domain tag, one `variant_id:quantity` row per item, rows joined
+ * by `\n`. Derives over the items EXACTLY AS GIVEN — `normalizeCartLines`
+ * emits items sorted by `variant_id`, which is the row order the server's own
+ * `order by r.variant_id` produces, so the normalizer's output and the
+ * derivation agree byte-for-byte.
+ *
+ * Exported because TWO boundaries need the SAME algorithm: the normalizer
+ * stamps it onto a fresh request (D2's idempotency-identity binding), and the
+ * persisted attempt record's restore boundary re-derives it from the stored
+ * items to reject a tampered fingerprint (F-08). Recomputing the form in a
+ * second place would let the two drift — a record the store minted could
+ * fail its own restore, or a tampered one could pass it. The derivation does
+ * NOT travel to the server: the server computes its own over the items it
+ * receives; this text exists so the client can bind a persisted
+ * `client_request_id` to the logical request locally — a changed cart
+ * produces a different fingerprint and can never silently reuse an existing
+ * idempotency identity.
+ */
+export function deriveRequestFingerprint(items: readonly NormalizedOrderItem[]): string {
+  return [FINGERPRINT_DOMAIN, ...items.map((item) => `${item.variant_id}:${item.quantity}`)].join(
+    "\n",
+  );
+}
+
+/**
  * Pure checkout domain rules — no IO — mapping the current Cart lines to the
  * exact `create_order` items payload (AC-05), plus the client-side
  * fingerprint that binds an idempotency identity to the logical request.
@@ -58,15 +86,9 @@ export type NormalizedRequest = {
  * `variant_id`, so the same logical cart yields a byte-identical request
  * regardless of input line order or casing.
  *
- * The fingerprint mirrors the server's canonical form (migration lines
- * 107–114: `'kiosk.checkout.lean.v1' || E'\n' || string_agg(variant_id ||
- * ':' || quantity, E'\n' order by r.variant_id)`): the leading domain tag,
- * `variant_id:quantity` rows joined by `\n`, sorted by `variant_id`. It NEVER
- * travels to the server — the server computes its own over the items it
- * receives — it exists so the client can bind a persisted
- * `client_request_id` to the logical request locally (D2): a changed cart
- * produces a different fingerprint and can never silently reuse an existing
- * idempotency identity.
+ * The returned fingerprint is `deriveRequestFingerprint(items)` — the ONE
+ * canonical derivation above, shared with the attempt record's restore
+ * boundary (F-08).
  *
  * Item order uses plain code-unit comparison of canonical lowercase uuid
  * text — deliberately NOT `localeCompare`: for lowercase hex the code-unit
@@ -123,10 +145,7 @@ export function normalizeCartLines(lines: readonly CartLine[]): NormalizedReques
       return { variant_id: variantId, quantity };
     });
 
-  const fingerprint = [
-    FINGERPRINT_DOMAIN,
-    ...items.map((item) => `${item.variant_id}:${item.quantity}`),
-  ].join("\n");
+  const fingerprint = deriveRequestFingerprint(items);
 
   return { items, fingerprint };
 }

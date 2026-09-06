@@ -278,22 +278,49 @@ describe("checkout model integration: normalizeCartLines → checkoutAttemptSche
     // 1..99 line bounds; the ceiling lives on the summed ITEM, not the line).
     const displayLine = cappuccinoLine(2);
 
-    it("restores a record whose single item sits at exactly 2147483647, with its fingerprint bound", () => {
+    it("keeps the 2147483647 ceiling item replayable at the item bound, with its fingerprint bound", () => {
       expect(ceiling.items).toEqual([{ variant_id: CAPPUCCINO_VARIANT_ID, quantity: 2147483647 }]);
 
+      // F-08 note: a genuine record's item quantity is the SUM of its
+      // snapshots' per-line 1..99 quantities, and reaching the ceiling would
+      // take over 21 million max-quantity lines of one variant — unreachable
+      // through any real cart (this describe's own premise). So a full record
+      // whose single display line says 2 cannot restore a ceiling item any
+      // more: the F-08 aggregate parity rejects it. What stays pinned here is
+      // exactly what the ceiling seam was always about — the ITEM bound is
+      // inclusive at 2147483647 (no items-quantity issue; the value above it
+      // fails at the exact path, in the case below) and the fingerprint is
+      // bound EXACTLY as normalizeCartLines produced it (the canonical form
+      // of the ceiling items, so no fingerprint issue either): the rejection
+      // is attributable to the aggregate parity ALONE.
       const result = checkoutAttemptSchema.safeParse(
         attemptRecordFrom(ceiling, [displayLine], { status: "unresolved" }),
       );
 
-      expect(result.success).toBe(true);
-      if (!result.success) {
+      expect(result.success).toBe(false);
+      if (result.success) {
         return;
       }
 
-      expect(result.data.items).toEqual([
-        { variant_id: CAPPUCCINO_VARIANT_ID, quantity: 2147483647 },
-      ]);
-      expect(result.data.fingerprint).toBe(ceiling.fingerprint);
+      expect(result.error.issues.some((issue) => issue.path.join(".") === "items.0.quantity")).toBe(
+        false,
+      );
+      expect(
+        result.error.issues.some(
+          (issue) =>
+            issue.path.length === 0 &&
+            issue.message ===
+              "checkout attempt fingerprint must equal the canonical fingerprint of its items",
+        ),
+      ).toBe(false);
+      expect(
+        result.error.issues.some(
+          (issue) =>
+            issue.path.length === 0 &&
+            issue.message ===
+              "checkout attempt lineSnapshots quantities must aggregate to the items' quantities per variant",
+        ),
+      ).toBe(true);
     });
 
     it("rejects a persisted item one past the ceiling — the schema is normalization's re-validation twin", () => {
