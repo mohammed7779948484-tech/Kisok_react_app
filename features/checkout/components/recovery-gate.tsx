@@ -7,9 +7,26 @@ import { useActiveProfile } from "@/core/auth";
 import { cn } from "@/core/utils";
 import { useCart } from "@/features/cart";
 
-import { useAttemptStore, type RecoveryOutcome } from "../state/attempt-store";
+import {
+  useAttemptStore,
+  type RecoveryOutcome,
+  type UnsafeHoldReason,
+} from "../state/attempt-store";
 
 import { ConflictRow } from "./conflict-row";
+
+/**
+ * The unsafe-recovery panel's copy per hold reason (R5-T05): honest,
+ * customer-safe, and free of internal identifiers — the customer cannot act
+ * on the reason, only staff can, so every line says exactly that.
+ */
+const UNSAFE_HOLD_DESCRIPTIONS: Record<UnsafeHoldReason, string> = {
+  corrupt: "We couldn't read this tablet's saved order information. Please let store staff know.",
+  "foreign-unresolved":
+    "A previous customer's unfinished order submission is saved on this tablet. Please let store staff know.",
+  "foreign-confirmed-unsafe-cleanup":
+    "A previous customer's order cleanup couldn't finish on this tablet. Please let store staff know.",
+};
 
 /**
  * The session-level recovery composition (T12, AC-13; plan D7): mounted ONCE
@@ -27,10 +44,14 @@ import { ConflictRow } from "./conflict-row";
  *   rejected — correctness must not depend on that screen having stayed
  *   mounted.
  * - The recovery SURFACES: the blocking panel for an unresolved same-owner
- *   attempt, and the cleanup-resolution panel for a confirmed attempt whose
- *   cart clear is not yet proven safe. Children ALWAYS render beneath
- *   (dimmed, blocked by the overlay): the cart is locked by the store, the
- *   sign-out is guarded, and the panel is the only interaction.
+ *   attempt, the cleanup-resolution panel for a confirmed attempt whose
+ *   cart clear is not yet proven safe, the K1003 hold panel (R5-T05 — a
+ *   restored OR in-session `held` phase), the unsafe-recovery staff panel
+ *   (fail-closed evidence held on disk), and the terminal restore's
+ *   conflict/failure panels (the durable definite verdict, no auto-replay).
+ *   Children ALWAYS render beneath (dimmed, blocked by the overlay): the cart
+ *   is locked by the store, the sign-out is guarded, and the panel is the
+ *   only interaction.
  *
  * Division of labour (plan D8): the ATTEMPT STORE is the single phase
  * authority — this component never mutates a phase itself. It subscribes
@@ -73,6 +94,9 @@ export function RecoveryGate({ children }: RecoveryGateProps) {
   const phase = useAttemptStore((state) => state.phase);
   const conflict = useAttemptStore((state) => state.conflict);
   const failure = useAttemptStore((state) => state.failure);
+  // The F-05 fail-closed hold's reason — the unsafe-recovery panel's copy is
+  // reason-specific (R5-T05), so the gate re-renders when the hold lands.
+  const unsafeHold = useAttemptStore((state) => state.unsafeHold);
   // The cleanup watch (AC-11/AC-13): a boolean selector, so the gate
   // re-renders only when the confirmed record's tracker actually flips to
   // "done" — the signal that the retried clear landed and the success flow
@@ -151,12 +175,15 @@ export function RecoveryGate({ children }: RecoveryGateProps) {
 
   /** The way out of a definite no-order outcome: the (preserved) cart. */
   const handleReturnToCart = () => {
-    // The episode ends here — the outcome was definite (no order exists),
-    // the store discarded the record at resolve and unlocked the cart. The
-    // machine's stale stock-conflict/failed phase is deliberately NOT reset
-    // here: the review screen's own mount-reset (T09) cleans it when the
-    // customer re-enters review, which is exactly what that reset is for —
-    // a fresh review over the corrected cart.
+    // The episode ends here — the outcome was definite (no order exists):
+    // either the store discarded the record at resolve and unlocked the cart
+    // (the unresolved family), or the verdict was restored from a TERMINAL
+    // record (R5-T05) — no lock was taken on that restore, and the durable
+    // verdict has no recovery value left to lose. The machine's stale
+    // stock-conflict/failed phase is deliberately NOT reset here: the review
+    // screen's own mount-reset (T09) cleans it when the customer re-enters
+    // review, which is exactly what that reset is for — a fresh review over
+    // the corrected cart.
     setEpisodeEnded(true);
     router.replace("/cart");
   };
@@ -176,26 +203,73 @@ export function RecoveryGate({ children }: RecoveryGateProps) {
     void useAttemptStore.getState().retryCleanup();
   };
 
-  // ---- the outcome routing (D7) -----------------------------------------------
+  // ---- the surface routing (D7, R5-T05) ---------------------------------------
   // Children render in EVERY branch — the overlay is the only thing above
-  // them. `"none"` and both discard families never raise a surface (the
-  // discards are already logged by the store; the app is simply normal), and
-  // `"confirmed-cleanup-done"` never raises one either (straight to the
-  // success handoff). An unresolved outcome keeps the surface up through the
-  // whole episode: the in-flight check, the still-unknown hold, and the
-  // definite no-order panels that end it. A cleanup-unsafe confirmation
-  // keeps it up until the retried clear is proven done.
+  // them. TWO hold surfaces are PHASE-scoped: `held` (the K1003 hold —
+  // restored from a durable held record, or risen MID-SESSION when a live
+  // submission resolves K1003) and `unsafe-recovery` (the fail-closed
+  // corrupt/foreign hold) raise REGARDLESS of `outcome` AND of the episode
+  // flag — session-wide, over ANY screen, including the review screen
+  // mid-session, and even after a previous recovery episode ended (RT03-4:
+  // an in-session hold must never leave the customer looking at a normal app
+  // while checkout is impossible; the hold itself is the episode that
+  // matters). In-session, the REVIEW screen owns the
+  // stock-conflict/failed/unknown/submitting presentations (its own panels
+  // and footer), so those phases raise this gate overlay only under a
+  // RECOVERED outcome: `"unresolved"` (recovered sessions — the in-flight
+  // check, the still-unknown hold, and the definite no-order panels that end
+  // the episode) and `"terminal"` (the restored durable definite verdict —
+  // the same phases and panels, with NO auto-replay). A cleanup-unsafe
+  // confirmation keeps the surface up until the retried clear is proven
+  // done. The no-surface outcomes: `"none"` (nothing on disk),
+  // `"discarded-foreign"` (the one proven-inert discard, already logged by
+  // the store), and `"confirmed-cleanup-done"` (straight to the success
+  // handoff).
   const recoverySurfaceVisible =
-    !episodeEnded &&
-    (outcome === "unresolved"
-      ? phase === "unknown" ||
-        phase === "submitting" ||
-        phase === "stock-conflict" ||
-        phase === "failed"
-      : outcome === "confirmed-cleanup-pending" && !cleanupDone);
+    phase === "held" ||
+    phase === "unsafe-recovery" ||
+    (!episodeEnded &&
+      (outcome === "unresolved" || outcome === "terminal"
+        ? phase === "unknown" ||
+          phase === "submitting" ||
+          phase === "stock-conflict" ||
+          phase === "failed"
+        : outcome === "confirmed-cleanup-pending" && !cleanupDone));
 
   let panel: ReactNode = null;
-  if (outcome === "confirmed-cleanup-pending") {
+  if (phase === "held") {
+    // F-04: the server PROVED an order exists for this request identity
+    // (K1003 — restored from a durable held record or risen mid-session). No
+    // actions: the hold has NO client-side exit (R5-T04 — the sign-out guard
+    // refuses while it stands; the exit is staff intervention), and a button
+    // that pretended otherwise would be dishonest.
+    panel = (
+      <Alert
+        variant="destructive"
+        title="This order request needs staff help"
+        description="An order may already exist for this request. Please let store staff know so they can check it before this tablet is used again."
+      />
+    );
+  } else if (phase === "unsafe-recovery") {
+    // F-05: the fail-closed recovery hold — corrupt, foreign, or
+    // foreign-unclean evidence KEPT on disk. Same honesty as the held panel:
+    // staff attention, no client-side exit, copy per hold reason.
+    panel = (
+      <Alert
+        variant="destructive"
+        title="This tablet needs staff attention"
+        description={
+          unsafeHold === null
+            ? // The store sets phase "unsafe-recovery" only together with a
+              // non-null `unsafeHold` (its holdUnsafe lands both) — this
+              // fallback is the honest generic staff copy for a state the
+              // machine cannot produce.
+              "Please let store staff know."
+            : UNSAFE_HOLD_DESCRIPTIONS[unsafeHold.reason]
+        }
+      />
+    );
+  } else if (outcome === "confirmed-cleanup-pending") {
     // The recovery-resolution surface: the same honesty as the success
     // screen's unsafe-cleanup warning (the order IS confirmed — nothing is
     // wrong with it; the tablet is what is not ready) plus the one action
@@ -212,7 +286,12 @@ export function RecoveryGate({ children }: RecoveryGateProps) {
         </Button>
       </>
     );
-  } else if (outcome === "unresolved") {
+  } else if (outcome === "unresolved" || outcome === "terminal") {
+    // The phase-driven panels serve BOTH recovered-outcome families: the
+    // unresolved episode, and the TERMINAL restore of a durable definite
+    // verdict (same phases, same payloads — only the conflict/failure
+    // branches are reachable for terminal: the store restores exactly those,
+    // and no resolver or replay can run on a terminal record).
     if (phase === "submitting") {
       // The replay (auto or customer-pressed) is in flight: the honest copy
       // plus the checking state — the BlockingOverlay grammar.

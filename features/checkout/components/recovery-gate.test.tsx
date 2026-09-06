@@ -18,7 +18,7 @@ import { submitOrder } from "../api/submit-order";
 import { RecoveryGate as RecoveryGateFromIndex } from "../index";
 import type { CreateOrderResponse } from "../model/create-order-response.schema";
 import type { CheckoutAttempt } from "../model/checkout-attempt.schema";
-import { deriveRequestFingerprint } from "../model/normalized-request";
+import { deriveRequestFingerprint, normalizeCartLines } from "../model/normalized-request";
 import { useAttemptStore } from "../state/attempt-store";
 
 import { RecoveryGate } from "./recovery-gate";
@@ -33,6 +33,14 @@ import { RecoveryGate } from "./recovery-gate";
  * same-owner attempt (auto-replay ONCE with the STORED idempotency identity),
  * the recovery-resolution surface for a confirmed attempt with unsafe
  * cleanup, and the immediate success handoff when cleanup is already safe.
+ *
+ * R5-T05 adds the fail-closed surfaces the R5-T03 machine created: the HELD
+ * panel (a restored OR in-session K1003 hold — the user-facing message the
+ * T03 review demanded, RT03-4), the UNSAFE-RECOVERY staff panel
+ * (corrupt/foreign/foreign-unclean evidence held on disk, copy per hold
+ * reason), and the TERMINAL restore (the durable definite verdict's
+ * conflict/failure panels over the same phase-driven presentation, with NO
+ * auto-replay).
  *
  * Conventions (the T09/T11 screen suites):
  *
@@ -217,6 +225,50 @@ function confirmedAttempt(cleanup: "pending" | "done"): CheckoutAttempt {
     cleanup: { cartClear: cleanup },
   };
 }
+
+/** A schema-valid HELD record — the durable K1003 hold evidence (F-04). */
+function heldAttempt(): CheckoutAttempt {
+  return {
+    ...unresolvedAttempt(),
+    status: "held",
+    hold: { reason: "k1003" },
+  };
+}
+
+/** A schema-valid TERMINAL stock-conflict record — the durable verdict (F-06). */
+function terminalConflictAttempt(): CheckoutAttempt {
+  return {
+    ...unresolvedAttempt(),
+    status: "terminal",
+    outcome: { kind: "stock-conflict", conflicts: CONFLICT_RESPONSE.conflicts },
+  };
+}
+
+/** A schema-valid TERMINAL definite-failure record — the durable verdict (F-06). */
+function terminalFailureAttempt(): CheckoutAttempt {
+  return {
+    ...unresolvedAttempt(),
+    status: "terminal",
+    outcome: {
+      kind: "definite-failure",
+      failure: {
+        kind: "server",
+        userMessage: "Something went wrong on our side. Please try again.",
+        retryable: false,
+      },
+    },
+  };
+}
+
+/**
+ * F-04: the K1003 idempotency conflict — the server PROVED an order already
+ * exists for this client_request_id under a different actor or fingerprint
+ * (the review suite's own K1003 fixture shape).
+ */
+const k1003Error = new AppError({
+  kind: "idempotency-conflict",
+  userMessage: "This order was already submitted with different items.",
+});
 
 /**
  * Seed the durable attempt record — and nothing else: the component under
@@ -499,7 +551,7 @@ describe("RecoveryGate", () => {
     expect(screen.queryByText("We're checking your last order submission")).toBeNull();
   });
 
-  it("holds a foreign-owner attempt fail-closed without replay: children render, nothing submits, nothing navigates (AC-13, F-05)", async () => {
+  it("holds a foreign-owner attempt fail-closed without replay: the staff surface over blocked children, nothing submits, nothing navigates (AC-13, F-05)", async () => {
     await seedAttempt(foreignAttempt());
     mockAuthHolder.current = installMockAuth();
     await renderGate();
@@ -508,9 +560,17 @@ describe("RecoveryGate", () => {
     // change: a foreign UNRESOLVED record is no longer discarded — deleting
     // it would let its owner's next session mint a fresh id and duplicate
     // THEIR order. The store holds it fail-closed (evidence kept on disk and
-    // in memory); the gate still renders children only — the dedicated
-    // unsafe-recovery surface is R5-T05's.
-    await screen.findByText(CHILDREN_TEXT);
+    // in memory); the R5-T05 surface renders the staff panel over blocked
+    // children — the hold's exit is staff intervention, never a client-side
+    // action the gate could offer.
+    await screen.findByText("This tablet needs staff attention");
+    expect(
+      screen.getByText(
+        "A previous customer's unfinished order submission is saved on this tablet. Please let store staff know.",
+      ),
+    ).toBeOnTheScreen();
+    expect(screen.queryByText(CHILDREN_TEXT)).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByText("We're checking your last order submission")).toBeNull();
     expect(mockSubmitOrder).not.toHaveBeenCalled();
     expect(mockRouterReplace).not.toHaveBeenCalled();
@@ -523,5 +583,255 @@ describe("RecoveryGate", () => {
 
   it("exports RecoveryGate from the feature's public index — the customer layout's import (D7)", () => {
     expect(RecoveryGateFromIndex).toBe(RecoveryGate);
+  });
+
+  describe("fail-closed hold and terminal surfaces (R5-T05, RT03-4)", () => {
+    it("restarts into a HELD record: the staff-help K1003 panel over blocked children, no auto-replay, no way out (F-04)", async () => {
+      await seedAttempt(heldAttempt());
+      mockAuthHolder.current = installMockAuth();
+      await renderGate();
+
+      // The durable K1003 hold surfaces as the staff-help panel: the server
+      // PROVED an order may already exist for this request, and the hold has
+      // NO client-side exit (R5-T04's design) — the copy says exactly that.
+      await screen.findByText("This order request needs staff help");
+      expect(
+        screen.getByText(
+          "An order may already exist for this request. Please let store staff know so they can check it before this tablet is used again.",
+        ),
+      ).toBeOnTheScreen();
+      // Children render beneath, BLOCKED by the aria-modal overlay — checkout
+      // is impossible while the hold stands, and the panel is the only truth.
+      expect(screen.queryByText(CHILDREN_TEXT)).toBeNull();
+      // NO action buttons: a button that pretended a way out would be
+      // dishonest (the exit is staff intervention).
+      expect(screen.queryByRole("button")).toBeNull();
+      // A held record must NEVER auto-replay — the hold is durable session
+      // state, not something to resubmit.
+      expect(mockSubmitOrder).not.toHaveBeenCalled();
+      expect(mockRouterReplace).not.toHaveBeenCalled();
+      // The machine restored the hold exactly as it was persisted.
+      expect(useAttemptStore.getState().phase).toBe("held");
+      expect(useAttemptStore.getState().record?.status).toBe("held");
+      expect(useAttemptStore.getState().unsafeHold).toBeNull();
+    });
+
+    it("rises the held surface MID-SESSION when a submission resolves K1003 — the gate, not the review screen, owns the message (RT03-4, F-04)", async () => {
+      mockAuthHolder.current = installMockAuth();
+      await renderGate();
+
+      // The session started clean: recover found nothing (outcome "none").
+      await screen.findByText(CHILDREN_TEXT);
+      await waitFor(() => expect(useAttemptStore.getState().recordLoaded).toBe(true));
+
+      // Drive the REAL store the way the review screen's submission flow
+      // does: prepare (mint + durable persist, phase "submitting") — the
+      // gate's own mount already ran recover. Wrapped in act: the phase flip
+      // and the cart lock re-render the gate.
+      const prepared = await act(async () => {
+        const result = await useAttemptStore.getState().prepareAttempt({
+          ownerId: TEST_PROFILE.id,
+          lines: [cappuccinoLine, waterLine],
+          normalized: normalizeCartLines([cappuccinoLine, waterLine]),
+        });
+        if (!result.ok) {
+          throw new Error(`prepareAttempt was expected to mint, but refused: ${result.reason}`);
+        }
+        return result.request;
+      });
+      // In-session, the review screen owns the in-flight presentation — the
+      // gate stays down while the submission is "submitting".
+      expect(screen.getByText(CHILDREN_TEXT)).toBeOnTheScreen();
+
+      // The submission resolves K1003 (the store is driven directly — the
+      // gate does not render the review screen): the machine holds the
+      // attempt, and the gate surface must rise over the live session.
+      await act(async () => {
+        await useAttemptStore.getState().resolveDefiniteFailure(k1003Error);
+      });
+
+      // THE RT03-4 pin: the in-session hold is VISIBLE — the customer never
+      // stares at a normal app while checkout is impossible.
+      await screen.findByText("This order request needs staff help");
+      expect(
+        screen.getByText(
+          "An order may already exist for this request. Please let store staff know so they can check it before this tablet is used again.",
+        ),
+      ).toBeOnTheScreen();
+      expect(screen.queryByText(CHILDREN_TEXT)).toBeNull();
+      expect(screen.queryByRole("button")).toBeNull();
+      // No replay fired (the store was driven directly; the hold never
+      // auto-resubmits) and no navigation happened.
+      expect(mockSubmitOrder).not.toHaveBeenCalled();
+      expect(mockRouterReplace).not.toHaveBeenCalled();
+      // The held record kept the ONE identity the prepared submission minted.
+      expect(useAttemptStore.getState().phase).toBe("held");
+      expect(useAttemptStore.getState().record?.status).toBe("held");
+      expect(useAttemptStore.getState().record?.clientRequestId).toBe(prepared.clientRequestId);
+    });
+
+    it("restarts into a CORRUPT durable record: the unsafe-recovery staff panel with the corrupt description, no submit, the hold stays up (F-05)", async () => {
+      // A payload the attempt schema rejects — held fail-closed on disk,
+      // never deleted (evidence a session cannot interpret).
+      const write = await storage.write(ATTEMPT_KEY, { version: 99, not: "an attempt" });
+      expect(write.status).toBe("persisted");
+      mockAuthHolder.current = installMockAuth();
+      await renderGate();
+
+      // The unsafe-recovery staff panel, copy per hold reason: corrupt means
+      // this tablet's saved order information is unreadable.
+      await screen.findByText("This tablet needs staff attention");
+      expect(
+        screen.getByText(
+          "We couldn't read this tablet's saved order information. Please let store staff know.",
+        ),
+      ).toBeOnTheScreen();
+      // The overlay claims the session — blocked children, no actions, no
+      // submit, no navigation. Nothing can dismiss it client-side.
+      expect(screen.queryByText(CHILDREN_TEXT)).toBeNull();
+      expect(screen.queryByRole("button")).toBeNull();
+      expect(mockSubmitOrder).not.toHaveBeenCalled();
+      expect(mockRouterReplace).not.toHaveBeenCalled();
+      // The corrupt evidence is still exactly there, and the machine is held.
+      const attemptKey = await storage.read(ATTEMPT_KEY, (raw) => raw);
+      expect(attemptKey.status).toBe("hit");
+      expect(useAttemptStore.getState().phase).toBe("unsafe-recovery");
+      expect(useAttemptStore.getState().unsafeHold).toEqual({ reason: "corrupt" });
+    });
+
+    it("restarts into a FOREIGN-UNRESOLVED record: the staff panel with the foreign-unresolved description, no submit (F-05)", async () => {
+      await seedAttempt(foreignAttempt());
+      mockAuthHolder.current = installMockAuth();
+      await renderGate();
+
+      // A previous customer's unfinished submission is held as evidence —
+      // the copy is reason-specific and customer-safe (no internal ids).
+      await screen.findByText("This tablet needs staff attention");
+      expect(
+        screen.getByText(
+          "A previous customer's unfinished order submission is saved on this tablet. Please let store staff know.",
+        ),
+      ).toBeOnTheScreen();
+      expect(screen.queryByText(CHILDREN_TEXT)).toBeNull();
+      expect(screen.queryByRole("button")).toBeNull();
+      // Never a replay under the wrong actor.
+      expect(mockSubmitOrder).not.toHaveBeenCalled();
+      expect(mockRouterReplace).not.toHaveBeenCalled();
+      expect(useAttemptStore.getState().phase).toBe("unsafe-recovery");
+      expect(useAttemptStore.getState().unsafeHold).toEqual({ reason: "foreign-unresolved" });
+    });
+
+    it("restarts into a FOREIGN confirmed record with unclean cleanup: the staff panel with the cleanup description, no submit (F-05, RT05-2)", async () => {
+      // The third unsafe-hold reason: a previous customer's order IS
+      // confirmed but their cart clear never finished — deleting the record
+      // would orphan their unclean cart (a fresh-ID re-submission for THEM),
+      // so it is held fail-closed with its own copy.
+      await seedAttempt({ ...confirmedAttempt("pending"), ownerId: FOREIGN_OWNER_ID });
+      mockAuthHolder.current = installMockAuth();
+      await renderGate();
+
+      await screen.findByText("This tablet needs staff attention");
+      expect(
+        screen.getByText(
+          "A previous customer's order cleanup couldn't finish on this tablet. Please let store staff know.",
+        ),
+      ).toBeOnTheScreen();
+      expect(screen.queryByText(CHILDREN_TEXT)).toBeNull();
+      expect(screen.queryByRole("button")).toBeNull();
+      expect(mockSubmitOrder).not.toHaveBeenCalled();
+      expect(mockRouterReplace).not.toHaveBeenCalled();
+      expect(useAttemptStore.getState().phase).toBe("unsafe-recovery");
+      expect(useAttemptStore.getState().unsafeHold).toEqual({
+        reason: "foreign-confirmed-unsafe-cleanup",
+      });
+    });
+
+    it("the held surface rises EVEN AFTER a previous episode ended (RT05-1)", async () => {
+      // The episode flag must never suppress a HOLD: end the recovery
+      // episode via a terminal restore's Return to Cart, then drive the
+      // machine into a fresh held state — the staff panel must rise over the
+      // reachable children, not leave a locked-cart normal app behind.
+      await seedAttempt(terminalFailureAttempt());
+      const user = userEvent.setup();
+      mockAuthHolder.current = installMockAuth();
+      await renderGate();
+      await screen.findByText("Your order didn't go through");
+      await user.press(await screen.findByRole("button", { name: "Return to Cart" }));
+      expect(mockRouterReplace).toHaveBeenCalledWith("/cart");
+      expect(screen.getByText(CHILDREN_TEXT)).toBeOnTheScreen();
+
+      // A fresh submission after the episode: prepare mints over the
+      // terminal record (F-06 design), the server answers K1003, the hold
+      // lands — the phase-scoped surface must rise despite episodeEnded.
+      await act(async () => {
+        const prepared = await useAttemptStore.getState().prepareAttempt({
+          ownerId: TEST_PROFILE.id,
+          lines: [cappuccinoLine, waterLine],
+          normalized: normalizeCartLines([cappuccinoLine, waterLine]),
+        });
+        if (!prepared.ok) throw new Error(`fixture prepare failed: ${prepared.reason}`);
+        await useAttemptStore.getState().resolveDefiniteFailure(k1003Error);
+      });
+
+      await screen.findByText("This order request needs staff help");
+      expect(screen.queryByText(CHILDREN_TEXT)).toBeNull();
+      expect(useAttemptStore.getState().phase).toBe("held");
+      expect(useAttemptStore.getState().record?.status).toBe("held");
+    });
+
+    it("restarts into a TERMINAL stock-conflict record: the conflict panel with the cart-joined rows and Return to Cart, ZERO submits (F-06)", async () => {
+      await seedAttempt(terminalConflictAttempt());
+      // The preserved cart: the conflict join reads its display data, exactly
+      // like the unresolved family's panel.
+      await seedCartEnvelope([cappuccinoLine, waterLine]);
+      const user = userEvent.setup();
+      mockAuthHolder.current = installMockAuth();
+      await renderGate();
+
+      // The durable definite verdict restores as the SAME conflict panel the
+      // unresolved family renders: honest title, rows joined to the restored
+      // cart, requested/available in words AND numbers.
+      await screen.findByText("Some items aren't available in the requested quantities");
+      expect(screen.getByText("Cappuccino")).toBeOnTheScreen();
+      expect(screen.getByText("Hot · Large · Oat Milk")).toBeOnTheScreen();
+      expect(screen.getByText("Requested 2 · Available 1")).toBeOnTheScreen();
+      expect(screen.queryByText(CHILDREN_TEXT)).toBeNull();
+      // NO auto-replay: a terminal verdict is durable — a restart must never
+      // resubmit it.
+      expect(mockSubmitOrder).not.toHaveBeenCalled();
+
+      // The one way forward: back to the (preserved) cart — the episode ends
+      // and the children are reachable again.
+      await user.press(await screen.findByRole("button", { name: "Return to Cart" }));
+      expect(mockRouterReplace).toHaveBeenCalledWith("/cart");
+      expect(
+        screen.queryByText("Some items aren't available in the requested quantities"),
+      ).toBeNull();
+      expect(screen.getByText(CHILDREN_TEXT)).toBeOnTheScreen();
+      // ZERO submits across the whole episode.
+      expect(mockSubmitOrder).not.toHaveBeenCalled();
+    });
+
+    it("restarts into a TERMINAL failure record: the failure panel with Return to Cart, ZERO submits (F-06)", async () => {
+      await seedAttempt(terminalFailureAttempt());
+      const user = userEvent.setup();
+      mockAuthHolder.current = installMockAuth();
+      await renderGate();
+
+      // The durable failure verdict restores as the SAME failure panel: the
+      // stored userMessage verbatim plus Return to Cart.
+      await screen.findByText("Your order didn't go through");
+      expect(
+        screen.getByText("Something went wrong on our side. Please try again."),
+      ).toBeOnTheScreen();
+      expect(screen.queryByText(CHILDREN_TEXT)).toBeNull();
+      // NO auto-replay for the terminal verdict.
+      expect(mockSubmitOrder).not.toHaveBeenCalled();
+
+      await user.press(await screen.findByRole("button", { name: "Return to Cart" }));
+      expect(mockRouterReplace).toHaveBeenCalledWith("/cart");
+      expect(screen.getByText(CHILDREN_TEXT)).toBeOnTheScreen();
+      expect(mockSubmitOrder).not.toHaveBeenCalled();
+    });
   });
 });
