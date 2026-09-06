@@ -838,13 +838,17 @@ describe("checkout-attempt record schema", () => {
       expectRejectedAt({ ...validHeldRecord, hold: { reason: "k5000" } }, "hold.reason");
     });
 
-    it.each(["network", "unknown"] as const)(
-      "rejects a terminal definite-failure record carrying the AMBIGUOUS kind %s (RT02-1)",
+    it.each(["network", "unknown", "idempotency-conflict"] as const)(
+      "rejects a terminal definite-failure record carrying the non-terminal kind %s (RT02-1, RT03-1)",
       (kind) => {
-        // Terminal is a durable DEFINITE no-order verdict; the classifier
-        // routes the ambiguous kinds to the unknown outcome, never a definite
-        // failure. A terminal record claiming an ambiguous failure kind is a
-        // contradiction no write path can produce.
+        // Terminal is a durable DEFINITE no-order verdict. The classifier
+        // routes the ambiguous kinds (network/unknown) to the unknown
+        // outcome, and the store routes K1003 (idempotency-conflict — an
+        // order EXISTS for this identity) to the HELD record, never terminal.
+        // A terminal record claiming any of these kinds is a contradiction
+        // no write path can produce — restoring it would present a "no
+        // order" verdict for a request that may HAVE an order (F-04's harm
+        // through the restore path).
         const result = checkoutAttemptSchema.safeParse({
           ...validTerminalFailureRecord,
           outcome: {

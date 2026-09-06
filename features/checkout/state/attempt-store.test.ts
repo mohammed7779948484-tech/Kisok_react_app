@@ -402,6 +402,37 @@ function confirmedRecord(
   };
 }
 
+/** A TERMINAL definite-failure record — the durable no-order verdict (F-06). */
+function terminalFailureRecord(): CheckoutAttempt {
+  return {
+    ...unresolvedRecord(),
+    // A distinct id from the harness's mint counter output, so a fresh mint
+    // can never coincide with the seeded verdict's identity.
+    clientRequestId: "00000000-0000-4000-8000-000000000042",
+    status: "terminal",
+    outcome: {
+      kind: "definite-failure",
+      failure: {
+        kind: "server",
+        userMessage: "Something went wrong on our side. Please try again.",
+        retryable: true,
+      },
+    },
+  };
+}
+
+/** A backend whose removes start failing once `failRemoves()` is called. */
+function flakyRemoveBackend() {
+  const raw = createMemoryStore();
+  const baseRemoveItem = raw.removeItem;
+  let failing = false;
+  raw.removeItem = async (key: string) => {
+    if (failing) throw new Error("remove rejected");
+    return baseRemoveItem(key);
+  };
+  return { raw, failRemoves: () => (failing = true) };
+}
+
 // The failure paths below log by design (honest storage and guard reports);
 // keep the suite silent so an expected failure does not look like a broken run.
 beforeEach(() => setLogSink(() => {}));
@@ -1582,6 +1613,160 @@ describe("recover — F-05: foreign and unclean records are HELD, never deleted"
     // The evidence record is untouched, in memory and on disk.
     expect(store.useStore.getState().record?.status).toBe("unresolved");
     expect(store.useStore.getState().record?.ownerId).toBe(OWNER_B);
+  });
+
+  it("foreign-unresolved hold: the THREE async resolvers refuse the foreign identity (RT03-2)", async () => {
+    // The evidence record under an F-05 hold is a FOREIGN unresolved record
+    // — its status would satisfy the resolvers' record guard. Resolving it
+    // would pin this session's outcome onto another profile's identity:
+    // resolveSuccess would confirm THEIR order and drive THEIR cart clear;
+    // the definite resolvers would discard THEIR identity. All three must
+    // refuse the hold.
+    const store = createStore();
+    seedRecord(store.raw, unresolvedRecord({ ownerId: OWNER_B }));
+    await store.useStore.getState().recover(OWNER_A);
+
+    await store.useStore.getState().resolveSuccess({
+      orderId: SUCCESS_RESPONSE.order_id,
+      displayNumber: SUCCESS_RESPONSE.display_number,
+      createdAt: SUCCESS_RESPONSE.created_at,
+    });
+    expect(store.useStore.getState().record?.status).toBe("unresolved");
+    expect(store.useStore.getState().record?.ownerId).toBe(OWNER_B);
+    expect(store.useStore.getState().phase).toBe("unsafe-recovery");
+    expect(store.counts().clear).toBe(0);
+    expect(readPersistedRecord(store.raw).status).toBe("unresolved");
+
+    await store.useStore.getState().resolveStockConflict(CONFLICTS);
+    expect(store.useStore.getState().record?.status).toBe("unresolved");
+    expect(readPersistedRecord(store.raw).status).toBe("unresolved");
+    expect(store.counts().unlock).toBe(0);
+
+    await store.useStore.getState().resolveDefiniteFailure(k1003Error);
+    expect(store.useStore.getState().record?.status).toBe("unresolved");
+    // The K1003 branch never even fired — no held write, no failure payload.
+    expect(store.useStore.getState().phase).toBe("unsafe-recovery");
+    expect(readPersistedRecord(store.raw).status).toBe("unresolved");
+  });
+});
+
+describe("resolveDefiniteFailure — ambiguous kinds are refused at the action boundary (RT03-6)", () => {
+  it.each([networkError, unknownKindError])(
+    "holds the attempt unresolved instead of persisting a terminal verdict (%p)",
+    async (error) => {
+      // The classifier routes the ambiguous kinds to the unknown outcome,
+      // but the action is public: a direct caller passing a network/unknown
+      // AppError must never have it persisted as a DEFINITE terminal verdict
+      // (F-03's harm, live). Fail safe: unresolved + locked.
+      const store = await preparedStore({ submits: [] });
+
+      await store.useStore.getState().resolveDefiniteFailure(error);
+
+      expect(store.useStore.getState().record?.status).toBe("unresolved");
+      expect(store.useStore.getState().phase).toBe("unknown");
+      expect(readPersistedRecord(store.raw).status).toBe("unresolved");
+      expect(store.counts().unlock).toBe(0);
+    },
+  );
+});
+
+describe("prepareAttempt over a TERMINAL record — the F-06 mint-over decision (RT03-3)", () => {
+  it("mints a fresh identity over an in-memory terminal record: the old verdict is safely dead", async () => {
+    // A terminal record asserts a definite NO-ORDER verdict for ITS
+    // client_request_id. The customer has seen the verdict (or will, via the
+    // gate) and confirms a FRESH logical request: a new identity is the
+    // correct behavior — the old id has no order to duplicate.
+    const store = createStore();
+    seedRecord(store.raw, terminalFailureRecord());
+    await store.useStore.getState().recover(OWNER_A);
+    const mintsBefore = store.mints();
+
+    const result = await store.useStore
+      .getState()
+      .prepareAttempt({ ownerId: OWNER_A, lines: LINES, normalized: NORMALIZED });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("narrowing guard for prepare result");
+    expect(store.mints()).toBe(mintsBefore + 1);
+    // The fresh identity differs from the seeded verdict's identity.
+    expect(result.request.clientRequestId).toBe("00000000-0000-4000-8000-000000000001");
+    expect(result.request.clientRequestId).not.toBe(terminalFailureRecord().clientRequestId);
+    // The disk record flipped from terminal to the fresh unresolved mint.
+    expect(readPersistedRecord(store.raw).status).toBe("unresolved");
+    expect(store.useStore.getState().phase).toBe("submitting");
+    expect(store.counts().lock).toBe(1);
+  });
+
+  it("restart-from-terminal → enterReview → confirm mints fresh and replaces the disk record", async () => {
+    // The full restart journey for the F-06 verdict: recover restores the
+    // definite failure (NO auto-replay), the customer goes back to review,
+    // and a fresh confirmation legitimately mints a NEW id — the old
+    // terminal identity is overwritten, never reused.
+    const store = createStore();
+    seedRecord(store.raw, terminalFailureRecord());
+    const outcome = await store.useStore.getState().recover(OWNER_A);
+    expect(outcome).toBe("terminal");
+    expect(store.submitCalls()).toEqual([]);
+
+    store.useStore.getState().enterReview();
+    expect(store.useStore.getState().phase).toBe("idle");
+
+    const result = await store.useStore
+      .getState()
+      .prepareAttempt({ ownerId: OWNER_A, lines: LINES, normalized: NORMALIZED });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("narrowing guard for prepare result");
+    const persisted = readPersistedRecord(store.raw);
+    expect(persisted.status).toBe("unresolved");
+    if (persisted.status !== "unresolved") throw new Error("narrowing guard for record");
+    expect(persisted.clientRequestId).toBe(result.request.clientRequestId);
+    expect(persisted.clientRequestId).not.toBe(terminalFailureRecord().clientRequestId);
+  });
+});
+
+describe("clearForSignOut — unsafe-recovery hold reset (RT03-5)", () => {
+  it("resets unsafeHold and recordLoaded; the next session re-reads disk and re-holds", async () => {
+    // The sign-out wipe is legal only when the guard (R5-T04) approved it —
+    // here we pin the STORE side: the envelope reset must clear the hold
+    // marker and force a REAL re-read, so the next recover rediscovers
+    // whatever disk holds (here: the same foreign record → the hold again).
+    const store = createStore();
+    seedRecord(store.raw, unresolvedRecord({ ownerId: OWNER_B }));
+    await store.useStore.getState().recover(OWNER_A);
+    expect(store.useStore.getState().phase).toBe("unsafe-recovery");
+
+    const removed = await store.useStore.getState().clearForSignOut();
+
+    expect(removed.status).toBe("persisted");
+    expect(store.useStore.getState().unsafeHold).toBeNull();
+    expect(store.useStore.getState().recordLoaded).toBe(false);
+    expect(store.useStore.getState().phase).toBe("idle");
+
+    // A fresh recover on the SAME backend (the next session's read): the
+    // foreign record is gone (the wipe removed it) → a clean miss.
+    const second = await store.useStore.getState().recover(OWNER_A);
+    expect(second).toBe("none");
+    expect(store.useStore.getState().phase).toBe("idle");
+  });
+
+  it("keeps the re-hold honest when the wipe itself fails: disk still carries the evidence", async () => {
+    const flaky = flakyRemoveBackend();
+    const store = createStore({ raw: flaky.raw });
+    seedRecord(store.raw, unresolvedRecord({ ownerId: OWNER_B }));
+    await store.useStore.getState().recover(OWNER_A);
+    flaky.failRemoves();
+
+    const removed = await store.useStore.getState().clearForSignOut();
+
+    expect(removed.status).toBe("rejected");
+    // Memory envelope still resets (the cart's H-F02 precedent)…
+    expect(store.useStore.getState().unsafeHold).toBeNull();
+    expect(store.useStore.getState().recordLoaded).toBe(false);
+    // …and the next recover re-reads the surviving evidence and re-holds.
+    const second = await store.useStore.getState().recover(OWNER_A);
+    expect(second).toBe("unsafe-recovery");
+    expect(store.useStore.getState().unsafeHold).toEqual({ reason: "foreign-unresolved" });
   });
 });
 

@@ -278,18 +278,21 @@ const attemptRecordFields = {
  * kinds — the terminal record simply keeps accepting the ones it was written
  * with.
  *
- * `"network"` and `"unknown"` are DELIBERATELY ABSENT: they are the AMBIGUOUS
- * kinds — `classifySubmitOutcome` routes them to the unknown outcome, never a
- * definite failure — so a record claiming `status: "terminal"` (a durable
- * DEFINITE no-order verdict) with an ambiguous failure kind is an oxymoron no
- * write path can produce, and the restore boundary rejects it (RT02-1).
+ * `"network"`, `"unknown"`, and `"idempotency-conflict"` are DELIBERATELY
+ * ABSENT: the first two are the AMBIGUOUS kinds — `classifySubmitOutcome`
+ * routes them to the unknown outcome, never a definite failure — and
+ * `"idempotency-conflict"` (K1003) means an order EXISTS for this
+ * client_request_id, so the store routes it to the HELD record, never a
+ * terminal no-order verdict. A record claiming `status: "terminal"` (a
+ * durable DEFINITE no-order verdict) with any of these kinds is an oxymoron
+ * no write path can produce, and the restore boundary rejects it (RT02-1,
+ * RT03-1).
  */
 const failureKindSchema = z.enum([
   "auth",
   "forbidden",
   "validation",
   "unavailable",
-  "idempotency-conflict",
   "state-conflict",
   "server",
 ] as const satisfies readonly [AppErrorKind, ...AppErrorKind[]]);

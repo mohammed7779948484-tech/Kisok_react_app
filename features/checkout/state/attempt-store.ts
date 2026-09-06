@@ -36,7 +36,7 @@ const log = createLogger("checkout.attempt");
  * ever violated (a violating record would fail the next restore loudly and
  * land in the fail-closed unsafe hold).
  */
-type TerminalFailureKind = Exclude<AppErrorKind, "network" | "unknown">;
+type TerminalFailureKind = Exclude<AppErrorKind, "network" | "unknown" | "idempotency-conflict">;
 
 // Plan decision D1: ONE durable attempt record under ONE key. At most one
 // attempt is ever on disk, and the payload itself (T03's schema) carries the
@@ -594,7 +594,16 @@ export function createAttemptStore(
 
     // ---- resolveSuccess (D4: capture → durably confirm → clear) -------------
     const applyResolveSuccess = async (response: OrderSuccessCapture): Promise<void> => {
-      const record = get().record;
+      const { record, unsafeHold } = get();
+      if (unsafeHold !== null) {
+        // RT03-2: an F-05 hold's evidence record is FOREIGN — its
+        // status ("unresolved") must not satisfy this resolver's record
+        // guard. Resolving the foreign identity (pinning this session's
+        // success payload onto it, driving its owner's cart clear) is
+        // exactly the escape the hold exists to prevent.
+        log.warn("resolveSuccess ignored: an unsafe recovery hold owns this session");
+        return;
+      }
       if (!record || record.status !== "unresolved") {
         // Fail-closed enforcement: ONLY an unresolved attempt may be
         // confirmed. A confirmed record is already the success payload (the
@@ -702,7 +711,14 @@ export function createAttemptStore(
 
     // ---- definite outcomes (AC-08, AC-10, D11) --------------------------------
     const applyResolveStockConflict = async (conflicts: StockConflictItem[]): Promise<void> => {
-      const record = get().record;
+      const { record, unsafeHold } = get();
+      if (unsafeHold !== null) {
+        // RT03-2: the evidence record under an F-05 hold is FOREIGN — its
+        // "unresolved" status must not satisfy this resolver's guard, and
+        // resolving it would discard another profile's identity.
+        log.warn("resolveStockConflict ignored: an unsafe recovery hold owns this session");
+        return;
+      }
       if (!record || record.status !== "unresolved") {
         // Fail-closed enforcement: only an UNRESOLVED attempt can resolve to
         // a conflict. A confirmed record IS the Order Success payload (D1) —
@@ -756,12 +772,33 @@ export function createAttemptStore(
     };
 
     const applyResolveDefiniteFailure = async (error: AppError): Promise<void> => {
-      const record = get().record;
+      const { record, unsafeHold } = get();
+      if (unsafeHold !== null) {
+        // RT03-2: the evidence record under an F-05 hold is FOREIGN — its
+        // "unresolved" status must not satisfy this resolver's guard, and
+        // resolving it (K1003 branch included) would act on another
+        // profile's identity.
+        log.warn("resolveDefiniteFailure ignored: an unsafe recovery hold owns this session");
+        return;
+      }
       if (!record || record.status !== "unresolved") {
         // Fail-closed enforcement: a held record is never re-resolved (F-04);
         // a confirmed record keeps its success payload; a terminal record
         // already carries its verdict; no record → nothing to resolve.
         log.warn("resolveDefiniteFailure ignored: no unresolved attempt to resolve");
+        return;
+      }
+
+      if (error.kind === "network" || error.kind === "unknown") {
+        // RT03-6: the classifier routes the ambiguous kinds to the unknown
+        // outcome, but this action is public — a future caller passing a
+        // network/unknown AppError directly must not have it persisted as a
+        // definite terminal verdict. Fail safe: hold the attempt unresolved.
+        log.warn(
+          "resolveDefiniteFailure refused an ambiguous error kind; holding the attempt unresolved",
+          { kind: error.kind },
+        );
+        applyResolveUnknown();
         return;
       }
 
@@ -789,8 +826,18 @@ export function createAttemptStore(
           // NOT discarded (a restart auto-replays the SAME id → K1003 again
           // → held attempt again — deterministic, server-side). Present
           // unknown (honest: the outcome cannot be safely recorded), keep
-          // the cart locked.
-          reportWriteFailure(write.error.message);
+          // the cart locked. `persistence` is deliberately untouched
+          // (RT03-7): the failed write was of the HELD record, so memory and
+          // disk both still hold the SAME unresolved record — memory is not
+          // ahead of disk, and a standing "clearFailed" must not be
+          // downgraded by a "memoryOnly" report.
+          log.error(
+            "The held attempt record could not be made durable; keeping the attempt unresolved",
+            {
+              key: STORAGE_KEY,
+              reason: write.error.message,
+            },
+          );
           set({ phase: "unknown", conflict: null, failure: null });
         }
         return; // NEVER unlock on the K1003 path — the cart is evidence/context.
