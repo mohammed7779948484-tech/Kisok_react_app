@@ -19,7 +19,7 @@ Current round     : 5 (safety remediation — independent review findings F-01..
 Current task      : — (round complete at the implementation level; verification/browser/reviews in flight)
 Current stage     : FEATURE GATE REOPENED — the Round-4 PASS claim was INVALIDATED by the independent safety review (eight findings) and is superseded by Round 5
 Last gate         : Round 5 task gates PASS (R5-T01..R5-T05); Round 5 gate in progress
-Next legal action : deterministic full verification → live browser journey → fresh full-scope review + quality audit → push to PR #13
+Next legal action : push to PR #13 → CI on the exact final HEAD (all verification/journey/review/audit items complete)
 Blocked by        : —
 ```
 

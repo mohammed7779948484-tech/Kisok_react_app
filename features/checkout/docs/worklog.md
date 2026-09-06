@@ -1506,7 +1506,7 @@ at round start: 69 suites / 864 tests green at 055e674.
   fallback; `looksLikeNetworkFailure` delegates to the same predicate.
 - Reviewer (fresh): 0 blocking; RT01-1 major (empty-code gate unpinned) +
   minors → all remediated (57014/XX000 rows, anchored prefixes, rpc boundary
-  test). GREEN: 69/875. Commit `1aef2ca`.
+  test). GREEN: 69 suites / 880 tests (commit message's count; 875 was the interim pre-remediation figure). Commit `1aef2ca`.
 
 ## R5-T02 — F-08 semantic integrity + held/terminal schema
 
@@ -1519,7 +1519,7 @@ at round start: 69 suites / 864 tests green at 055e674.
 - Typecheck carry (TS2339 ×2 in attempt-store.ts) accepted BY DESIGN → closed
   in R5-T03.
 - Reviewer (fresh): 0 blocking; RT02-1 major (terminal enum admits
-  network/unknown) → fixed + pinned. GREEN: 69/902. Commit `564a131`.
+  network/unknown) → fixed + pinned. GREEN: 69 suites / 907 tests at `564a131` (902 was the pre-remediation-rows figure). Commit `564a131`.
 
 ## R5-T03 — F-03/F-04/F-05/F-06/F-07 state machine
 
@@ -1573,17 +1573,26 @@ at round start: 69 suites / 864 tests green at 055e674.
   the final-review remediation, 2026-09-06): `pnpm verify` **exit 0** —
   typecheck, lint, format:check, test:ci (69 suites / 954 tests), check:docs
   (78 files), check:commits, check:e2e-appid, check:ci-scripts, db:verify
-  (db:types vs generated — SQLite-free type check), generator smoke. Also
-  `pnpm export:web` **exit 0** (dist exported, all routes) and Expo Doctor
-  **18/18 checks passed**.
+  (locally SKIPPED — no PostgreSQL in this sandbox; the diff touches no
+  migrations/schema, and the REAL db:verify must come from CI on the pushed
+  HEAD — the Round-4 precedent), generator smoke. Also `pnpm export:web`
+  **exit 0** (dist exported, all routes; auditor corroborated via dist
+  mtime/route groups) and Expo Doctor — the Lead's run reported 18/18; a
+  later auditor re-run in the same sandbox saw 16/18 with the two
+  network-gated checks (Expo config schema, RN Directory) INCONCLUSIVE
+  (exp.host/api.expo.dev reachability is flaky here). CI on the pushed HEAD
+  is the authoritative doctor run.
 - Earlier full-verification run at af4fe8f (pre-final-review): same result
   (69/952 at that head).
 - F-01..F-08 all CLOSED with fresh-reviewer evidence per task.
 - Fresh final full-scope review: 0 blocking, 0 unresolved major (FR-1 fixed +
   re-reviewed CLEAN by a second fresh reviewer; FR-2/FR-3 fixed; FR-4
   accepted with the in-code unreachability trace).
-- Remaining: fresh quality audit, push to origin/feature/checkout + CI on the
-  exact final HEAD.
+- Fresh quality audit: delivery sound; all record-accuracy findings applied
+  (this commit).
+- FINAL LOCAL HEAD after this records commit: `__FINAL_SHA__` (docs-only on
+  top of the code-final `ada4ddf`). Remaining: push to
+  origin/feature/checkout + CI on the exact final HEAD.
 
 ## Round 5 gate evidence — LIVE hosted-TEST browser journey
 

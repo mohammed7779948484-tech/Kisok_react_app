@@ -156,12 +156,23 @@ worklog.md Round 5): RT01-1, RT02-1, RT03-1/2/3, RT04-1 (design decision:
 hold permanence accepted, documented), RT05-1/2. Task gates: R5-T01..R5-T05
 all PASS.
 
-## Round 5 final review + quality audit
+## Round 5 final review + quality audit — COMPLETE
 
-Pending — see todo.md's Round 5 gate checklist for the remaining items
-(full-scope fresh review, quality audit, browser journey, push + CI on the
-exact final HEAD). The Round-4 "final review result" above is superseded by
-this round and is retained as history only.
+The full-scope fresh review ran (27 axes; findings FR-1..FR-4 dispositioned
+above) and its major finding's remediation was re-reviewed CLEAN by a second
+fresh READ-ONLY re-reviewer (scope: `git show 81338a4` — verdict CLEAN on
+code, 0 blocking/0 major; records-level RRF-1 records gap closed by recording
+the final-HEAD verification runs, RRF-2 row reworded to the accurate latent
+hazard, RRF-3 negative-control test added at `ada4ddf`; it also re-ran
+69/953, typecheck, lint, doctor). A fresh READ-ONLY quality auditor then
+audited the delivery: verdict **sound** — REDs reproduced against parent
+commits (8/8 transport, 25 store tests named for the findings, 4 guard, 9
+gate), every Round-5 commit green (864→954), branch discipline clean (no
+other ref moved), no scope drift, no payment/tracking invention; its
+record-accuracy findings (counts, doctor/db:verify honesty, re-review record,
+final-SHA statement, stale Pending blocks, plan.md file list) were all
+applied. The Round-4 "final review result" above is superseded by this round
+and is retained as history only. Remaining: push + CI on the exact final HEAD.
 
 ## Round 5 FINAL full-scope review (fresh reviewer, post-implementation)
 

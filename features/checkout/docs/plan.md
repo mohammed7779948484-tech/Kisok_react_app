@@ -622,3 +622,16 @@ episode flag; hold panels carry no actions (staff exit). The terminal outcome
 joins the outcome-scoped conflict/failure panels with Return to Cart and no
 auto-replay. In-session stock-conflict/failed/unknown/submitting stay
 review-screen-owned (no double presentation).
+
+## D-R10 — Round-5 external file changes (reconciles the original
+
+"Files expected to change" list above, which said none)
+
+The remediation legitimately touched three files outside features/checkout:
+`core/errors/index.ts` (F-02 — the PostgREST transport classification; its
+boundary is shared by every feature, and the checkout invariant demanded the
+core fix, with boundary tests in `core/errors/__tests__` and a read-path row
+in `core/supabase/__tests__/rpc.test.ts`), and an append-style note in
+`docs/state-management.md` (the guard's extended blocked set). No other
+shared file changed; `core/errors`' public surface (kinds, maps, retry
+semantics) is unchanged.
