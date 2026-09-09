@@ -82,6 +82,20 @@ export function AdaptiveSheetTitle({ className, children, ...props }: DialogPrim
   );
 }
 
+export function AdaptiveSheetDescription({
+  className,
+  children,
+  ...props
+}: DialogPrimitive.DescriptionProps) {
+  return (
+    <DialogPrimitive.Description asChild {...props}>
+      <Text variant="body" tone="muted" className={className}>
+        {children}
+      </Text>
+    </DialogPrimitive.Description>
+  );
+}
+
 export function AdaptiveSheetFooter({ className, ...props }: React.ComponentProps<typeof View>) {
   return <View className={cn("gap-3 border-t border-border p-5", className)} {...props} />;
 }

@@ -25,6 +25,7 @@ export {
   AdaptiveSheet,
   AdaptiveSheetClose,
   AdaptiveSheetContent,
+  AdaptiveSheetDescription,
   AdaptiveSheetFooter,
   AdaptiveSheetHeader,
   AdaptiveSheetTitle,

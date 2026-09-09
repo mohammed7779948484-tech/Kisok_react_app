@@ -98,6 +98,133 @@ describe("toAppError", () => {
       expect(error.userMessage).toBe("Your session expired. Please sign in again.");
     });
   });
+
+  describe("PostgREST transport-failure shape (F-02)", () => {
+    /**
+     * The EXACT error object `@supabase/postgrest-js` 2.112.4 RETURNS — does not
+     * throw — when the underlying fetch rejects: a plain object (NOT an Error
+     * instance), `code: ""`, and a message built as `${fetchError.name}:
+     * ${fetchError.message}`. A server-side error arrives as a PostgREST JSON
+     * body and never carries those name prefixes — which is what keeps the
+     * transport rule surgical instead of "every unknown code is network".
+     * Source: node_modules/@supabase/postgrest-js/dist/index.cjs (~lines
+     * 394–437).
+     */
+    const transportError = (
+      message: string,
+      hint = "",
+      details = "",
+      code: string | undefined = "",
+    ) => ({
+      message,
+      details,
+      hint,
+      code,
+    });
+
+    it.each([
+      {
+        label: "React Native fetch rejection",
+        error: transportError(
+          "TypeError: Network request failed",
+          "",
+          "TypeError: Network request failed\n    at fetch (native)",
+        ),
+      },
+      {
+        label: "undici/Node fetch rejection",
+        error: transportError("FetchError: fetch failed"),
+      },
+      {
+        label: "aborted request — a timed-out write may still have committed",
+        error: transportError(
+          "AbortError: The operation was aborted",
+          "Request was aborted (timeout or manual cancellation)",
+        ),
+      },
+    ])(
+      "classifies the returned transport object ($label) as network, never a definite server failure",
+      ({ error }) => {
+        const appError = toAppError(error);
+
+        expect(appError.kind).toBe("network");
+        expect(appError.retryable).toBe(true);
+      },
+    );
+
+    it("gives the returned transport object the network user message and its raw detail", () => {
+      const appError = toAppError(transportError("FetchError: fetch failed"));
+
+      expect(appError.userMessage).toBe(
+        "We couldn't reach the network. Check the connection and try again.",
+      );
+      expect(appError.technicalMessage).toBe("FetchError: fetch failed");
+    });
+
+    it("classifies an abort by its postgrest-js hint even when the message alone doesn't match", () => {
+      const error = toAppError({
+        message: "The request did not complete",
+        details: "",
+        hint: "Request was aborted (timeout or manual cancellation)",
+        code: "",
+      });
+
+      expect(error.kind).toBe("network");
+    });
+
+    it.each([
+      ["", "Relation does not exist"],
+      ["", "Internal Server Error"],
+      // Non-empty UNMAPPED codes are server answers even when the message
+      // carries transport keywords — the empty-code gate (RT01-1) is what keeps
+      // the reclassification surgical, and these rows pin it.
+      ["57014", "canceling statement due to statement timeout"],
+      ["XX000", "TypeError: Network request failed"],
+    ] as const)(
+      "keeps an unmapped-code PostgrestError that is NOT transport (code %s, %s) as a definite server failure",
+      (code, message) => {
+        expect(toAppError(transportError(message, "", "", code)).kind).toBe("server");
+      },
+    );
+
+    it.each([
+      ["K1006", "server"],
+      ["42501", "forbidden"],
+    ])(
+      "never reclassifies a mapped Postgres code (%s) even when its message looks like transport",
+      (code, kind) => {
+        const error = toAppError({
+          message: "TypeError: Network request failed",
+          details: "",
+          hint: "",
+          code,
+        });
+
+        expect(error.kind).toBe(kind);
+      },
+    );
+
+    it("classifies a postgrest-js prefix-only transport message (FetchError: terminated) as network", () => {
+      // postgrest-js constructs returned-object messages as
+      // `${fetchError.name}: ${fetchError.message}` — "FetchError: terminated"
+      // (undici body termination) matches ONLY via the anchored name prefix.
+      expect(toAppError(transportError("FetchError: terminated")).kind).toBe("network");
+    });
+
+    it("does not classify a thrown error that merely EMBEDS an error name as network", () => {
+      // "Uncaught TypeError: …" is a client-side crash report, not a fetch
+      // rejection: the name prefix must be anchored at the START, so the
+      // keyword-free remainder falls through to `unknown` (fail-safe, but not
+      // masked as connectivity).
+      expect(toAppError(new Error("Uncaught TypeError: x is not a function")).kind).toBe("unknown");
+    });
+
+    it("keeps classifying THROWN transport errors as network — one predicate for both shapes", () => {
+      expect(toAppError(new TypeError("fetch failed")).kind).toBe("network");
+      expect(toAppError(new Error("Network request failed")).kind).toBe("network");
+      expect(toAppError(new Error("The operation was aborted")).kind).toBe("network");
+    });
+  });
 });
 
 describe("shouldRetry", () => {

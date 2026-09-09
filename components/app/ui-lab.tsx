@@ -17,6 +17,7 @@ import { AppImage } from "@/components/media/app-image";
 import {
   AdaptiveSheet,
   AdaptiveSheetContent,
+  AdaptiveSheetDescription,
   AdaptiveSheetHeader,
   AdaptiveSheetTitle,
   AdaptiveSheetTrigger,
@@ -304,6 +305,9 @@ export function UiLabScreen() {
               <AdaptiveSheetContent>
                 <AdaptiveSheetHeader>
                   <AdaptiveSheetTitle>Adaptive surface</AdaptiveSheetTitle>
+                  <AdaptiveSheetDescription>
+                    Side panel in landscape, bottom sheet otherwise.
+                  </AdaptiveSheetDescription>
                 </AdaptiveSheetHeader>
                 <View className="p-5">
                   <Text variant="body" tone="muted">
