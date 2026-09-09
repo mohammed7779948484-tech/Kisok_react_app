@@ -5,7 +5,7 @@ import { cn } from "@/core/utils";
 
 import { TextClassContext } from "./text";
 
-const badgeVariants = cva("flex-row items-center self-start rounded-md px-2.5 py-1", {
+const badgeVariants = cva("flex-row items-center self-start rounded-full px-3 py-1.5", {
   variants: {
     variant: {
       neutral: "bg-secondary",
@@ -19,7 +19,7 @@ const badgeVariants = cva("flex-row items-center self-start rounded-md px-2.5 py
   defaultVariants: { variant: "neutral" },
 });
 
-const badgeTextVariants = cva("text-xs font-semibold", {
+const badgeTextVariants = cva("text-xs font-bold", {
   variants: {
     variant: {
       neutral: "text-secondary-foreground",

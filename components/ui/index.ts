@@ -9,6 +9,7 @@ export { Icon, withIconClassName } from "./icon";
 export { Alert, alertVariants } from "./alert";
 export { Progress } from "./progress";
 export { Tabs, TabsContent, TabsList, TabsTrigger } from "./tabs";
+export { RadioGroup, RadioGroupItem } from "./radio-group";
 export {
   Dialog,
   DialogClose,

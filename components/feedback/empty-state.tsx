@@ -25,9 +25,13 @@ export function EmptyState({
   className?: string;
 }) {
   return (
-    <View className={cn("flex-1 items-center justify-center gap-3 p-8", className)}>
-      {icon ? <Icon as={icon} size={40} className="text-muted-foreground" /> : null}
-      <Text variant="h3" className="text-center">
+    <View className={cn("flex-1 items-center justify-center gap-4 p-8", className)}>
+      {icon ? (
+        <View className="items-center justify-center rounded-full bg-secondary p-4">
+          <Icon as={icon} size={36} className="text-primary" />
+        </View>
+      ) : null}
+      <Text variant="h2" className="text-center" accessibilityRole="header">
         {title}
       </Text>
       {description ? (
@@ -36,7 +40,7 @@ export function EmptyState({
         </Text>
       ) : null}
       {action ? (
-        <Button variant="secondary" onPress={action.onPress} className="mt-2">
+        <Button variant="primary" onPress={action.onPress} className="mt-2">
           <Text>{action.label}</Text>
         </Button>
       ) : null}

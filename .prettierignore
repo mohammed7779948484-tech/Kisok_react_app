@@ -1,6 +1,7 @@
 node_modules/
 .expo/
 dist/
+.agents/skills/
 pnpm-lock.yaml
 supabase/migrations/
 core/supabase/database.types.ts

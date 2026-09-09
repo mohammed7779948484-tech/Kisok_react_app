@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 
+import { Check, CheckCircle2 } from "lucide-react-native";
 import { BackHandler, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { SkeletonList } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
-import { Alert, Button, Text } from "@/components/ui";
+import { Alert, Button, Icon, Text } from "@/components/ui";
 import { createLogger } from "@/core/logging";
 import { useCustomerCatalogSettings } from "@/features/catalog";
 
@@ -310,7 +311,26 @@ export function OrderSuccessScreen() {
           countdownReArmRef.current?.();
         }}
       >
-        <Text variant="h1">Order Confirmed</Text>
+        <View className="overflow-hidden rounded-2xl bg-primary p-6 md:p-8">
+          <View aria-hidden className="mb-6 flex-row gap-2">
+            <View className="h-2 w-16 rounded-full bg-accent" />
+            <View className="h-2 w-8 rounded-full bg-primary-foreground/40" />
+            <View className="h-2 flex-1 rounded-full bg-primary-foreground/15" />
+          </View>
+          <View className="flex-row items-center gap-4">
+            <View className="h-16 w-16 items-center justify-center rounded-full bg-success">
+              <Icon as={Check} size={36} className="text-success-foreground" />
+            </View>
+            <View className="flex-1 gap-1">
+              <Text variant="h1" className="text-primary-foreground">
+                Order Confirmed
+              </Text>
+              <Text variant="body" className="text-primary-foreground/80">
+                Keep this screen nearby if staff ask for the order number.
+              </Text>
+            </View>
+          </View>
+        </View>
         <Alert
           variant="success"
           title="Your order has been sent to the store"
@@ -319,21 +339,30 @@ export function OrderSuccessScreen() {
         {/* The display number: mono and LARGE — it is read aloud across a
             counter, so the type carries the digits and the accessible name
             says what they are. */}
-        <View className="items-center gap-1 py-6">
+        <View className="items-center gap-3 py-8">
+          <View className="flex-row items-center gap-2">
+            <Icon as={CheckCircle2} className="text-success" />
+            <Text variant="label" tone="success">
+              Ready to share with staff
+            </Text>
+          </View>
           <Text variant="label" tone="muted">
             Order number
           </Text>
           <Text
             variant="mono"
-            className="text-5xl"
+            className="text-6xl font-black tracking-widest text-primary md:text-7xl"
             accessibilityLabel={`Order number ${confirmedRecord.success.displayNumber}`}
           >
             {confirmedRecord.success.displayNumber}
           </Text>
         </View>
-        <Text variant="body" tone="muted">
-          {summary}
-        </Text>
+        <View className="flex-row items-center justify-between border-y border-border py-4">
+          <Text variant="h2">Submitted items</Text>
+          <Text variant="body" tone="muted">
+            {summary}
+          </Text>
+        </View>
         {/* The immutable submitted snapshots through T08's read-only row —
             the record's snapshot type is structurally the CartLine shape the
             row renders (pinned at the type level in the attempt schema's own
@@ -349,7 +378,7 @@ export function OrderSuccessScreen() {
       {/* The footer follows the record's cleanup tracker: the gated reset is
           offered ONLY where the store's gate will accept it (AC-11/AC-14). */}
       <SafeAreaView edges={["bottom"]}>
-        <View className="gap-3 border-t border-border px-6 py-4">
+        <View className="gap-4 border-t border-border bg-card px-6 py-5">
           {cleanupUnsafe ? (
             <>
               <Alert

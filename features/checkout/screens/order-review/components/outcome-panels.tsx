@@ -1,6 +1,7 @@
-import { ScrollView } from "react-native";
+import { AlertTriangle, CircleX, ShieldQuestion } from "lucide-react-native";
+import { ScrollView, View } from "react-native";
 
-import { Alert } from "@/components/ui";
+import { Icon, Text } from "@/components/ui";
 import type { CartLine } from "@/features/cart";
 
 import type { AttemptFailure, StockConflictItem } from "../../../state/attempt-store";
@@ -61,11 +62,24 @@ export function StockConflictPanel({
 }) {
   return (
     <ScrollView className="flex-1" contentContainerClassName="gap-4 px-6 py-4">
-      <Alert
-        variant="warning"
-        title="Some items aren't available in the requested quantities"
-        description="No order was submitted, and your cart wasn't changed. Return to your cart to adjust the quantities."
-      />
+      <View
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+        className="gap-3 rounded-lg border border-warning/30 bg-warning/10 p-5"
+      >
+        <View className="flex-row items-center gap-3">
+          <View className="h-touch w-touch items-center justify-center rounded-full bg-warning">
+            <Icon as={AlertTriangle} className="text-warning-foreground" />
+          </View>
+          <View className="flex-1 gap-1">
+            <Text variant="h2">Some quantities are no longer available</Text>
+            <Text variant="body" tone="muted">
+              No order was submitted and your cart was not changed. Return to your cart to adjust
+              the items below.
+            </Text>
+          </View>
+        </View>
+      </View>
       {conflicts.map((entry) => (
         <ConflictRow key={entry.variant_id} entry={entry} lines={lines} />
       ))}
@@ -91,11 +105,24 @@ export function StockConflictPanel({
  */
 export function UnknownOutcomePanel() {
   return (
-    <Alert
-      variant="warning"
-      title="We couldn't confirm whether your order went through"
-      description="It may already exist — we'll check safely without submitting a duplicate."
-    />
+    <View
+      accessibilityRole="alert"
+      accessibilityLiveRegion="polite"
+      className="gap-3 rounded-lg border border-warning/30 bg-warning/10 p-5"
+    >
+      <View className="flex-row items-center gap-3">
+        <View className="h-touch w-touch items-center justify-center rounded-full bg-warning">
+          <Icon as={ShieldQuestion} className="text-warning-foreground" />
+        </View>
+        <Text variant="h2" className="flex-1">
+          Order status not confirmed
+        </Text>
+      </View>
+      <Text variant="body" tone="muted">
+        We could not confirm whether your order went through. It may already exist, so checking
+        again will safely reuse the same request instead of submitting a duplicate.
+      </Text>
+    </View>
   );
 }
 
@@ -112,10 +139,22 @@ export function UnknownOutcomePanel() {
  */
 export function FailureOutcomePanel({ failure }: { failure: AttemptFailure }) {
   return (
-    <Alert
-      variant="destructive"
-      title="Your order didn't go through"
-      description={failure.userMessage}
-    />
+    <View
+      accessibilityRole="alert"
+      accessibilityLiveRegion="polite"
+      className="gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-5"
+    >
+      <View className="flex-row items-center gap-3">
+        <View className="h-touch w-touch items-center justify-center rounded-full bg-destructive">
+          <Icon as={CircleX} className="text-destructive-foreground" />
+        </View>
+        <Text variant="h2" className="flex-1">
+          Order not sent
+        </Text>
+      </View>
+      <Text variant="body" tone="muted">
+        {failure.userMessage}
+      </Text>
+    </View>
   );
 }

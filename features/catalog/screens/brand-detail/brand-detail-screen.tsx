@@ -145,7 +145,7 @@ export function BrandDetailScreen({ brandId }: BrandDetailScreenProps) {
   return (
     <Screen>
       <View className="flex-1">
-        <View className="gap-3 px-6 pb-2 pt-6">
+        <View className="gap-5 px-5 pb-3 pt-6 md:px-8">
           <Button variant="ghost" onPress={handleBack} className="self-start">
             <Text>Go back</Text>
           </Button>
@@ -157,7 +157,7 @@ export function BrandDetailScreen({ brandId }: BrandDetailScreenProps) {
           keyExtractor={productKeyExtractor}
           onItemPress={handleProductPress}
           testID="brand-products-grid"
-          className="px-4"
+          className="px-3 md:px-6"
         />
       </View>
     </Screen>
@@ -177,18 +177,21 @@ type BrandIdentityProps = {
  */
 function BrandIdentity({ brand, productCount }: BrandIdentityProps) {
   return (
-    <View className="flex-row items-center gap-4">
+    <View className="flex-row items-center gap-5 border-b border-border pb-6">
       <AppImage
         uri={brand.image?.secureUrl ?? null}
         alt={brand.name}
         contentFit="cover"
-        className="h-16 w-16 rounded-lg"
+        className="h-24 w-24 rounded-xl border border-border bg-card md:h-28 md:w-28"
       />
-      <View className="flex-1 gap-1">
+      <View className="flex-1 gap-2">
+        <Text variant="label" tone="primary">
+          Brand
+        </Text>
         <Text variant="h1" accessibilityRole="header">
           {brand.name}
         </Text>
-        <Text variant="body" tone="muted">
+        <Text variant="label" tone="muted">
           {productCountLabel(productCount)}
         </Text>
       </View>

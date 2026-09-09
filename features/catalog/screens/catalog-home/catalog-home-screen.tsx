@@ -132,12 +132,21 @@ export function CatalogHomeScreen() {
 
   return (
     <Screen>
-      <ScrollView contentContainerClassName="gap-6 p-6">
-        <Text variant="h1" accessibilityRole="header">
-          {isFullSettings(view.settings) ? view.settings.store_name : "Catalog"}
-        </Text>
-
-        <CatalogNavigation current="home" onNavigate={handleRootNavigate} />
+      <ScrollView contentContainerClassName="gap-10 px-5 pb-36 pt-8 md:px-8">
+        <View className="gap-6">
+          <View className="gap-2 py-2">
+            <Text variant="label" tone="primary">
+              Store catalog
+            </Text>
+            <Text variant="display" accessibilityRole="header">
+              {isFullSettings(view.settings) ? view.settings.store_name : "Catalog"}
+            </Text>
+            <Text variant="lead" tone="muted">
+              Discover products by brand or category.
+            </Text>
+          </View>
+          <CatalogNavigation current="home" onNavigate={handleRootNavigate} />
+        </View>
 
         {brands.length > 0 ? (
           <HomeSection
@@ -205,12 +214,15 @@ type HomeSectionProps = {
 /** One bounded Home section: its heading, its Browse-all action and its cards. */
 function HomeSection({ title, browseAllLabel, onBrowseAll, children }: HomeSectionProps) {
   return (
-    <View className="gap-3">
+    <View className="gap-5 border-t border-border pt-6">
       <View className="flex-row items-center justify-between gap-3">
-        <Text variant="h2" accessibilityRole="header">
-          {title}
-        </Text>
-        <Button variant="ghost" onPress={onBrowseAll} className="shrink-0">
+        <View className="flex-row items-center gap-3">
+          <View className="h-8 w-2 rounded-sm bg-accent" />
+          <Text variant="h2" accessibilityRole="header">
+            {title}
+          </Text>
+        </View>
+        <Button variant="outline" onPress={onBrowseAll} className="shrink-0">
           <Text>{browseAllLabel}</Text>
         </Button>
       </View>
@@ -245,9 +257,9 @@ function HomeCards<ItemT extends { id: string }>({
   }
 
   return (
-    <View className="gap-3">
+    <View className="gap-4">
       {rows.map((row, rowIndex) => (
-        <View key={rowIndex} className="flex-row gap-3">
+        <View key={rowIndex} className="flex-row gap-4">
           {row.map((item) => (
             <View key={item.id} className="flex-1">
               {renderItem(item)}

@@ -53,10 +53,16 @@ export function CartAccessButton() {
   const label = `Open cart${totalQuantity > 0 ? `, ${totalQuantity} items` : ""}`;
 
   return (
-    <Button size="icon" className="relative" accessibilityLabel={label} onPress={openQuickCart}>
+    <Button
+      size="large"
+      className="relative rounded-full px-6"
+      accessibilityLabel={label}
+      onPress={openQuickCart}
+    >
       <Icon as={ShoppingCart} size={24} className="text-primary-foreground" />
+      <Text>Cart</Text>
       {totalQuantity > 0 ? (
-        <Badge variant="primary" className="absolute -right-2 -top-2">
+        <Badge variant="primary" className="absolute -right-2 -top-2 border-2 border-background">
           <Text>{totalQuantity}</Text>
         </Badge>
       ) : null}

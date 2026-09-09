@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 
-import { ShoppingCart } from "lucide-react-native";
+import { ClipboardCheck, ShoppingCart } from "lucide-react-native";
 import { BackHandler, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { BlockingOverlay, EmptyState, SkeletonList } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
-import { Alert, Button, Text } from "@/components/ui";
+import { Alert, Button, Icon, Text } from "@/components/ui";
 import { createLogger } from "@/core/logging";
 import { getCartSnapshot, useCart } from "@/features/cart";
 
@@ -339,8 +339,16 @@ export function OrderReviewScreen() {
     // way (R-T09-01).
     <Screen edges={lines.length > 0 ? FOOTER_EDGES : FOOTERLESS_EDGES}>
       <View className="flex-1">
-        <View className="gap-3 px-6 pt-6">
-          <Text variant="h1">Review Your Order</Text>
+        <View className="gap-4 border-b border-border/70 px-6 pb-5 pt-8">
+          <View className="flex-row items-start gap-4">
+            <Icon as={ClipboardCheck} size={32} className="mt-1 text-primary" />
+            <View className="flex-1 gap-1">
+              <Text variant="h1">Review Your Order</Text>
+              <Text variant="body" tone="muted">
+                Confirm each item and quantity. Your order is sent only once you continue.
+              </Text>
+            </View>
+          </View>
           {persistence === "memoryOnly" ? (
             <Alert
               variant="warning"
@@ -385,7 +393,7 @@ export function OrderReviewScreen() {
           // No virtualization: the cart is bounded at 100 lines by the
           // create_order contract, so plain ScrollView mounts every row —
           // a virtualizer would add measurement complexity for no gain.
-          <ScrollView className="flex-1" contentContainerClassName="gap-4 px-6 py-4">
+          <ScrollView className="flex-1" contentContainerClassName="px-6 py-2">
             {lines.map((line) => (
               <OrderLineRow key={line.lineId} line={line} />
             ))}
@@ -402,10 +410,13 @@ export function OrderReviewScreen() {
         // while this footer is mounted, so this SafeAreaView is the bottom
         // inset's single owner (R-T09-01).
         <SafeAreaView edges={["bottom"]}>
-          <View className="gap-3 border-t border-border px-6 py-4">
-            <Text variant="body" tone="muted">
-              {summary}
-            </Text>
+          <View className="gap-4 border-t border-border bg-card px-6 py-5">
+            <View className="flex-row items-center justify-between gap-4">
+              <Text variant="label" tone="muted">
+                Order summary
+              </Text>
+              <Text variant="h3">{summary}</Text>
+            </View>
             {phase === "stock-conflict" ? (
               // The one way forward (AC-08): the store already unlocked the
               // cart at resolve; this button only moves. Replaces Confirm —

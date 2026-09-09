@@ -1,5 +1,6 @@
 import { ActivityIndicator, View } from "react-native";
 
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Text } from "@/components/ui/text";
 
 /**
@@ -11,22 +12,22 @@ import { Text } from "@/components/ui/text";
  * prevents a duplicate order.
  */
 export function BlockingOverlay({ visible, label }: { visible: boolean; label: string }) {
-  if (!visible) return null;
-
   return (
-    <View
-      aria-modal
-      accessibilityRole="progressbar"
-      accessibilityLabel={label}
-      accessibilityLiveRegion="assertive"
-      className="absolute inset-0 z-50 items-center justify-center gap-4 bg-background/85"
-      // Claims the touch on native so presses cannot reach the screen beneath.
-      // On web the prop is inert, but the overlay covers the viewport and
-      // intercepts pointer events by stacking, so the behaviour matches.
-      onStartShouldSetResponder={() => true}
-    >
-      <ActivityIndicator size="large" />
-      <Text variant="lead">{label}</Text>
-    </View>
+    <Dialog open={visible} onOpenChange={() => undefined}>
+      <DialogContent className="max-w-sm items-center border-0 p-8">
+        <DialogTitle className="sr-only">{label}</DialogTitle>
+        <View
+          accessibilityRole="progressbar"
+          accessibilityLabel={label}
+          accessibilityLiveRegion="assertive"
+          className="items-center gap-4"
+        >
+          <ActivityIndicator size="large" />
+          <Text variant="lead" className="text-center text-popover-foreground">
+            {label}
+          </Text>
+        </View>
+      </DialogContent>
+    </Dialog>
   );
 }

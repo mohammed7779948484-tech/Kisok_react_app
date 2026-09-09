@@ -1,6 +1,6 @@
 import { View } from "react-native";
 
-import { Button, Text } from "@/components/ui";
+import { RadioGroup, RadioGroupItem, Text } from "@/components/ui";
 import { cn } from "@/core/utils";
 
 import type { CatalogVariantView } from "../../../model/catalog-view";
@@ -22,7 +22,8 @@ import type { CatalogVariantView } from "../../../model/catalog-view";
  * `title_override` variant — the one case where the label hides them; when the
  * label itself is the option pairs, repeating them below would be noise.
  *
- * ANY variant, including an unavailable one, stays a plain selectable Button —
+ * ANY variant, including an unavailable one, stays selectable through the
+ * shared library-backed RadioGroup —
  * inspection is the whole point (Design decision 9), so entries are never
  * disabled. Selection is announced through `aria-selected` (the platform-safe
  * spelling prescribed by docs/design-system.md) and mirrored visually by the
@@ -55,11 +56,16 @@ export function VariantChoiceList({
   className,
 }: VariantChoiceListProps) {
   return (
-    <View className={cn("gap-2", className)}>
-      <Text variant="body" tone="muted">
-        Choose a variant
-      </Text>
-      <View className="gap-2">
+    <View className={cn("gap-4", className)}>
+      <View className="gap-1 border-t border-border pt-5">
+        <Text variant="label" tone="primary">
+          Selection
+        </Text>
+        <Text variant="h2" accessibilityRole="header">
+          Choose your option
+        </Text>
+      </View>
+      <RadioGroup value={selectedVariantId} onValueChange={onSelectVariant} className="gap-3">
         {variants.map((variant) => {
           const isSelected = variant.id === selectedVariantId;
           const availability = variant.is_available ? "Available" : "Out of stock";
@@ -73,26 +79,40 @@ export function VariantChoiceList({
               : null;
 
           return (
-            <Button
+            <RadioGroupItem
               key={variant.id}
-              variant={isSelected ? "primary" : "ghost"}
-              block
-              aria-selected={isSelected}
+              value={variant.id}
               accessibilityLabel={
                 optionPairs !== null
                   ? `${variant.label}, ${optionPairs}, ${availability}`
                   : `${variant.label}, ${availability}`
               }
-              onPress={() => onSelectVariant(variant.id)}
-              className="flex-col items-start justify-start gap-1"
+              className={cn(
+                "rounded-xl p-5",
+                isSelected ? "border-accent" : "border-border bg-card",
+              )}
             >
-              <Text>{variant.label}</Text>
-              {optionPairs !== null ? <Text variant="label">{optionPairs}</Text> : null}
-              <Text variant="label">{availability}</Text>
-            </Button>
+              <View className="flex-1 gap-2">
+                <Text variant="h3">{variant.label}</Text>
+                {optionPairs !== null ? (
+                  <Text
+                    variant="caption"
+                    className={isSelected ? "text-primary-foreground/80" : undefined}
+                  >
+                    {optionPairs}
+                  </Text>
+                ) : null}
+                <Text
+                  variant="label"
+                  className={isSelected ? "text-primary-foreground" : undefined}
+                >
+                  {availability}
+                </Text>
+              </View>
+            </RadioGroupItem>
           );
         })}
-      </View>
+      </RadioGroup>
     </View>
   );
 }

@@ -1,10 +1,11 @@
 import { useRouter } from "expo-router";
 import type { ReactNode } from "react";
 import { ScrollView, View } from "react-native";
+import { ArrowLeft, CalendarDays, PackageCheck, XCircle } from "lucide-react-native";
 
 import { EmptyState, ErrorState, InlineError, SkeletonList } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
-import { Button, Text } from "@/components/ui";
+import { Button, Icon, Text } from "@/components/ui";
 import { useAuth } from "@/core/auth";
 
 import type { ActiveOrderRow } from "../../api/fetch-active-orders";
@@ -109,6 +110,7 @@ function terminalSummaryLabel(order: HistoryRow, timezone: string): string {
 
 type HistoryGroupProps = {
   title: string;
+  status: "completed" | "cancelled";
   orders: HistoryRow[];
   /** The signed-in employee's profile id — the assignment comparison. */
   actorPreparationId: string;
@@ -124,18 +126,52 @@ type HistoryGroupProps = {
  * — simpler than the board's section, which carries action callbacks and
  * rejection feedback history never has.
  */
-function HistoryGroup({ title, orders, actorPreparationId, timezone, onPress }: HistoryGroupProps) {
+function HistoryGroup({
+  title,
+  status,
+  orders,
+  actorPreparationId,
+  timezone,
+  onPress,
+}: HistoryGroupProps) {
+  const isCancelled = status === "cancelled";
+
   return (
-    <View className="gap-3">
-      <Text variant="h3">{`${title} (${orders.length})`}</Text>
+    <View className="flex-1 gap-3 rounded-lg bg-muted/70 p-2">
+      <View
+        className={`min-h-touch flex-row items-center justify-between gap-3 rounded-md px-4 py-3 ${
+          isCancelled ? "bg-destructive" : "bg-secondary"
+        }`}
+      >
+        <View className="min-w-0 flex-1 flex-row items-center gap-2">
+          <Icon
+            as={isCancelled ? XCircle : PackageCheck}
+            size={20}
+            className={isCancelled ? "text-destructive-foreground" : "text-secondary-foreground"}
+          />
+          <Text
+            variant="h3"
+            className={isCancelled ? "text-destructive-foreground" : "text-secondary-foreground"}
+          >
+            {title}
+          </Text>
+        </View>
+        <View className="min-w-touch items-center rounded-full bg-background/90 px-3 py-1.5">
+          <Text variant="mono" className="text-base text-foreground">
+            {orders.length}
+          </Text>
+        </View>
+      </View>
       {orders.length === 0 ? (
         // A group can be legitimately empty while its sibling is not — words,
         // not a blank panel (the board section's own convention).
-        <Text variant="body" tone="muted">
-          No orders
-        </Text>
+        <View className="min-h-32 items-center justify-center rounded-md border border-dashed border-border bg-card p-6">
+          <Text variant="body" tone="muted">
+            No orders
+          </Text>
+        </View>
       ) : (
-        <View className="gap-3">
+        <View className="gap-2">
           {orders.map((order) => (
             <OrderCard
               key={order.id}
@@ -178,7 +214,7 @@ export function StoreDayHistoryScreen() {
 
   let body: ReactNode;
   if (history.isPending) {
-    body = <SkeletonList />;
+    body = <SkeletonList itemClassName="h-40" />;
   } else if (history.isError && data === undefined) {
     // The error passes through as `unknown` (T04 O-1: transport-level throws
     // are not AppError at the screen) — ErrorState decides whether a retry
@@ -197,9 +233,10 @@ export function StoreDayHistoryScreen() {
   } else {
     const groups = groupTerminalOrders(dayOrders);
     body = (
-      <View className="gap-4">
+      <View className="gap-4 lg:flex-row lg:items-start">
         <HistoryGroup
           title="Completed"
+          status="completed"
           orders={groups.completed}
           actorPreparationId={actorPreparationId}
           timezone={timezone}
@@ -207,6 +244,7 @@ export function StoreDayHistoryScreen() {
         />
         <HistoryGroup
           title="Cancelled"
+          status="cancelled"
           orders={groups.cancelled}
           actorPreparationId={actorPreparationId}
           timezone={timezone}
@@ -218,20 +256,27 @@ export function StoreDayHistoryScreen() {
 
   return (
     <Screen edges={["top", "bottom", "left", "right"]}>
-      <ScrollView contentContainerClassName="gap-4 p-6">
+      <ScrollView contentContainerClassName="min-h-full gap-5 p-4 md:p-6">
         {/* The back action is screen chrome: present in every state, like the details
             screen — a history screen always has a way out. */}
-        <View className="flex-row items-center gap-2">
+        <View className="flex-row items-center gap-3 border-b border-border pb-4">
           <Button variant="ghost" size="compact" onPress={() => router.back()}>
+            <Icon as={ArrowLeft} size={20} className="text-foreground" />
             <Text>Back</Text>
           </Button>
-          <Text variant="h1">History</Text>
+          <View className="min-w-0 flex-1 gap-1">
+            <Text variant="h1">History</Text>
+            <Text variant="caption">Completed and cancelled order tickets</Text>
+          </View>
         </View>
         {/* The day header is data-derived: it renders once the window
             resolved, grounding both the groups and the day-level empty state
             in the specific store day they describe. */}
         {data !== undefined ? (
-          <Text variant="h3">{formatDayHeader(data.window.startUtc, timezone)}</Text>
+          <View className="flex-row items-center gap-2 rounded-md bg-secondary px-4 py-3">
+            <Icon as={CalendarDays} size={20} className="text-primary" />
+            <Text variant="h3">{formatDayHeader(data.window.startUtc, timezone)}</Text>
+          </View>
         ) : null}
         {/* T11-R04: a failed refetch with retained day data is not silent — a
             transient banner beside the content; the full ErrorState stays

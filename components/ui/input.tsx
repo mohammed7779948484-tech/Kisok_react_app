@@ -28,13 +28,13 @@ export function Input({
   const invalid = Boolean(errorMessage);
 
   return (
-    <View className="w-full gap-1.5">
+    <View className="w-full gap-2">
       {label ? <Text variant="label">{label}</Text> : null}
       <TextInput
         editable={editable}
         accessibilityLabel={props.accessibilityLabel ?? label}
         className={cn(
-          "h-touch rounded-lg border bg-background px-4 text-base text-foreground",
+          "h-control rounded-md border bg-card px-4 text-lg text-foreground",
           "placeholder:text-muted-foreground",
           invalid ? "border-destructive" : "border-input",
           !editable && "opacity-50",

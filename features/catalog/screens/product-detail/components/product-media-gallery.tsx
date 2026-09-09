@@ -61,19 +61,19 @@ export function ProductMediaGallery({
   const mainAlt = media.length > 1 ? `${alt}, image ${activePosition} of ${media.length}` : alt;
 
   return (
-    <View className={cn("gap-2", className)}>
+    <View className={cn("gap-3", className)}>
       <AppImage
         key={active?.secureUrl ?? "media-fallback"}
         uri={active?.secureUrl ?? null}
         alt={mainAlt}
         contentFit="cover"
-        className="aspect-square w-full rounded-lg"
+        className="aspect-square w-full rounded-xl border border-border bg-card"
       />
       {media.length > 1 ? (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerClassName="gap-2 pb-1"
+          contentContainerClassName="gap-3 pb-1"
         >
           {media.map((item, index) => {
             const isThumbSelected = item.mediaAssetId === active?.mediaAssetId;
@@ -86,8 +86,8 @@ export function ProductMediaGallery({
                 aria-selected={isThumbSelected}
                 onPress={() => onSelectMedia(item.mediaAssetId)}
                 className={cn(
-                  "rounded-lg border-2",
-                  isThumbSelected ? "border-primary" : "border-border",
+                  "min-h-touch min-w-touch rounded-lg border-2 bg-card p-1 active:scale-[0.97] active:opacity-90",
+                  isThumbSelected ? "border-primary bg-secondary" : "border-border",
                 )}
               >
                 <AppImage

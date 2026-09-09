@@ -1,5 +1,5 @@
 import { memo, useCallback } from "react";
-import { Pressable } from "react-native";
+import { Pressable, View } from "react-native";
 
 import { AppImage } from "@/components/media/app-image";
 import { Card, Text } from "@/components/ui";
@@ -38,21 +38,26 @@ export const CategoryCard = memo(function CategoryCard({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${category.name}, ${countLabel}`}
+      accessibilityLabel={`${category.name}${category.parent ? `, subcategory of ${category.parent.name}` : ""}, ${countLabel}`}
       onPress={handlePress}
-      className="active:opacity-90"
+      className="h-full active:scale-[0.98] active:opacity-90"
     >
-      <Card className={cn("gap-2 p-2", className)}>
+      <Card className={cn("h-full overflow-hidden", className)}>
         <AppImage
           uri={category.image?.secureUrl ?? null}
           alt={category.name}
           contentFit="cover"
-          className="aspect-square w-full rounded-lg"
+          className="aspect-square w-full"
         />
-        <Text variant="h3" numberOfLines={2}>
-          {category.name}
-        </Text>
-        <Text variant="caption">{countLabel}</Text>
+        <View className="min-h-28 flex-1 justify-between gap-2 border-t border-border bg-card p-4">
+          <Text variant="caption" tone="primary">
+            {category.parent ? `In ${category.parent.name}` : "Main category"}
+          </Text>
+          <Text variant="h3">{category.name}</Text>
+          <Text variant="label" tone="muted">
+            {countLabel}
+          </Text>
+        </View>
       </Card>
     </Pressable>
   );

@@ -33,16 +33,16 @@ export function ErrorState({
     <View
       accessibilityRole="alert"
       accessibilityLiveRegion="polite"
-      className={cn("flex-1 items-center justify-center gap-3 p-8", className)}
+      className={cn("flex-1 items-center justify-center gap-4 p-8", className)}
     >
-      <Text variant="h3" tone="destructive" className="text-center">
+      <Text variant="h2" tone="destructive" className="text-center" accessibilityRole="header">
         {title}
       </Text>
       <Text variant="body" tone="muted" className="max-w-md text-center">
         {message}
       </Text>
       {canRetry ? (
-        <Button variant="secondary" onPress={onRetry} className="mt-2">
+        <Button variant="primary" onPress={onRetry} className="mt-2">
           <Text>Try again</Text>
         </Button>
       ) : null}
@@ -57,7 +57,7 @@ export function InlineError({ error, className }: { error: unknown; className?: 
     <View
       accessibilityRole="alert"
       accessibilityLiveRegion="polite"
-      className={cn("rounded-lg border border-destructive/40 bg-destructive/10 p-3", className)}
+      className={cn("rounded-lg border border-destructive/30 bg-destructive/10 p-4", className)}
     >
       <Text variant="label" tone="destructive">
         {appError.userMessage}

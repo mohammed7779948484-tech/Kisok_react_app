@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
 import { Button, Text } from "@/components/ui";
+import { useLayout, useResponsiveValue } from "@/core/responsive";
 import { AddToCartButton, type CatalogCartSource } from "@/features/catalog-cart-integration";
 
 import { AvailabilityBadge } from "../../components/availability-badge";
@@ -87,6 +88,9 @@ export type ProductDetailScreenProps = {
 export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
   const router = useRouter();
   const catalog = useCatalog();
+  const { isLandscape } = useLayout();
+  const canSplit = useResponsiveValue({ compact: false, medium: false, expanded: true });
+  const useTwoColumnLayout = isLandscape && canSplit;
   // Design decision 3: the selected variant and image are screen-local React
   // state. `selectedVariantId === null` is the default — the first variant in
   // backend order; `selectedMediaAssetId === null` is "no explicit thumbnail
@@ -222,80 +226,90 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
 
   return (
     <Screen>
-      {/* pb-24 (96px): clears the integration's persistent cart affordance —
-          an absolutely-positioned 48dp button anchored 24px above the viewport
+      {/* pb-36 (144px): clears the integration's persistent cart affordance —
+          an absolutely-positioned 64dp button anchored 24px above the viewport
           bottom-right (plus safe-area inset). At end-of-scroll the Add action
           is the last content, so its bottom edge must sit above the
-          affordance's band (24+48+inset ≤ 96 at the brief's tablet/desktop
+          affordance's band (24+64+inset plus its count badge stays below 144
           sizes) or a corner press on the primary CTA would open the Quick
           Cart instead (R2-01). */}
-      <ScrollView contentContainerClassName="gap-4 px-6 pb-24 pt-6">
+      <ScrollView contentContainerClassName="gap-6 px-5 pb-36 pt-6 md:px-8">
         <Button variant="ghost" onPress={handleBack} className="self-start">
           <Text>Go back</Text>
         </Button>
-        <View className="gap-2">
-          <Text variant="h1" accessibilityRole="header">
-            {product.name}
-          </Text>
-          <AvailabilityBadge isAvailable={product.isAvailable} />
-          {product.short_description !== null ? (
-            <Text variant="body" tone="muted">
-              {product.short_description}
-            </Text>
-          ) : null}
-          {product.brand !== null ? (
-            <View className="gap-1">
-              <Text variant="label" tone="muted">
-                Brand
-              </Text>
-              <Button
-                variant="ghost"
-                accessibilityLabel={product.brand.name}
-                onPress={() => handleBrandPress(product)}
-                className="self-start"
-              >
-                <Text>{product.brand.name}</Text>
-              </Button>
-            </View>
-          ) : null}
-          {product.categories.length > 0 ? (
-            <View className="gap-1">
-              <Text variant="label" tone="muted">
-                Categories
-              </Text>
-              <View className="flex-row flex-wrap gap-2">
-                {product.categories.map((category) => (
+        <View className={useTwoColumnLayout ? "flex-row items-start gap-8" : "gap-6"}>
+          <ProductMediaGallery
+            media={variant.media}
+            alt={`${product.name} — ${variant.label}`}
+            activeMediaAssetId={activeMediaAssetId}
+            onSelectMedia={handleSelectMedia}
+            className="flex-1"
+          />
+          <View className="flex-1 gap-6">
+            <View className="gap-4">
+              <View className="gap-2">
+                <Text variant="label" tone="primary">
+                  Product
+                </Text>
+                <Text variant="h1" accessibilityRole="header">
+                  {product.name}
+                </Text>
+              </View>
+              <AvailabilityBadge isAvailable={product.isAvailable} />
+              {product.short_description !== null ? (
+                <Text variant="body" tone="muted">
+                  {product.short_description}
+                </Text>
+              ) : null}
+              {product.brand !== null ? (
+                <View className="gap-2">
+                  <Text variant="label" tone="muted">
+                    Brand
+                  </Text>
                   <Button
-                    key={category.id}
-                    variant="ghost"
-                    accessibilityLabel={category.name}
-                    onPress={() => handleCategoryPress(category.id)}
+                    variant="outline"
+                    accessibilityLabel={product.brand.name}
+                    onPress={() => handleBrandPress(product)}
                     className="self-start"
                   >
-                    <Text>{category.name}</Text>
+                    <Text>{product.brand.name}</Text>
                   </Button>
-                ))}
-              </View>
+                </View>
+              ) : null}
+              {product.categories.length > 0 ? (
+                <View className="gap-2">
+                  <Text variant="label" tone="muted">
+                    Categories
+                  </Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {product.categories.map((category) => (
+                      <Button
+                        key={category.id}
+                        variant="outline"
+                        accessibilityLabel={category.name}
+                        onPress={() => handleCategoryPress(category.id)}
+                        className="self-start"
+                      >
+                        <Text>{category.name}</Text>
+                      </Button>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
             </View>
-          ) : null}
+            <VariantChoiceList
+              variants={product.variants}
+              selectedVariantId={variant.id}
+              onSelectVariant={handleSelectVariant}
+            />
+            {/* The plan-sanctioned Add action (see the doc comment): rendered only
+                on the resolved-product path, below the variant list, so it follows
+                the resolved selection. The integration's button owns every cart
+                call and the Quick Cart open — this screen renders and derives
+                nothing else for it. */}
+            <AddToCartButton source={addSource} />
+          </View>
         </View>
-        <ProductMediaGallery
-          media={variant.media}
-          alt={`${product.name} — ${variant.label}`}
-          activeMediaAssetId={activeMediaAssetId}
-          onSelectMedia={handleSelectMedia}
-        />
-        <VariantChoiceList
-          variants={product.variants}
-          selectedVariantId={variant.id}
-          onSelectVariant={handleSelectVariant}
-        />
-        {/* The plan-sanctioned Add action (see the doc comment): rendered only
-            on the resolved-product path, below the variant list, so it follows
-            the resolved selection. The integration's button owns every cart
-            call and the Quick Cart open — this screen renders and derives
-            nothing else for it. */}
-        <AddToCartButton source={addSource} />
       </ScrollView>
     </Screen>
   );

@@ -69,30 +69,38 @@ export function CartItemRow({
   ].join(" · ");
 
   return (
-    <View className={cn("flex-row items-center gap-3", className)}>
+    <View className={cn("flex-row items-start gap-4 border-b border-border/70 py-5", className)}>
       <AppImage
         uri={line.imageUri}
         alt={line.productDisplayName}
-        className="h-20 w-20 rounded-lg"
+        className="h-24 w-24 rounded-xl bg-muted"
       />
-      <View className="flex-1 gap-1">
+      <View className="min-w-0 flex-1 gap-2 pt-1">
         <Text variant="h3">{line.productDisplayName}</Text>
-        <Text variant="caption">{caption}</Text>
+        <Text variant="body" tone="muted">
+          {caption}
+        </Text>
+        <View className="mt-2 self-start">
+          <Text variant="label" tone="muted" className="mb-2">
+            Quantity
+          </Text>
+          <QuantityStepper
+            value={line.quantity}
+            onValueChange={onSetQuantity}
+            disabled={controlsDisabled}
+          />
+        </View>
       </View>
-      <View className="items-end gap-2">
-        <QuantityStepper
-          value={line.quantity}
-          onValueChange={onSetQuantity}
-          disabled={controlsDisabled}
-        />
+      <View className="items-end">
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon"
+          className="border border-transparent"
           accessibilityLabel={`Remove ${line.productDisplayName}`}
           disabled={controlsDisabled}
           onPress={() => setConfirmOpen(true)}
         >
-          <Icon as={Trash2} />
+          <Icon as={Trash2} className="text-destructive" />
         </Button>
       </View>
       <ConfirmDialog

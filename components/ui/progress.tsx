@@ -15,16 +15,20 @@ export function Progress({
   className,
   indicatorClassName,
   value,
+  max = 100,
   ...props
 }: ProgressPrimitive.RootProps & {
   indicatorClassName?: string;
   accessibilityLabel: string;
 }) {
-  const percent = Math.min(100, Math.max(0, value ?? 0));
+  const normalizedMax = Number.isFinite(max) && max > 0 ? max : 100;
+  const clampedValue = Math.min(normalizedMax, Math.max(0, value ?? 0));
+  const percent = (clampedValue / normalizedMax) * 100;
 
   return (
     <ProgressPrimitive.Root
-      value={percent}
+      value={clampedValue}
+      max={normalizedMax}
       className={cn("h-2 w-full overflow-hidden rounded-full bg-secondary", className)}
       {...props}
     >

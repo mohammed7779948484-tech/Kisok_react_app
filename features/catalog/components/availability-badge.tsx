@@ -25,7 +25,7 @@ export function AvailabilityBadge({ isAvailable, className }: AvailabilityBadgeP
       accessibilityLabel={label}
       className={className}
     >
-      <Text>{label}</Text>
+      <Text variant="label">{label}</Text>
     </Badge>
   );
 }

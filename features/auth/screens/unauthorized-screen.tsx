@@ -23,26 +23,41 @@ export function UnauthorizedScreen() {
 
   return (
     <Screen edges={["top", "bottom", "left", "right"]}>
-      <View className="flex-1 items-center justify-center gap-4 p-8">
-        <Text variant="h2" className="text-center">
-          This account can't use the tablet
-        </Text>
-        <Text variant="body" tone="muted" className="max-w-md text-center">
-          {reason}
-        </Text>
-        <Button
-          variant="secondary"
-          onPress={signOut.run}
-          disabled={signOut.pending}
-          className="mt-2"
-        >
-          <Text>{signOut.pending ? "Signing out…" : "Sign out"}</Text>
-        </Button>
-        {signOut.message ? (
-          <Text variant="body" tone="destructive" className="max-w-md text-center">
-            {signOut.message}
-          </Text>
-        ) : null}
+      <View className="flex-1 items-center justify-center p-6 md:p-10">
+        <View className="w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-card">
+          <View className="flex-row items-center justify-between bg-primary p-6 md:p-8">
+            <Text variant="label" className="text-primary-foreground">
+              Account access
+            </Text>
+            <View className="h-3 w-14 rounded-sm bg-accent" />
+          </View>
+          <View accessibilityRole="alert" className="items-start gap-5 p-6 md:p-10">
+            <Text variant="h1" accessibilityRole="header">
+              This account cannot use the tablet
+            </Text>
+            <Text variant="body" tone="muted" className="max-w-xl">
+              {reason}
+            </Text>
+            <Button
+              variant="secondary"
+              onPress={signOut.run}
+              disabled={signOut.pending}
+              className="mt-2"
+            >
+              <Text>{signOut.pending ? "Signing out…" : "Sign out"}</Text>
+            </Button>
+            {signOut.message ? (
+              <Text
+                variant="body"
+                tone="destructive"
+                accessibilityLiveRegion="polite"
+                className="max-w-xl"
+              >
+                {signOut.message}
+              </Text>
+            ) : null}
+          </View>
+        </View>
       </View>
     </Screen>
   );

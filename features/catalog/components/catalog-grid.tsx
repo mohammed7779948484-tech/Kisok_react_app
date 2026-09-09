@@ -40,6 +40,7 @@ export type CatalogGridProps<ItemT> = {
   keyExtractor: (item: ItemT, index: number) => string;
   /** Reports a row press upward with the pressed item. */
   onItemPress: (item: ItemT) => void;
+  listHeaderComponent?: React.ReactElement;
   testID?: string;
   className?: string;
 };
@@ -49,6 +50,7 @@ export function CatalogGrid<ItemT>({
   renderItem,
   keyExtractor,
   onItemPress,
+  listHeaderComponent,
   testID,
   className,
 }: CatalogGridProps<ItemT>) {
@@ -63,17 +65,17 @@ export function CatalogGrid<ItemT>({
 
   const renderRow = useCallback(
     (info: { item: ItemT; index: number }) => (
-      <View className="p-1.5">{renderItem({ item: info.item, onPress: handleItemPress })}</View>
+      <View className="p-2">{renderItem({ item: info.item, onPress: handleItemPress })}</View>
     ),
     [renderItem, handleItemPress],
   );
 
   // Stable identity so FlashList's content container is not re-styled on
-  // every render. 24 matches the p-6 scale for breathing room under the last
-  // row; NativeWind classes cannot reach FlashList's content container.
+  // every render. The bottom clearance keeps the final card clear of the
+  // session-wide cart control, its badge, offset, and normal safe inset.
   // Note: FlashList v2 no longer takes `estimatedItemSize` — it measures rows
   // itself, so there is nothing to hoist for that.
-  const contentContainerStyle = useMemo(() => ({ paddingBottom: 24 }), []);
+  const contentContainerStyle = useMemo(() => ({ paddingBottom: 144 }), []);
 
   return (
     <View className={cn("flex-1", className)}>
@@ -83,6 +85,7 @@ export function CatalogGrid<ItemT>({
         numColumns={columns}
         renderItem={renderRow}
         keyExtractor={keyExtractor}
+        ListHeaderComponent={listHeaderComponent}
         contentContainerStyle={contentContainerStyle}
         testID={testID}
       />

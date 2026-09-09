@@ -39,6 +39,8 @@ import {
   Icon,
   Input,
   Progress,
+  RadioGroup,
+  RadioGroupItem,
   Separator,
   Skeleton,
   Tabs,
@@ -87,18 +89,35 @@ export function UiLabScreen() {
   const layout = useLayout();
   const [value, setValue] = useState("");
   const [tab, setTab] = useState("new");
+  const [radio, setRadio] = useState("customer");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [blocking, setBlocking] = useState(false);
 
   return (
     <Screen edges={["top", "bottom", "left", "right"]}>
-      <ScrollView contentContainerClassName="gap-8 p-6">
-        <View className="gap-2">
-          <Text variant="display">UI Lab</Text>
-          <Text variant="caption">
-            {layout.width}×{layout.height} · {layout.size} ·{" "}
-            {layout.isPortrait ? "portrait" : "landscape"}
-          </Text>
+      <ScrollView contentContainerClassName="gap-10 p-6 md:p-10">
+        <View className="overflow-hidden rounded-lg bg-primary">
+          <View className="flex-row items-center justify-between p-6 md:p-8">
+            <View className="gap-2">
+              <Text
+                variant="display"
+                className="text-primary-foreground"
+                accessibilityRole="header"
+              >
+                UI Lab
+              </Text>
+              <Text variant="caption" className="text-primary-foreground/80">
+                {layout.width}×{layout.height} · {layout.size} ·{" "}
+                {layout.isPortrait ? "portrait" : "landscape"}
+              </Text>
+            </View>
+            <View className="h-4 w-20 rounded-sm bg-accent" />
+          </View>
+          <View className="bg-accent px-6 py-3 md:px-8">
+            <Text variant="label" className="text-accent-foreground">
+              Development-only source coverage
+            </Text>
+          </View>
         </View>
 
         <Section title="Colour tokens">
@@ -169,6 +188,29 @@ export function UiLabScreen() {
           <Input label="With hint" hint="Six characters, no I, O, 0 or 1." placeholder="A7K2M9" />
           <Input label="With error" errorMessage="That order number isn't valid." value="123" />
           <Input label="Disabled" editable={false} value="Read only" />
+        </Section>
+
+        <Section title="Radio group">
+          <RadioGroup value={radio} onValueChange={setRadio} accessibilityLabel="Workspace role">
+            <RadioGroupItem value="customer">
+              <View className="flex-1 gap-1">
+                <Text variant="label">Customer</Text>
+                <Text variant="caption">Browse and submit an in-store order.</Text>
+              </View>
+            </RadioGroupItem>
+            <RadioGroupItem value="preparation">
+              <View className="flex-1 gap-1">
+                <Text variant="label">Preparation</Text>
+                <Text variant="caption">Manage active store orders.</Text>
+              </View>
+            </RadioGroupItem>
+            <RadioGroupItem value="disabled" disabled>
+              <View className="flex-1 gap-1">
+                <Text variant="label">Disabled option</Text>
+                <Text variant="caption">Unavailable control state.</Text>
+              </View>
+            </RadioGroupItem>
+          </RadioGroup>
         </Section>
 
         <Section title="Badges">

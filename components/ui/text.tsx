@@ -19,16 +19,16 @@ export const TextClassContext = createContext<string | undefined>(undefined);
 const textVariants = cva("text-foreground", {
   variants: {
     variant: {
-      display: "text-5xl font-bold tracking-tight",
-      h1: "text-3xl font-bold tracking-tight",
-      h2: "text-2xl font-semibold tracking-tight",
-      h3: "text-xl font-semibold",
-      body: "text-base",
-      lead: "text-lg",
-      label: "text-sm font-medium",
-      caption: "text-xs text-muted-foreground",
+      display: "text-5xl font-black tracking-tight md:text-6xl",
+      h1: "text-3xl font-black tracking-tight md:text-4xl",
+      h2: "text-2xl font-bold tracking-tight md:text-3xl",
+      h3: "text-xl font-bold leading-7",
+      body: "text-base leading-6 md:text-lg md:leading-7",
+      lead: "text-xl leading-7 md:text-2xl md:leading-8",
+      label: "text-sm font-bold leading-5 md:text-base",
+      caption: "text-sm leading-5 text-muted-foreground",
       /** Order numbers, SKUs — anything read aloud or typed back in. */
-      mono: "font-mono text-base tracking-widest",
+      mono: "font-mono text-lg font-bold tracking-wider",
     },
     tone: {
       default: "",

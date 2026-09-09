@@ -10,23 +10,23 @@ import { TextClassContext } from "./text";
  * documented minimum touch target for the kiosk — do not add a smaller size.
  */
 const buttonVariants = cva(
-  "flex-row items-center justify-center gap-2 rounded-lg active:opacity-90 disabled:opacity-50 web:transition-colors",
+  "flex-row items-center justify-center gap-2 rounded-md active:scale-[0.98] active:opacity-90 disabled:opacity-40 web:transition-[color,background-color,border-color,transform] web:duration-150",
   {
     variants: {
       variant: {
         primary: "bg-primary active:bg-primary/90",
-        secondary: "bg-secondary active:bg-secondary/80",
-        outline: "border border-border bg-transparent active:bg-secondary",
+        secondary: "bg-secondary active:bg-secondary/70",
+        outline: "border border-input bg-card active:bg-secondary",
         ghost: "bg-transparent active:bg-secondary",
         destructive: "bg-destructive active:bg-destructive/90",
       },
       size: {
         // 48dp — the floor.
-        default: "h-touch px-5",
+        default: "h-control px-5",
         // Primary calls to action on a tablet: bigger, easier to hit while standing.
-        large: "h-14 px-7",
+        large: "h-16 px-8",
         // Only for dense internal tools (Preparation board), never customer-facing.
-        compact: "h-touch px-3",
+        compact: "h-touch px-4",
         icon: "h-touch w-touch px-0",
       },
       block: { true: "w-full", false: "self-start" },
@@ -35,7 +35,7 @@ const buttonVariants = cva(
   },
 );
 
-const buttonTextVariants = cva("text-base font-semibold", {
+const buttonTextVariants = cva("text-base font-bold", {
   variants: {
     variant: {
       primary: "text-primary-foreground",

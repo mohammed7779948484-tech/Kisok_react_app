@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  AlertTriangle,
+  CircleX,
+  RotateCcw,
+  ShieldAlert,
+  ShieldQuestion,
+} from "lucide-react-native";
 import { ActivityIndicator, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 
-import { Alert, Button, Text } from "@/components/ui";
+import { Alert, Button, Icon, Text } from "@/components/ui";
 import { useActiveProfile } from "@/core/auth";
 import { cn } from "@/core/utils";
 import { useCart } from "@/features/cart";
@@ -355,6 +362,47 @@ export function RecoveryGate({ children }: RecoveryGateProps) {
     }
   }
 
+  const recoverySignal =
+    phase === "held" || phase === "unsafe-recovery"
+      ? {
+          icon: ShieldAlert,
+          title: "Staff help required",
+          description: "This tablet is paused until store staff can safely resolve the order.",
+          iconClassName: "bg-destructive",
+          glyphClassName: "text-destructive-foreground",
+        }
+      : outcome === "confirmed-cleanup-pending"
+        ? {
+            icon: RotateCcw,
+            title: "Tablet reset required",
+            description: "The order is confirmed, but this tablet must be cleared before reuse.",
+            iconClassName: "bg-warning",
+            glyphClassName: "text-warning-foreground",
+          }
+        : phase === "stock-conflict"
+          ? {
+              icon: AlertTriangle,
+              title: "Availability changed",
+              description: "No order was sent. Review the affected quantities below.",
+              iconClassName: "bg-warning",
+              glyphClassName: "text-warning-foreground",
+            }
+          : phase === "failed"
+            ? {
+                icon: CircleX,
+                title: "Order not sent",
+                description: "The submission has a definite outcome and your cart is preserved.",
+                iconClassName: "bg-destructive",
+                glyphClassName: "text-destructive-foreground",
+              }
+            : {
+                icon: ShieldQuestion,
+                title: "Order status check",
+                description: "This tablet is checking safely without submitting a duplicate.",
+                iconClassName: "bg-warning",
+                glyphClassName: "text-warning-foreground",
+              };
+
   return (
     <View
       // z-50 only while a surface is up: the layout's cart affordance is
@@ -373,10 +421,32 @@ export function RecoveryGate({ children }: RecoveryGateProps) {
           // unreachable. Which is exactly the design: the panel is the only
           // interaction while a recovery surface is up.
           aria-modal
-          className="absolute inset-0 z-50 items-center justify-center bg-background/85"
+          className="absolute inset-0 z-50 items-center justify-center bg-background/95 px-6"
           onStartShouldSetResponder={() => true}
         >
-          <View className="w-full max-w-xl gap-4 px-6">{panel}</View>
+          <View className="w-full max-w-xl gap-5 rounded-2xl bg-card p-6">
+            <View className="flex-row items-center gap-4 border-b border-border pb-5">
+              <View
+                className={cn(
+                  "h-14 w-14 items-center justify-center rounded-full",
+                  recoverySignal.iconClassName,
+                )}
+              >
+                <Icon
+                  as={recoverySignal.icon}
+                  size={28}
+                  className={recoverySignal.glyphClassName}
+                />
+              </View>
+              <View className="flex-1 gap-1">
+                <Text variant="h2">{recoverySignal.title}</Text>
+                <Text variant="body" tone="muted">
+                  {recoverySignal.description}
+                </Text>
+              </View>
+            </View>
+            {panel}
+          </View>
         </View>
       ) : null}
     </View>

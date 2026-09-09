@@ -73,6 +73,8 @@ module.exports = {
       spacing: {
         // Minimum comfortable touch target for the kiosk. See docs/design-system.md.
         touch: "48px",
+        control: "56px",
+        sheet: "480px",
       },
     },
     screens: {

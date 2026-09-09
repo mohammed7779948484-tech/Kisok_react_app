@@ -9,7 +9,7 @@ const Tabs = TabsPrimitive.Root;
 function TabsList({ className, ...props }: TabsPrimitive.ListProps) {
   return (
     <TabsPrimitive.List
-      className={cn("h-touch flex-row items-center rounded-lg bg-secondary p-1", className)}
+      className={cn("h-14 flex-row items-center rounded-lg bg-secondary p-1", className)}
       {...props}
     />
   );
@@ -21,14 +21,12 @@ function TabsTrigger({ className, ...props }: TabsPrimitive.TriggerProps) {
 
   return (
     <TextClassContext.Provider
-      value={cn("text-sm font-semibold", active ? "text-foreground" : "text-muted-foreground")}
+      value={cn("text-sm font-bold", active ? "text-primary-foreground" : "text-muted-foreground")}
     >
       <TabsPrimitive.Trigger
-        // The selected state must be announced, not just coloured.
-        accessibilityState={{ selected: active }}
         className={cn(
-          "flex-1 flex-row items-center justify-center rounded-md px-3 py-2",
-          active && "bg-background",
+          "h-touch flex-1 flex-row items-center justify-center rounded-md px-3 py-2",
+          active && "bg-primary",
           props.disabled && "opacity-50",
           className,
         )}

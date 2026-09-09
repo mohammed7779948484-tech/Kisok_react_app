@@ -1,4 +1,4 @@
-import { ShoppingCart } from "lucide-react-native";
+import { ShoppingCart, Trash2 } from "lucide-react-native";
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
@@ -6,7 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ConfirmDialog, EmptyState, SkeletonList } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
-import { Alert, Button, Text } from "@/components/ui";
+import { Alert, Button, Icon, Text } from "@/components/ui";
 
 import { CartItemRow } from "../../components/cart-item-row";
 import { useCart } from "../../state/use-cart";
@@ -134,8 +134,16 @@ export function FullCartScreen() {
     // way (R-T09-01).
     <Screen edges={lines.length > 0 ? FOOTER_EDGES : FOOTERLESS_EDGES}>
       <View className="flex-1">
-        <View className="gap-3 px-6 pt-6">
-          <Text variant="h1">Your Cart</Text>
+        <View className="gap-4 border-b border-border/70 px-6 pb-5 pt-8">
+          <View className="flex-row items-start gap-4">
+            <Icon as={ShoppingCart} size={32} className="mt-1 text-primary" />
+            <View className="flex-1 gap-1">
+              <Text variant="h1">Your Cart</Text>
+              <Text variant="body" tone="muted">
+                Check quantities and selections before reviewing your order.
+              </Text>
+            </View>
+          </View>
           {persistence === "memoryOnly" ? (
             <Alert
               variant="warning"
@@ -162,7 +170,7 @@ export function FullCartScreen() {
         ) : (
           // No virtualization: the cart is bounded at 100 lines by the
           // create_order contract, so plain ScrollView mounts every row.
-          <ScrollView className="flex-1" contentContainerClassName="gap-4 px-6 py-4">
+          <ScrollView className="flex-1" contentContainerClassName="px-6 py-2">
             {lines.map((line) => (
               <CartItemRow
                 key={line.lineId}
@@ -183,10 +191,13 @@ export function FullCartScreen() {
         // while this footer is mounted, so this SafeAreaView is the bottom
         // inset's single owner (R-T09-01).
         <SafeAreaView edges={["bottom"]}>
-          <View className="gap-3 border-t border-border px-6 py-4">
-            <Text variant="body" tone="muted">
-              {summary}
-            </Text>
+          <View className="gap-4 border-t border-border bg-card px-6 py-5">
+            <View className="flex-row items-center justify-between gap-4">
+              <Text variant="label" tone="muted">
+                Cart summary
+              </Text>
+              <Text variant="h3">{summary}</Text>
+            </View>
             {/* AC-01 (checkout brief): the checkout entry seam — the way
                 forward is the footer's PRIMARY action (primary, large,
                 block), rendered ABOVE the destructive clear because the
@@ -207,12 +218,13 @@ export function FullCartScreen() {
                 large, self-start — the prominence split the review screen's
                 footer uses), confirm flow untouched. */}
             <Button
-              variant="destructive"
+              variant="ghost"
               size="large"
               disabled={locked}
               onPress={() => setConfirmClearOpen(true)}
             >
-              <Text>Clear Cart</Text>
+              <Icon as={Trash2} className="text-destructive" />
+              <Text className="text-destructive">Clear Cart</Text>
             </Button>
           </View>
         </SafeAreaView>

@@ -1,5 +1,5 @@
 import { memo, useCallback } from "react";
-import { Pressable } from "react-native";
+import { Pressable, View } from "react-native";
 
 import { AppImage } from "@/components/media/app-image";
 import { Card, Text } from "@/components/ui";
@@ -48,19 +48,19 @@ export const ProductCard = memo(function ProductCard({
       accessibilityRole="button"
       accessibilityLabel={`${product.name}, ${productAvailabilityLabel(product.isAvailable)}`}
       onPress={handlePress}
-      className="active:opacity-90"
+      className="h-full active:scale-[0.98] active:opacity-90"
     >
-      <Card className={cn("gap-2 p-2", className)}>
+      <Card className={cn("h-full overflow-hidden", className)}>
         <AppImage
           uri={product.coverMedia?.secureUrl ?? null}
           alt={product.name}
           contentFit="cover"
-          className="aspect-square w-full rounded-lg"
+          className="aspect-square w-full"
         />
-        <Text variant="h3" numberOfLines={2}>
-          {product.name}
-        </Text>
-        <AvailabilityBadge isAvailable={product.isAvailable} />
+        <View className="min-h-32 flex-1 justify-between gap-3 border-t border-border bg-card p-4">
+          <Text variant="h3">{product.name}</Text>
+          <AvailabilityBadge isAvailable={product.isAvailable} />
+        </View>
       </Card>
     </Pressable>
   );

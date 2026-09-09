@@ -5,13 +5,13 @@ import { cn } from "@/core/utils";
 
 import { Text } from "./text";
 
-const alertVariants = cva("w-full gap-1 rounded-lg border p-4", {
+const alertVariants = cva("w-full gap-1.5 rounded-lg border p-5", {
   variants: {
     variant: {
-      info: "border-border bg-secondary",
-      success: "border-success/40 bg-success/10",
-      warning: "border-warning/40 bg-warning/10",
-      destructive: "border-destructive/40 bg-destructive/10",
+      info: "border-primary/20 bg-primary/10",
+      success: "border-success/30 bg-success/10",
+      warning: "border-warning/30 bg-warning/10",
+      destructive: "border-destructive/30 bg-destructive/10",
     },
   },
   defaultVariants: { variant: "info" },
@@ -35,7 +35,7 @@ export function Alert({ className, variant, title, description, ...props }: Aler
       className={cn(alertVariants({ variant }), className)}
       {...props}
     >
-      <Text variant="label">{title}</Text>
+      <Text variant="h3">{title}</Text>
       {description ? <Text variant="caption">{description}</Text> : null}
     </View>
   );

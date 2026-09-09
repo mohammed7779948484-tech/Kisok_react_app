@@ -35,16 +35,14 @@ export function AdaptiveSheetContent({
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay
         className={cn(
-          "absolute inset-0 z-50 bg-black/50",
+          "absolute inset-0 z-50 bg-foreground/60",
           isExpanded ? "flex-row justify-end" : "justify-end",
         )}
       >
         <DialogPrimitive.Content
           className={cn(
-            "z-50 border-border bg-popover",
-            isExpanded
-              ? "h-full w-[420px] border-l"
-              : "max-h-[85%] w-full rounded-t-xl border-t px-1",
+            "z-50 bg-popover",
+            isExpanded ? "h-full w-sheet max-w-full" : "max-h-[88%] w-full rounded-t-2xl px-1",
             className,
           )}
           style={{
@@ -58,7 +56,7 @@ export function AdaptiveSheetContent({
             // accessibility tree.
             <View
               aria-hidden
-              className="my-3 h-1 w-10 self-center rounded-full bg-muted-foreground/40"
+              className="my-3 h-1.5 w-12 self-center rounded-full bg-muted-foreground/35"
             />
           ) : null}
           {children}
@@ -69,7 +67,7 @@ export function AdaptiveSheetContent({
 }
 
 export function AdaptiveSheetHeader({ className, ...props }: React.ComponentProps<typeof View>) {
-  return <View className={cn("gap-1.5 px-5 pb-3 pt-2", className)} {...props} />;
+  return <View className={cn("gap-2 px-6 pb-4 pt-2", className)} {...props} />;
 }
 
 export function AdaptiveSheetTitle({ className, children, ...props }: DialogPrimitive.TitleProps) {
@@ -97,5 +95,10 @@ export function AdaptiveSheetDescription({
 }
 
 export function AdaptiveSheetFooter({ className, ...props }: React.ComponentProps<typeof View>) {
-  return <View className={cn("gap-3 border-t border-border p-5", className)} {...props} />;
+  return (
+    <View
+      className={cn("gap-3 border-t border-border bg-secondary/40 p-6", className)}
+      {...props}
+    />
+  );
 }

@@ -40,6 +40,7 @@
     "@rn-primitives/dialog": "^1.5.2",
     "@rn-primitives/portal": "^1.5.3",
     "@rn-primitives/progress": "^1.5.2",
+    "@rn-primitives/radio-group": "^1.5.2",
     "@rn-primitives/slot": "^1.5.2",
     "@rn-primitives/tabs": "^1.5.2",
     "@shopify/flash-list": "2.0.2",
@@ -100,7 +101,7 @@
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs}": [
-      "eslint --max-warnings=0 --fix",
+      "eslint --max-warnings=0 --no-warn-ignored --fix",
       "prettier --write"
     ],
     "*.{json,md,css,yml,yaml}": [

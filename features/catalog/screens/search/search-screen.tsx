@@ -141,26 +141,34 @@ export function SearchScreen() {
   return (
     <Screen>
       <View className="flex-1">
-        <View className="gap-3 px-6 pb-2 pt-6">
-          <Text variant="h1" accessibilityRole="header">
-            Search
-          </Text>
-          <Input
-            label="Search products"
-            placeholder="Search by product, brand or category"
-            value={query}
-            onChangeText={setQuery}
-            // Landing on a dedicated search screen is itself the intent to
-            // type, so the field takes focus (and the keyboard) immediately.
-            autoFocus
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-          />
-          <Text variant="body" tone="muted" accessibilityLiveRegion="polite">
-            {searchStatusMessage(searchResult)}
-          </Text>
+        <View className="gap-5 px-5 pb-3 pt-8 md:px-8">
+          <View className="gap-2">
+            <Text variant="label" tone="primary">
+              Browse the store
+            </Text>
+            <Text variant="h1" accessibilityRole="header">
+              Search
+            </Text>
+          </View>
           <CatalogNavigation current="search" onNavigate={handleRootNavigate} />
+          <View className="gap-3 rounded-xl border border-border bg-card p-4">
+            <Input
+              label="Search products"
+              placeholder="Search by product, brand or category"
+              value={query}
+              onChangeText={setQuery}
+              // Landing on a dedicated search screen is itself the intent to
+              // type, so the field takes focus (and the keyboard) immediately.
+              autoFocus
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              className="border-primary"
+            />
+            <Text variant="body" tone="muted" accessibilityLiveRegion="polite">
+              {searchStatusMessage(searchResult)}
+            </Text>
+          </View>
         </View>
         {searchResult.state === "results" ? (
           <CatalogGrid
@@ -169,7 +177,7 @@ export function SearchScreen() {
             keyExtractor={productKeyExtractor}
             onItemPress={handleProductPress}
             testID="search-results-grid"
-            className="px-4"
+            className="px-3 md:px-6"
           />
         ) : null}
       </View>

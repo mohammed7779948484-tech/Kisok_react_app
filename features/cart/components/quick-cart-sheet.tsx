@@ -1,5 +1,5 @@
-import { ShoppingCart } from "lucide-react-native";
-import { ScrollView } from "react-native";
+import { PackageCheck, ShoppingCart } from "lucide-react-native";
+import { ScrollView, View } from "react-native";
 
 import { EmptyState } from "@/components/feedback";
 import {
@@ -12,8 +12,10 @@ import {
   AdaptiveSheetTitle,
   Alert,
   Button,
+  Icon,
   Text,
 } from "@/components/ui";
+import { cn } from "@/core/utils";
 
 import { selectTotalQuantity, useCartStore } from "../state/cart-store";
 import { CartItemRow } from "./cart-item-row";
@@ -79,10 +81,17 @@ export function QuickCartSheet({
 
   return (
     <AdaptiveSheet open={open} onOpenChange={onOpenChange}>
-      <AdaptiveSheetContent className={className}>
-        <AdaptiveSheetHeader>
-          <AdaptiveSheetTitle>{`Your Cart · ${totalQuantity}`}</AdaptiveSheetTitle>
-          <AdaptiveSheetDescription>
+      <AdaptiveSheetContent className={cn("bg-card", className)}>
+        <AdaptiveSheetHeader className="border-b border-border bg-secondary/40 pb-5 pt-4">
+          <View className="flex-row items-center gap-3">
+            <View className="h-touch w-touch items-center justify-center rounded-lg bg-primary">
+              <Icon as={PackageCheck} className="text-primary-foreground" />
+            </View>
+            <AdaptiveSheetTitle className="flex-1">
+              {`Your Cart · ${totalQuantity}`}
+            </AdaptiveSheetTitle>
+          </View>
+          <AdaptiveSheetDescription className="pl-14">
             Review the items in your cart, or continue shopping.
           </AdaptiveSheetDescription>
         </AdaptiveSheetHeader>
@@ -114,7 +123,7 @@ export function QuickCartSheet({
         ) : (
           // No virtualization: the cart is bounded at 100 lines by the
           // create_order contract, so plain ScrollView mounts every row.
-          <ScrollView className="flex-1" contentContainerClassName="gap-4 px-5 py-3">
+          <ScrollView className="flex-1" contentContainerClassName="px-6 py-2">
             {lines.map((line) => (
               <CartItemRow
                 key={line.lineId}
@@ -127,7 +136,7 @@ export function QuickCartSheet({
           </ScrollView>
         )}
 
-        <AdaptiveSheetFooter>
+        <AdaptiveSheetFooter className="bg-card px-6 py-5">
           <AdaptiveSheetClose asChild>
             <Button variant="outline" block>
               <Text>Continue Shopping</Text>

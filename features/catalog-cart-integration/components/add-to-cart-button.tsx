@@ -79,7 +79,7 @@ export function AddToCartButton({ source }: AddToCartButtonProps) {
   };
 
   return (
-    <Button block disabled={!canAdd} onPress={handleAdd}>
+    <Button size="large" block disabled={!canAdd} onPress={handleAdd}>
       <Icon as={ShoppingCart} size={20} className="text-primary-foreground" />
       <Text>Add to cart</Text>
     </Button>

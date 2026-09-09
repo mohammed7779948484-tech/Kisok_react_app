@@ -1,5 +1,7 @@
 import { Stack } from "expo-router";
+import { View } from "react-native";
 
+import { OfflineNotice } from "@/components/feedback";
 import { CatalogCartProvider } from "@/features/catalog-cart-integration";
 import { RecoveryGate } from "@/features/checkout";
 
@@ -27,7 +29,10 @@ export default function CustomerLayout() {
   return (
     <CatalogCartProvider>
       <RecoveryGate>
-        <Stack screenOptions={{ headerShown: false }} />
+        <View className="flex-1">
+          <OfflineNotice respectTopInset />
+          <Stack screenOptions={{ headerShown: false }} />
+        </View>
       </RecoveryGate>
     </CatalogCartProvider>
   );

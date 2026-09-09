@@ -1,4 +1,4 @@
-import { View } from "react-native";
+import { ScrollView, View } from "react-native";
 
 import { Button, Text } from "@/components/ui";
 import { cn } from "@/core/utils";
@@ -56,16 +56,21 @@ export function CategoryBrandFilter({
   const isAllBrandsSelected = selectedBrandId === null;
 
   return (
-    <View className={cn("gap-2", className)}>
-      <Text variant="body" tone="muted">
+    <View className={cn("gap-3", className)}>
+      <Text variant="label" tone="muted">
         Filter by brand
       </Text>
-      <View className="flex-row flex-wrap gap-2">
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerClassName="gap-2 pr-4"
+      >
         <Button
           variant={isAllBrandsSelected ? "primary" : "ghost"}
           accessibilityLabel="All Brands"
           aria-selected={isAllBrandsSelected}
           onPress={() => onSelectBrand(null)}
+          className={isAllBrandsSelected ? "border-b-4 border-accent" : "border border-border"}
         >
           <Text>All Brands</Text>
         </Button>
@@ -79,12 +84,13 @@ export function CategoryBrandFilter({
               accessibilityLabel={option.name}
               aria-selected={isSelected}
               onPress={() => onSelectBrand(option.brandId)}
+              className={isSelected ? "border-b-4 border-accent" : "border border-border"}
             >
               <Text>{option.name}</Text>
             </Button>
           );
         })}
-      </View>
+      </ScrollView>
     </View>
   );
 }

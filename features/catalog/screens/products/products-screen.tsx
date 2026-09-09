@@ -133,13 +133,20 @@ export function ProductsScreen() {
   return (
     <Screen>
       <View className="flex-1">
-        <View className="gap-3 px-6 pb-2 pt-6">
-          <Text variant="h1" accessibilityRole="header">
-            All products
-          </Text>
-          <Text variant="body" tone="muted">
-            {productCountLabel(products.length)}
-          </Text>
+        <View className="gap-5 px-5 pb-3 pt-8 md:px-8">
+          <View className="gap-2">
+            <Text variant="label" tone="primary">
+              Browse the store
+            </Text>
+            <View className="flex-row items-end justify-between gap-4">
+              <Text variant="h1" accessibilityRole="header" className="flex-1">
+                All products
+              </Text>
+              <Text variant="label" tone="muted">
+                {productCountLabel(products.length)}
+              </Text>
+            </View>
+          </View>
           <CatalogNavigation current="products" onNavigate={handleRootNavigate} />
         </View>
         <CatalogGrid
@@ -148,7 +155,7 @@ export function ProductsScreen() {
           keyExtractor={productKeyExtractor}
           onItemPress={handleProductPress}
           testID="products-grid"
-          className="px-4"
+          className="px-3 md:px-6"
         />
       </View>
     </Screen>

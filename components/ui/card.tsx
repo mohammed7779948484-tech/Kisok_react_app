@@ -6,15 +6,15 @@ import { Text } from "./text";
 
 /**
  * Surface container. Elevation policy: KISOK uses a border plus a flat surface
- * colour rather than shadows — shadows render inconsistently across Android and
- * react-native-web and add noise on a dense catalog grid.
+ * colour rather than shadows. Tonal separation stays crisp on bright store
+ * tablets and avoids noisy elevation in dense operational views.
  */
 export function Card({ className, ...props }: ViewProps) {
-  return <View className={cn("rounded-xl border border-border bg-card", className)} {...props} />;
+  return <View className={cn("rounded-lg border border-border bg-card", className)} {...props} />;
 }
 
 export function CardHeader({ className, ...props }: ViewProps) {
-  return <View className={cn("gap-1.5 p-4", className)} {...props} />;
+  return <View className={cn("gap-2 p-5", className)} {...props} />;
 }
 
 export function CardTitle({
@@ -46,9 +46,11 @@ export function CardDescription({
 }
 
 export function CardContent({ className, ...props }: ViewProps) {
-  return <View className={cn("p-4 pt-0", className)} {...props} />;
+  return <View className={cn("p-5 pt-0", className)} {...props} />;
 }
 
 export function CardFooter({ className, ...props }: ViewProps) {
-  return <View className={cn("flex-row items-center gap-3 p-4 pt-0", className)} {...props} />;
+  return (
+    <View className={cn("flex-row flex-wrap items-center gap-3 p-5 pt-0", className)} {...props} />
+  );
 }

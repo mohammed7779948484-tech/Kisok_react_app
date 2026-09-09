@@ -1,7 +1,9 @@
-import { View } from "react-native";
+import { ScrollView, View } from "react-native";
+import { Check, Circle, CircleDot } from "lucide-react-native";
+import type { LucideIcon } from "lucide-react-native";
 
 import { InlineError } from "@/components/feedback";
-import { Text } from "@/components/ui";
+import { Icon, Text } from "@/components/ui";
 import { cn } from "@/core/utils";
 
 import type { ActiveOrderRow } from "../../../api/fetch-active-orders";
@@ -47,6 +49,32 @@ export type BoardSectionActionError = {
   error: unknown;
 };
 
+type BoardSectionStatus = "new" | "preparing" | "ready";
+
+const SECTION_STYLE: Record<
+  BoardSectionStatus,
+  { icon: LucideIcon; headerClassName: string; iconClassName: string; textClassName: string }
+> = {
+  new: {
+    icon: Circle,
+    headerClassName: "bg-secondary",
+    iconClassName: "text-secondary-foreground",
+    textClassName: "text-secondary-foreground",
+  },
+  preparing: {
+    icon: CircleDot,
+    headerClassName: "bg-primary",
+    iconClassName: "text-primary-foreground",
+    textClassName: "text-primary-foreground",
+  },
+  ready: {
+    icon: Check,
+    headerClassName: "bg-success",
+    iconClassName: "text-success-foreground",
+    textClassName: "text-success-foreground",
+  },
+};
+
 export type BoardSectionProps = {
   /**
    * The group heading, with the count rendered beside it. Omitted on the tab
@@ -54,6 +82,7 @@ export type BoardSectionProps = {
    * count — repeating them would hand assistive tech the same words twice.
    */
   title?: string;
+  status?: BoardSectionStatus;
   entries: BoardSectionEntry[];
   /** The signed-in employee's profile id — the assignment comparison. */
   actorPreparationId: string;
@@ -63,11 +92,14 @@ export type BoardSectionProps = {
   onMarkReady: (order: ActiveOrderRow) => void;
   onCancel: (order: ActiveOrderRow) => void;
   onPress: (order: ActiveOrderRow) => void;
+  /** Lets expanded tablet lanes scroll independently while their headers stay visible. */
+  scrollable?: boolean;
   className?: string;
 };
 
 export function BoardSection({
   title,
+  status,
   entries,
   actorPreparationId,
   actionError,
@@ -75,43 +107,75 @@ export function BoardSection({
   onMarkReady,
   onCancel,
   onPress,
+  scrollable = false,
   className,
 }: BoardSectionProps) {
-  return (
-    <View className={cn("gap-3", className)}>
-      {title !== undefined ? (
-        <Text variant="h3">
-          {title} ({entries.length})
-        </Text>
-      ) : null}
-      {entries.length === 0 ? (
-        // A group can be legitimately empty while its siblings are not —
-        // words, not a blank panel.
+  const sectionStyle = status === undefined ? undefined : SECTION_STYLE[status];
+
+  const orderList =
+    entries.length === 0 ? (
+      <View className="min-h-32 items-center justify-center border border-dashed border-border bg-card p-6">
         <Text variant="body" tone="muted">
           No orders
         </Text>
-      ) : (
-        <View className="gap-3">
-          {entries.map(({ order, createdAtLabel, pendingAction }) => (
-            <View key={order.id} className="gap-2">
-              <OrderCard
-                order={order}
-                actorPreparationId={actorPreparationId}
-                createdAtLabel={createdAtLabel}
-                pendingAction={pendingAction}
-                onStartPreparing={onStartPreparing}
-                onMarkReady={onMarkReady}
-                onCancel={onCancel}
-                onPress={onPress}
-              />
-              {actionError !== null &&
-              actionError !== undefined &&
-              actionError.orderId === order.id ? (
-                <InlineError error={actionError.error} />
-              ) : null}
-            </View>
-          ))}
+      </View>
+    ) : (
+      <View className="gap-2">
+        {entries.map(({ order, createdAtLabel, pendingAction }) => (
+          <View key={order.id} className="gap-2">
+            <OrderCard
+              order={order}
+              actorPreparationId={actorPreparationId}
+              createdAtLabel={createdAtLabel}
+              pendingAction={pendingAction}
+              onStartPreparing={onStartPreparing}
+              onMarkReady={onMarkReady}
+              onCancel={onCancel}
+              onPress={onPress}
+            />
+            {actionError !== null &&
+            actionError !== undefined &&
+            actionError.orderId === order.id ? (
+              <InlineError error={actionError.error} />
+            ) : null}
+          </View>
+        ))}
+      </View>
+    );
+
+  return (
+    <View className={cn("gap-3 border-t-4 border-border pt-3", scrollable && "flex-1", className)}>
+      {title !== undefined ? (
+        <View
+          className={cn(
+            "min-h-touch flex-row items-center justify-between gap-3 px-4 py-3",
+            sectionStyle?.headerClassName ?? "bg-secondary",
+          )}
+        >
+          <View className="min-w-0 flex-1 flex-row items-center gap-2">
+            {sectionStyle !== undefined ? (
+              <Icon as={sectionStyle.icon} size={20} className={sectionStyle.iconClassName} />
+            ) : null}
+            <Text
+              variant="h3"
+              className={sectionStyle?.textClassName ?? "text-secondary-foreground"}
+            >
+              {title}
+            </Text>
+          </View>
+          <View className="min-w-touch items-center px-3 py-1.5">
+            <Text variant="mono" className="text-base text-foreground">
+              {entries.length}
+            </Text>
+          </View>
         </View>
+      ) : null}
+      {scrollable && entries.length > 0 ? (
+        <ScrollView className="flex-1" contentContainerClassName="pb-4" nestedScrollEnabled>
+          {orderList}
+        </ScrollView>
+      ) : (
+        orderList
       )}
     </View>
   );

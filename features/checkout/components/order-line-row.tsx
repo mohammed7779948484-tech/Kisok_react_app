@@ -48,22 +48,31 @@ export function OrderLineRow({ line, className }: OrderLineRowProps) {
   ].join(" · ");
 
   return (
-    <View className={cn("flex-row items-center gap-3", className)}>
+    <View className={cn("flex-row items-center gap-4 border-b border-border/70 py-5", className)}>
       <AppImage
         uri={line.imageUri}
         alt={line.productDisplayName}
-        className="h-20 w-20 rounded-lg"
+        className="h-24 w-24 rounded-xl bg-muted"
       />
-      <View className="flex-1 gap-1">
+      <View className="min-w-0 flex-1 gap-2">
         <Text variant="h3">{line.productDisplayName}</Text>
-        <Text variant="caption">{caption}</Text>
+        <Text variant="body" tone="muted">
+          {caption}
+        </Text>
       </View>
       {/* Read-only quantity: no stepper here — the label convention carries
           the meaning to assistive technology, the snapshot carries the
           number. */}
-      <Text variant="body" accessibilityLabel={`Quantity: ${line.quantity}`}>
-        {line.quantity}
-      </Text>
+      <View className="min-w-16 items-center rounded-lg bg-secondary px-3 py-2">
+        <Text variant="caption">Qty</Text>
+        <Text
+          variant="h3"
+          className="tabular-nums"
+          accessibilityLabel={`Quantity: ${line.quantity}`}
+        >
+          {line.quantity}
+        </Text>
+      </View>
     </View>
   );
 }

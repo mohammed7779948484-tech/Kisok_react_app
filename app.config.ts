@@ -21,7 +21,7 @@ const config: ExpoConfig = {
   newArchEnabled: true,
   android: {
     adaptiveIcon: {
-      backgroundColor: "#0F1A18",
+      backgroundColor: "#213CD4",
       foregroundImage: "./assets/images/android-icon-foreground.png",
       backgroundImage: "./assets/images/android-icon-background.png",
       monochromeImage: "./assets/images/android-icon-monochrome.png",
@@ -48,8 +48,8 @@ const config: ExpoConfig = {
         image: "./assets/images/splash-icon.png",
         imageWidth: 220,
         resizeMode: "contain",
-        backgroundColor: "#FCFBF8",
-        dark: { backgroundColor: "#0F1A18" },
+        backgroundColor: "#F5F6FA",
+        dark: { backgroundColor: "#0D101B" },
       },
     ],
     [

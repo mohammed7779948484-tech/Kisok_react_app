@@ -1,6 +1,7 @@
 import { View } from "react-native";
+import { House, LayoutGrid, Package, Search, Tags, type LucideIcon } from "lucide-react-native";
 
-import { Button, Text } from "@/components/ui";
+import { Button, Icon, Text } from "@/components/ui";
 import { cn } from "@/core/utils";
 
 /**
@@ -27,6 +28,14 @@ const DESTINATION_LABELS: Record<CatalogDestination, string> = {
   search: "Search",
 };
 
+const DESTINATION_ICONS: Record<CatalogDestination, LucideIcon> = {
+  home: House,
+  products: Package,
+  brands: Tags,
+  categories: LayoutGrid,
+  search: Search,
+};
+
 export type CatalogNavigationProps = {
   /** The root destination the customer is currently on. */
   current: CatalogDestination;
@@ -40,9 +49,15 @@ export type CatalogNavigationProps = {
 
 export function CatalogNavigation({ current, onNavigate, className }: CatalogNavigationProps) {
   return (
-    <View className={cn("flex-row flex-wrap gap-2", className)}>
+    <View
+      className={cn(
+        "flex-row flex-wrap gap-1 rounded-xl border border-border bg-card p-2",
+        className,
+      )}
+    >
       {CATALOG_DESTINATIONS.map((destination) => {
         const isSelected = destination === current;
+        const DestinationIcon = DESTINATION_ICONS[destination];
 
         return (
           <Button
@@ -51,8 +66,19 @@ export function CatalogNavigation({ current, onNavigate, className }: CatalogNav
             onPress={() => onNavigate(destination)}
             accessibilityLabel={DESTINATION_LABELS[destination]}
             aria-selected={isSelected}
+            className={cn(
+              "min-h-20 min-w-20 flex-1 flex-col gap-1 rounded-lg border-b-4 px-1 py-2",
+              isSelected ? "border-accent" : "border-transparent",
+            )}
           >
-            <Text>{DESTINATION_LABELS[destination]}</Text>
+            <Icon
+              as={DestinationIcon}
+              size={24}
+              className={isSelected ? "text-primary-foreground" : "text-muted-foreground"}
+            />
+            <Text variant="label" className="text-center">
+              {DESTINATION_LABELS[destination]}
+            </Text>
           </Button>
         );
       })}

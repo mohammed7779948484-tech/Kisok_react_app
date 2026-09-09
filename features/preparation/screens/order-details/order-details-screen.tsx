@@ -2,11 +2,21 @@ import { useRouter } from "expo-router";
 import { useState, type ReactNode } from "react";
 import { ScrollView, View } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Check, Clock3, Package, Play, Tag, UserRound, X } from "lucide-react-native";
 
 import { EmptyState, ErrorState, InlineError, SkeletonList } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
 import { AppImage } from "@/components/media/app-image";
-import { Badge, Button, Card, CardContent, CardFooter, CardHeader, Text } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  Icon,
+  Text,
+} from "@/components/ui";
 import { useAuth } from "@/core/auth";
 
 import type { ActiveOrderRow } from "../../api/fetch-active-orders";
@@ -142,14 +152,18 @@ export function OrderDetailsScreen({ orderId }: OrderDetailsScreenProps) {
 
   return (
     <Screen edges={["top", "bottom", "left", "right"]}>
-      <ScrollView contentContainerClassName="gap-4 p-6">
+      <ScrollView contentContainerClassName="min-h-full gap-5 p-4 md:p-6">
         {/* The back action is screen chrome: present in every state, including
             the unavailable one — a details screen always has a way out. */}
-        <View className="flex-row items-center gap-2">
+        <View className="flex-row items-center gap-3 border-b border-border pb-4">
           <Button variant="ghost" size="compact" onPress={() => router.back()}>
+            <Icon as={ArrowLeft} size={20} className="text-foreground" />
             <Text>Back</Text>
           </Button>
-          <Text variant="h1">Order Details</Text>
+          <View className="min-w-0 flex-1 gap-1">
+            <Text variant="h1">Order Details</Text>
+            <Text variant="caption">Stored order ticket and item snapshot</Text>
+          </View>
         </View>
         {/* T03-R03: branch FIRST — the read-bearing subtree below mounts only
             with a real id. */}
@@ -243,7 +257,7 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
 
   let body: ReactNode;
   if (orderQuery.isPending) {
-    body = <SkeletonList />;
+    body = <SkeletonList itemClassName="h-32" />;
   } else if (orderQuery.isError) {
     // A failed fetch shows the unavailable state instead of stale content —
     // the error passes through as unknown (T04 O-1: transport-level throws
@@ -262,18 +276,31 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
     body = <OrderUnavailable />;
   } else {
     body = (
-      <View className="gap-4">
-        <OrderSummaryCard
-          order={order}
-          timezone={timezone}
-          actorPreparationId={actorPreparationId}
-          pendingAction={pendingAction}
-          actionError={ownActionError}
-          onStartPreparing={() => runTransition("preparing")}
-          onMarkReady={() => runTransition("ready")}
-          onCancel={handleCancelRequested}
-        />
-        <View className="gap-3">
+      <View className="gap-4 lg:flex-row lg:items-start">
+        <View className="lg:w-1/3">
+          <OrderSummaryCard
+            order={order}
+            timezone={timezone}
+            actorPreparationId={actorPreparationId}
+            pendingAction={pendingAction}
+            actionError={ownActionError}
+            onStartPreparing={() => runTransition("preparing")}
+            onMarkReady={() => runTransition("ready")}
+            onCancel={handleCancelRequested}
+          />
+        </View>
+        <View className="flex-1 gap-3">
+          <View className="flex-row items-center justify-between border-b border-border pb-3">
+            <View className="flex-row items-center gap-2">
+              <Icon as={Package} size={20} className="text-primary" />
+              <Text variant="h2">Items</Text>
+            </View>
+            <Badge variant="neutral">
+              <Text>
+                {order.order_items.length === 1 ? "1 line" : `${order.order_items.length} lines`}
+              </Text>
+            </Badge>
+          </View>
           {[...order.order_items].sort(compareByVariantSku).map((item) => (
             <OrderItemRow key={item.id} item={item} />
           ))}
@@ -368,6 +395,7 @@ function OrderSummaryCard({
         disabled={starting}
         onPress={onStartPreparing}
       >
+        <Icon as={Play} size={18} className="text-primary-foreground" />
         <Text>{starting ? "Starting…" : "Start Preparing"}</Text>
       </Button>,
     );
@@ -376,6 +404,7 @@ function OrderSummaryCard({
     const markingReady = pendingAction === "markReady";
     footerButtons.push(
       <Button key="mark-ready" variant="primary" disabled={markingReady} onPress={onMarkReady}>
+        <Icon as={Check} size={18} className="text-primary-foreground" />
         <Text>{markingReady ? "Marking ready…" : "Mark Ready"}</Text>
       </Button>,
     );
@@ -384,6 +413,7 @@ function OrderSummaryCard({
     const cancelling = pendingAction === "cancel";
     footerButtons.push(
       <Button key="cancel" variant="destructive" disabled={cancelling} onPress={onCancel}>
+        <Icon as={X} size={18} className="text-destructive-foreground" />
         <Text>{cancelling ? "Cancelling…" : "Cancel"}</Text>
       </Button>,
     );
@@ -391,27 +421,49 @@ function OrderSummaryCard({
 
   return (
     <View className="gap-2">
-      <Card>
-        <CardHeader>
+      <Card
+        className={
+          pendingAction !== undefined
+            ? "overflow-hidden border-primary bg-primary/5"
+            : "overflow-hidden"
+        }
+      >
+        <CardHeader className="gap-4 bg-secondary/70 p-4">
           {/* flex-wrap: the mono number and the badge must wrap, not overflow,
               at 200% text scaling. */}
-          <View className="flex-row flex-wrap items-center justify-between gap-2">
-            <Text variant="h2" className="font-mono tracking-widest">
-              {order.display_number}
-            </Text>
+          <View className="flex-row flex-wrap items-start justify-between gap-3">
+            <View className="gap-1">
+              <Text variant="caption" className="text-xs font-bold">
+                Order ticket
+              </Text>
+              <Text variant="h2" className="font-mono tracking-wider">
+                {order.display_number}
+              </Text>
+            </View>
             <OrderStatusBadge status={order.status} />
           </View>
-          <Text variant="caption">{`Created ${formatCreatedAt(order.created_at, timezone)}`}</Text>
         </CardHeader>
-        {assignmentLabel !== null ? (
-          <CardContent className="gap-2">
-            <Badge variant="outline">
-              <Text>{assignmentLabel}</Text>
-            </Badge>
-          </CardContent>
-        ) : null}
+        <CardContent className="gap-3 p-4">
+          <View className="flex-row items-center gap-2">
+            <Icon as={Clock3} size={18} className="text-muted-foreground" />
+            <View className="gap-0.5">
+              <Text variant="caption">Created</Text>
+              <Text variant="label">{formatCreatedAt(order.created_at, timezone)}</Text>
+            </View>
+          </View>
+          {assignmentLabel !== null ? (
+            <View className="flex-row items-center gap-2 border-t border-border pt-3">
+              <Icon as={UserRound} size={18} className="text-muted-foreground" />
+              <Badge variant={assignmentLabel === "You" ? "primary" : "outline"}>
+                <Text>{assignmentLabel}</Text>
+              </Badge>
+            </View>
+          ) : null}
+        </CardContent>
         {footerButtons.length > 0 ? (
-          <CardFooter className="flex-wrap">{footerButtons}</CardFooter>
+          <CardFooter className="flex-wrap border-t border-border bg-muted/70 p-4">
+            {footerButtons}
+          </CardFooter>
         ) : null}
       </Card>
       {/* AC-10: the rejection feedback for THIS order renders here — directly
@@ -431,33 +483,44 @@ function OrderSummaryCard({
  */
 function OrderItemRow({ item }: { item: ItemRow }) {
   return (
-    <Card>
-      <CardContent className="flex-row gap-4 p-4">
+    <Card className="overflow-hidden">
+      <CardContent className="gap-4 p-4 sm:flex-row">
         <AppImage
           uri={item.image_secure_url}
           alt={itemImageAlt(item)}
-          className="h-24 w-24 shrink-0 rounded-lg"
+          className="h-24 w-24 shrink-0 rounded-md"
         />
-        <View className="flex-1 gap-1">
-          <View className="flex-row flex-wrap items-baseline justify-between gap-2">
+        <View className="min-w-0 flex-1 gap-2">
+          <View className="flex-row flex-wrap items-start justify-between gap-3">
             <Text variant="h3" className="min-w-0 flex-1">
               {item.product_name}
             </Text>
-            <Text variant="h3">{`×${item.quantity}`}</Text>
+            <View className="min-w-touch items-center rounded-md bg-accent px-3 py-2">
+              <Text variant="h3" className="text-accent-foreground">{`×${item.quantity}`}</Text>
+            </View>
           </View>
           {item.variant_name !== null ? <Text variant="body">{item.variant_name}</Text> : null}
-          {optionTexts(item.variant_options).map((label, index) => (
-            // T13-R03: a malformed snapshot with duplicate option labels
-            // cannot come from migration 07 — but a compound key costs nothing
-            // and never collides regardless.
-            <Text key={`${label}-${index}`} variant="caption">
-              {label}
+          <View className="gap-1">
+            {optionTexts(item.variant_options).map((label, index) => (
+              // T13-R03: a malformed snapshot with duplicate option labels
+              // cannot come from migration 07 — but a compound key costs nothing
+              // and never collides regardless.
+              <Text key={`${label}-${index}`} variant="caption">
+                {label}
+              </Text>
+            ))}
+          </View>
+          <View className="flex-row flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-3">
+            {item.brand_name !== null ? (
+              <View className="flex-row items-center gap-1.5">
+                <Icon as={Tag} size={15} className="text-muted-foreground" />
+                <Text variant="caption">{item.brand_name}</Text>
+              </View>
+            ) : null}
+            <Text variant="mono" className="text-xs">
+              {item.variant_sku}
             </Text>
-          ))}
-          {item.brand_name !== null ? <Text variant="caption">{item.brand_name}</Text> : null}
-          <Text variant="mono" className="text-xs">
-            {item.variant_sku}
-          </Text>
+          </View>
         </View>
       </CardContent>
     </Card>

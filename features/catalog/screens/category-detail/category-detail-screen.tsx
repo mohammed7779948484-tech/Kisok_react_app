@@ -214,59 +214,67 @@ export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) 
     }
   };
 
+  const categoryDiscoveryHeader = (
+    <View className="gap-5 px-2 pb-5 pt-6">
+      <Button variant="ghost" onPress={handleBack} className="self-start">
+        <Text>Go back</Text>
+      </Button>
+      <CategoryIdentity category={category} />
+      <CategoryBrandFilter
+        options={filterOptions}
+        selectedBrandId={selectedBrand?.brandId ?? null}
+        onSelectBrand={handleSelectBrand}
+      />
+      {childCategories.length > 0 ? (
+        <View className="gap-3 border-t border-border pt-5">
+          <Text variant="h3" accessibilityRole="header">
+            Subcategories
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerClassName="gap-4 pb-1"
+          >
+            {childCategories.map((child) => (
+              <CategoryCard
+                key={child.id}
+                category={child}
+                onPress={handleChildPress}
+                className="w-52"
+              />
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+    </View>
+  );
+
   return (
     <Screen>
       <View className="flex-1">
-        <View className="gap-3 px-6 pb-2 pt-6">
-          <Button variant="ghost" onPress={handleBack} className="self-start">
-            <Text>Go back</Text>
-          </Button>
-          <CategoryIdentity category={category} />
-          <CategoryBrandFilter
-            options={filterOptions}
-            selectedBrandId={selectedBrand?.brandId ?? null}
-            onSelectBrand={handleSelectBrand}
-          />
-          {childCategories.length > 0 ? (
-            <View className="gap-2">
-              <Text variant="body" tone="muted">
-                Subcategories
-              </Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerClassName="gap-3 pb-1"
-              >
-                {childCategories.map((child) => (
-                  <CategoryCard
-                    key={child.id}
-                    category={child}
-                    onPress={handleChildPress}
-                    className="w-44"
-                  />
-                ))}
-              </ScrollView>
-            </View>
-          ) : null}
-        </View>
         {products.length > 0 ? (
           <CatalogGrid
             data={products}
             renderItem={renderProductCard}
             keyExtractor={productKeyExtractor}
             onItemPress={handleProductPress}
+            listHeaderComponent={categoryDiscoveryHeader}
             testID="category-products-grid"
-            className="px-4"
+            className="px-3 md:px-6"
           />
         ) : (
           // The reachable zero state: a selected brand with no products left
           // in this category. Inline — the identity, the filter and the child
           // discovery stay on screen as the way onward (AC-05).
-          <EmptyState
-            title="No products from this brand"
-            description="This brand currently has no products in this category. Browse the full selection instead."
-            action={{ label: "Show all brands", onPress: handleResetBrand }}
-          />
+          <ScrollView contentContainerClassName="flex-grow px-3 md:px-6">
+            {categoryDiscoveryHeader}
+            <EmptyState
+              title="No products from this brand"
+              description="This brand currently has no products in this category. Browse the full selection instead."
+              action={{ label: "Show all brands", onPress: handleResetBrand }}
+              className="min-h-80"
+            />
+          </ScrollView>
         )}
       </View>
     </Screen>
@@ -286,18 +294,21 @@ type CategoryIdentityProps = {
  */
 function CategoryIdentity({ category }: CategoryIdentityProps) {
   return (
-    <View className="flex-row items-center gap-4">
+    <View className="flex-row items-center gap-5 border-b border-border pb-6">
       <AppImage
         uri={category.image?.secureUrl ?? null}
         alt={category.name}
         contentFit="cover"
-        className="h-16 w-16 rounded-lg"
+        className="h-24 w-24 rounded-xl border border-border bg-card md:h-28 md:w-28"
       />
-      <View className="flex-1 gap-1">
+      <View className="flex-1 gap-2">
+        <Text variant="label" tone="primary">
+          Category
+        </Text>
         <Text variant="h1" accessibilityRole="header">
           {category.name}
         </Text>
-        <Text variant="body" tone="muted">
+        <Text variant="label" tone="muted">
           {productCountLabel(category.productCount)}
         </Text>
       </View>

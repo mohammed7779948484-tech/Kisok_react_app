@@ -151,13 +151,20 @@ export function BrandsScreen() {
   return (
     <Screen>
       <View className="flex-1">
-        <View className="gap-3 px-6 pb-2 pt-6">
-          <Text variant="h1" accessibilityRole="header">
-            All brands
-          </Text>
-          <Text variant="body" tone="muted">
-            {brandCountLabel(brands.length)}
-          </Text>
+        <View className="gap-5 px-5 pb-3 pt-8 md:px-8">
+          <View className="gap-2">
+            <Text variant="label" tone="primary">
+              Browse the store
+            </Text>
+            <View className="flex-row items-end justify-between gap-4">
+              <Text variant="h1" accessibilityRole="header" className="flex-1">
+                All brands
+              </Text>
+              <Text variant="label" tone="muted">
+                {brandCountLabel(brands.length)}
+              </Text>
+            </View>
+          </View>
           <CatalogNavigation current="brands" onNavigate={handleRootNavigate} />
         </View>
         <CatalogGrid
@@ -166,7 +173,7 @@ export function BrandsScreen() {
           keyExtractor={brandKeyExtractor}
           onItemPress={handleBrandPress}
           testID="brands-grid"
-          className="px-4"
+          className="px-3 md:px-6"
         />
       </View>
     </Screen>

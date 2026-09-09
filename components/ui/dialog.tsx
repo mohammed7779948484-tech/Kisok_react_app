@@ -20,7 +20,7 @@ const DialogPortal = DialogPrimitive.Portal;
 function DialogOverlay({ className, ...props }: DialogPrimitive.OverlayProps) {
   return (
     <DialogPrimitive.Overlay
-      className={cn("absolute inset-0 z-50 justify-center bg-black/50 p-4", className)}
+      className={cn("absolute inset-0 z-50 justify-center bg-foreground/60 p-4", className)}
       {...props}
     />
   );
@@ -36,7 +36,7 @@ function DialogContent({
       <DialogOverlay>
         <DialogPrimitive.Content
           className={cn(
-            "z-50 w-full max-w-lg gap-4 self-center rounded-xl border border-border bg-popover p-6",
+            "z-50 w-full max-w-lg gap-5 self-center rounded-2xl bg-popover p-6 md:p-8",
             className,
           )}
           {...props}
