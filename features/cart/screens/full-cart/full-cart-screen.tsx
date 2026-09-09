@@ -46,8 +46,9 @@ const FOOTERLESS_EDGES = ["top", "bottom", "left", "right"] as const;
  * Persistence honesty (AC-06, same contract as the sheet): `memoryOnly` →
  * warning Alert, `clearFailed` → destructive Alert — a safety issue is never
  * undersold as a memory-only nuisance. While locked (AC-09) every user control
- * renders disabled — the rows' controls AND the Clear Cart trigger. The
- * store-level `clearCart` lock exemption exists for the programmatic
+ * renders disabled — the rows' controls, the Clear Cart trigger, AND the
+ * Review Order entry (the lock blocks submission ENTRY, not just cart edits).
+ * The store-level `clearCart` lock exemption exists for the programmatic
  * post-checkout path, not for user clears mid-lock: a customer emptying the
  * cart while a critical operation runs is exactly the race the lock exists to
  * prevent, so the trigger is disabled and only the store's programmatic path
@@ -61,9 +62,23 @@ const FOOTERLESS_EDGES = ["top", "bottom", "left", "right"] as const;
  * presentations (restore-pending, empty) Screen itself takes all four edges,
  * like every other footer-less screen in the repo. When the footer unmounts
  * (the last line removed or the cart cleared), Screen re-claims the bottom
- * edge — one owner at a time, never two, never none. The summary block above
- * the destructive Clear Cart button derives its totals from the view — the
- * T04 module selectors inside the hook — never a mirrored total.
+ * edge — one owner at a time, never two, never none. The summary block derives
+ * its totals from the view — the T04 module selectors inside the hook — never
+ * a mirrored total.
+ *
+ * The footer's PRIMARY action is **Review Order** — checkout's AC-01 entry
+ * seam, the deliberate cross-feature integration its plan assigns to THIS
+ * owning feature (cart-owned, on the checkout plan's external-changes list):
+ * primary variant, large, block, pushing `/checkout` through the same
+ * `useRouter()` the empty state already uses, and enabled only while the cart
+ * is hydrated + populated + NOT locked — the exact rule the checkout review
+ * screen encodes for its own Confirm affordance, so the two surfaces can never
+ * disagree about when submission is reachable. The kiosk reading order puts
+ * the way forward first: Review Order renders ABOVE the destructive Clear
+ * Cart, which becomes the secondary row (still large, self-start instead of
+ * block — the prominence convention moved with the primary action, the same
+ * primary-block/secondary-large split the review screen's footer already
+ * uses). Clear Cart keeps its ConfirmDialog flow untouched.
  *
  * It must not import the Supabase client or the catalog — the cart is
  * client-owned local state with no backend. Use design-system components and
@@ -102,6 +117,15 @@ export function FullCartScreen() {
   const summary = `${totalQuantity} ${totalQuantity === 1 ? "item" : "items"} · ${distinctLineCount} ${
     distinctLineCount === 1 ? "line" : "lines"
   }`;
+
+  // AC-01 (checkout brief) — the entry rule, mirroring the checkout review
+  // screen's own Confirm enablement: the way into checkout opens only on a
+  // hydrated, populated, unlocked cart. At the footer the first two terms
+  // hold structurally (the footer renders only with lines, and hydration
+  // gated the whole screen above), but the rule is encoded in full so this
+  // affordance and the review screen can never disagree about when
+  // submission is reachable.
+  const canReview = hydrated && lines.length > 0 && !locked;
 
   return (
     // The footer renders only while there are lines, so the edges follow it:
@@ -163,14 +187,28 @@ export function FullCartScreen() {
             <Text variant="body" tone="muted">
               {summary}
             </Text>
+            {/* AC-01 (checkout brief): the checkout entry seam — the way
+                forward is the footer's PRIMARY action (primary, large,
+                block), rendered ABOVE the destructive clear because the
+                kiosk reading order meets the way forward first. */}
+            <Button
+              variant="primary"
+              size="large"
+              block
+              disabled={!canReview}
+              onPress={() => router.push("/checkout")}
+            >
+              <Text>Review Order</Text>
+            </Button>
             {/* Disabled while locked (AC-09): the store's lock exemption for
                 clearCart covers the PROGRAMMATIC post-checkout clear, not a
                 user clearing the cart mid-lock — that race is what the lock
-                exists to prevent. */}
+                exists to prevent. The destructive SECONDARY row now (still
+                large, self-start — the prominence split the review screen's
+                footer uses), confirm flow untouched. */}
             <Button
               variant="destructive"
               size="large"
-              block
               disabled={locked}
               onPress={() => setConfirmClearOpen(true)}
             >

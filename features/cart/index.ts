@@ -15,9 +15,13 @@
  *   single store from `useActiveProfile()` and re-hydrates when the profile
  *   id changes (the T09 carry-forward: nothing else hydrates).
  * - Plain action functions — `addItem`, `setLineQuantity`, `removeLine`,
- *   `clearCart`, `lockCart`, `unlockCart`, `hydrateCart`, `getCartSnapshot` —
- *   for non-React callers. The future Checkout feature drives the same single
- *   store through these without a hook.
+ *   `clearCart`, `clearCartDurable`, `lockCart`, `unlockCart`, `hydrateCart`,
+ *   `getCartSnapshot` — for non-React callers. The future Checkout feature
+ *   drives the same single store through these without a hook; of these,
+ *   `clearCartDurable` is the only one that resolves a durable-write
+ *   `StorageWriteResult` (`hydrateCart` is awaitable for restore completion,
+ *   not a write outcome), so a confirmed order can prove its post-success
+ *   clear landed (that feature's plan decision D5).
  * - Types for contracts at the boundary: `CartLine`, `AddToCartInput`,
  *   `PersistenceStatus`, re-exported from `state/use-cart` so there is ONE
  *   public types source. Types only: the store itself deliberately stays an
@@ -45,6 +49,7 @@ export { QuickCartSheet } from "./components/quick-cart-sheet";
 export {
   addItem,
   clearCart,
+  clearCartDurable,
   getCartSnapshot,
   hydrateCart,
   lockCart,

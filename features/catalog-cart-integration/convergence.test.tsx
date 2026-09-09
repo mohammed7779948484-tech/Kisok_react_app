@@ -510,18 +510,31 @@ describe("boundary scans (AC-11)", () => {
     expect(deepIntegrationImports).toEqual([]);
   });
 
-  it("the customer layout imports only the integration's public index and expo-router (the thin mount)", () => {
+  it("the customer layout imports only the sanctioned public indexes and expo-router (the thin mount), and RecoveryGate is mounted", () => {
     const layoutSource = readFileSync(CUSTOMER_LAYOUT_PATH, "utf8");
     const specifiers = importSpecifiers(layoutSource);
 
     // The T04 mount: the provider arrives through the integration's public
     // index — the one sanctioned way another module may reach this feature.
     expect(specifiers).toContain("@/features/catalog-cart-integration");
+    // The checkout RecoveryGate is positively mounted too (F-T12-01: the
+    // sanctioned-set check alone would silently pass if the gate and its
+    // import were both removed) — checkout plan D7.
+    expect(specifiers).toContain("@/features/checkout");
+    expect(layoutSource).toContain("RecoveryGate");
 
     // Thin-mount discipline, the full-cart route suite's sanctioned-set shape:
-    // anything beyond the router's own Stack and the public index is out of
+    // anything beyond the router's own Stack and the public indexes is out of
     // place here (and would fail the app/** ESLint boundary anyway).
-    const sanctioned = new Set(["expo-router", "@/features/catalog-cart-integration"]);
+    // `@/features/checkout` joined the set when the checkout feature mounted
+    // its session-level RecoveryGate in the customer layout (checkout plan
+    // D7, listed in that plan's external-changes): through the public index,
+    // exactly the shape this pin enforces.
+    const sanctioned = new Set([
+      "expo-router",
+      "@/features/catalog-cart-integration",
+      "@/features/checkout",
+    ]);
     expect(specifiers.filter((specifier) => !sanctioned.has(specifier))).toEqual([]);
   });
 });

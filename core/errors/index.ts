@@ -154,9 +154,27 @@ function isPostgrestError(value: unknown): value is PostgrestError {
   );
 }
 
+/**
+ * Transport-level failure signatures — ONE canonical list shared by both the
+ * thrown-`Error` path and the PostgrestError-shape path below.
+ *
+ * The `FetchError:` / `TypeError:` / `AbortError:` NAME prefixes are deliberate:
+ * `@supabase/postgrest-js` converts a fetch REJECTION into a RETURNED error
+ * object whose message is exactly `${fetchError.name}: ${fetchError.message}` —
+ * a server-side error arrives as a PostgREST JSON body and never carries those
+ * prefixes. That is what keeps the rule surgical: an unknown PostgREST code is
+ * transport ONLY when the shape says so, never by default.
+ */
+const NETWORK_FAILURE_PATTERN =
+  /network request failed|fetch failed|failed to fetch|timeout|timed out|aborted|enotfound|econnrefused|econnreset|etimedout|eai_again|socket hang up|network error|^(?:fetcherror|typeerror|aborterror):/i;
+
+function messageLooksLikeNetworkFailure(message: string): boolean {
+  return NETWORK_FAILURE_PATTERN.test(message);
+}
+
 function looksLikeNetworkFailure(value: unknown): boolean {
   if (!(value instanceof Error)) return false;
-  return /network request failed|fetch failed|failed to fetch|timeout|aborted/i.test(value.message);
+  return messageLooksLikeNetworkFailure(value.message);
 }
 
 /**
@@ -197,6 +215,28 @@ export function toAppError(
         userMessage: mapped.userMessage,
         technicalMessage: [value.message, value.details, value.hint].filter(Boolean).join(" | "),
         code,
+        cause: value,
+      });
+    }
+    // F-02: postgrest-js does NOT throw on a transport failure — it RETURNS an
+    // error object with an empty code, so the `looksLikeNetworkFailure` branch
+    // below never sees it and it used to fall through to the DEFINITE `server`
+    // kind. A transport failure cannot prove the server rolled back: the
+    // request may have committed and the response was lost. Treating it as
+    // definite makes checkout discard the idempotency identity and enables a
+    // duplicate order, so it must be `network` (ambiguous) instead. A mapped
+    // code is never reclassified — a Postgres error response means the server
+    // ANSWERED. An abort counts too: a timed-out write may have been delivered.
+    const transportFailure =
+      (code === "" || code == null) &&
+      (messageLooksLikeNetworkFailure(value.message) ||
+        (typeof value.hint === "string" && value.hint.startsWith("Request was aborted")));
+    if (transportFailure) {
+      return new AppError({
+        kind: "network",
+        userMessage: "We couldn't reach the network. Check the connection and try again.",
+        technicalMessage: [value.message, value.details, value.hint].filter(Boolean).join(" | "),
+        code: "",
         cause: value,
       });
     }

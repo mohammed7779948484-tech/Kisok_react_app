@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { useActiveProfile } from "@/core/auth";
+import type { StorageWriteResult } from "@/core/storage";
 
 import type { AddToCartInput, CartLine } from "../model/cart-line.schema";
 import {
@@ -166,6 +167,42 @@ export function removeLine(lineId: string): void {
 /** Clear the cart: memory immediately, durable key through the honest remove→fallback. */
 export function clearCart(): void {
   useCartStore.getState().clearCart();
+}
+
+/**
+ * The durable clear WITH its honest result — the narrow Checkout seam (that
+ * feature's plan decision D5).
+ *
+ * Why this exists when `clearCart()` already clears: the UI-facing clear is
+ * fire-and-forget BY DESIGN — a customer tapping "clear cart" needs no
+ * proof, so `clearCart()` stays void. Checkout needs proof: after a
+ * confirmed order it must know the durable clear actually landed before it
+ * treats local cleanup as safe (AC-07/AC-11 of that feature), and watching
+ * `persistence` transitions for a fire-and-forget clear is a race, not a
+ * proof. This delegate hands back the promise the store's `clear()` already
+ * produces — same single store, same serialized remove→fallback chain, no
+ * store logic duplicated at the call site; only the result is no longer
+ * dropped.
+ *
+ * Deliberately NOT gated on `hydrated`, unlike the UI `clearCart()`: it is a
+ * pure pass-through of the store's ungated `clear()`. Checkout calls it
+ * after a confirmed order, when the cart was necessarily hydrated for the
+ * submission to have happened; a recovery flow that reaches it earlier
+ * still gets honest behavior, because `clear()` itself fails closed when no
+ * owner is resolved (a failed remove skips the ownerless fallback envelope
+ * and reports the rejection — see the store's `rawDiscard`). A gate here
+ * would have to either silently skip the durable clear — exactly what a
+ * post-success caller must not have happen, with the previous customer's
+ * data still on disk — or fabricate a result. `locked` does not gate it
+ * either (plan decision 5): the post-checkout clear runs while locked.
+ * Caller requirement in recovery flows: if this is awaited while a
+ * same-owner restore is still in flight, the disk result stays honest
+ * (`persisted`) but the restore's apply can resurrect the
+ * previously-persisted lines in memory. Await `hydrateCart(owner)` — or
+ * otherwise confirm hydration has settled — before calling this there.
+ */
+export async function clearCartDurable(): Promise<StorageWriteResult> {
+  return useCartStore.getState().clear();
 }
 
 /** Lock user-driven mutations for a critical operation (future Checkout). */

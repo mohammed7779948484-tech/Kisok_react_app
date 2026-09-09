@@ -464,7 +464,7 @@ describe("CatalogCartProvider — persistent affordance (AC-06, plan decision 5)
 });
 
 describe("customer layout mount (plan decision 1; brief AC-11 thin-mount share)", () => {
-  it("app/(customer)/_layout.tsx is the thin mount: CatalogCartProvider wraps the Stack, and no other feature is imported", () => {
+  it("app/(customer)/_layout.tsx is the thin mount: CatalogCartProvider and RecoveryGate wrap the Stack, and only sanctioned public indexes are imported", () => {
     const layoutSource = readFileSync(LAYOUT_PATH, "utf8");
     const specifiers = importSpecifiers(layoutSource);
 
@@ -473,11 +473,26 @@ describe("customer layout mount (plan decision 1; brief AC-11 thin-mount share)"
     expect(specifiers).toContain("@/features/catalog-cart-integration");
     // And the provider actually WRAPS the Stack, not just an unused import.
     expect(layoutSource).toContain("CatalogCartProvider");
+    // The checkout RecoveryGate too (F-T12-01: a positive mount pin — the
+    // sanctioned-set check alone is one-directional and would silently pass
+    // if the gate AND its import were removed). The gate mounting here is
+    // checkout plan D7; it is also what makes the T07 sign-out-guard
+    // registration live for the session.
+    expect(specifiers).toContain("@/features/checkout");
+    expect(layoutSource).toContain("RecoveryGate");
 
     // Thin-mount discipline, the full-cart route suite's sanctioned-set shape:
-    // anything beyond the router's own Stack and the public index is out of
+    // anything beyond the router's own Stack and the public indexes is out of
     // place here (and would fail the app/** ESLint boundary anyway).
-    const sanctioned = new Set(["expo-router", "@/features/catalog-cart-integration"]);
+    // `@/features/checkout` joined the set when the checkout feature mounted
+    // its session-level RecoveryGate here (checkout plan D7, listed in that
+    // plan's external-changes): through the public index, exactly the shape
+    // this pin enforces.
+    const sanctioned = new Set([
+      "expo-router",
+      "@/features/catalog-cart-integration",
+      "@/features/checkout",
+    ]);
     expect(specifiers.filter((specifier) => !sanctioned.has(specifier))).toEqual([]);
   });
 });

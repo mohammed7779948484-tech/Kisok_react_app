@@ -1,6 +1,7 @@
 import { resetLogging, setLogSink } from "@/core/logging";
 import {
   createJsonStorage,
+  storage,
   storageKey,
   type KeyValueStore,
   type StorageWriteResult,
@@ -10,7 +11,13 @@ import { createMemoryStore } from "@/core/testing";
 import type { AddToCartInput, CartLine } from "../model/cart-line.schema";
 import { deriveLineId } from "../model/cart-rules";
 import { persistedCartSchema } from "../model/persisted-cart.schema";
-import { createCartStore, selectDistinctLineCount, selectTotalQuantity } from "./cart-store";
+import {
+  createCartStore,
+  selectDistinctLineCount,
+  selectTotalQuantity,
+  useCartStore,
+} from "./cart-store";
+import { clearCartDurable } from "./use-cart";
 
 const KEY = storageKey("cart", "lines");
 
@@ -1243,6 +1250,145 @@ describe("clearCart — the UI-facing clear (AC-05)", () => {
     expect(useStore.getState().persistence).toBe("unknown");
     // The durable clear never ran — pre-restore discards belong to hydrate().
     expect(raw.map.has(KEY)).toBe(true);
+  });
+});
+
+describe("clearCartDurable — the awaitable durable clear (Checkout plan D5)", () => {
+  /**
+   * The delegate resolves the CURRENT store (getState() at call time), so
+   * these tests drive the REAL singleton `useCartStore` — the exact object
+   * production Checkout code reaches through `@/features/cart`. The
+   * singleton's backend is the AsyncStorage in-memory mock (reliable, but it
+   * cannot be told to fail), so the durable-FAILURE scenarios splice in the
+   * REAL clear of a factory-built store over `createMemoryStore({ failOn })`:
+   * `setState` can replace actions on a real zustand store (the
+   * sign-out-cleanup.test.ts pattern, no mock framework), and the clear the
+   * delegate then resolves is the production remove→fallback code bound to
+   * an injectable backend. That clear's memory writes address the FACTORY
+   * store it was created for, so memory assertions in the spliced scenarios
+   * read the factory store; the singleton's own memory-empty behavior is
+   * pinned end-to-end by the first test through the real storage paths.
+   */
+  const realSingletonClear = useCartStore.getState().clear;
+
+  /** Read the singleton's durable key back through the app's real storage API. */
+  function readSingletonCart() {
+    return storage.read(KEY, (raw) => persistedCartSchema.parse(raw));
+  }
+
+  beforeEach(async () => {
+    useCartStore.setState({
+      lines: [],
+      ownerId: null,
+      persistence: "unknown",
+      hydrated: false,
+      locked: false,
+      clear: realSingletonClear,
+    });
+    // Disk hygiene for the singleton's real backend: a previous test's
+    // envelope must not leak into this one's hydrate/clear.
+    await storage.remove(KEY);
+  });
+
+  it("resolves the store's honest persisted result, empties memory, and is not blocked by the lock", async () => {
+    // The production path end-to-end: hydrate, seed through the store's own
+    // write path, then lock — Checkout calls this after a confirmed order,
+    // while the cart is locked (plan decision 5).
+    await useCartStore.getState().hydrate(OWNER_A);
+    useCartStore.getState().addItem(espressoInput);
+    await expect(useCartStore.getState().persistNow()).resolves.toEqual({ status: "persisted" });
+    useCartStore.getState().lock();
+    // The seed really is on disk, or the post-clear miss would prove nothing.
+    expect((await readSingletonCart()).status).toBe("hit");
+
+    const result = await clearCartDurable();
+
+    // The whole point of the seam (D5): the durable clear's honest result is
+    // RESOLVED, not dropped the way the fire-and-forget clearCart() drops it
+    // — this is what lets Checkout prove AC-07/AC-11 before it treats local
+    // cleanup as safe.
+    expect(result).toEqual({ status: "persisted" });
+    expect(useCartStore.getState().lines).toEqual([]);
+    expect((await readSingletonCart()).status).toBe("miss");
+    // The owner is kept (clearing is not a profile switch), and the lock is
+    // neither an obstacle nor released — the caller owns releasing it.
+    expect(useCartStore.getState().ownerId).toBe(OWNER_A);
+    expect(useCartStore.getState().locked).toBe(true);
+    expect(useCartStore.getState().persistence).toBe("persisted");
+  });
+
+  it("remove fails → the fallback overwrite recovers: disk ends correctly empty and the clear resolves the overwrite's persisted", async () => {
+    const raw = createMemoryStore({ failOn: "removeItem" });
+    seedCart(raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
+    const useStore = createCartStore(createJsonStorage(raw));
+    await useStore.getState().hydrate(OWNER_A);
+    expect(useStore.getState().lines).toEqual([espressoLine]);
+
+    // Point the delegate's `useCartStore.getState().clear()` at the factory
+    // store's REAL clear. This also pins the current-store mechanics: the
+    // delegate resolves whatever clear the singleton holds AT CALL TIME — a
+    // captured-at-module-load action reference would still run the
+    // singleton's own clear here and fail the disk assertion below.
+    useCartStore.setState({ clear: useStore.getState().clear });
+
+    const result = await clearCartDurable();
+
+    // The truth, stated precisely: the durable REMOVE failed, and the clear
+    // recovered through the fallback OVERWRITE — which SUCCEEDED. The store
+    // resolves the overwrite's result: a genuine durable success (disk
+    // provably empty), never memoryOnly and never a fabricated rejection.
+    expect(result.status).toBe("persisted");
+    expect(useStore.getState().persistence).toBe("persisted");
+    expect(useStore.getState().lines).toEqual([]);
+    // Disk is correctly empty — as an explicit empty envelope, not a missing
+    // key: a cold start restores this owner's empty cart, never the previous
+    // customer's lines.
+    expect(readPersistedCart(raw)).toEqual({ version: 1, ownerId: OWNER_A, lines: [] });
+  });
+
+  it("both the remove and the fallback overwrite fail → the clear resolves the honest rejected result (clearFailed)", async () => {
+    // The backend the clear suite above uses for "nothing durable succeeds":
+    // setItem and removeItem both throw.
+    const raw: KeyValueStore = {
+      getItem: async () => JSON.stringify({ version: 1, ownerId: OWNER_A, lines: [espressoLine] }),
+      setItem: async () => {
+        throw new Error("disk full");
+      },
+      removeItem: async () => {
+        throw new Error("disk full");
+      },
+    };
+    const useStore = createCartStore(createJsonStorage(raw));
+    await useStore.getState().hydrate(OWNER_A);
+    expect(useStore.getState().lines).toEqual([espressoLine]);
+
+    useCartStore.setState({ clear: useStore.getState().clear });
+
+    const result = await clearCartDurable();
+
+    // AC-11's exact seam: the honest rejection is RESOLVED, never swallowed —
+    // the caller (Checkout) surfaces the unsafe local cleanup instead of
+    // believing the cart was cleared.
+    expect(result.status).toBe("rejected");
+    expect(rejectedError(result).message).toBe("disk full");
+    expect(useStore.getState().lines).toEqual([]);
+    expect(useStore.getState().persistence).toBe("clearFailed");
+  });
+
+  it("is not gated on hydration: before the first hydrate the durable clear still runs and removes a stale key", async () => {
+    // The deliberate D5 decision (see the delegate's doc comment): the UI
+    // clearCart() is a no-op pre-hydrate, but the AWAITABLE clear must not
+    // gate — a recovery flow can reach it before hydration completes, and a
+    // gate would have to silently skip the durable clear (leaving a previous
+    // customer's data on disk while the caller believes it gone) or
+    // fabricate a result.
+    await storage.write(KEY, { version: 1, ownerId: OWNER_B, lines: [waterLine] });
+
+    const result = await clearCartDurable();
+
+    expect(result.status).toBe("persisted");
+    expect((await readSingletonCart()).status).toBe("miss");
+    expect(useCartStore.getState().lines).toEqual([]);
   });
 });
 
