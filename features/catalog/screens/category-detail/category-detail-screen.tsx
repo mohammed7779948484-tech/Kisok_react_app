@@ -35,7 +35,11 @@ export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) 
   const [selectedBrand, setSelectedBrand] = useState<CategoryBrandFilterOption | null>(null);
 
   const handleBack = useCallback(() => {
-    router.back();
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/categories");
+    }
   }, [router]);
 
   const handleProductPress = useCallback(
@@ -101,7 +105,7 @@ export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) 
         <EmptyState
           title="Category not found"
           description="This category is no longer in the catalog. It may have been removed since you started browsing."
-          action={{ label: "Go back to categories", onPress: handleBack }}
+          action={{ label: "Back to categories", onPress: () => router.replace("/categories") }}
         />
       </Screen>
     );

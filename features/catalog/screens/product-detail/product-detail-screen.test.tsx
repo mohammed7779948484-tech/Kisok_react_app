@@ -139,7 +139,7 @@ const STALE_PRODUCT_ID = "6e6e6e6e-6e6e-46e6-8e6e-6e6e6e6e6e6e";
  */
 const PRODUCT_NOT_FOUND_TITLE = "Product not found";
 const PRODUCT_NOT_FOUND_DESCRIPTION =
-  "This product isn't in the current catalog. It may have been removed since you started browsing. Go back to see the products this store has now.";
+  "This product is no longer in the catalog. It may have been removed since you started browsing.";
 
 /** Ids for the appended Studio Kettle product and its variants. */
 const extraProductIds = {
@@ -548,8 +548,8 @@ describe("ProductDetailScreen", () => {
     });
     expect(variantEntries.map((entry) => entry.props.accessibilityLabel)).toEqual([
       "Matte Black Edition, Available",
-      "Color: Rouge, Size: Lárge, Out of stock",
-      "Option 3, Out of stock",
+      "Color: Rouge, Size: Lárge, Currently unavailable",
+      "Option 3, Currently unavailable",
     ]);
 
     // The first variant is the default selection, and the product's derived
@@ -604,12 +604,12 @@ describe("ProductDetailScreen", () => {
     // decision 9): selecting it is a screen-local state change, never a Cart
     // action, and its selection is announced.
     await user.press(
-      screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Out of stock" }),
+      screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Currently unavailable" }),
     );
 
     expect(
       screen.getByRole("button", {
-        name: "Color: Rouge, Size: Lárge, Out of stock",
+        name: "Color: Rouge, Size: Lárge, Currently unavailable",
         selected: true,
       }),
     ).toBeOnTheScreen();
@@ -623,10 +623,10 @@ describe("ProductDetailScreen", () => {
 
     // The neutral-fallback variant has no variant media: the gallery falls
     // back to the product cover (the model's derived `media`/`primaryMedia`).
-    await user.press(screen.getByRole("button", { name: "Option 3, Out of stock" }));
+    await user.press(screen.getByRole("button", { name: "Option 3, Currently unavailable" }));
 
     expect(
-      screen.getByRole("button", { name: "Option 3, Out of stock", selected: true }),
+      screen.getByRole("button", { name: "Option 3, Currently unavailable", selected: true }),
     ).toBeOnTheScreen();
     const coverImage = screen.getByLabelText("Studio Kettle — Option 3");
     expect(displayedImageUri(coverImage)).toBe(kettleImageUrls.cover);
@@ -681,7 +681,7 @@ describe("ProductDetailScreen", () => {
 
     // Changing the variant resets the gallery to the new variant's primary
     // image — the customer's old thumbnail pick must not leak across variants.
-    await user.press(screen.getByRole("button", { name: "Option 3, Out of stock" }));
+    await user.press(screen.getByRole("button", { name: "Option 3, Currently unavailable" }));
     await user.press(screen.getByRole("button", { name: "Matte Black Edition, Available" }));
 
     expect(
@@ -703,11 +703,14 @@ describe("ProductDetailScreen", () => {
 
     // All-unavailable products stay discoverable and inspectable with honest
     // words (Design decision 10): the derived product availability.
-    expect(screen.getByLabelText("Out of stock")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Currently unavailable")).toBeOnTheScreen();
 
     // The single-variant neutral label, selected by default.
     expect(
-      screen.getByRole("button", { name: "Standard option, Out of stock", selected: true }),
+      screen.getByRole("button", {
+        name: "Standard option, Currently unavailable",
+        selected: true,
+      }),
     ).toBeOnTheScreen();
 
     // Neither the variant nor the product carries media: the gallery's final
@@ -720,7 +723,7 @@ describe("ProductDetailScreen", () => {
     // The optional description this product lacks is absent; the category
     // context it DOES have renders.
     expect(screen.queryByText("A smooth customer favourite.")).toBeNull();
-    expect(screen.getByRole("button", { name: "Tóp Picks" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Browse category Tóp Picks" })).toBeOnTheScreen();
   });
 
   it("pushes the brand and category detail routes from the product context", async () => {
@@ -730,14 +733,14 @@ describe("ProductDetailScreen", () => {
     await renderProductDetail(catalogFixtureIds.products.coffee);
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Maison Élite" })).toBeOnTheScreen(),
+      expect(screen.getByRole("button", { name: "Browse brand Maison Élite" })).toBeOnTheScreen(),
     );
 
     // Context is navigable discovery: object-form PUSH with the exact ids, so
     // this detail stays mounted behind the pushed one (no replace, no back).
-    await user.press(screen.getByRole("button", { name: "Maison Élite" }));
-    await user.press(screen.getByRole("button", { name: "Drínks" }));
-    await user.press(screen.getByRole("button", { name: "Tóp Picks" }));
+    await user.press(screen.getByRole("button", { name: "Browse brand Maison Élite" }));
+    await user.press(screen.getByRole("button", { name: "Browse category Drínks" }));
+    await user.press(screen.getByRole("button", { name: "Browse category Tóp Picks" }));
 
     expect(mockRouterPush).toHaveBeenCalledTimes(3);
     expect(mockRouterPush).toHaveBeenNthCalledWith(1, {
@@ -777,11 +780,10 @@ describe("ProductDetailScreen", () => {
     expect(screen.queryByRole("button", { name: /Café Crème|Standard option/ })).toBeNull();
 
     // The way back to the discovery surface that opened this detail.
-    await user.press(screen.getByRole("button", { name: "Go back" }));
+    await user.press(screen.getByRole("button", { name: "Back to products" }));
 
-    expect(mockRouterBack).toHaveBeenCalledTimes(1);
+    expect(mockRouterReplace).toHaveBeenCalledWith("/products");
     expect(mockRouterPush).not.toHaveBeenCalled();
-    expect(mockRouterReplace).not.toHaveBeenCalled();
   });
 
   it("reads the productId route param and passes it to the screen", async () => {

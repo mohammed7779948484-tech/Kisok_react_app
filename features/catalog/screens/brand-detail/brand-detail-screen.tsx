@@ -25,7 +25,11 @@ export function BrandDetailScreen({ brandId }: BrandDetailScreenProps) {
   const catalog = useCatalog();
 
   const handleBack = useCallback(() => {
-    router.back();
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/brands");
+    }
   }, [router]);
 
   const handleProductPress = useCallback(
@@ -80,7 +84,7 @@ export function BrandDetailScreen({ brandId }: BrandDetailScreenProps) {
         <EmptyState
           title="Brand not found"
           description="This brand isn't in the current catalog. It may have been removed since you started browsing."
-          action={{ label: "Go back to brands", onPress: handleBack }}
+          action={{ label: "Back to brands", onPress: () => router.replace("/brands") }}
         />
       </Screen>
     );
@@ -96,7 +100,7 @@ export function BrandDetailScreen({ brandId }: BrandDetailScreenProps) {
             variant="ghost"
             size="compact"
             onPress={handleBack}
-            className="gap-1.5 self-start pl-2"
+            className="min-h-touch gap-1.5 self-start pl-2"
             accessibilityLabel="Go back"
           >
             <Icon as={ArrowLeft} size={18} />

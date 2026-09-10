@@ -1,7 +1,8 @@
-import { Pressable, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import { House, LayoutGrid, Package, Search, Tags, type LucideIcon } from "lucide-react-native";
 
 import { Icon, Text } from "@/components/ui";
+import { useLayout } from "@/core/responsive";
 import { cn } from "@/core/utils";
 
 export const CATALOG_DESTINATIONS = ["home", "products", "categories", "brands", "search"] as const;
@@ -31,9 +32,10 @@ export type CatalogNavigationProps = {
 };
 
 export function CatalogNavigation({ current, onNavigate, className }: CatalogNavigationProps) {
+  const { isCompact } = useLayout();
   const mainDestinations: CatalogDestination[] = ["home", "products", "categories", "brands"];
 
-  return (
+  const navContent = (
     <View className={cn("flex-row items-center justify-between gap-2.5", className)}>
       {/* Primary taxonomy navigation buttons */}
       <View className="flex-row items-center gap-1 rounded-xl border border-border/70 bg-muted/50 p-1">
@@ -102,4 +104,19 @@ export function CatalogNavigation({ current, onNavigate, className }: CatalogNav
       </Pressable>
     </View>
   );
+
+  if (isCompact) {
+    return (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerClassName="items-center py-0.5 pr-2"
+        className="w-full"
+      >
+        {navContent}
+      </ScrollView>
+    );
+  }
+
+  return navContent;
 }

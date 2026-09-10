@@ -53,6 +53,21 @@ export type CatalogCartProviderProps = {
  * keeps filling the screen; `relative` so the affordance's bottom-end anchor
  * resolves against it) — no visual chrome, no raw colours.
  */
+const CATALOG_BROWSING_ROUTES = new Set([
+  "/",
+  "/products",
+  "/brands",
+  "/brand-detail",
+  "/categories",
+  "/category-detail",
+  "/search",
+  "/product-detail",
+]);
+
+function isBrowsingRoute(pathname: string): boolean {
+  return CATALOG_BROWSING_ROUTES.has(pathname);
+}
+
 export function CatalogCartProvider({ children }: CatalogCartProviderProps) {
   // The session-wide hydration owner, kept mounted for the whole customer
   // experience. Its view is consumed by the sheet's own store subscription
@@ -66,8 +81,8 @@ export function CatalogCartProvider({ children }: CatalogCartProviderProps) {
   // The public router for the View Full Cart intent.
   const router = useRouter();
 
-  // AC-06 / plan decision 5: the affordance's route gate. It renders on every
-  // browsing surface and is hidden exactly on the full cart route.
+  // Route gate: the affordance renders exclusively on catalog browsing surfaces
+  // and is hidden on cart, checkout, checkout-success, and recovery surfaces.
   const pathname = usePathname();
 
   // Safe-area-aware placement (store tablets have a gesture area).
@@ -96,7 +111,7 @@ export function CatalogCartProvider({ children }: CatalogCartProviderProps) {
     <QuickCartContext.Provider value={contextValue}>
       <View className="relative flex-1">
         {children}
-        {pathname !== "/cart" ? (
+        {isBrowsingRoute(pathname) ? (
           <View className="absolute bottom-6 right-6" style={{ marginBottom: insets.bottom }}>
             <CartAccessButton />
           </View>

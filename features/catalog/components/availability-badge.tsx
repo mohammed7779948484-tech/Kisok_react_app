@@ -5,6 +5,8 @@ export type AvailabilityBadgeProps = {
   isAvailable: boolean;
   /** Whether this badge represents product-level or variant-level availability */
   type?: "product" | "variant";
+  /** Optional count of variants to accurately differentiate 1 variant vs multiple options */
+  variantCount?: number;
   /** Optional custom text override */
   label?: string;
   className?: string;
@@ -13,6 +15,7 @@ export type AvailabilityBadgeProps = {
 export function AvailabilityBadge({
   isAvailable,
   type = "variant",
+  variantCount,
   label: customLabel,
   className,
 }: AvailabilityBadgeProps) {
@@ -20,7 +23,9 @@ export function AvailabilityBadge({
     customLabel ??
     (isAvailable
       ? type === "product"
-        ? "Options available"
+        ? variantCount !== undefined && variantCount <= 1
+          ? "Available"
+          : "Options available"
         : "Available"
       : "Currently unavailable");
 

@@ -76,6 +76,7 @@ export function SearchScreen() {
       <View className="flex-row items-center rounded-2xl border border-input bg-card px-4 shadow-sm focus-within:border-ring">
         <Icon as={Search} size={20} className="mr-3 text-muted-foreground" />
         <InputControl
+          accessibilityLabel="Search catalog"
           placeholder="Search products, brands, categories, or options..."
           value={query}
           onChangeText={setQuery}

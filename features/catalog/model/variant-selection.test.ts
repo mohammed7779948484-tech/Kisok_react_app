@@ -5,8 +5,11 @@ import {
   deriveVariantSelectionStrategy,
   findVariantByOptionValues,
   formatOptionCompatibility,
+  formatProductAvailability,
   formatVariantAvailability,
+  formatVariantDetails,
   getValidOptionValuesForDimension,
+  resolveDefaultVariant,
   resolveVariantByOptionValues,
 } from "./variant-selection";
 
@@ -43,6 +46,27 @@ function makeMockVariant(
 }
 
 describe("variant-selection", () => {
+  describe("resolveDefaultVariant", () => {
+    it("prefers the first available variant in existing backend order", () => {
+      const v1 = makeMockVariant("v1", [], false); // unavailable
+      const v2 = makeMockVariant("v2", [], true); // available
+      const v3 = makeMockVariant("v3", [], true); // available
+
+      expect(resolveDefaultVariant([v1, v2, v3])?.id).toBe("v2");
+    });
+
+    it("falls back to the first variant if no variant is available", () => {
+      const v1 = makeMockVariant("v1", [], false);
+      const v2 = makeMockVariant("v2", [], false);
+
+      expect(resolveDefaultVariant([v1, v2])?.id).toBe("v1");
+    });
+
+    it("returns undefined for empty variant array", () => {
+      expect(resolveDefaultVariant([])).toBeUndefined();
+    });
+  });
+
   describe("deriveVariantSelectionStrategy", () => {
     it("returns 'single' when product has 0 or 1 variant", () => {
       expect(deriveVariantSelectionStrategy([])).toEqual({
@@ -75,6 +99,32 @@ describe("variant-selection", () => {
       expect(strategy.primaryDimension?.values).toHaveLength(3);
     });
 
+    it("separates fixed dimensions from discriminating dimensions", () => {
+      // 3 flavors, but Strength is fixed at 20mg across all variants
+      const variants = [
+        makeMockVariant("v1", [
+          { typeId: "t1", typeName: "Flavor", valueId: "f1", value: "Mint" },
+          { typeId: "t2", typeName: "Strength", valueId: "s1", value: "20mg" },
+        ]),
+        makeMockVariant("v2", [
+          { typeId: "t1", typeName: "Flavor", valueId: "f2", value: "Berry" },
+          { typeId: "t2", typeName: "Strength", valueId: "s1", value: "20mg" },
+        ]),
+        makeMockVariant("v3", [
+          { typeId: "t1", typeName: "Flavor", valueId: "f3", value: "Mango" },
+          { typeId: "t2", typeName: "Strength", valueId: "s1", value: "20mg" },
+        ]),
+      ];
+
+      const strategy = deriveVariantSelectionStrategy(variants);
+      // Because Strength only has 1 value, only Flavor discriminates!
+      expect(strategy.type).toBe("clean-single-dimension-inline");
+      expect(strategy.primaryDimension?.typeName).toBe("Flavor");
+      expect(strategy.fixedDimensions).toHaveLength(1);
+      expect(strategy.fixedDimensions?.[0]?.typeName).toBe("Strength");
+      expect(strategy.fixedDimensions?.[0]?.value).toBe("20mg");
+    });
+
     it("detects clean-single-dimension-picker when 7+ unique options exist", () => {
       const variants = Array.from({ length: 10 }, (_, i) =>
         makeMockVariant(`v${i}`, [
@@ -89,15 +139,42 @@ describe("variant-selection", () => {
       expect(strategy.primaryDimension?.values).toHaveLength(10);
     });
 
-    it("detects clean-multi-dimension when all variants share uniform dimensions and unique signatures", () => {
+    it("detects clean-multi-dimension when a dense Cartesian matrix exists", () => {
+      // 2 Formats x 2 Strengths = 4 combinations, all 4 present
       const variants = [
         makeMockVariant("v1", [
           { typeId: "t1", typeName: "Format", valueId: "fmt1", value: "Pod" },
           { typeId: "t2", typeName: "Strength", valueId: "str1", value: "20mg" },
         ]),
         makeMockVariant("v2", [
-          { typeId: "t2", typeName: "Strength", valueId: "str2", value: "50mg" },
           { typeId: "t1", typeName: "Format", valueId: "fmt1", value: "Pod" },
+          { typeId: "t2", typeName: "Strength", valueId: "str2", value: "50mg" },
+        ]),
+        makeMockVariant("v3", [
+          { typeId: "t1", typeName: "Format", valueId: "fmt2", value: "Disposable" },
+          { typeId: "t2", typeName: "Strength", valueId: "str1", value: "20mg" },
+        ]),
+        makeMockVariant("v4", [
+          { typeId: "t1", typeName: "Format", valueId: "fmt2", value: "Disposable" },
+          { typeId: "t2", typeName: "Strength", valueId: "str2", value: "50mg" },
+        ]),
+      ];
+
+      const strategy = deriveVariantSelectionStrategy(variants);
+      expect(strategy.type).toBe("clean-multi-dimension");
+      expect(strategy.dimensions).toHaveLength(2);
+    });
+
+    it("falls back to concrete picker when multi-dimensional matrix is sparse to avoid user trapping", () => {
+      // 2 Formats x 2 Strengths = 4 combinations, but only 3 exist (sparse matrix)
+      const variants = [
+        makeMockVariant("v1", [
+          { typeId: "t1", typeName: "Format", valueId: "fmt1", value: "Pod" },
+          { typeId: "t2", typeName: "Strength", valueId: "str1", value: "20mg" },
+        ]),
+        makeMockVariant("v2", [
+          { typeId: "t1", typeName: "Format", valueId: "fmt1", value: "Pod" },
+          { typeId: "t2", typeName: "Strength", valueId: "str2", value: "50mg" },
         ]),
         makeMockVariant("v3", [
           { typeId: "t1", typeName: "Format", valueId: "fmt2", value: "Disposable" },
@@ -106,8 +183,8 @@ describe("variant-selection", () => {
       ];
 
       const strategy = deriveVariantSelectionStrategy(variants);
-      expect(strategy.type).toBe("clean-multi-dimension");
-      expect(strategy.dimensions).toHaveLength(2);
+      // Because variantCount (3) < expectedCombinations (4), fallback to small-concrete (<=4 variants)
+      expect(strategy.type).toBe("small-concrete");
     });
 
     it("falls back to small-concrete when variants (<= 4) have incomplete or missing options", () => {
@@ -268,6 +345,71 @@ describe("variant-selection", () => {
       expect(formatOptionCompatibility(false)).toEqual({
         isCompatible: false,
         label: "Not available with current selection",
+      });
+    });
+  });
+
+  describe("formatVariantDetails", () => {
+    it("formats structured option types and values", () => {
+      const v = makeMockVariant("v1", [
+        { typeId: "t1", typeName: "Flavor", valueId: "f1", value: "Watermelon" },
+        { typeId: "t2", typeName: "Strength", valueId: "s1", value: "20mg" },
+      ]);
+
+      expect(formatVariantDetails(v)).toBe("Flavor: Watermelon · Strength: 20mg");
+    });
+
+    it("suppresses redundant detail when title_override already communicates that value", () => {
+      const v = makeMockVariant(
+        "v1",
+        [
+          { typeId: "t1", typeName: "Flavor", valueId: "f1", value: "Watermelon" },
+          { typeId: "t2", typeName: "Strength", valueId: "s1", value: "20mg" },
+        ],
+        true,
+        "Watermelon",
+      );
+
+      // Flavor: Watermelon is suppressed because title_override === "Watermelon"
+      expect(formatVariantDetails(v)).toBe("20mg");
+    });
+
+    it("returns null when all attributes match title_override or no options exist", () => {
+      const vSingle = makeMockVariant(
+        "v1",
+        [{ typeId: "t1", typeName: "Flavor", valueId: "f1", value: "Watermelon" }],
+        true,
+        "Watermelon",
+      );
+      expect(formatVariantDetails(vSingle)).toBeNull();
+
+      const vNone = makeMockVariant("v2", []);
+      expect(formatVariantDetails(vNone)).toBeNull();
+    });
+  });
+
+  describe("formatProductAvailability", () => {
+    it("returns Available for single-variant in-stock product", () => {
+      expect(formatProductAvailability(true, 1)).toEqual({
+        isAvailable: true,
+        label: "Available",
+        tone: "success",
+      });
+    });
+
+    it("returns Options available for multi-variant in-stock product", () => {
+      expect(formatProductAvailability(true, 3)).toEqual({
+        isAvailable: true,
+        label: "Options available",
+        tone: "success",
+      });
+    });
+
+    it("returns Currently unavailable for out-of-stock product", () => {
+      expect(formatProductAvailability(false, 3)).toEqual({
+        isAvailable: false,
+        label: "Currently unavailable",
+        tone: "destructive",
       });
     });
   });

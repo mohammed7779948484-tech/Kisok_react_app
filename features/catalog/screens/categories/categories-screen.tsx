@@ -1,7 +1,8 @@
 import { useCallback } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { ArrowRight } from "lucide-react-native";
 import { useRouter } from "expo-router";
+import { FlashList } from "@shopify/flash-list";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
@@ -24,6 +25,8 @@ export function CategoriesScreen() {
     },
     [router],
   );
+
+  const keyExtractor = useCallback((family: CategoryFamily) => family.root.id, []);
 
   if (catalog.isPending) {
     return (
@@ -69,6 +72,14 @@ export function CategoriesScreen() {
 
   const families = deriveCategoryFamilies(view.rootCategories);
 
+  const renderFamily = ({ item: family, index }: { item: CategoryFamily; index: number }) => (
+    <CategoryFamilySection
+      family={family}
+      onCategoryPress={handleCategoryPress}
+      isLast={index === families.length - 1}
+    />
+  );
+
   return (
     <CatalogShell
       currentDestination="categories"
@@ -77,16 +88,15 @@ export function CategoriesScreen() {
       subtitle="Shop by department and category"
       countLabel={`${view.rootCategories.length} departments`}
     >
-      <ScrollView contentContainerClassName="gap-10 px-5 pb-36 pt-6 md:px-8">
-        {families.map((family, index) => (
-          <CategoryFamilySection
-            key={family.root.id}
-            family={family}
-            onCategoryPress={handleCategoryPress}
-            isLast={index === families.length - 1}
-          />
-        ))}
-      </ScrollView>
+      <View className="flex-1 px-5 md:px-8">
+        <FlashList<CategoryFamily>
+          data={families}
+          renderItem={renderFamily}
+          keyExtractor={keyExtractor}
+          contentContainerStyle={{ paddingTop: 24, paddingBottom: 144 }}
+          testID="categories-list"
+        />
+      </View>
     </CatalogShell>
   );
 }

@@ -41,6 +41,7 @@ export type CatalogGridProps<ItemT> = {
   /** Reports a row press upward with the pressed item. */
   onItemPress: (item: ItemT) => void;
   listHeaderComponent?: React.ReactElement;
+  listEmptyComponent?: React.ReactElement;
   testID?: string;
   className?: string;
 };
@@ -51,6 +52,7 @@ export function CatalogGrid<ItemT>({
   keyExtractor,
   onItemPress,
   listHeaderComponent,
+  listEmptyComponent,
   testID,
   className,
 }: CatalogGridProps<ItemT>) {
@@ -64,8 +66,8 @@ export function CatalogGrid<ItemT>({
   );
 
   const renderRow = useCallback(
-    (info: { item: ItemT; index: number }) => (
-      <View className="p-2">{renderItem({ item: info.item, onPress: handleItemPress })}</View>
+    ({ item }: { item: ItemT; index: number }) => (
+      <View className="p-2">{renderItem({ item, onPress: handleItemPress })}</View>
     ),
     [renderItem, handleItemPress],
   );
@@ -86,6 +88,7 @@ export function CatalogGrid<ItemT>({
         renderItem={renderRow}
         keyExtractor={keyExtractor}
         ListHeaderComponent={listHeaderComponent}
+        ListEmptyComponent={listEmptyComponent}
         contentContainerStyle={contentContainerStyle}
         testID={testID}
       />

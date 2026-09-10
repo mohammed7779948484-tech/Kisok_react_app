@@ -85,7 +85,7 @@ describe("CatalogHomeScreen", () => {
     await renderWithProviders(<CatalogHomeScreen />);
 
     await waitFor(() =>
-      expect(screen.getByRole("header", { name: "KISOK Test Store" })).toBeOnTheScreen(),
+      expect(screen.getByRole("header", { name: "KISOK Test Store Catalog" })).toBeOnTheScreen(),
     );
 
     // Root navigation is present with Home selected.
@@ -95,7 +95,7 @@ describe("CatalogHomeScreen", () => {
     // All three bounded sections are present.
     expect(screen.getByRole("header", { name: "Brands" })).toBeOnTheScreen();
     expect(screen.getByRole("header", { name: "Categories" })).toBeOnTheScreen();
-    expect(screen.getByRole("header", { name: "Featured products" })).toBeOnTheScreen();
+    expect(screen.getByRole("header", { name: "Featured" })).toBeOnTheScreen();
 
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
   });
@@ -117,8 +117,14 @@ describe("CatalogHomeScreen", () => {
     expect(screen.queryByRole("button", { name: /Tóp Picks/ })).toBeNull();
 
     // Featured products section: featured products only.
-    expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Pocket Notebook, Out of stock" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+    ).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", {
+        name: "Pocket Notebook, by KISOK Basics, Currently unavailable",
+      }),
+    ).toBeOnTheScreen();
     expect(screen.queryByRole("button", { name: /Everyday Tote/ })).toBeNull();
   });
 
@@ -159,7 +165,9 @@ describe("CatalogHomeScreen", () => {
 
     await user.press(screen.getByRole("button", { name: "Maison Élite, 1 product" }));
     await user.press(screen.getByRole("button", { name: "Drínks, 2 products" }));
-    await user.press(screen.getByRole("button", { name: "Café Crème, Available" }));
+    await user.press(
+      screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+    );
 
     expect(mockRouterPush).toHaveBeenCalledTimes(3);
     expect(mockRouterPush).toHaveBeenNthCalledWith(1, {
@@ -184,12 +192,12 @@ describe("CatalogHomeScreen", () => {
     await renderWithProviders(<CatalogHomeScreen />);
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Browse all brands" })).toBeOnTheScreen(),
+      expect(screen.getByRole("button", { name: "All brands" })).toBeOnTheScreen(),
     );
 
-    await user.press(screen.getByRole("button", { name: "Browse all brands" }));
-    await user.press(screen.getByRole("button", { name: "Browse all categories" }));
-    await user.press(screen.getByRole("button", { name: "Browse all products" }));
+    await user.press(screen.getByRole("button", { name: "All brands" }));
+    await user.press(screen.getByRole("button", { name: "All categories" }));
+    await user.press(screen.getByRole("button", { name: "View all products" }));
 
     expect(mockRouterReplace).toHaveBeenCalledTimes(3);
     expect(mockRouterReplace).toHaveBeenNthCalledWith(1, "/brands");
@@ -203,11 +211,15 @@ describe("CatalogHomeScreen", () => {
 
     await renderWithProviders(<CatalogHomeScreen />);
 
-    await waitFor(() => expect(screen.getByRole("header", { name: "Catalog" })).toBeOnTheScreen());
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: "Store Catalog" })).toBeOnTheScreen(),
+    );
 
-    expect(screen.queryByText("KISOK Test Store")).toBeNull();
+    expect(screen.queryByText("KISOK Test Store Catalog")).toBeNull();
     // The rest of Home still works without optional settings.
-    expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+    ).toBeOnTheScreen();
   });
 
   it("omits sections whose optional collections are absent while products exist", async () => {
@@ -225,8 +237,8 @@ describe("CatalogHomeScreen", () => {
     // No section headers, no Browse-all actions, no cards.
     expect(screen.queryByRole("header", { name: "Brands" })).toBeNull();
     expect(screen.queryByRole("header", { name: "Categories" })).toBeNull();
-    expect(screen.queryByRole("header", { name: "Featured products" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Browse all/ })).toBeNull();
+    expect(screen.queryByRole("header", { name: "Featured" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /View all products|All / })).toBeNull();
     expect(screen.queryByRole("button", { name: /Café Crème/ })).toBeNull();
   });
 
@@ -283,7 +295,7 @@ describe("CatalogHomeScreen", () => {
     const { queryClient } = await renderWithProviders(<CatalogHomeScreen />);
 
     await waitFor(() =>
-      expect(screen.getByRole("header", { name: "KISOK Test Store" })).toBeOnTheScreen(),
+      expect(screen.getByRole("header", { name: "KISOK Test Store Catalog" })).toBeOnTheScreen(),
     );
 
     // The same background refetch the shared QueryClient triggers on
@@ -296,8 +308,10 @@ describe("CatalogHomeScreen", () => {
     });
 
     // The populated Home stays on screen…
-    expect(screen.getByRole("header", { name: "KISOK Test Store" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen();
+    expect(screen.getByRole("header", { name: "KISOK Test Store Catalog" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+    ).toBeOnTheScreen();
     // …and the full-screen error state does not replace it.
     expect(screen.queryByText("Something went wrong")).toBeNull();
     expect(screen.queryByText("We couldn't load the catalog. Please try again.")).toBeNull();
@@ -322,9 +336,9 @@ describe("CatalogHomeScreen", () => {
     // Brands and categories exist in the snapshot, but sections stay hidden.
     expect(screen.queryByRole("header", { name: "Brands" })).toBeNull();
     expect(screen.queryByRole("header", { name: "Categories" })).toBeNull();
-    expect(screen.queryByRole("header", { name: "Featured products" })).toBeNull();
+    expect(screen.queryByRole("header", { name: "Featured" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Maison Élite/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Browse all/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /View all products|All / })).toBeNull();
 
     // The empty state offers a way forward: refetch the snapshot.
     await user.press(screen.getByRole("button", { name: "Try again" }));

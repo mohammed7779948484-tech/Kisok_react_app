@@ -68,11 +68,9 @@ const nonRetryableCatalogError = new AppError({
  * The distinct search-state copy. Declared once so the tests assert the four
  * states by DIFFERENT text, never by one message doubling for another.
  */
-const IDLE_PROMPT =
-  "Type to search the products in this store. Matching products appear as you type.";
-const TOO_SHORT_HINT = "Keep typing — search starts with at least 2 characters.";
-const noMatchMessage = (query: string) =>
-  `No products match "${query}". Try a different word — search covers only the products currently in this catalog.`;
+const IDLE_PROMPT = "Search products, brands, categories, or options.";
+const TOO_SHORT_HINT = "Enter at least 2 characters to search.";
+const noMatchMessage = (query: string) => `No matches for "${query}".`;
 
 /** Ids for the products the searchable fixture appends past the base 3. */
 const extraProductIds = {
@@ -89,7 +87,7 @@ const extraProductIds = {
  */
 const alpineResultLabels = [
   "Alpine Mug, Available",
-  "Alpine Blanket, Out of stock",
+  "Alpine Blanket, Currently unavailable",
   "Alpine Lantern, Available",
 ] as const;
 
@@ -255,14 +253,14 @@ describe("SearchScreen", () => {
     await renderWithProviders(<SearchScreen />);
 
     await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search products");
+    const input = screen.getByLabelText("Search catalog");
 
     await user.type(input, "a");
 
     // One character is a distinct hint, not the idle prompt and not no-match.
     expect(screen.getByText(TOO_SHORT_HINT)).toBeOnTheScreen();
     expect(screen.queryByText(IDLE_PROMPT)).toBeNull();
-    expect(screen.queryByText(/No products match/)).toBeNull();
+    expect(screen.queryByText(/No matches/)).toBeNull();
     expect(screen.queryByTestId("search-results-grid")).toBeNull();
 
     // A single accented character normalizes to one character — still too short.
@@ -280,10 +278,10 @@ describe("SearchScreen", () => {
     await renderWithProviders(<SearchScreen />);
 
     await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search products");
+    const input = screen.getByLabelText("Search catalog");
     await user.type(input, "alpine");
 
-    await waitFor(() => expect(screen.getByText("3 matching products")).toBeOnTheScreen());
+    await waitFor(() => expect(screen.getByText("3 products found")).toBeOnTheScreen());
 
     // Every match exactly once, in backend display order (the query's tree
     // order follows the data order FlashList renders).
@@ -295,7 +293,7 @@ describe("SearchScreen", () => {
     // Results state messaging replaces the other three states' copy.
     expect(screen.queryByText(IDLE_PROMPT)).toBeNull();
     expect(screen.queryByText(TOO_SHORT_HINT)).toBeNull();
-    expect(screen.queryByText(/No products match/)).toBeNull();
+    expect(screen.queryByText(/No matches/)).toBeNull();
 
     // Non-matching products are not rendered at all.
     expect(screen.queryByText("Café Crème")).toBeNull();
@@ -311,14 +309,16 @@ describe("SearchScreen", () => {
     await renderWithProviders(<SearchScreen />);
 
     await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search products");
+    const input = screen.getByLabelText("Search catalog");
 
     // An uppercase, accented query against plain product names.
     await user.type(input, "ALPINÉ");
 
-    await waitFor(() => expect(screen.getByText("3 matching products")).toBeOnTheScreen());
+    await waitFor(() => expect(screen.getByText("3 products found")).toBeOnTheScreen());
     expect(screen.getByRole("button", { name: "Alpine Mug, Available" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Alpine Blanket, Out of stock" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Alpine Blanket, Currently unavailable" }),
+    ).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Alpine Lantern, Available" })).toBeOnTheScreen();
   });
 
@@ -329,18 +329,18 @@ describe("SearchScreen", () => {
     await renderWithProviders(<SearchScreen />);
 
     await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search products");
+    const input = screen.getByLabelText("Search catalog");
 
     // "Tóp Picks" is a category name — no product name contains "top".
     await user.type(input, "top");
 
-    await waitFor(() => expect(screen.getByText("2 matching products")).toBeOnTheScreen());
+    await waitFor(() => expect(screen.getByText("2 products found")).toBeOnTheScreen());
     const resultCards = screen.getAllByRole("button", {
-      name: /, (Available|Out of stock)$/,
+      name: /, (Available|Options available|Currently unavailable)$/,
     });
     expect(resultCards.map((card) => card.props.accessibilityLabel)).toEqual([
-      "Café Crème, Available",
-      "Everyday Tote, Out of stock",
+      "Café Crème, by Maison Élite, Options available",
+      "Everyday Tote, by KISOK Basics, Currently unavailable",
     ]);
     expect(screen.queryByRole("button", { name: /Pocket Notebook/ })).toBeNull();
   });
@@ -352,7 +352,7 @@ describe("SearchScreen", () => {
     await renderWithProviders(<SearchScreen />);
 
     await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search products");
+    const input = screen.getByLabelText("Search catalog");
 
     await user.type(input, "zzz");
 
@@ -367,13 +367,13 @@ describe("SearchScreen", () => {
     // The input stays rendered with the query so the customer can edit it
     // (the screen never unmounts or blurs it between search states).
     expect(input).toHaveDisplayValue("zzz");
-    expect(screen.getByLabelText("Search products")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Search catalog")).toBeOnTheScreen();
 
     // Editing the query recovers to results without leaving the screen.
     await user.clear(input);
     await user.type(input, "alpine");
 
-    await waitFor(() => expect(screen.getByText("3 matching products")).toBeOnTheScreen());
+    await waitFor(() => expect(screen.getByText("3 products found")).toBeOnTheScreen());
 
     expect(mockRouterPush).not.toHaveBeenCalled();
     expect(mockRouterReplace).not.toHaveBeenCalled();
@@ -386,7 +386,7 @@ describe("SearchScreen", () => {
     await renderWithProviders(<SearchScreen />);
 
     await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search products");
+    const input = screen.getByLabelText("Search catalog");
 
     // A base-fixture SKU: identifiers are not customer search fields (AC-06).
     await user.type(input, "SECRET-SKU");
@@ -407,7 +407,7 @@ describe("SearchScreen", () => {
     await renderWithProviders(<SearchScreen />);
 
     await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search products");
+    const input = screen.getByLabelText("Search catalog");
     await user.type(input, "alpine");
 
     await waitFor(() =>
@@ -417,7 +417,7 @@ describe("SearchScreen", () => {
     // An available and an unavailable result both open their Product Detail —
     // unavailable products stay discoverable and pressable.
     await user.press(screen.getByRole("button", { name: "Alpine Mug, Available" }));
-    await user.press(screen.getByRole("button", { name: "Alpine Blanket, Out of stock" }));
+    await user.press(screen.getByRole("button", { name: "Alpine Blanket, Currently unavailable" }));
 
     expect(mockRouterPush).toHaveBeenCalledTimes(2);
     expect(mockRouterPush).toHaveBeenNthCalledWith(1, {
@@ -465,7 +465,7 @@ describe("SearchScreen", () => {
     expect(screen.getByLabelText("Loading the catalog…")).toBeOnTheScreen();
     // No search chrome pretending to be data while pending.
     expect(screen.queryByRole("header", { name: "Search" })).toBeNull();
-    expect(screen.queryByLabelText("Search products")).toBeNull();
+    expect(screen.queryByLabelText("Search catalog")).toBeNull();
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
   });
 
@@ -481,7 +481,7 @@ describe("SearchScreen", () => {
 
     expect(screen.getByText("We couldn't load the catalog. Please try again.")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Try again" })).toBeOnTheScreen();
-    expect(screen.queryByLabelText("Search products")).toBeNull();
+    expect(screen.queryByLabelText("Search catalog")).toBeNull();
 
     await user.press(screen.getByRole("button", { name: "Try again" }));
 
@@ -509,7 +509,7 @@ describe("SearchScreen", () => {
 
     // An empty catalog is a snapshot-layer state: the search surface never
     // renders — search chrome must not pretend to have its own states.
-    expect(screen.queryByLabelText("Search products")).toBeNull();
+    expect(screen.queryByLabelText("Search catalog")).toBeNull();
     expect(screen.queryByRole("header", { name: "Search" })).toBeNull();
     expect(screen.queryByTestId("search-results-grid")).toBeNull();
 
@@ -533,8 +533,8 @@ describe("SearchScreen", () => {
     const { queryClient } = await renderWithProviders(<SearchScreen />);
 
     await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    await user.type(screen.getByLabelText("Search products"), "alpine");
-    await waitFor(() => expect(screen.getByText("3 matching products")).toBeOnTheScreen());
+    await user.type(screen.getByLabelText("Search catalog"), "alpine");
+    await waitFor(() => expect(screen.getByText("3 products found")).toBeOnTheScreen());
 
     // The same background refetch the shared QueryClient triggers on
     // focus/reconnect; fake timers (see the file header) let TanStack's
@@ -545,9 +545,9 @@ describe("SearchScreen", () => {
     });
 
     // The results, count and input stay on screen…
-    expect(screen.getByText("3 matching products")).toBeOnTheScreen();
+    expect(screen.getByText("3 products found")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Alpine Mug, Available" })).toBeOnTheScreen();
-    expect(screen.getByLabelText("Search products")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Search catalog")).toBeOnTheScreen();
     // …and the full-screen error state does not replace them.
     expect(screen.queryByText("Something went wrong")).toBeNull();
     expect(screen.queryByText("We couldn't load the catalog. Please try again.")).toBeNull();

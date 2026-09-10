@@ -6,13 +6,7 @@ export type VariantSelectionStrategyType =
   | "clean-single-dimension-inline"
   | "clean-single-dimension-picker"
   | "clean-multi-dimension"
-  | "large-concrete-picker"
-  // Backward compatibility aliases
-  | "small-set"
-  | "direct-concrete"
-  | "single-dimension-inline"
-  | "single-dimension-picker"
-  | "multi-dimension";
+  | "large-concrete-picker";
 
 export type OptionDimensionValue = {
   valueId: string;
@@ -26,20 +20,40 @@ export type OptionDimension = {
   values: OptionDimensionValue[];
 };
 
+export type FixedOptionDimension = {
+  typeId: string;
+  typeName: string;
+  valueId: string;
+  value: string;
+};
+
 export type VariantSelectionStrategy = {
   type: VariantSelectionStrategyType;
-  /** Primary option dimension if cleanly present (single dimension) */
+  /** Primary option dimension if cleanly single-dimension */
   primaryDimension?: OptionDimension;
-  /** All dimensions if clean multi-dimension */
+  /** Discriminating dimensions if clean multi-dimension */
   dimensions?: OptionDimension[];
+  /** Fixed dimensions that do not vary across variants */
+  fixedDimensions?: FixedOptionDimension[];
   /** Total count of concrete variants */
   variantCount: number;
 };
 
 /**
+ * Resolves the preferred initial variant for a product.
+ * Prefers the first available variant in existing backend order.
+ * If no variant is available, falls back to the first variant.
+ */
+export function resolveDefaultVariant(
+  variants: readonly CatalogVariantView[],
+): CatalogVariantView | undefined {
+  return variants.find((v) => v.is_available) ?? variants[0];
+}
+
+/**
  * Derives the optimal selection strategy for a product's variants based on real data structure.
- * Rigorously differentiates clean single-dimension, clean multi-dimension, small concrete sets,
- * and large partially structured/ambiguous sets.
+ * Rigorously differentiates clean single-dimension, reachable multi-dimension, small concrete sets,
+ * and large concrete picker sets.
  */
 export function deriveVariantSelectionStrategy(
   variants: readonly CatalogVariantView[],
@@ -102,7 +116,6 @@ export function deriveVariantSelectionStrategy(
   for (const [typeId, { typeName, values }] of dimensionMap.entries()) {
     const valueList: OptionDimensionValue[] = Array.from(values.entries()).map(
       ([valueId, value]) => {
-        // Available if at least one variant with this option value is in stock
         const isAvailable = variants.some(
           (v) =>
             v.is_available && v.options.some((o) => o.type.id === typeId && o.value.id === valueId),
@@ -113,48 +126,83 @@ export function deriveVariantSelectionStrategy(
     dimensions.push({ typeId, typeName, values: valueList });
   }
 
-  // Condition 1: Clean Single Dimension
-  // Uniform 1 dimension on every variant, unique signatures, no missing options
-  if (isUniformDimensions && !hasDuplicateSignatures && dimensions.length === 1 && dimensions[0]) {
-    const primaryDimension = dimensions[0];
-    const optionCount = primaryDimension.values.length;
+  // Separate fixed dimensions (only 1 value) from discriminating dimensions (>1 values)
+  const fixedDimensions: FixedOptionDimension[] = [];
+  const discriminatingDimensions: OptionDimension[] = [];
 
-    // 7+ values: searchable AdaptiveSheet picker
-    if (optionCount > 6) {
+  for (const dim of dimensions) {
+    if (dim.values.length <= 1 && dim.values[0]) {
+      fixedDimensions.push({
+        typeId: dim.typeId,
+        typeName: dim.typeName,
+        valueId: dim.values[0].valueId,
+        value: dim.values[0].value,
+      });
+    } else {
+      discriminatingDimensions.push(dim);
+    }
+  }
+
+  // Uniform dimensions and unique signatures check
+  if (isUniformDimensions && !hasDuplicateSignatures) {
+    // Case 1: Exactly 1 discriminating dimension (e.g. only Flavor varies; Strength is fixed)
+    if (discriminatingDimensions.length === 1 && discriminatingDimensions[0]) {
+      const primaryDimension = discriminatingDimensions[0];
+      const optionCount = primaryDimension.values.length;
+
+      if (optionCount > 6) {
+        return {
+          type: "clean-single-dimension-picker",
+          primaryDimension,
+          fixedDimensions: fixedDimensions.length > 0 ? fixedDimensions : undefined,
+          variantCount,
+        };
+      }
+
       return {
-        type: "clean-single-dimension-picker",
+        type: "clean-single-dimension-inline",
         primaryDimension,
+        fixedDimensions: fixedDimensions.length > 0 ? fixedDimensions : undefined,
         variantCount,
       };
     }
 
-    // 2-6 values: inline toggle group
-    return {
-      type: "clean-single-dimension-inline",
-      primaryDimension,
-      variantCount,
-    };
-  }
+    // Case 2: 2+ discriminating dimensions
+    // Must be reachably dense (full Cartesian matrix) to prevent customer trapping in sparse matrix
+    if (discriminatingDimensions.length >= 2) {
+      const expectedCombinations = discriminatingDimensions.reduce(
+        (acc, dim) => acc * dim.values.length,
+        1,
+      );
 
-  // Condition 2: Clean Multi-Dimension Matrix
-  // Uniform multiple dimensions on every variant, unique signatures, no missing options
-  if (isUniformDimensions && !hasDuplicateSignatures && dimensions.length > 1) {
-    return {
-      type: "clean-multi-dimension",
-      dimensions,
-      variantCount,
-    };
+      // Full Cartesian matrix: 100% reachable without dead ends
+      if (variantCount === expectedCombinations) {
+        return {
+          type: "clean-multi-dimension",
+          dimensions: discriminatingDimensions,
+          fixedDimensions: fixedDimensions.length > 0 ? fixedDimensions : undefined,
+          variantCount,
+        };
+      }
+      // Sparse matrix fallback below to ensure predictable customer navigation
+    }
   }
 
   // Condition 3: Small Concrete Set (<= 4 variants)
-  // Partially structured, ambiguous signatures, or unstructured small collection
   if (variantCount <= 4) {
-    return { type: "small-concrete", variantCount };
+    return {
+      type: "small-concrete",
+      fixedDimensions: fixedDimensions.length > 0 ? fixedDimensions : undefined,
+      variantCount,
+    };
   }
 
   // Condition 4: Large Concrete Set (>= 5 variants)
-  // Searchable AdaptiveSheet concrete-variant picker so we never render 15-46 full cards
-  return { type: "large-concrete-picker", variantCount };
+  return {
+    type: "large-concrete-picker",
+    fixedDimensions: fixedDimensions.length > 0 ? fixedDimensions : undefined,
+    variantCount,
+  };
 }
 
 export type VariantMatchResult =
@@ -218,7 +266,6 @@ export function getValidOptionValuesForDimension(
   const validValueIds = new Set<string>();
 
   for (const variant of variants) {
-    // Check if variant matches all OTHER current selections
     let matchesOther = true;
     for (const [typeId, valueId] of Object.entries(currentSelections)) {
       if (typeId === targetTypeId) continue;
@@ -244,6 +291,38 @@ export function getValidOptionValuesForDimension(
 }
 
 /**
+ * Formats ordered structured variant details (e.g. "Color: Red · Size: Large"),
+ * cleanly omitting information already communicated by title_override.
+ */
+export function formatVariantDetails(
+  variant: CatalogVariantView,
+  options?: { omitOptionValues?: Set<string>; useKeyPrefix?: boolean },
+): string | null {
+  if (variant.options.length === 0) return null;
+
+  const titleLower = variant.title_override?.trim().toLowerCase() ?? "";
+
+  const relevantOptions = variant.options.filter((opt) => {
+    const val = opt.value.value.trim();
+    if (!val) return false;
+    if (options?.omitOptionValues?.has(val)) return false;
+    // Omit if title_override already communicates this exact value
+    if (titleLower && titleLower === val.toLowerCase()) {
+      return false;
+    }
+    return true;
+  });
+
+  if (relevantOptions.length === 0) return null;
+
+  if (options?.useKeyPrefix ?? relevantOptions.length > 1) {
+    return relevantOptions.map((o) => `${o.type.name}: ${o.value.value}`).join(" · ");
+  }
+
+  return relevantOptions.map((o) => o.value.value).join(" · ");
+}
+
+/**
  * Formats a concise summary of the selected variant's attributes for customer confirmation.
  */
 export function formatVariantSummary(variant: CatalogVariantView): string {
@@ -251,11 +330,16 @@ export function formatVariantSummary(variant: CatalogVariantView): string {
     return variant.title_override.trim();
   }
 
-  if (variant.options.length > 0) {
-    return variant.options.map((opt) => opt.value.value).join(" · ");
+  if (variant.options.length === 0) {
+    return variant.label;
   }
 
-  return variant.label;
+  if (variant.options.length === 1 && variant.options[0]) {
+    return variant.options[0].value.value;
+  }
+
+  // Multiple dimensions: Type: Value pairs for clarity
+  return variant.options.map((opt) => `${opt.type.name}: ${opt.value.value}`).join(" · ");
 }
 
 /**
@@ -285,13 +369,23 @@ export function formatOptionCompatibility(isCompatible: boolean): {
 
 /**
  * Formats truthful availability copy at product level.
+ * Differentiates 1 variant ("Available") from multiple variants ("Options available").
  */
-export function formatProductAvailability(productIsAvailable: boolean): {
+export function formatProductAvailability(
+  productIsAvailable: boolean,
+  variantCount = 2,
+): {
   isAvailable: boolean;
   label: string;
   tone: "success" | "destructive";
 } {
-  return productIsAvailable
-    ? { isAvailable: true, label: "Options available", tone: "success" }
-    : { isAvailable: false, label: "Currently unavailable", tone: "destructive" };
+  if (!productIsAvailable) {
+    return { isAvailable: false, label: "Currently unavailable", tone: "destructive" };
+  }
+
+  if (variantCount <= 1) {
+    return { isAvailable: true, label: "Available", tone: "success" };
+  }
+
+  return { isAvailable: true, label: "Options available", tone: "success" };
 }

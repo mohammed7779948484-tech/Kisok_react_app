@@ -10,7 +10,11 @@ import { useLayout, useResponsiveValue } from "@/core/responsive";
 import { AddToCartButton, type CatalogCartSource } from "@/features/catalog-cart-integration";
 
 import { AvailabilityBadge } from "../../components/availability-badge";
-import { formatVariantSummary } from "../../model/variant-selection";
+import {
+  formatVariantDetails,
+  formatVariantSummary,
+  resolveDefaultVariant,
+} from "../../model/variant-selection";
 import type { CatalogProductView } from "../../model/catalog-view";
 import { useCatalog } from "../../queries/use-catalog";
 import { AdaptiveVariantSelector } from "./components/adaptive-variant-selector";
@@ -33,7 +37,11 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
   const [selectedMediaAssetId, setSelectedMediaAssetId] = useState<string | null>(null);
 
   const handleBack = useCallback(() => {
-    router.back();
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/products");
+    }
   }, [router]);
 
   const handleBrandPress = useCallback(
@@ -99,15 +107,23 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
         <EmptyState
           title="Product not found"
           description="This product is no longer in the catalog. It may have been removed since you started browsing."
-          action={{ label: "Back to browsing", onPress: handleBack }}
+          action={{ label: "Back to products", onPress: () => router.replace("/products") }}
         />
       </Screen>
     );
   }
 
-  // Selected variant degradation
+  // Selected variant resolution:
+  // 1. Explicit customer selection preserved if still valid
+  // 2. Initial entry or snapshot recovery prefers first available variant in backend order
+  // 3. Fallback to first backend variant if none available
   const variant =
-    product.variants.find((candidate) => candidate.id === selectedVariantId) ?? product.variants[0];
+    (selectedVariantId
+      ? product.variants.find((candidate) => candidate.id === selectedVariantId)
+      : undefined) ??
+    resolveDefaultVariant(product.variants) ??
+    product.variants[0];
+
   if (variant === undefined) {
     throw new Error(`product ${product.id} resolved without a variant`);
   }
@@ -138,6 +154,7 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
   };
 
   const selectedSummary = formatVariantSummary(variant);
+  const selectedDetails = formatVariantDetails(variant);
 
   return (
     <Screen>
@@ -170,36 +187,42 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
           <View className={useTwoColumnLayout ? "flex-1 gap-6" : "gap-6"}>
             {/* Header & Taxonomy */}
             <View className="gap-3">
-              {/* Quieter brand & category context links with >= 48dp touch targets */}
-              <View className="flex-row flex-wrap items-center gap-2.5">
+              {/* Quieter navigable brand & category metadata with >= 48dp touch targets */}
+              <View className="flex-row flex-wrap items-center gap-2">
                 {product.brand ? (
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={`Browse brand ${product.brand.name}`}
                     onPress={() => handleBrandPress(product)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    className="min-h-touch flex-row items-center gap-1.5 rounded-full bg-secondary/80 px-3.5 py-1.5 active:opacity-75"
+                    className="min-h-touch flex-row items-center gap-1 py-1 active:opacity-75"
                   >
-                    <Text variant="caption" className="font-semibold text-secondary-foreground">
+                    <Text variant="caption" className="font-semibold text-primary">
                       {product.brand.name}
                     </Text>
-                    <Icon as={ChevronRight} size={14} className="text-secondary-foreground/70" />
+                    <Icon as={ChevronRight} size={13} className="text-muted-foreground/60" />
                   </Pressable>
                 ) : null}
 
-                {product.categories.map((cat) => (
-                  <Pressable
-                    key={cat.id}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Browse category ${cat.name}`}
-                    onPress={() => handleCategoryPress(cat.id)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    className="min-h-touch flex-row items-center gap-1 rounded-full border border-border/70 bg-card px-3.5 py-1.5 active:opacity-75"
-                  >
-                    <Text variant="caption" tone="muted" className="font-medium">
-                      {cat.name}
-                    </Text>
-                  </Pressable>
+                {product.categories.map((cat, idx) => (
+                  <View key={cat.id} className="flex-row items-center gap-2">
+                    {product.brand || idx > 0 ? (
+                      <Text variant="caption" tone="muted" className="text-muted-foreground/40">
+                        /
+                      </Text>
+                    ) : null}
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Browse category ${cat.name}`}
+                      onPress={() => handleCategoryPress(cat.id)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      className="min-h-touch flex-row items-center py-1 active:opacity-75"
+                    >
+                      <Text variant="caption" tone="muted" className="font-medium">
+                        {cat.name}
+                      </Text>
+                    </Pressable>
+                  </View>
                 ))}
               </View>
 
@@ -235,6 +258,11 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
                   <Text variant="body" className="font-bold text-foreground">
                     {selectedSummary}
                   </Text>
+                  {selectedDetails ? (
+                    <Text variant="caption" tone="muted">
+                      {selectedDetails}
+                    </Text>
+                  ) : null}
                 </View>
                 <AvailabilityBadge isAvailable={variant.is_available} type="variant" />
               </View>

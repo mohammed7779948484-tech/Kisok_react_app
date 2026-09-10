@@ -77,6 +77,7 @@ jest.mock("lucide-react-native", () => {
     Trash2: makeIcon("Trash2"),
     ImageOff: makeIcon("ImageOff"),
     ShoppingCart: makeIcon("ShoppingCart"),
+    PackageCheck: makeIcon("PackageCheck"),
   };
 });
 
@@ -96,6 +97,8 @@ const CLEANUP_OWNER = "5e6f7a8b-9c0d-4e1f-8a2b-4c5d6e7f8a9b";
 const ADD_OWNER = "6f7a8b9c-0d1e-4f2a-8b3c-5d6e7f8a9b0c";
 const AFFORDANCE_OWNER = "708192a3-b4c5-4d6e-8f7a-9c0d1e2f3a4b";
 const CART_ROUTE_OWNER = "8192a3b4-c5d6-4e7f-8a0b-1e2f3a4b5c6d";
+const CHECKOUT_ROUTE_OWNER = "92a3b4c5-d6e7-4f8a-9b1c-2e3f4a5b6c7d";
+const SUCCESS_ROUTE_OWNER = "a3b4c5d6-e7f8-4a9b-8c2d-3e4f5a6b7c8e";
 
 const sizeSelection = {
   optionTypeId: "b2e1a4c3-8f7d-4a2b-9c6e-1d3f5a7b9c2d",
@@ -308,7 +311,7 @@ describe("CatalogCartProvider", () => {
     // The context flips, and the sheet the provider renders shows its real
     // content through the single cart model (hydrated empty for this owner).
     expect(screen.getByText("open:true")).toBeOnTheScreen();
-    await screen.findByRole("heading", { name: "Your Cart · 0" });
+    await screen.findByText("Your Cart · 0");
     expect(screen.getByText("Your cart is empty")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Continue Shopping" })).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "View Full Cart" })).toBeOnTheScreen();
@@ -425,7 +428,7 @@ describe("CatalogCartProvider", () => {
     // is visible without reopening — product name, and the updated total in
     // the title.
     expect(screen.getByText("Cappuccino")).toBeOnTheScreen();
-    expect(screen.getByRole("heading", { name: "Your Cart · 1" })).toBeOnTheScreen();
+    expect(screen.getByText("Your Cart · 1")).toBeOnTheScreen();
     const snapshot = getCartSnapshot();
     expect(snapshot.lines).toHaveLength(1);
     expect(snapshot.lines[0]?.productDisplayName).toBe("Cappuccino");
@@ -456,10 +459,24 @@ describe("CatalogCartProvider — persistent affordance (AC-06, plan decision 5)
     // …and the sheet the provider renders still works through the context the
     // children consume — hiding the button removes nothing else.
     await user.press(screen.getByRole("button", { name: "Open Quick Cart" }));
-    await screen.findByRole("heading", { name: "Your Cart · 0" });
+    await screen.findByText("Your Cart · 0");
     expect(screen.getByText("Your cart is empty")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Continue Shopping" })).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "View Full Cart" })).toBeOnTheScreen();
+  });
+
+  it("hides the affordance on /checkout", async () => {
+    mockPathname.current = "/checkout";
+    await renderProvider(<Text>checkout-probe</Text>, CHECKOUT_ROUTE_OWNER);
+    expect(await screen.findByText("checkout-probe")).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Open cart" })).toBeNull();
+  });
+
+  it("hides the affordance on /checkout-success", async () => {
+    mockPathname.current = "/checkout-success";
+    await renderProvider(<Text>success-probe</Text>, SUCCESS_ROUTE_OWNER);
+    expect(await screen.findByText("success-probe")).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Open cart" })).toBeNull();
   });
 });
 
@@ -490,6 +507,8 @@ describe("customer layout mount (plan decision 1; brief AC-11 thin-mount share)"
     // this pin enforces.
     const sanctioned = new Set([
       "expo-router",
+      "react-native",
+      "@/components/feedback",
       "@/features/catalog-cart-integration",
       "@/features/checkout",
     ]);

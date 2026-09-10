@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/adaptive-sheet";
 import { Button, Icon, Input, Text } from "@/components/ui";
 import { cn } from "@/core/utils";
+import { normalizeCatalogSearchText } from "../../../model/catalog-view";
 
 export type OptionPickerItem = {
   id: string;
@@ -39,28 +40,43 @@ export function LargeOptionPickerSheet({
 }: LargeOptionPickerSheetProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      onOpenChange(nextOpen);
+      if (!nextOpen) {
+        setSearchQuery("");
+      }
+    },
+    [onOpenChange],
+  );
+
   const filteredItems = useMemo(() => {
-    const trimmed = searchQuery.trim().toLowerCase();
-    if (!trimmed) return items;
+    const normalized = normalizeCatalogSearchText(searchQuery);
+    if (!normalized) return items;
     return items.filter(
       (item) =>
-        item.label.toLowerCase().includes(trimmed) ||
-        (item.description && item.description.toLowerCase().includes(trimmed)),
+        normalizeCatalogSearchText(item.label).includes(normalized) ||
+        (item.description && normalizeCatalogSearchText(item.description).includes(normalized)),
     );
   }, [items, searchQuery]);
 
   const handleSelect = useCallback(
     (id: string) => {
       onSelect(id);
-      onOpenChange(false);
-      setSearchQuery("");
+      handleOpenChange(false);
     },
-    [onSelect, onOpenChange],
+    [onSelect, handleOpenChange],
   );
 
   const handleClearSearch = useCallback(() => {
     setSearchQuery("");
   }, []);
+
+  const selectedIndex = useMemo(() => {
+    if (!selectedId || searchQuery !== "") return undefined;
+    const index = filteredItems.findIndex((item) => item.id === selectedId);
+    return index > 0 ? index : undefined;
+  }, [filteredItems, selectedId, searchQuery]);
 
   const renderItem = useCallback(
     ({ item }: { item: OptionPickerItem }) => {
@@ -114,27 +130,33 @@ export function LargeOptionPickerSheet({
   const keyExtractor = useCallback((item: OptionPickerItem) => item.id, []);
 
   return (
-    <AdaptiveSheet open={open} onOpenChange={onOpenChange}>
+    <AdaptiveSheet open={open} onOpenChange={handleOpenChange}>
       <AdaptiveSheetContent className="flex-1">
         <AdaptiveSheetHeader className="border-b border-border pb-3">
           <View className="flex-row items-center justify-between">
             <AdaptiveSheetTitle>{title}</AdaptiveSheetTitle>
             <AdaptiveSheetClose asChild>
-              <Button variant="ghost" size="icon" accessibilityLabel="Close picker">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="min-h-touch min-w-[48px]"
+                accessibilityLabel="Close picker"
+              >
                 <Icon as={X} size={20} />
               </Button>
             </AdaptiveSheetClose>
           </View>
 
-          {/* Search bar inside sheet with tablet-compliant 48dp ergonomics */}
+          {/* Search bar inside sheet with tablet-compliant 48dp ergonomics and explicit accessible name */}
           <View className="relative pt-2">
             <Input
+              accessibilityLabel={`Search ${title.toLowerCase()}`}
               placeholder={`Search ${title.toLowerCase()}...`}
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoCapitalize="none"
               autoCorrect={false}
-              className="min-h-control pr-10 text-base"
+              className="min-h-control pr-12 text-base"
             />
             {searchQuery.length > 0 ? (
               <Pressable
@@ -142,7 +164,7 @@ export function LargeOptionPickerSheet({
                 accessibilityLabel="Clear search text"
                 onPress={handleClearSearch}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                className="absolute bottom-2 right-2 h-10 w-10 items-center justify-center rounded-full active:bg-muted"
+                className="absolute bottom-1.5 right-1.5 h-12 w-12 items-center justify-center rounded-full active:bg-muted"
               >
                 <Icon as={X} size={16} className="text-muted-foreground" />
               </Pressable>
@@ -163,6 +185,7 @@ export function LargeOptionPickerSheet({
               data={filteredItems}
               renderItem={renderItem}
               keyExtractor={keyExtractor}
+              initialScrollIndex={selectedIndex}
               contentContainerStyle={{ paddingBottom: 32 }}
             />
           )}

@@ -25,7 +25,11 @@ export const ProductCard = memo(function ProductCard({
   }, [onPress, product]);
 
   const optionCount = formatProductOptionCount(product);
-  const availabilityText = product.isAvailable ? "Options available" : "Currently unavailable";
+  const availabilityText = product.isAvailable
+    ? product.variants.length <= 1
+      ? "Available"
+      : "Options available"
+    : "Currently unavailable";
   const brandName = product.brand?.name;
 
   return (
@@ -51,21 +55,32 @@ export const ProductCard = memo(function ProductCard({
           />
         </AspectRatio>
 
-        {/* Content area */}
+        {/* Content area with stable reserved slots for aligned grid rhythm */}
         <View className="flex-1 justify-between gap-3 p-4">
           <View className="gap-1">
-            {brandName ? (
-              <Text variant="caption" tone="muted" numberOfLines={1}>
-                {brandName}
+            {/* Stable brand/context slot (h-5 preserves grid alignment even when unbranded) */}
+            <View className="h-5 justify-center">
+              {brandName ? (
+                <Text variant="caption" tone="muted" numberOfLines={1}>
+                  {brandName}
+                </Text>
+              ) : null}
+            </View>
+
+            {/* Stable two-line title slot */}
+            <View className="min-h-[44px] justify-start">
+              <Text variant="h3" numberOfLines={2} className="font-semibold leading-tight">
+                {product.name}
               </Text>
-            ) : null}
-            <Text variant="h3" numberOfLines={2} className="font-semibold leading-tight">
-              {product.name}
-            </Text>
+            </View>
           </View>
 
           <View className="flex-row flex-wrap items-center justify-between gap-2 pt-1">
-            <AvailabilityBadge type="product" isAvailable={product.isAvailable} />
+            <AvailabilityBadge
+              type="product"
+              isAvailable={product.isAvailable}
+              variantCount={product.variants.length}
+            />
             {optionCount ? (
               <Text variant="caption" tone="muted" className="font-medium">
                 {optionCount}

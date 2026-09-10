@@ -38,6 +38,11 @@ export function ProductsScreen() {
     [],
   );
 
+  // Stale brand recovery: if selectedBrandId !== "all" and not in current brands, fall back to "all"
+  const brands = catalog.data?.brands ?? [];
+  const isBrandValid = selectedBrandId === "all" || brands.some((b) => b.id === selectedBrandId);
+  const effectiveBrandId = isBrandValid ? selectedBrandId : "all";
+
   // Local filtering (preserves source backend order)
   const filteredProducts = useMemo(() => {
     const products = catalog.data?.products ?? [];
@@ -45,12 +50,12 @@ export function ProductsScreen() {
       if (availabilityFilter === "available" && !product.isAvailable) {
         return false;
       }
-      if (selectedBrandId !== "all" && product.brand?.id !== selectedBrandId) {
+      if (effectiveBrandId !== "all" && product.brand?.id !== effectiveBrandId) {
         return false;
       }
       return true;
     });
-  }, [catalog.data?.products, availabilityFilter, selectedBrandId]);
+  }, [catalog.data?.products, availabilityFilter, effectiveBrandId]);
 
   if (catalog.isPending) {
     return (
@@ -82,8 +87,7 @@ export function ProductsScreen() {
     );
   }
 
-  const brands = view.brands;
-  const hasActiveFilters = availabilityFilter !== "all" || selectedBrandId !== "all";
+  const hasActiveFilters = availabilityFilter !== "all" || effectiveBrandId !== "all";
 
   const handleResetFilters = () => {
     setAvailabilityFilter("all");
@@ -140,7 +144,7 @@ export function ProductsScreen() {
             <ToggleGroup
               type="single"
               layout="content"
-              value={selectedBrandId}
+              value={effectiveBrandId}
               onValueChange={(val) => val && setSelectedBrandId(val)}
               accessibilityLabel="Filter by brand"
             >
@@ -172,25 +176,24 @@ export function ProductsScreen() {
       countLabel={productCountLabel(filteredProducts.length)}
     >
       <View className="flex-1">
-        {filteredProducts.length === 0 ? (
-          <View className="flex-1 justify-center p-8">
-            <EmptyState
-              title="No products match these filters"
-              description="No products match your current filters. Clear filters to see the full collection."
-              action={{ label: "Clear filters", onPress: handleResetFilters }}
-            />
-          </View>
-        ) : (
-          <CatalogGrid
-            data={filteredProducts}
-            renderItem={renderProductCard}
-            keyExtractor={productKeyExtractor}
-            onItemPress={handleProductPress}
-            listHeaderComponent={filterHeader}
-            testID="products-grid"
-            className="px-3 md:px-6"
-          />
-        )}
+        <CatalogGrid
+          data={filteredProducts}
+          renderItem={renderProductCard}
+          keyExtractor={productKeyExtractor}
+          onItemPress={handleProductPress}
+          listHeaderComponent={filterHeader}
+          listEmptyComponent={
+            <View className="items-center justify-center p-8">
+              <EmptyState
+                title="No products match these filters"
+                description="No products match your current filters. Clear filters to see the full collection."
+                action={{ label: "Clear filters", onPress: handleResetFilters }}
+              />
+            </View>
+          }
+          testID="products-grid"
+          className="px-3 md:px-6"
+        />
       </View>
     </CatalogShell>
   );

@@ -266,7 +266,9 @@ describe("ProductsScreen", () => {
     await renderWithProviders(<ProductsScreen />);
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen(),
+      expect(
+        screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+      ).toBeOnTheScreen(),
     );
 
     // Available products say so in words.
@@ -274,9 +276,15 @@ describe("ProductsScreen", () => {
     expect(screen.getByRole("button", { name: "Herbal Tea Tin, Available" })).toBeOnTheScreen();
 
     // Unavailable products remain present with their textual availability.
-    expect(screen.getByRole("button", { name: "Everyday Tote, Out of stock" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Pocket Notebook, Out of stock" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Cotton Scarf, Out of stock" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Everyday Tote, by KISOK Basics, Currently unavailable" }),
+    ).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Pocket Notebook, Currently unavailable" }),
+    ).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Cotton Scarf, Currently unavailable" }),
+    ).toBeOnTheScreen();
 
     // Cover imagery renders through AppImage; missing media keeps the shared
     // fallback slot instead of collapsing the card layout.
@@ -292,12 +300,18 @@ describe("ProductsScreen", () => {
     await waitFor(() => expect(screen.getByText(manyProductCountLabel)).toBeOnTheScreen());
 
     // Nothing is filtered out of the grid: every product is still browsable,
-    // each carrying its textual Out of stock status.
+    // each carrying its textual Currently unavailable status.
     for (const name of manyProductNames) {
-      expect(screen.getByRole("button", { name: `${name}, Out of stock` })).toBeOnTheScreen();
+      const expectedLabel =
+        name === "Café Crème"
+          ? "Café Crème, by Maison Élite, Currently unavailable"
+          : name === "Everyday Tote"
+            ? "Everyday Tote, by KISOK Basics, Currently unavailable"
+            : `${name}, Currently unavailable`;
+      expect(screen.getByRole("button", { name: expectedLabel })).toBeOnTheScreen();
     }
 
-    expect(screen.queryByRole("button", { name: /, Available$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /, (Available|Options available)$/ })).toBeNull();
   });
 
   it("pushes the matching product detail when a card is pressed", async () => {
@@ -307,12 +321,18 @@ describe("ProductsScreen", () => {
     await renderWithProviders(<ProductsScreen />);
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen(),
+      expect(
+        screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+      ).toBeOnTheScreen(),
     );
 
     // An available product, an unavailable one, and one past the base fixture.
-    await user.press(screen.getByRole("button", { name: "Café Crème, Available" }));
-    await user.press(screen.getByRole("button", { name: "Everyday Tote, Out of stock" }));
+    await user.press(
+      screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+    );
+    await user.press(
+      screen.getByRole("button", { name: "Everyday Tote, by KISOK Basics, Currently unavailable" }),
+    );
     await user.press(screen.getByRole("button", { name: "Trail Bottle, Available" }));
 
     expect(mockRouterPush).toHaveBeenCalledTimes(3);

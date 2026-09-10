@@ -89,6 +89,15 @@ export function CatalogHomeScreen() {
   return (
     <CatalogShell currentDestination="home" settings={view.settings}>
       <ScrollView contentContainerClassName="gap-10 px-5 pb-36 pt-6 md:px-8">
+        {/* Page-level accessible heading representing Store / Catalog */}
+        <View className="sr-only">
+          <Text variant="h1" accessibilityRole="header">
+            {view.settings && "store_name" in view.settings && view.settings.store_name
+              ? `${view.settings.store_name} Catalog`
+              : "Store Catalog"}
+          </Text>
+        </View>
+
         {/* Immediate Search & Discovery Affordance */}
         <Pressable
           accessibilityRole="button"
@@ -123,7 +132,15 @@ export function CatalogHomeScreen() {
             onPress={handleProductPress}
             isExpanded={isExpanded}
           />
-        ) : featured.mode === "showcase" || featured.mode === "grid" ? (
+        ) : featured.mode === "showcase" ? (
+          <HomeSection
+            title="Featured"
+            browseAllLabel="View all products"
+            onBrowseAll={() => router.replace("/products")}
+          >
+            <ShowcaseFeaturedGrid items={featured.items} onPress={handleProductPress} />
+          </HomeSection>
+        ) : featured.mode === "grid" ? (
           <HomeSection
             title="Featured"
             browseAllLabel="View all products"
@@ -230,10 +247,7 @@ function SpotlightFeaturedCard({ product, onPress, isExpanded }: SpotlightFeatur
             </View>
 
             <View className="gap-2">
-              <Text
-                variant="display"
-                className="text-2xl font-extrabold tracking-tight md:text-3xl"
-              >
+              <Text variant="h2" className="text-2xl font-extrabold tracking-tight md:text-3xl">
                 {product.name}
               </Text>
               {product.short_description ? (
@@ -245,7 +259,11 @@ function SpotlightFeaturedCard({ product, onPress, isExpanded }: SpotlightFeatur
 
             <View className="flex-row flex-wrap items-center justify-between gap-4 pt-2">
               <View className="flex-row items-center gap-3">
-                <AvailabilityBadge type="product" isAvailable={product.isAvailable} />
+                <AvailabilityBadge
+                  type="product"
+                  isAvailable={product.isAvailable}
+                  variantCount={product.variants.length}
+                />
                 {optionCount ? (
                   <Text variant="caption" tone="muted" className="font-medium">
                     {optionCount}
@@ -269,6 +287,49 @@ function SpotlightFeaturedCard({ product, onPress, isExpanded }: SpotlightFeatur
         </View>
       </Card>
     </Pressable>
+  );
+}
+
+type ShowcaseFeaturedGridProps = {
+  items: CatalogProductView[];
+  onPress: (product: CatalogProductView) => void;
+};
+
+function ShowcaseFeaturedGrid({ items, onPress }: ShowcaseFeaturedGridProps) {
+  const count = items.length;
+
+  if (count === 2) {
+    return (
+      <View className="flex-col gap-6 md:flex-row">
+        {items.map((product) => (
+          <View key={product.id} className="flex-1">
+            <ProductCard product={product} onPress={onPress} />
+          </View>
+        ))}
+      </View>
+    );
+  }
+
+  if (count === 3) {
+    return (
+      <View className="flex-col gap-4 md:flex-row">
+        {items.map((product) => (
+          <View key={product.id} className="flex-1">
+            <ProductCard product={product} onPress={onPress} />
+          </View>
+        ))}
+      </View>
+    );
+  }
+
+  return (
+    <View className="flex-row flex-wrap gap-4">
+      {items.map((product) => (
+        <View key={product.id} className="min-w-[200px] flex-1">
+          <ProductCard product={product} onPress={onPress} />
+        </View>
+      ))}
+    </View>
   );
 }
 

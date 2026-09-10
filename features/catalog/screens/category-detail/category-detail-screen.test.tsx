@@ -100,7 +100,7 @@ const STALE_CATEGORY_ID = "68686868-6868-4688-8688-686868686868";
  */
 const CATEGORY_NOT_FOUND_TITLE = "Category not found";
 const CATEGORY_NOT_FOUND_DESCRIPTION =
-  "This category isn't in the current catalog. It may have been removed since you started browsing. Go back to see the categories this store has now.";
+  "This category is no longer in the catalog. It may have been removed since you started browsing.";
 
 /**
  * The distinct copy of the brand-filter no-match state: a selected brand with
@@ -109,7 +109,7 @@ const CATEGORY_NOT_FOUND_DESCRIPTION =
  */
 const NO_BRAND_MATCH_TITLE = "No products from this brand";
 const NO_BRAND_MATCH_DESCRIPTION =
-  "This brand currently has no products in this category. Browse the full selection instead.";
+  "This brand currently has no products in this category. Clear the brand filter to browse the full department.";
 
 /** Ids for the root category the hierarchy fixture appends past the base 2. */
 const extraCategoryIds = {
@@ -136,10 +136,10 @@ const extraVariantIds = {
  * the direct child's, de-duplicated in product order).
  */
 const DRINKS_PRODUCT_LABELS = [
-  "Café Crème, Available",
-  "Everyday Tote, Out of stock",
+  "Café Crème, by Maison Élite, Options available",
+  "Everyday Tote, by KISOK Basics, Currently unavailable",
   "Sparkling Water, Available",
-  "Chá Board, Available",
+  "Chá Board, by KISOK Basics, Available",
 ] as const;
 
 /**
@@ -318,7 +318,9 @@ describe("CategoryDetailScreen", () => {
 
     // The category-scoped products render in the scalable grid…
     expect(screen.getByTestId("category-products-grid")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+    ).toBeOnTheScreen();
 
     // …and the root's direct child is present as navigable discovery.
     expect(screen.getByRole("button", { name: "Tóp Picks, 2 products" })).toBeOnTheScreen();
@@ -347,7 +349,9 @@ describe("CategoryDetailScreen", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen(),
+      expect(
+        screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+      ).toBeOnTheScreen(),
     );
 
     // This category's products — direct memberships plus the direct child's,
@@ -427,8 +431,8 @@ describe("CategoryDetailScreen", () => {
       name: /^(Café Crème|Everyday Tote),/,
     });
     expect(productCards.map((card) => card.props.accessibilityLabel)).toEqual([
-      "Café Crème, Available",
-      "Everyday Tote, Out of stock",
+      "Café Crème, by Maison Élite, Options available",
+      "Everyday Tote, by KISOK Basics, Currently unavailable",
     ]);
     expect(screen.getByText("2 products")).toBeOnTheScreen();
 
@@ -452,13 +456,21 @@ describe("CategoryDetailScreen", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen(),
+      expect(
+        screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+      ).toBeOnTheScreen(),
     );
 
     // An available product and an unavailable one: every product stays
     // inspectable from its category.
-    await user.press(screen.getByRole("button", { name: "Café Crème, Available" }));
-    await user.press(screen.getByRole("button", { name: "Everyday Tote, Out of stock" }));
+    await user.press(
+      screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+    );
+    await user.press(
+      screen.getByRole("button", {
+        name: "Everyday Tote, by KISOK Basics, Currently unavailable",
+      }),
+    );
 
     expect(mockRouterPush).toHaveBeenCalledTimes(2);
     expect(mockRouterPush).toHaveBeenNthCalledWith(1, {
@@ -494,7 +506,9 @@ describe("CategoryDetailScreen", () => {
       ).toBeOnTheScreen(),
     );
 
-    expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+    ).toBeOnTheScreen();
     // The identity count stays the view's DERIVED AGGREGATED count (4 — the
     // number the Categories cards show) while the grid is narrowed to the
     // filtered subset: the header describes the category, not the filter.
@@ -538,7 +552,9 @@ describe("CategoryDetailScreen", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen(),
+      expect(
+        screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+      ).toBeOnTheScreen(),
     );
 
     await user.press(screen.getByRole("button", { name: "Maison Élite" }));
@@ -548,7 +564,9 @@ describe("CategoryDetailScreen", () => {
         screen.getByRole("button", { name: "Maison Élite", selected: true }),
       ).toBeOnTheScreen(),
     );
-    expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+    ).toBeOnTheScreen();
 
     // The refreshed snapshot: Café Crème is unbranded, Élite is gone.
     await act(async () => {
@@ -581,10 +599,16 @@ describe("CategoryDetailScreen", () => {
 
     await waitFor(() => expect(screen.getByTestId("category-products-grid")).toBeOnTheScreen());
     expect(screen.queryByText(NO_BRAND_MATCH_TITLE)).toBeNull();
-    expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Everyday Tote, Out of stock" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Café Crème, Options available" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", {
+        name: "Everyday Tote, by KISOK Basics, Currently unavailable",
+      }),
+    ).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Sparkling Water, Available" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Chá Board, Available" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Chá Board, by KISOK Basics, Available" }),
+    ).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "All Brands", selected: true })).toBeOnTheScreen();
   });
 
@@ -609,11 +633,12 @@ describe("CategoryDetailScreen", () => {
     expect(screen.queryByRole("header")).toBeNull();
 
     // The way back to the discovery surface that opened this detail.
-    await user.press(screen.getByRole("button", { name: "Go back" }));
+    await user.press(screen.getByRole("button", { name: "Back to categories" }));
 
-    expect(mockRouterBack).toHaveBeenCalledTimes(1);
+    expect(mockRouterReplace).toHaveBeenCalledTimes(1);
+    expect(mockRouterReplace).toHaveBeenCalledWith("/categories");
     expect(mockRouterPush).not.toHaveBeenCalled();
-    expect(mockRouterReplace).not.toHaveBeenCalled();
+    expect(mockRouterBack).not.toHaveBeenCalled();
   });
 
   it("reads the categoryId route param and passes it to the screen", async () => {
@@ -627,7 +652,9 @@ describe("CategoryDetailScreen", () => {
 
     await waitFor(() => expect(screen.getByRole("header", { name: "Drínks" })).toBeOnTheScreen());
     expect(screen.getByText("4 products")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+    ).toBeOnTheScreen();
     expect(screen.queryByRole("button", { name: /Field Compass/ })).toBeNull();
 
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
@@ -726,7 +753,9 @@ describe("CategoryDetailScreen", () => {
 
     // The populated detail stays on screen…
     expect(screen.getByRole("header", { name: "Drínks" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+    ).toBeOnTheScreen();
     // …and the full-screen error state does not replace it.
     expect(screen.queryByText("Something went wrong")).toBeNull();
     expect(screen.queryByText("We couldn't load the catalog. Please try again.")).toBeNull();
