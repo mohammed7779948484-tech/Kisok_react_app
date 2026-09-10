@@ -1,90 +1,24 @@
 import { useCallback, useState } from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
+import { Search, X } from "lucide-react-native";
 import { useRouter } from "expo-router";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
-import { Input, Text } from "@/components/ui";
+import { Icon, InputControl, Text } from "@/components/ui";
 
 import { CatalogGrid, type CatalogGridRowInfo } from "../../components/catalog-grid";
-import { CatalogNavigation, type CatalogDestination } from "../../components/catalog-navigation";
+import { CatalogShell } from "../../components/catalog-shell";
 import { ProductCard } from "../../components/product-card";
 import type { CatalogProductView, CatalogSearchResult } from "../../model/catalog-view";
 import { useCatalog } from "../../queries/use-catalog";
 
-/**
- * Stable by construction (module scope): a fresh inline keyExtractor would
- * give the grid a new prop identity on every render.
- */
 const productKeyExtractor = (product: CatalogProductView) => product.id;
 
-/**
- * Local Catalog Search (AC-06): a customer-typed query matched purely against
- * the loaded snapshot — `CatalogView.search`, the pure model function that
- * already implements trim + case/diacritic normalization and matching across
- * product names/keywords, brand, category, variant title/keywords and option
- * type/value labels. There is no network request, no SKU/barcode matching and
- * no re-implemented normalization here.
- *
- * Two state layers:
- *
- * - Snapshot layer (one `useCatalog` read, shared semantics with Home and
- *   Products): cold loading, error with retry only while NO snapshot exists (a
- *   failed background refetch keeps the populated search surface on screen —
- *   the T04-R03 stated rule), or whole-catalog empty. The search surface never
- *   renders in those states: search states are local projections of a
- *   successful snapshot and never pretend to have network states of their own.
- * - Search layer (pure local projection): the query lives only in this
- *   component's state (it is view state, not server state). The model runs per
- *   keystroke — it is local and cheap (the model precomputes each product's
- *   normalized `searchText` once), so there is no debounce and no duplicated
- *   query state. One persistent status line renders the idle prompt, the
- *   too-short hint, the no-match message or the result count; it carries the
- *   polite live region so screen readers hear result changes. The input is
- *   never unmounted or blurred between states, so the customer can keep
- *   editing a no-match query.
- *
- * Results render through the T03 `CatalogGrid` (FlashList): a two-character
- * query can match the whole catalog, so the result set is unbounded by nature
- * and virtualizes per the RN list rules, exactly like All Products. Root
- * destinations use REPLACE semantics so re-selecting one never stacks
- * duplicate history (plan Design decision 5); result cards are PUSHED to
- * `/product-detail` so the search results stay mounted behind the detail.
- */
 export function SearchScreen() {
   const router = useRouter();
   const catalog = useCatalog();
-  // View state, not server state: the query string lives here and nowhere else.
   const [query, setQuery] = useState("");
-
-  const handleRootNavigate = useCallback(
-    (destination: CatalogDestination) => {
-      switch (destination) {
-        case "home":
-          router.replace("/");
-          break;
-        case "products":
-          router.replace("/products");
-          break;
-        case "brands":
-          router.replace("/brands");
-          break;
-        case "categories":
-          router.replace("/categories");
-          break;
-        case "search":
-          router.replace("/search");
-          break;
-        default: {
-          // Compile-time exhaustiveness: if CatalogDestination gains a member,
-          // this assignment fails the build instead of silently no-oping here.
-          const exhaustive: never = destination;
-          return exhaustive;
-        }
-      }
-    },
-    [router],
-  );
 
   const handleProductPress = useCallback(
     (product: CatalogProductView) => {
@@ -93,15 +27,16 @@ export function SearchScreen() {
     [router],
   );
 
-  // CatalogGrid memoizes its row renderer against these props — keep the
-  // identities stable (useCallback / module scope) so a re-render of this
-  // screen does not defeat the virtualizer's row memoization.
   const renderProductCard = useCallback(
     ({ item, onPress }: CatalogGridRowInfo<CatalogProductView>) => (
       <ProductCard product={item} onPress={onPress} />
     ),
     [],
   );
+
+  const handleClear = useCallback(() => {
+    setQuery("");
+  }, []);
 
   if (catalog.isPending) {
     return (
@@ -111,9 +46,6 @@ export function SearchScreen() {
     );
   }
 
-  // Full-screen error only when NO snapshot exists: on a failed background
-  // refetch TanStack keeps `data` and the populated search surface stays on
-  // screen through the blip (see the state rules in the component doc comment).
   if (catalog.isError && !catalog.data) {
     return (
       <Screen>
@@ -138,71 +70,93 @@ export function SearchScreen() {
 
   const searchResult = view.search(query);
 
+  const searchHeader = (
+    <View className="gap-3 pb-4 pt-2">
+      {/* Feature-owned search input field */}
+      <View className="flex-row items-center rounded-2xl border border-input bg-card px-4 shadow-sm focus-within:border-ring">
+        <Icon as={Search} size={20} className="mr-3 text-muted-foreground" />
+        <InputControl
+          placeholder="Search products, brands, categories, or options..."
+          value={query}
+          onChangeText={setQuery}
+          autoFocus
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+          className="h-control flex-1 border-0 bg-transparent px-0 text-base"
+        />
+        {query.length > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Clear search"
+            onPress={handleClear}
+            className="h-9 w-9 items-center justify-center rounded-full active:bg-muted"
+          >
+            <Icon as={X} size={18} className="text-muted-foreground" />
+          </Pressable>
+        ) : null}
+      </View>
+
+      {/* Accessible status feedback line */}
+      <Text
+        variant="caption"
+        tone={searchResult.state === "no-match" ? "destructive" : "muted"}
+        accessibilityLiveRegion="polite"
+        className="px-1 font-medium"
+      >
+        {searchStatusMessage(searchResult)}
+      </Text>
+    </View>
+  );
+
   return (
-    <Screen>
+    <CatalogShell
+      currentDestination="search"
+      settings={view.settings}
+      title="Search catalog"
+      subtitle="Instant local discovery"
+    >
       <View className="flex-1">
-        <View className="gap-5 px-5 pb-3 pt-8 md:px-8">
-          <View className="gap-2">
-            <Text variant="label" tone="primary">
-              Browse the store
-            </Text>
-            <Text variant="h1" accessibilityRole="header">
-              Search
-            </Text>
-          </View>
-          <CatalogNavigation current="search" onNavigate={handleRootNavigate} />
-          <View className="gap-3 rounded-xl border border-border bg-card p-4">
-            <Input
-              label="Search products"
-              placeholder="Search by product, brand or category"
-              value={query}
-              onChangeText={setQuery}
-              // Landing on a dedicated search screen is itself the intent to
-              // type, so the field takes focus (and the keyboard) immediately.
-              autoFocus
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-              className="border-primary"
-            />
-            <Text variant="body" tone="muted" accessibilityLiveRegion="polite">
-              {searchStatusMessage(searchResult)}
-            </Text>
-          </View>
-        </View>
         {searchResult.state === "results" ? (
           <CatalogGrid
             data={searchResult.products}
             renderItem={renderProductCard}
             keyExtractor={productKeyExtractor}
             onItemPress={handleProductPress}
+            listHeaderComponent={searchHeader}
             testID="search-results-grid"
             className="px-3 md:px-6"
           />
-        ) : null}
+        ) : searchResult.state === "no-match" ? (
+          <View className="flex-1 px-5 md:px-8">
+            {searchHeader}
+            <View className="flex-1 justify-center py-12">
+              <EmptyState
+                title="No products found"
+                description={`No products match "${searchResult.query}". Check for spelling errors or try a broader search term.`}
+                action={{ label: "Clear search", onPress: handleClear }}
+              />
+            </View>
+          </View>
+        ) : (
+          <View className="flex-1 px-5 md:px-8">{searchHeader}</View>
+        )}
       </View>
-    </Screen>
+    </CatalogShell>
   );
 }
 
-/**
- * The four distinct search-state messages, keyed off the model's state. The
- * switch is exhaustive over `CatalogSearchResult["state"]`: adding a state
- * fails the build here instead of silently falling through.
- */
 function searchStatusMessage(searchResult: CatalogSearchResult): string {
   switch (searchResult.state) {
     case "idle":
-      return "Type to search the products in this store. Matching products appear as you type.";
+      return "Search products, brands, categories, or options.";
     case "too-short":
-      return "Keep typing — search starts with at least 2 characters.";
+      return "Enter at least 2 characters to search.";
     case "no-match":
-      return `No products match "${searchResult.query}". Try a different word — search covers only the products currently in this catalog.`;
+      return `No products match "${searchResult.query}".`;
     case "results":
-      return searchResultCountLabel(searchResult.products.length);
+      return searchResult.products.length === 1
+        ? "1 product found"
+        : `${searchResult.products.length} products found`;
   }
-}
-
-function searchResultCountLabel(count: number): string {
-  return count === 1 ? "1 matching product" : `${count} matching products`;
 }

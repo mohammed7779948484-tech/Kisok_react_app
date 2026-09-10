@@ -4,83 +4,22 @@ import { useRouter } from "expo-router";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
-import { Text } from "@/components/ui";
 
 import { BrandCard } from "../../components/brand-card";
 import { CatalogGrid, type CatalogGridRowInfo } from "../../components/catalog-grid";
-import { CatalogNavigation, type CatalogDestination } from "../../components/catalog-navigation";
+import { CatalogShell } from "../../components/catalog-shell";
 import type { CatalogBrandView } from "../../model/catalog-view";
 import { useCatalog } from "../../queries/use-catalog";
 
-/**
- * Stable by construction (module scope): a fresh inline keyExtractor would
- * give the grid a new prop identity on every render.
- */
 const brandKeyExtractor = (brand: CatalogBrandView) => brand.id;
 
-/**
- * All Brands (AC-04): every `view.brands` card with its derived product count.
- *
- * The brands collection is unbounded in principle — it grows with the store's
- * assortment — so it renders through the T03 `CatalogGrid` (FlashList,
- * 2/3/4 columns), the feature's scalable composition, exactly like All
- * Products; a bounded composition would need a size ceiling nobody can state.
- * `BrandCard` is the whole-card press target and owns the derived count copy.
- *
- * The screen consumes the feature's own `useCatalog` hook — never Supabase
- * directly — and renders one real state per the brief's capability-aware state
- * requirements: cold loading, error with retry only while no snapshot exists
- * (a failed background refetch keeps the populated grid on screen — TanStack
- * retains `data`, and the shared QueryClient refetches on focus/reconnect for
- * long-lived kiosk sessions), whole-catalog empty (no products means there is
- * nothing to discover from any brand — same copy family as Home and Products),
- * or the populated grid. The error object is passed through so `ErrorState`
- * decides whether retry is worth offering.
- *
- * Root destinations use REPLACE semantics so re-selecting one never stacks
- * duplicate root history (plan Design decision 5); brand cards are PUSHED to
- * `/brand-detail` (object form) so the originating list stays mounted behind
- * the detail and preserves its scroll position.
- *
- * Empty brand collection: brands can be absent while products exist (products
- * may all be unbranded), which is a LOCAL projection of a successful snapshot
- * — never an error, never a network state. It directs the customer to
- * Products (the brief's pinned way forward) via a REPLACE to the Products
- * root: the empty brands surface has nothing to come back to, and a root
- * change uses replace semantics.
- */
+function brandCountLabel(count: number): string {
+  return count === 1 ? "1 brand" : `${count} brands`;
+}
+
 export function BrandsScreen() {
   const router = useRouter();
   const catalog = useCatalog();
-
-  const handleRootNavigate = useCallback(
-    (destination: CatalogDestination) => {
-      switch (destination) {
-        case "home":
-          router.replace("/");
-          break;
-        case "products":
-          router.replace("/products");
-          break;
-        case "brands":
-          router.replace("/brands");
-          break;
-        case "categories":
-          router.replace("/categories");
-          break;
-        case "search":
-          router.replace("/search");
-          break;
-        default: {
-          // Compile-time exhaustiveness: if CatalogDestination gains a member,
-          // this assignment fails the build instead of silently no-oping here.
-          const exhaustive: never = destination;
-          return exhaustive;
-        }
-      }
-    },
-    [router],
-  );
 
   const handleBrandPress = useCallback(
     (brand: CatalogBrandView) => {
@@ -89,9 +28,6 @@ export function BrandsScreen() {
     [router],
   );
 
-  // CatalogGrid memoizes its row renderer against these props — keep the
-  // identities stable (useCallback / module scope) so a re-render of this
-  // screen does not defeat the virtualizer's row memoization.
   const renderBrandCard = useCallback(
     ({ item, onPress }: CatalogGridRowInfo<CatalogBrandView>) => (
       <BrandCard brand={item} onPress={onPress} />
@@ -107,9 +43,6 @@ export function BrandsScreen() {
     );
   }
 
-  // Full-screen error only when NO snapshot exists: on a failed background
-  // refetch TanStack keeps `data` and the populated grid stays on screen
-  // through the blip (see the state rules in the component doc comment).
   if (catalog.isError && !catalog.data) {
     return (
       <Screen>
@@ -133,8 +66,6 @@ export function BrandsScreen() {
   }
 
   if (view.brands.length === 0) {
-    // Products exist (checked above), so this is a local empty collection —
-    // direct the customer to them rather than to a dead end.
     return (
       <Screen>
         <EmptyState
@@ -149,24 +80,14 @@ export function BrandsScreen() {
   const brands = view.brands;
 
   return (
-    <Screen>
-      <View className="flex-1">
-        <View className="gap-5 px-5 pb-3 pt-8 md:px-8">
-          <View className="gap-2">
-            <Text variant="label" tone="primary">
-              Browse the store
-            </Text>
-            <View className="flex-row items-end justify-between gap-4">
-              <Text variant="h1" accessibilityRole="header" className="flex-1">
-                All brands
-              </Text>
-              <Text variant="label" tone="muted">
-                {brandCountLabel(brands.length)}
-              </Text>
-            </View>
-          </View>
-          <CatalogNavigation current="brands" onNavigate={handleRootNavigate} />
-        </View>
+    <CatalogShell
+      currentDestination="brands"
+      settings={view.settings}
+      title="All brands"
+      subtitle="Discover brand collections"
+      countLabel={brandCountLabel(brands.length)}
+    >
+      <View className="flex-1 pt-2">
         <CatalogGrid
           data={brands}
           renderItem={renderBrandCard}
@@ -176,10 +97,6 @@ export function BrandsScreen() {
           className="px-3 md:px-6"
         />
       </View>
-    </Screen>
+    </CatalogShell>
   );
-}
-
-function brandCountLabel(count: number): string {
-  return count === 1 ? "1 brand" : `${count} brands`;
 }

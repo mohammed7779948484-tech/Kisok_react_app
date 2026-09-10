@@ -1,47 +1,17 @@
 import { Pressable, ScrollView, View } from "react-native";
 
 import { AppImage } from "@/components/media/app-image";
+import { AspectRatio, Card } from "@/components/ui";
 import { cn } from "@/core/utils";
 
 import type { CatalogMedia } from "../../../model/catalog-view";
 
-/**
- * The media surface of Product Detail (AC-07, Design decisions 9 and 12).
- *
- * Presentational only: it receives the media to show (the model's derived
- * `variant.media`, whose variant→product-cover fallback is ALREADY applied),
- * the active media id, and its callback, and reports interactions upward. It
- * must not fetch, must not read a store, and must not import the Supabase
- * client or a router — the owning screen owns the selection state (Design
- * decision 3: the selected image is screen-local React state).
- *
- * Gallery mechanics — bounded and kiosk-honest: one large image plus, only
- * when there is more than one, a bounded horizontal strip of 64dp thumbnail
- * buttons that switch it. The large image is REMOUNTED by its resolved secure
- * URL (`key`) so AppImage's latched failure state cannot leak across gallery
- * selections (Design decision 12; a 404 on one image must not blank the next).
- * The active media defaults to the first of the set when the given id matches
- * none, so a mid-render variant switch degrades to the primary instead of to
- * nothing. With NO media at all — neither the variant nor the product has any
- * — the same path hands `AppImage` no URI and its shared fallback keeps the
- * image surface and its layout instead of collapsing.
- *
- * Thumbnails are named `${alt} image N`, announced selected through
- * `aria-selected` (the platform-safe spelling prescribed by
- * docs/design-system.md) and mirrored visually by the primary/border tokens —
- * never colour alone. Their inner AppImage is decorative (`alt=""`) because
- * the button itself carries the name.
- */
 export type ProductMediaGalleryProps = {
   /** The media of the selected variant, already variant→product-cover derived. */
   media: readonly CatalogMedia[];
-  /** Accessible-name base for the image surface (the screen composes it). */
+  /** Accessible-name base for the image surface. */
   alt: string;
-  /**
-   * The media asset id of the image to display, or `null` when none is
-   * resolved. The component never changes it by itself — it is controlled by
-   * the owning screen.
-   */
+  /** The media asset id of the image to display, or null when none resolved. */
   activeMediaAssetId: string | null;
   /** Reports the pressed thumbnail's media asset id. */
   onSelectMedia: (mediaAssetId: string) => void;
@@ -61,14 +31,21 @@ export function ProductMediaGallery({
   const mainAlt = media.length > 1 ? `${alt}, image ${activePosition} of ${media.length}` : alt;
 
   return (
-    <View className={cn("gap-3", className)}>
-      <AppImage
-        key={active?.secureUrl ?? "media-fallback"}
-        uri={active?.secureUrl ?? null}
-        alt={mainAlt}
-        contentFit="cover"
-        className="aspect-square w-full rounded-xl border border-border bg-card"
-      />
+    <View className={cn("gap-4", className)}>
+      {/* Packaging-friendly portrait presentation */}
+      <Card className="overflow-hidden border-border bg-card shadow-none">
+        <AspectRatio ratio={3 / 4} className="w-full bg-muted/20 p-6 md:p-8">
+          <AppImage
+            key={active?.secureUrl ?? "media-fallback"}
+            uri={active?.secureUrl ?? null}
+            alt={mainAlt}
+            contentFit="contain"
+            className="h-full w-full"
+          />
+        </AspectRatio>
+      </Card>
+
+      {/* Thumbnails row if more than 1 image */}
       {media.length > 1 ? (
         <ScrollView
           horizontal
@@ -82,19 +59,22 @@ export function ProductMediaGallery({
               <Pressable
                 key={item.mediaAssetId}
                 accessibilityRole="button"
-                accessibilityLabel={`${alt} image ${index + 1}`}
+                accessibilityLabel={`${alt} thumbnail ${index + 1}`}
+                accessibilityState={{ selected: isThumbSelected }}
                 aria-selected={isThumbSelected}
                 onPress={() => onSelectMedia(item.mediaAssetId)}
                 className={cn(
-                  "min-h-touch min-w-touch rounded-lg border-2 bg-card p-1 active:scale-[0.97] active:opacity-90",
-                  isThumbSelected ? "border-primary bg-secondary" : "border-border",
+                  "h-16 w-16 overflow-hidden rounded-xl border-2 p-1 transition-all active:scale-[0.96]",
+                  isThumbSelected
+                    ? "border-primary bg-primary/10 shadow-sm"
+                    : "border-border/80 bg-muted/40",
                 )}
               >
                 <AppImage
                   uri={item.secureUrl}
                   alt=""
-                  contentFit="cover"
-                  className="h-16 w-16 rounded-md"
+                  contentFit="contain"
+                  className="h-full w-full"
                 />
               </Pressable>
             );

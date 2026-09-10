@@ -1,31 +1,38 @@
 import { Badge, Text } from "@/components/ui";
 
-/**
- * Textual availability for a customer-visible product or variant.
- *
- * The brief is explicit: availability is boolean only, and the words must
- * always be there — colour only never carries this meaning (AC-03/AC-07).
- * The badge colour merely reinforces the text, never replaces it.
- *
- * Presentational only: the boolean arrives as a prop; no fetching, no store,
- * no Supabase client.
- */
 export type AvailabilityBadgeProps = {
-  /** Product-level availability is derived by the Catalog view: any available variant. */
+  /** True if available */
   isAvailable: boolean;
+  /** Whether this badge represents product-level or variant-level availability */
+  type?: "product" | "variant";
+  /** Optional custom text override */
+  label?: string;
   className?: string;
 };
 
-export function AvailabilityBadge({ isAvailable, className }: AvailabilityBadgeProps) {
-  const label = isAvailable ? "Available" : "Out of stock";
+export function AvailabilityBadge({
+  isAvailable,
+  type = "variant",
+  label: customLabel,
+  className,
+}: AvailabilityBadgeProps) {
+  const resolvedLabel =
+    customLabel ??
+    (isAvailable
+      ? type === "product"
+        ? "Options available"
+        : "Available"
+      : "Currently unavailable");
 
   return (
     <Badge
       variant={isAvailable ? "success" : "destructive"}
-      accessibilityLabel={label}
+      accessibilityLabel={resolvedLabel}
       className={className}
     >
-      <Text variant="label">{label}</Text>
+      <Text variant="caption" className="font-semibold">
+        {resolvedLabel}
+      </Text>
     </Badge>
   );
 }

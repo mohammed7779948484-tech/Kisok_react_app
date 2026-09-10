@@ -1,24 +1,16 @@
 import { memo, useCallback } from "react";
 import { Pressable, View } from "react-native";
+import { ArrowRight } from "lucide-react-native";
 
 import { AppImage } from "@/components/media/app-image";
-import { Card, Text } from "@/components/ui";
+import { AspectRatio, Card, Icon, Text } from "@/components/ui";
 import { cn } from "@/core/utils";
 
 import type { CatalogCategoryView } from "../model/catalog-view";
 import { productCountLabel } from "../model/labels";
 
-/**
- * Whole-card navigation for one category in the Catalog (AC-05).
- *
- * One Pressable wraps the whole card; the owning screen wires `onPress` to the
- * category detail route. The product count is the view's derived number
- * (parent categories aggregate direct children, de-duplicated), spoken in
- * words. No fetching, no store, no router.
- */
 export type CategoryCardProps = {
   category: CatalogCategoryView;
-  /** Stable press handler: CatalogGrid hands every row one shared handler. */
   onPress: (category: CatalogCategoryView) => void;
   className?: string;
 };
@@ -31,32 +23,52 @@ export const CategoryCard = memo(function CategoryCard({
   const handlePress = useCallback(() => {
     onPress(category);
   }, [onPress, category]);
-  // The count label is the feature's shared copy helper (model/labels.ts) —
-  // the same sentence every Catalog surface speaks for a derived count.
+
   const countLabel = productCountLabel(category.productCount);
+  const isSubcategory = category.parent !== null;
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${category.name}${category.parent ? `, subcategory of ${category.parent.name}` : ""}, ${countLabel}`}
+      accessibilityLabel={`${category.name}${isSubcategory ? `, subcategory of ${category.parent!.name}` : ""}, ${countLabel}`}
       onPress={handlePress}
-      className="h-full active:scale-[0.98] active:opacity-90"
+      className="h-full active:scale-[0.985]"
     >
-      <Card className={cn("h-full overflow-hidden", className)}>
-        <AppImage
-          uri={category.image?.secureUrl ?? null}
-          alt={category.name}
-          contentFit="cover"
-          className="aspect-square w-full"
-        />
-        <View className="min-h-28 flex-1 justify-between gap-2 border-t border-border bg-card p-4">
-          <Text variant="caption" tone="primary">
-            {category.parent ? `In ${category.parent.name}` : "Main category"}
-          </Text>
-          <Text variant="h3">{category.name}</Text>
-          <Text variant="label" tone="muted">
-            {countLabel}
-          </Text>
+      <Card
+        className={cn(
+          "h-full overflow-hidden border-border bg-card shadow-none transition-shadow",
+          className,
+        )}
+      >
+        <AspectRatio ratio={16 / 10} className="w-full bg-muted/20">
+          <AppImage
+            uri={category.image?.secureUrl ?? null}
+            alt={category.name}
+            contentFit="cover"
+            className="h-full w-full"
+          />
+        </AspectRatio>
+
+        <View className="flex-1 justify-between gap-3 p-4">
+          <View className="gap-1">
+            <Text
+              variant="caption"
+              tone="primary"
+              className="font-semibold uppercase tracking-wider"
+            >
+              {isSubcategory ? `In ${category.parent!.name}` : "Category"}
+            </Text>
+            <Text variant="h3" numberOfLines={1} className="font-semibold">
+              {category.name}
+            </Text>
+          </View>
+
+          <View className="flex-row items-center justify-between border-t border-border/60 pt-3">
+            <Text variant="caption" tone="muted">
+              {countLabel}
+            </Text>
+            <Icon as={ArrowRight} size={16} className="text-muted-foreground" />
+          </View>
         </View>
       </Card>
     </Pressable>

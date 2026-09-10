@@ -1,23 +1,16 @@
 import { memo, useCallback } from "react";
 import { Pressable, View } from "react-native";
+import { ArrowRight } from "lucide-react-native";
 
 import { AppImage } from "@/components/media/app-image";
-import { Card, Text } from "@/components/ui";
+import { AspectRatio, Card, Icon, Text } from "@/components/ui";
 import { cn } from "@/core/utils";
 
 import type { CatalogBrandView } from "../model/catalog-view";
 import { productCountLabel } from "../model/labels";
 
-/**
- * Whole-card navigation for one brand in the Catalog (AC-04).
- *
- * One Pressable wraps the whole card; the owning screen wires `onPress` to the
- * brand detail route. The product count is the view's derived number, spoken
- * in words ("1 product" / "N products"). No fetching, no store, no router.
- */
 export type BrandCardProps = {
   brand: CatalogBrandView;
-  /** Stable press handler: CatalogGrid hands every row one shared handler. */
   onPress: (brand: CatalogBrandView) => void;
   className?: string;
 };
@@ -26,8 +19,7 @@ export const BrandCard = memo(function BrandCard({ brand, onPress, className }: 
   const handlePress = useCallback(() => {
     onPress(brand);
   }, [onPress, brand]);
-  // The count label is the feature's shared copy helper (model/labels.ts) —
-  // the same sentence every Catalog surface speaks for a derived count.
+
   const countLabel = productCountLabel(brand.productCount);
 
   return (
@@ -35,20 +27,45 @@ export const BrandCard = memo(function BrandCard({ brand, onPress, className }: 
       accessibilityRole="button"
       accessibilityLabel={`${brand.name}, ${countLabel}`}
       onPress={handlePress}
-      className="h-full active:scale-[0.98] active:opacity-90"
+      className="h-full active:scale-[0.985]"
     >
-      <Card className={cn("h-full overflow-hidden", className)}>
-        <AppImage
-          uri={brand.image?.secureUrl ?? null}
-          alt={brand.name}
-          contentFit="cover"
-          className="aspect-square w-full"
-        />
-        <View className="min-h-28 flex-1 justify-between gap-2 border-t border-border bg-card p-4">
-          <Text variant="h3">{brand.name}</Text>
-          <Text variant="label" tone="muted">
-            {countLabel}
-          </Text>
+      <Card
+        className={cn(
+          "h-full overflow-hidden border-border bg-card shadow-none transition-shadow",
+          className,
+        )}
+      >
+        {/* Brand logo/emblem display area */}
+        <AspectRatio ratio={16 / 10} className="w-full items-center justify-center bg-muted/20 p-4">
+          <AppImage
+            uri={brand.image?.secureUrl ?? null}
+            alt={brand.name}
+            contentFit="contain"
+            className="h-full w-full max-w-[80%]"
+          />
+        </AspectRatio>
+
+        {/* Brand collection metadata */}
+        <View className="flex-1 justify-between gap-3 p-4">
+          <View className="gap-1">
+            <Text
+              variant="caption"
+              tone="primary"
+              className="font-semibold uppercase tracking-wider"
+            >
+              Brand
+            </Text>
+            <Text variant="h3" numberOfLines={1} className="font-semibold">
+              {brand.name}
+            </Text>
+          </View>
+
+          <View className="flex-row items-center justify-between border-t border-border/60 pt-3">
+            <Text variant="caption" tone="muted">
+              {countLabel}
+            </Text>
+            <Icon as={ArrowRight} size={16} className="text-muted-foreground" />
+          </View>
         </View>
       </Card>
     </Pressable>
