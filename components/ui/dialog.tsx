@@ -1,63 +1,130 @@
 import * as DialogPrimitive from "@rn-primitives/dialog";
-import { View } from "react-native";
+import { X } from "lucide-react-native";
+import * as React from "react";
+import {
+  Platform,
+  Text as RNText,
+  View,
+  type GestureResponderEvent,
+  type ViewProps,
+} from "react-native";
+import { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
+import { FullWindowOverlay as RNFullWindowOverlay } from "react-native-screens";
 
 import { cn } from "@/core/utils";
 
-import { Text } from "./text";
+import { Icon } from "./icon";
+import { NativeOnlyAnimatedView } from "./native-only-animated-view";
 
-/**
- * Modal dialog built on @rn-primitives/dialog, which supplies focus trapping,
- * escape/back handling, and the accessibility roles. Do not hand-roll a modal
- * with an absolutely positioned View — you will lose all of that.
- *
- * Requires <PortalHost /> to be mounted once at the app root (see app/_layout.tsx).
- */
 const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
-const DialogClose = DialogPrimitive.Close;
 const DialogPortal = DialogPrimitive.Portal;
+const DialogClose = DialogPrimitive.Close;
+const FullWindowOverlay = Platform.OS === "ios" ? RNFullWindowOverlay : React.Fragment;
 
-function DialogOverlay({ className, ...props }: DialogPrimitive.OverlayProps) {
+function DialogOverlay({
+  className,
+  children,
+  onPress,
+  ...props
+}: Omit<React.ComponentProps<typeof DialogPrimitive.Overlay>, "asChild"> & {
+  children?: React.ReactNode;
+}) {
+  const { onOpenChange } = DialogPrimitive.useRootContext();
+
+  function onOverlayPress(event: GestureResponderEvent) {
+    onPress?.(event);
+    if (event.target === event.currentTarget && !event.isDefaultPrevented()) onOpenChange(false);
+  }
+
   return (
-    <DialogPrimitive.Overlay
-      className={cn("absolute inset-0 z-50 justify-center bg-foreground/60 p-4", className)}
-      {...props}
-    />
+    <FullWindowOverlay>
+      <DialogPrimitive.Overlay
+        className={cn(
+          "absolute inset-0 z-50 flex items-center justify-center bg-foreground/55 p-4 md:p-8",
+          Platform.select({ web: "fixed animate-in fade-in-0" }),
+          className,
+        )}
+        {...props}
+        onPress={Platform.select({ web: onOverlayPress, native: onPress })}
+        asChild={Platform.OS !== "web"}
+      >
+        <NativeOnlyAnimatedView
+          entering={FadeIn.duration(180).reduceMotion(ReduceMotion.System)}
+          exiting={FadeOut.duration(140).reduceMotion(ReduceMotion.System)}
+          as="Pressable"
+        >
+          <NativeOnlyAnimatedView
+            entering={FadeIn.delay(40).duration(180).reduceMotion(ReduceMotion.System)}
+            exiting={FadeOut.duration(140).reduceMotion(ReduceMotion.System)}
+          >
+            <>{children}</>
+          </NativeOnlyAnimatedView>
+        </NativeOnlyAnimatedView>
+      </DialogPrimitive.Overlay>
+    </FullWindowOverlay>
   );
 }
 
 function DialogContent({
   className,
+  portalHost,
   children,
+  showCloseButton = true,
   ...props
-}: DialogPrimitive.ContentProps & { children: React.ReactNode }) {
+}: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  portalHost?: string;
+  showCloseButton?: boolean;
+}) {
   return (
-    <DialogPortal>
+    <DialogPortal hostName={portalHost}>
       <DialogOverlay>
         <DialogPrimitive.Content
           className={cn(
-            "z-50 w-full max-w-lg gap-5 self-center rounded-2xl bg-popover p-6 md:p-8",
+            "z-50 mx-auto flex w-full max-w-xl flex-col gap-5 rounded-xl bg-popover p-6 shadow-xl shadow-foreground/10 md:p-8",
+            Platform.select({ web: "duration-200 animate-in fade-in-0 zoom-in-95" }),
             className,
           )}
           {...props}
         >
           {children}
+          {showCloseButton ? (
+            <DialogPrimitive.Close
+              className={cn(
+                "absolute right-2 top-2 h-touch w-touch items-center justify-center rounded-md opacity-70 active:bg-secondary active:opacity-100",
+                Platform.select({
+                  web: "outline-none transition-opacity focus-visible:ring-[3px] focus-visible:ring-ring/30",
+                }),
+              )}
+            >
+              <Icon as={X} size={20} className="text-muted-foreground" />
+              <RNText className="sr-only">Close</RNText>
+            </DialogPrimitive.Close>
+          ) : null}
         </DialogPrimitive.Content>
       </DialogOverlay>
     </DialogPortal>
   );
 }
 
-function DialogHeader({ className, ...props }: React.ComponentProps<typeof View>) {
-  return <View className={cn("gap-1.5", className)} {...props} />;
+function DialogHeader({ className, ...props }: ViewProps) {
+  return <View className={cn("flex-col gap-2 pr-10", className)} {...props} />;
 }
 
-function DialogFooter({ className, ...props }: React.ComponentProps<typeof View>) {
+function DialogFooter({ className, ...props }: ViewProps) {
   return (
     <View
+      className={cn("flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end", className)}
+      {...props}
+    />
+  );
+}
+
+function DialogTitle({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Title>) {
+  return (
+    <DialogPrimitive.Title
       className={cn(
-        // Stack on narrow screens so two long labels never squeeze each other.
-        "gap-3 sm:flex-row sm:justify-end",
+        "text-xl font-semibold leading-7 text-popover-foreground md:text-2xl",
         className,
       )}
       {...props}
@@ -65,23 +132,15 @@ function DialogFooter({ className, ...props }: React.ComponentProps<typeof View>
   );
 }
 
-function DialogTitle({ className, children, ...props }: DialogPrimitive.TitleProps) {
+function DialogDescription({
+  className,
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Description>) {
   return (
-    <DialogPrimitive.Title asChild {...props}>
-      <Text variant="h3" className={cn("text-popover-foreground", className)}>
-        {children}
-      </Text>
-    </DialogPrimitive.Title>
-  );
-}
-
-function DialogDescription({ className, children, ...props }: DialogPrimitive.DescriptionProps) {
-  return (
-    <DialogPrimitive.Description asChild {...props}>
-      <Text variant="body" tone="muted" className={className}>
-        {children}
-      </Text>
-    </DialogPrimitive.Description>
+    <DialogPrimitive.Description
+      className={cn("text-base leading-6 text-muted-foreground md:text-lg md:leading-7", className)}
+      {...props}
+    />
   );
 }
 

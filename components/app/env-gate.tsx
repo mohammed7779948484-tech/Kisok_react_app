@@ -18,13 +18,12 @@ export function EnvGate({ children }: { children: React.ReactNode }) {
         <ScrollView contentContainerClassName="flex-grow items-center justify-center p-6 md:p-10">
           <View
             accessibilityRole="alert"
-            className="w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-card"
+            className="w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-card"
           >
-            <View className="flex-row items-center justify-between bg-primary p-6 md:p-8">
-              <Text variant="label" className="text-primary-foreground">
+            <View className="border-b border-border bg-secondary p-6 md:px-8">
+              <Text variant="label" tone="primary">
                 Setup required
               </Text>
-              <View className="h-3 w-14 rounded-sm bg-accent" />
             </View>
             <View className="gap-5 p-6 md:p-10">
               <Text variant="h1" tone="destructive" accessibilityRole="header">

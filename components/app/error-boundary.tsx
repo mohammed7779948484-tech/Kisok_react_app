@@ -49,13 +49,12 @@ export class AppErrorBoundary extends Component<Props, State> {
           <View
             accessibilityRole="alert"
             accessibilityLiveRegion="assertive"
-            className="w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-card"
+            className="w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-card"
           >
-            <View className="flex-row items-center justify-between bg-primary p-6 md:p-8">
-              <Text variant="label" className="text-primary-foreground">
+            <View className="border-b border-border bg-secondary p-6 md:px-8">
+              <Text variant="label" tone="primary">
                 App recovery
               </Text>
-              <View className="h-3 w-14 rounded-sm bg-accent" />
             </View>
             <View className="items-start gap-5 p-6 md:p-10">
               <Text variant="h1" accessibilityRole="header">

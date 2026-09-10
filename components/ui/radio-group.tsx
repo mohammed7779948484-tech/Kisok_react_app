@@ -8,7 +8,11 @@ import { TextClassContext } from "./text";
 
 const RadioGroupValueContext = createContext<string | undefined>(undefined);
 
-function RadioGroup({ className, value, ...props }: RadioGroupPrimitive.RootProps) {
+function RadioGroup({
+  className,
+  value,
+  ...props
+}: React.ComponentProps<typeof RadioGroupPrimitive.Root>) {
   return (
     <RadioGroupValueContext.Provider value={value}>
       <RadioGroupPrimitive.Root value={value} className={cn("gap-3", className)} {...props} />
@@ -16,9 +20,10 @@ function RadioGroup({ className, value, ...props }: RadioGroupPrimitive.RootProp
   );
 }
 
-type RadioGroupItemProps = Omit<RadioGroupPrimitive.ItemProps, "children"> & {
-  children: React.ReactNode;
-};
+type RadioGroupItemProps = Omit<
+  React.ComponentProps<typeof RadioGroupPrimitive.Item>,
+  "children"
+> & { children?: React.ReactNode };
 
 function RadioGroupItem({ className, children, ...props }: RadioGroupItemProps) {
   const selected = useContext(RadioGroupValueContext) === props.value;
@@ -26,8 +31,8 @@ function RadioGroupItem({ className, children, ...props }: RadioGroupItemProps) 
     <TextClassContext.Provider value={selected ? "text-primary-foreground" : "text-foreground"}>
       <RadioGroupPrimitive.Item
         className={cn(
-          "min-h-control flex-row items-center gap-4 rounded-lg border p-4 active:scale-[0.99]",
-          selected ? "border-primary bg-primary" : "border-border bg-card active:bg-secondary",
+          "min-h-control flex-row items-center gap-4 rounded-md border bg-card p-4 active:scale-[0.99]",
+          selected ? "border-primary bg-primary" : "border-border active:bg-secondary/60",
           props.disabled && "opacity-40",
           className,
         )}

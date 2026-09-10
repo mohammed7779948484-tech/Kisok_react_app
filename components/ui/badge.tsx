@@ -1,25 +1,29 @@
+import * as Slot from "@rn-primitives/slot";
 import { cva, type VariantProps } from "class-variance-authority";
-import { View, type ViewProps } from "react-native";
+import { View } from "react-native";
 
 import { cn } from "@/core/utils";
 
 import { TextClassContext } from "./text";
 
-const badgeVariants = cva("flex-row items-center self-start rounded-full px-3 py-1.5", {
-  variants: {
-    variant: {
-      neutral: "bg-secondary",
-      primary: "bg-primary",
-      success: "bg-success",
-      warning: "bg-warning",
-      destructive: "bg-destructive",
-      outline: "border border-border bg-transparent",
+const badgeVariants = cva(
+  "shrink-0 flex-row items-center justify-center gap-1.5 self-start rounded-sm border px-2.5 py-1",
+  {
+    variants: {
+      variant: {
+        neutral: "border-transparent bg-secondary",
+        primary: "border-transparent bg-primary",
+        success: "border-transparent bg-success",
+        warning: "border-transparent bg-warning",
+        destructive: "border-transparent bg-destructive",
+        outline: "border-border bg-transparent",
+      },
     },
+    defaultVariants: { variant: "neutral" },
   },
-  defaultVariants: { variant: "neutral" },
-});
+);
 
-const badgeTextVariants = cva("text-xs font-bold", {
+const badgeTextVariants = cva("text-xs font-semibold leading-4", {
   variants: {
     variant: {
       neutral: "text-secondary-foreground",
@@ -33,15 +37,16 @@ const badgeTextVariants = cva("text-xs font-bold", {
   defaultVariants: { variant: "neutral" },
 });
 
-export type BadgeProps = ViewProps & VariantProps<typeof badgeVariants>;
+export type BadgeProps = React.ComponentProps<typeof View> &
+  VariantProps<typeof badgeVariants> & { asChild?: boolean };
 
-/** Status chips (order status, availability). Colour alone never carries meaning — always include text. */
-export function Badge({ className, variant, ...props }: BadgeProps) {
+export function Badge({ className, variant, asChild = false, ...props }: BadgeProps) {
+  const Component = asChild ? Slot.View : View;
   return (
     <TextClassContext.Provider value={badgeTextVariants({ variant })}>
-      <View className={cn(badgeVariants({ variant }), className)} {...props} />
+      <Component className={cn(badgeVariants({ variant }), className)} {...props} />
     </TextClassContext.Provider>
   );
 }
 
-export { badgeVariants };
+export { badgeTextVariants, badgeVariants };

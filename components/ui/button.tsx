@@ -1,31 +1,30 @@
 import { cva, type VariantProps } from "class-variance-authority";
-import { Pressable, type PressableProps } from "react-native";
+import { Platform, Pressable } from "react-native";
 
 import { cn } from "@/core/utils";
 
 import { TextClassContext } from "./text";
 
-/**
- * Every interactive surface in KISOK is at least 48dp tall. That is the
- * documented minimum touch target for the kiosk — do not add a smaller size.
- */
 const buttonVariants = cva(
-  "flex-row items-center justify-center gap-2 rounded-md active:scale-[0.98] active:opacity-90 disabled:opacity-40 web:transition-[color,background-color,border-color,transform] web:duration-150",
+  cn(
+    "group shrink-0 flex-row items-center justify-center gap-2 rounded-md",
+    "active:scale-[0.985] disabled:opacity-40",
+    Platform.select({
+      web: "whitespace-nowrap outline-none transition-[color,background-color,border-color,transform] duration-150 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:pointer-events-none",
+    }),
+  ),
   {
     variants: {
       variant: {
-        primary: "bg-primary active:bg-primary/90",
+        primary: "active:bg-primary/88 bg-primary",
         secondary: "bg-secondary active:bg-secondary/70",
         outline: "border border-input bg-card active:bg-secondary",
         ghost: "bg-transparent active:bg-secondary",
-        destructive: "bg-destructive active:bg-destructive/90",
+        destructive: "active:bg-destructive/88 bg-destructive",
       },
       size: {
-        // 48dp — the floor.
         default: "h-control px-5",
-        // Primary calls to action on a tablet: bigger, easier to hit while standing.
-        large: "h-16 px-8",
-        // Only for dense internal tools (Preparation board), never customer-facing.
+        large: "h-control-lg px-8",
         compact: "h-touch px-4",
         icon: "h-touch w-touch px-0",
       },
@@ -35,7 +34,7 @@ const buttonVariants = cva(
   },
 );
 
-const buttonTextVariants = cva("text-base font-bold", {
+const buttonTextVariants = cva("text-base font-semibold", {
   variants: {
     variant: {
       primary: "text-primary-foreground",
@@ -49,16 +48,9 @@ const buttonTextVariants = cva("text-base font-bold", {
   defaultVariants: { variant: "primary", size: "default" },
 });
 
-export type ButtonProps = PressableProps &
-  VariantProps<typeof buttonVariants> & {
-    className?: string;
-  };
+export type ButtonProps = React.ComponentProps<typeof Pressable> &
+  VariantProps<typeof buttonVariants>;
 
-/**
- * Accessibility: pass `accessibilityLabel` whenever the button's content is an
- * icon only. `disabled` is forwarded to `accessibilityState` so screen readers
- * and `toBeDisabled()` assertions both see it.
- */
 export function Button({ className, variant, size, block, disabled, ...props }: ButtonProps) {
   return (
     <TextClassContext.Provider value={buttonTextVariants({ variant, size })}>
@@ -73,4 +65,4 @@ export function Button({ className, variant, size, block, disabled, ...props }: 
   );
 }
 
-export { buttonVariants, buttonTextVariants };
+export { buttonTextVariants, buttonVariants };

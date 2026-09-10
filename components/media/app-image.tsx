@@ -47,7 +47,7 @@ export function AppImage({
         accessible={alt.length > 0}
         accessibilityRole="image"
         accessibilityLabel={alt || undefined}
-        className={cn("items-center justify-center bg-secondary", className)}
+        className={cn("items-center justify-center bg-muted", className)}
       >
         <Icon as={fallbackIcon} size={28} className="text-muted-foreground" />
       </View>
@@ -65,7 +65,7 @@ export function AppImage({
       // expo-image keep it on disk between sessions.
       cachePolicy="memory-disk"
       onError={() => setFailed(true)}
-      className={cn("bg-secondary", className)}
+      className={cn("bg-muted", className)}
       {...props}
     />
   );

@@ -55,6 +55,7 @@ module.exports = {
         warning: {
           DEFAULT: "hsl(var(--warning))",
           foreground: "hsl(var(--warning-foreground))",
+          text: "hsl(var(--warning-text))",
         },
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
@@ -65,8 +66,8 @@ module.exports = {
         ring: "hsl(var(--ring))",
       },
       borderRadius: {
-        sm: "calc(var(--radius) - 6px)",
-        md: "calc(var(--radius) - 3px)",
+        sm: "calc(var(--radius) - 4px)",
+        md: "calc(var(--radius) - 2px)",
         lg: "var(--radius)",
         xl: "calc(var(--radius) + 6px)",
       },
@@ -74,6 +75,7 @@ module.exports = {
         // Minimum comfortable touch target for the kiosk. See docs/design-system.md.
         touch: "48px",
         control: "56px",
+        "control-lg": "64px",
         sheet: "480px",
       },
     },

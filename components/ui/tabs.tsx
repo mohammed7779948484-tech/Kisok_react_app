@@ -1,33 +1,44 @@
 import * as TabsPrimitive from "@rn-primitives/tabs";
+import { Platform } from "react-native";
 
 import { cn } from "@/core/utils";
 
 import { TextClassContext } from "./text";
 
-const Tabs = TabsPrimitive.Root;
+function Tabs({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.Root>) {
+  return <TabsPrimitive.Root className={cn("flex-col gap-4", className)} {...props} />;
+}
 
-function TabsList({ className, ...props }: TabsPrimitive.ListProps) {
+function TabsList({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.List>) {
   return (
     <TabsPrimitive.List
-      className={cn("h-14 flex-row items-center rounded-lg bg-secondary p-1", className)}
+      className={cn(
+        "min-h-control flex-row items-center rounded-md border border-border bg-muted p-1",
+        className,
+      )}
       {...props}
     />
   );
 }
 
-function TabsTrigger({ className, ...props }: TabsPrimitive.TriggerProps) {
+function TabsTrigger({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
   const { value } = TabsPrimitive.useRootContext();
   const active = value === props.value;
-
   return (
     <TextClassContext.Provider
-      value={cn("text-sm font-bold", active ? "text-primary-foreground" : "text-muted-foreground")}
+      value={cn(
+        "text-sm font-semibold md:text-base",
+        active ? "text-primary-foreground" : "text-muted-foreground",
+      )}
     >
       <TabsPrimitive.Trigger
         className={cn(
-          "h-touch flex-1 flex-row items-center justify-center rounded-md px-3 py-2",
-          active && "bg-primary",
-          props.disabled && "opacity-50",
+          "h-touch flex-1 flex-row items-center justify-center gap-2 rounded-sm px-4",
+          active ? "bg-primary" : "active:bg-secondary",
+          props.disabled && "opacity-40",
+          Platform.select({
+            web: "outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/30",
+          }),
           className,
         )}
         {...props}
@@ -36,8 +47,13 @@ function TabsTrigger({ className, ...props }: TabsPrimitive.TriggerProps) {
   );
 }
 
-function TabsContent({ className, ...props }: TabsPrimitive.ContentProps) {
-  return <TabsPrimitive.Content className={cn("flex-1", className)} {...props} />;
+function TabsContent({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.Content>) {
+  return (
+    <TabsPrimitive.Content
+      className={cn("flex-1", Platform.select({ web: "outline-none" }), className)}
+      {...props}
+    />
+  );
 }
 
 export { Tabs, TabsContent, TabsList, TabsTrigger };

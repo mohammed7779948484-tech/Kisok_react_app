@@ -1,5 +1,6 @@
 import { View } from "react-native";
 
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { isAppError, toAppError } from "@/core/errors";
@@ -53,15 +54,5 @@ export function ErrorState({
 /** Narrow banner for a failure that sits alongside content instead of replacing it. */
 export function InlineError({ error, className }: { error: unknown; className?: string }) {
   const appError = isAppError(error) ? error : toAppError(error);
-  return (
-    <View
-      accessibilityRole="alert"
-      accessibilityLiveRegion="polite"
-      className={cn("rounded-lg border border-destructive/30 bg-destructive/10 p-4", className)}
-    >
-      <Text variant="label" tone="destructive">
-        {appError.userMessage}
-      </Text>
-    </View>
-  );
+  return <Alert variant="destructive" title={appError.userMessage} className={className} />;
 }
