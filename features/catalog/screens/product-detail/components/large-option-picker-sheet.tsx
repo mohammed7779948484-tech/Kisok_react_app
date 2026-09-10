@@ -16,6 +16,7 @@ import { cn } from "@/core/utils";
 export type OptionPickerItem = {
   id: string;
   label: string;
+  description?: string;
   isAvailable: boolean;
 };
 
@@ -41,7 +42,11 @@ export function LargeOptionPickerSheet({
   const filteredItems = useMemo(() => {
     const trimmed = searchQuery.trim().toLowerCase();
     if (!trimmed) return items;
-    return items.filter((item) => item.label.toLowerCase().includes(trimmed));
+    return items.filter(
+      (item) =>
+        item.label.toLowerCase().includes(trimmed) ||
+        (item.description && item.description.toLowerCase().includes(trimmed)),
+    );
   }, [items, searchQuery]);
 
   const handleSelect = useCallback(
@@ -53,18 +58,24 @@ export function LargeOptionPickerSheet({
     [onSelect, onOpenChange],
   );
 
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery("");
+  }, []);
+
   const renderItem = useCallback(
     ({ item }: { item: OptionPickerItem }) => {
       const isSelected = item.id === selectedId;
+      const fullLabel = item.description ? `${item.label}, ${item.description}` : item.label;
+      const availabilityText = item.isAvailable ? "Available" : "Currently unavailable";
 
       return (
         <Pressable
-          accessibilityRole="radio"
-          accessibilityLabel={`${item.label}, ${item.isAvailable ? "Available" : "Currently unavailable"}`}
+          accessibilityRole="button"
+          accessibilityLabel={`${fullLabel}, ${availabilityText}`}
           accessibilityState={{ selected: isSelected }}
           onPress={() => handleSelect(item.id)}
           className={cn(
-            "min-h-control flex-row items-center justify-between border-b border-border/50 px-5 py-3.5 active:bg-muted/60",
+            "min-h-touch flex-row items-center justify-between border-b border-border/50 px-5 py-3.5 active:bg-muted/60",
             isSelected && "bg-muted/40",
           )}
         >
@@ -75,12 +86,17 @@ export function LargeOptionPickerSheet({
             >
               {item.label}
             </Text>
+            {item.description ? (
+              <Text variant="caption" tone="muted" className="pt-0.5">
+                {item.description}
+              </Text>
+            ) : null}
             <Text
               variant="caption"
               tone={item.isAvailable ? "muted" : "destructive"}
-              className="pt-0.5"
+              className="pt-1 font-medium"
             >
-              {item.isAvailable ? "Available" : "Currently unavailable"}
+              {availabilityText}
             </Text>
           </View>
 
@@ -110,20 +126,31 @@ export function LargeOptionPickerSheet({
             </AdaptiveSheetClose>
           </View>
 
-          {/* Search bar inside sheet */}
-          <View className="pt-2">
+          {/* Search bar inside sheet with tablet-compliant 48dp ergonomics */}
+          <View className="relative pt-2">
             <Input
               placeholder={`Search ${title.toLowerCase()}...`}
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoCapitalize="none"
               autoCorrect={false}
-              className="h-10 text-base"
+              className="min-h-control pr-10 text-base"
             />
+            {searchQuery.length > 0 ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Clear search text"
+                onPress={handleClearSearch}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                className="absolute bottom-2 right-2 h-10 w-10 items-center justify-center rounded-full active:bg-muted"
+              >
+                <Icon as={X} size={16} className="text-muted-foreground" />
+              </Pressable>
+            ) : null}
           </View>
         </AdaptiveSheetHeader>
 
-        {/* Option list */}
+        {/* Virtualized option list */}
         <View className="min-h-[300px] flex-1">
           {filteredItems.length === 0 ? (
             <View className="items-center justify-center p-8">

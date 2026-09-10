@@ -25,7 +25,6 @@ export type CatalogShellProps = {
   headerRight?: React.ReactNode;
   children: React.ReactNode;
   contentClassName?: string;
-  scrollable?: boolean;
 };
 
 export function CatalogShell({
@@ -123,12 +122,15 @@ export function CatalogShell({
                   </Text>
                 ) : null}
               </View>
-              {countLabel ? (
-                <Text variant="caption" tone="muted" className="font-medium">
-                  {countLabel}
-                </Text>
-              ) : headerRight ? (
-                headerRight
+              {countLabel || headerRight ? (
+                <View className="flex-row items-center gap-3">
+                  {countLabel ? (
+                    <Text variant="caption" tone="muted" className="font-medium">
+                      {countLabel}
+                    </Text>
+                  ) : null}
+                  {headerRight}
+                </View>
               ) : null}
             </View>
           </View>

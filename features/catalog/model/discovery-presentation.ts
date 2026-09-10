@@ -36,19 +36,28 @@ export function deriveFeaturedLayout(featuredProducts: readonly CatalogProductVi
 }
 
 /**
- * Returns a concise option count badge string if product has multiple variants
- * e.g. "43 flavors" if primary dimension is Flavor, or "12 options" otherwise.
+ * Returns a truthful concise option count badge string if product has multiple variants.
+ * Only returns "X flavors" when every variant has a single clean Flavor option and all
+ * flavor values are distinct. Otherwise uses generic truthful count "X options".
  */
 export function formatProductOptionCount(product: CatalogProductView): string | null {
   const count = product.variants.length;
   if (count <= 1) return null;
 
-  // Check if variants are primarily differentiated by an option type like "Flavor"
-  const firstVariant = product.variants[0];
-  const firstOption = firstVariant?.options[0];
-  if (firstVariant && firstOption && firstVariant.options.length === 1) {
-    const dimName = firstOption.type.name.toLowerCase();
-    if (dimName === "flavor") {
+  // Check if every variant cleanly has exactly one option of type "flavor"
+  const allSingleFlavor = product.variants.every(
+    (variant) =>
+      variant.options.length === 1 &&
+      variant.options[0]?.type.name.trim().toLowerCase() === "flavor",
+  );
+
+  if (allSingleFlavor) {
+    const distinctFlavorIds = new Set(
+      product.variants.map((variant) => variant.options[0]?.value.id),
+    );
+
+    // Only claim "X flavors" if each variant represents a unique flavor value
+    if (distinctFlavorIds.size === count) {
       return `${count} flavors`;
     }
   }

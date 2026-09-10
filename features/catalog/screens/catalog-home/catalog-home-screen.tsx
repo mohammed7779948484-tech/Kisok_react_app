@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { ArrowRight, Search, Sparkles } from "lucide-react-native";
+import { ArrowRight, Search } from "lucide-react-native";
 import { useRouter } from "expo-router";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
@@ -94,7 +94,7 @@ export function CatalogHomeScreen() {
           accessibilityRole="button"
           accessibilityLabel="Search catalog"
           onPress={handleSearchShortcut}
-          className="flex-row items-center justify-between rounded-2xl border border-border/80 bg-card p-4 shadow-sm active:bg-muted/40"
+          className="min-h-touch flex-row items-center justify-between rounded-2xl border border-border/80 bg-card p-4 shadow-sm active:bg-muted/40"
         >
           <View className="flex-row items-center gap-3">
             <View className="h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
@@ -105,7 +105,7 @@ export function CatalogHomeScreen() {
                 Search the catalog
               </Text>
               <Text variant="caption" tone="muted">
-                Find by product name, brand, category, or flavor
+                Find by product name, brand, category, or option
               </Text>
             </View>
           </View>
@@ -126,7 +126,6 @@ export function CatalogHomeScreen() {
         ) : featured.mode === "showcase" || featured.mode === "grid" ? (
           <HomeSection
             title="Featured"
-            badge="Curated"
             browseAllLabel="View all products"
             onBrowseAll={() => router.replace("/products")}
           >
@@ -216,12 +215,13 @@ function SpotlightFeaturedCard({ product, onPress, isExpanded }: SpotlightFeatur
           {/* Editorial Content */}
           <View className="flex-1 justify-center gap-4 p-6 md:p-8">
             <View className="flex-row items-center gap-2">
-              <View className="flex-row items-center gap-1.5 rounded-full bg-accent/15 px-3 py-1">
-                <Icon as={Sparkles} size={14} className="text-accent" />
-                <Text variant="caption" className="font-bold text-accent">
-                  Featured Product
-                </Text>
-              </View>
+              <Text
+                variant="caption"
+                tone="primary"
+                className="font-semibold uppercase tracking-wider"
+              >
+                Featured Spotlight
+              </Text>
               {product.brand ? (
                 <Text variant="caption" tone="muted" className="font-medium">
                   by {product.brand.name}
@@ -253,10 +253,17 @@ function SpotlightFeaturedCard({ product, onPress, isExpanded }: SpotlightFeatur
                 ) : null}
               </View>
 
-              <Button variant="primary" onPress={handlePress} className="shrink-0 gap-2">
-                <Text>Discover product</Text>
-                <Icon as={ArrowRight} size={16} />
-              </Button>
+              {/* Visual CTA only - no nested interactive Button */}
+              <View
+                pointerEvents="none"
+                aria-hidden={true}
+                className="h-touch min-h-touch flex-row items-center gap-2 rounded-xl bg-primary px-5 py-2.5"
+              >
+                <Text variant="body" className="font-semibold text-primary-foreground">
+                  Discover product
+                </Text>
+                <Icon as={ArrowRight} size={16} className="text-primary-foreground" />
+              </View>
             </View>
           </View>
         </View>
@@ -267,30 +274,25 @@ function SpotlightFeaturedCard({ product, onPress, isExpanded }: SpotlightFeatur
 
 type HomeSectionProps = {
   title: string;
-  badge?: string;
   browseAllLabel: string;
   onBrowseAll: () => void;
   children: React.ReactNode;
 };
 
-function HomeSection({ title, badge, browseAllLabel, onBrowseAll, children }: HomeSectionProps) {
+function HomeSection({ title, browseAllLabel, onBrowseAll, children }: HomeSectionProps) {
   return (
     <View className="gap-4">
       <View className="flex-row items-center justify-between gap-3 border-b border-border/60 pb-3">
-        <View className="flex-row items-center gap-2.5">
-          <Text variant="h2" accessibilityRole="header" className="font-bold tracking-tight">
-            {title}
-          </Text>
-          {badge ? (
-            <View className="rounded-full bg-secondary px-2.5 py-0.5">
-              <Text variant="caption" className="font-semibold text-secondary-foreground">
-                {badge}
-              </Text>
-            </View>
-          ) : null}
-        </View>
+        <Text variant="h2" accessibilityRole="header" className="font-bold tracking-tight">
+          {title}
+        </Text>
 
-        <Button variant="ghost" size="compact" onPress={onBrowseAll} className="shrink-0 gap-1">
+        <Button
+          variant="ghost"
+          size="compact"
+          onPress={onBrowseAll}
+          className="min-h-touch shrink-0 gap-1"
+        >
           <Text className="font-semibold text-primary">{browseAllLabel}</Text>
           <Icon as={ArrowRight} size={14} className="text-primary" />
         </Button>

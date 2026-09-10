@@ -28,17 +28,19 @@ const availableProduct = requireProduct(catalogFixtureIds.products.coffee);
 const unavailableProduct = requireProduct(catalogFixtureIds.products.tote);
 
 describe("ProductCard", () => {
-  it("shows the product name and textual derived availability", async () => {
+  it("shows the product name and truthful product-level availability", async () => {
     await renderWithProviders(<ProductCard product={availableProduct} onPress={jest.fn()} />);
 
     expect(screen.getByText("Café Crème")).toBeOnTheScreen();
-    expect(screen.getByText("Available")).toBeOnTheScreen();
+    expect(screen.getByText("Options available")).toBeOnTheScreen();
   });
 
   it("is a single whole-card press target whose accessible name carries name and availability", async () => {
     await renderWithProviders(<ProductCard product={availableProduct} onPress={jest.fn()} />);
 
-    const card = screen.getByRole("button", { name: "Café Crème, Available" });
+    const brandName = availableProduct.brand?.name;
+    const expectedLabel = `${availableProduct.name}${brandName ? `, by ${brandName}` : ""}, Options available`;
+    const card = screen.getByRole("button", { name: expectedLabel });
     expect(card).toBeOnTheScreen();
   });
 
@@ -47,7 +49,9 @@ describe("ProductCard", () => {
     const user = userEvent.setup();
     await renderWithProviders(<ProductCard product={availableProduct} onPress={onPress} />);
 
-    await user.press(screen.getByRole("button", { name: "Café Crème, Available" }));
+    const brandName = availableProduct.brand?.name;
+    const expectedLabel = `${availableProduct.name}${brandName ? `, by ${brandName}` : ""}, Options available`;
+    await user.press(screen.getByRole("button", { name: expectedLabel }));
 
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(onPress).toHaveBeenCalledWith(availableProduct);
@@ -65,7 +69,7 @@ describe("ProductCard", () => {
     expect(screen.getByRole("image", { name: "Everyday Tote" })).toBeOnTheScreen();
   });
 
-  it("keeps unavailable products discoverable with an Out of stock label", async () => {
+  it("keeps unavailable products discoverable with a Currently unavailable label", async () => {
     const onPress = jest.fn();
     const user = userEvent.setup();
     await renderWithProviders(
@@ -74,10 +78,12 @@ describe("ProductCard", () => {
       </View>,
     );
 
-    expect(screen.getByText("Out of stock")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Everyday Tote, Out of stock" })).toBeOnTheScreen();
+    expect(screen.getByText("Currently unavailable")).toBeOnTheScreen();
+    const brandName = unavailableProduct.brand?.name;
+    const expectedLabel = `${unavailableProduct.name}${brandName ? `, by ${brandName}` : ""}, Currently unavailable`;
+    expect(screen.getByRole("button", { name: expectedLabel })).toBeOnTheScreen();
 
-    await user.press(screen.getByRole("button", { name: "Everyday Tote, Out of stock" }));
+    await user.press(screen.getByRole("button", { name: expectedLabel }));
 
     expect(onPress).toHaveBeenCalledWith(unavailableProduct);
   });

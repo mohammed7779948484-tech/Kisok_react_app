@@ -98,8 +98,8 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
       <Screen>
         <EmptyState
           title="Product not found"
-          description="This product isn't in the current catalog. It may have been removed since you started browsing."
-          action={{ label: "Go back to catalog", onPress: handleBack }}
+          description="This product is no longer in the catalog. It may have been removed since you started browsing."
+          action={{ label: "Back to browsing", onPress: handleBack }}
         />
       </Screen>
     );
@@ -148,7 +148,7 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
           variant="ghost"
           size="compact"
           onPress={handleBack}
-          className="gap-1.5 self-start pl-2"
+          className="min-h-touch gap-1.5 self-start pl-2"
           accessibilityLabel="Go back to previous screen"
         >
           <Icon as={ArrowLeft} size={18} />
@@ -170,14 +170,15 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
           <View className={useTwoColumnLayout ? "flex-1 gap-6" : "gap-6"}>
             {/* Header & Taxonomy */}
             <View className="gap-3">
-              {/* Quieter brand & category context links */}
-              <View className="flex-row flex-wrap items-center gap-3">
+              {/* Quieter brand & category context links with >= 48dp touch targets */}
+              <View className="flex-row flex-wrap items-center gap-2.5">
                 {product.brand ? (
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={`Browse brand ${product.brand.name}`}
                     onPress={() => handleBrandPress(product)}
-                    className="flex-row items-center gap-1 rounded-full bg-secondary/80 px-3 py-1 active:opacity-75"
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    className="min-h-touch flex-row items-center gap-1.5 rounded-full bg-secondary/80 px-3.5 py-1.5 active:opacity-75"
                   >
                     <Text variant="caption" className="font-semibold text-secondary-foreground">
                       {product.brand.name}
@@ -192,7 +193,8 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
                     accessibilityRole="button"
                     accessibilityLabel={`Browse category ${cat.name}`}
                     onPress={() => handleCategoryPress(cat.id)}
-                    className="flex-row items-center gap-1 rounded-full border border-border bg-card px-3 py-1 active:opacity-75"
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    className="min-h-touch flex-row items-center gap-1 rounded-full border border-border/70 bg-card px-3.5 py-1.5 active:opacity-75"
                   >
                     <Text variant="caption" tone="muted" className="font-medium">
                       {cat.name}
@@ -224,7 +226,7 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
             />
 
             {/* Decision & Add to Cart Area */}
-            <View className="gap-3 rounded-2xl border border-border/80 bg-card p-5">
+            <View className="gap-3.5 rounded-2xl border border-border/80 bg-card p-5 shadow-sm">
               <View className="flex-row items-center justify-between gap-3">
                 <View className="gap-0.5">
                   <Text variant="caption" tone="muted">

@@ -31,13 +31,12 @@ export type CatalogNavigationProps = {
 };
 
 export function CatalogNavigation({ current, onNavigate, className }: CatalogNavigationProps) {
-  // Main browse destinations (Search is also available or can be highlighted)
   const mainDestinations: CatalogDestination[] = ["home", "products", "categories", "brands"];
 
   return (
-    <View className={cn("flex-row items-center justify-between gap-3", className)}>
-      {/* Primary taxonomy tabs */}
-      <View className="flex-row flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-muted/50 p-1.5">
+    <View className={cn("flex-row items-center justify-between gap-2.5", className)}>
+      {/* Primary taxonomy navigation buttons */}
+      <View className="flex-row items-center gap-1 rounded-xl border border-border/70 bg-muted/50 p-1">
         {mainDestinations.map((destination) => {
           const isSelected = destination === current;
           const DestinationIcon = DESTINATION_ICONS[destination];
@@ -45,13 +44,12 @@ export function CatalogNavigation({ current, onNavigate, className }: CatalogNav
           return (
             <Pressable
               key={destination}
-              accessibilityRole="tab"
+              accessibilityRole="button"
               accessibilityLabel={DESTINATION_LABELS[destination]}
               accessibilityState={{ selected: isSelected }}
-              aria-selected={isSelected}
               onPress={() => onNavigate(destination)}
               className={cn(
-                "h-touch flex-row items-center gap-2 rounded-lg px-4 transition-all active:scale-[0.98]",
+                "h-touch min-h-touch flex-row items-center gap-2 rounded-lg px-3 transition-all active:scale-[0.98] md:px-4",
                 isSelected ? "bg-primary shadow-sm" : "bg-transparent active:bg-muted",
               )}
             >
@@ -77,12 +75,11 @@ export function CatalogNavigation({ current, onNavigate, className }: CatalogNav
       {/* Elevated Search discovery action */}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Search catalog"
+        accessibilityLabel={DESTINATION_LABELS.search}
         accessibilityState={{ selected: current === "search" }}
-        aria-selected={current === "search"}
         onPress={() => onNavigate("search")}
         className={cn(
-          "h-touch flex-row items-center gap-2.5 rounded-xl border px-4 active:scale-[0.98]",
+          "h-touch min-h-touch flex-row items-center gap-2 rounded-xl border px-3.5 active:scale-[0.98] md:px-4",
           current === "search"
             ? "border-primary bg-primary text-primary-foreground"
             : "border-border/80 bg-card active:bg-muted/60",

@@ -7,6 +7,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
 import { AppImage } from "@/components/media/app-image";
 import { Button, Icon, Text } from "@/components/ui";
+import { useLayout } from "@/core/responsive";
 
 import { CatalogGrid, type CatalogGridRowInfo } from "../../components/catalog-grid";
 import { CategoryCard } from "../../components/category-card";
@@ -28,6 +29,8 @@ export type CategoryDetailScreenProps = {
 export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) {
   const router = useRouter();
   const catalog = useCatalog();
+  const { isLandscape, isExpanded } = useLayout();
+  const useWideHeader = isLandscape && isExpanded;
 
   const [selectedBrand, setSelectedBrand] = useState<CategoryBrandFilterOption | null>(null);
 
@@ -97,7 +100,7 @@ export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) 
       <Screen>
         <EmptyState
           title="Category not found"
-          description="This category isn't in the current catalog. It may have been removed since you started browsing."
+          description="This category is no longer in the catalog. It may have been removed since you started browsing."
           action={{ label: "Go back to categories", onPress: handleBack }}
         />
       </Screen>
@@ -129,20 +132,33 @@ export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) 
   };
 
   const categoryDiscoveryHeader = (
-    <View className="gap-5 px-2 pb-5 pt-4">
-      {/* Category Identity Card */}
-      <CategoryIdentity category={category} />
+    <View className="gap-5 px-2 pb-5 pt-3">
+      {/* Category header and filters responsive layout */}
+      <View
+        className={
+          useWideHeader
+            ? "flex-row items-start justify-between gap-8 border-b border-border/50 pb-5"
+            : "gap-4 border-b border-border/50 pb-4"
+        }
+      >
+        <View className={useWideHeader ? "max-w-md flex-1" : "w-full"}>
+          <CategoryIdentity category={category} />
+        </View>
 
-      {/* Brand Filter */}
-      <CategoryBrandFilter
-        options={filterOptions}
-        selectedBrandId={selectedBrand?.brandId ?? null}
-        onSelectBrand={handleSelectBrand}
-      />
+        {filterOptions.length > 0 ? (
+          <View className={useWideHeader ? "flex-1 pt-1" : "w-full pt-1"}>
+            <CategoryBrandFilter
+              options={filterOptions}
+              selectedBrandId={selectedBrand?.brandId ?? null}
+              onSelectBrand={handleSelectBrand}
+            />
+          </View>
+        ) : null}
+      </View>
 
       {/* Subcategories Horizontal Scroll Row (Roots only) */}
       {childCategories.length > 0 ? (
-        <View className="gap-2.5 border-t border-border/70 pt-4">
+        <View className="gap-2.5">
           <Text variant="caption" tone="muted" className="font-semibold">
             Subcategories:
           </Text>
@@ -174,7 +190,7 @@ export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) 
             variant="ghost"
             size="compact"
             onPress={handleBack}
-            className="gap-1.5 self-start pl-2"
+            className="min-h-touch gap-1.5 self-start pl-2"
             accessibilityLabel="Go back"
           >
             <Icon as={ArrowLeft} size={18} />
@@ -197,7 +213,7 @@ export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) 
             {categoryDiscoveryHeader}
             <EmptyState
               title="No products from this brand"
-              description="This brand currently has no products in this category. Browse the full department instead."
+              description="This brand currently has no products in this category. Clear the brand filter to browse the full department."
               action={{ label: "Show all brands", onPress: handleResetBrand }}
               className="min-h-80"
             />
@@ -216,8 +232,8 @@ function CategoryIdentity({ category }: CategoryIdentityProps) {
   const isSubcategory = category.parent !== null;
 
   return (
-    <View className="flex-row items-center gap-5 rounded-2xl border border-border/80 bg-card p-4 md:p-5">
-      <View className="h-20 w-20 overflow-hidden rounded-xl bg-muted/20 md:h-24 md:w-24">
+    <View className="flex-row items-center gap-4">
+      <View className="h-16 w-16 overflow-hidden rounded-xl bg-muted/20 md:h-20 md:w-20">
         <AppImage
           uri={category.image?.secureUrl ?? null}
           alt={category.name}
@@ -225,7 +241,7 @@ function CategoryIdentity({ category }: CategoryIdentityProps) {
           className="h-full w-full"
         />
       </View>
-      <View className="flex-1 gap-1">
+      <View className="flex-1 gap-0.5">
         <Text variant="caption" tone="primary" className="font-semibold uppercase tracking-wider">
           {isSubcategory ? `Subcategory of ${category.parent!.name}` : "Department"}
         </Text>

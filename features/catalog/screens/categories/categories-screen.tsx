@@ -77,12 +77,13 @@ export function CategoriesScreen() {
       subtitle="Shop by department and category"
       countLabel={`${view.rootCategories.length} departments`}
     >
-      <ScrollView contentContainerClassName="gap-8 px-5 pb-36 pt-6 md:px-8">
-        {families.map((family) => (
+      <ScrollView contentContainerClassName="gap-10 px-5 pb-36 pt-6 md:px-8">
+        {families.map((family, index) => (
           <CategoryFamilySection
             key={family.root.id}
             family={family}
             onCategoryPress={handleCategoryPress}
+            isLast={index === families.length - 1}
           />
         ))}
       </ScrollView>
@@ -93,19 +94,20 @@ export function CategoriesScreen() {
 type CategoryFamilySectionProps = {
   family: CategoryFamily;
   onCategoryPress: (category: CatalogCategoryView) => void;
+  isLast: boolean;
 };
 
-function CategoryFamilySection({ family, onCategoryPress }: CategoryFamilySectionProps) {
+function CategoryFamilySection({ family, onCategoryPress, isLast }: CategoryFamilySectionProps) {
   const { root, children } = family;
 
   return (
-    <View className="gap-3 rounded-2xl border border-border/80 bg-card p-5 shadow-sm">
-      {/* Root Department Header Card */}
+    <View className={isLast ? "gap-4" : "gap-4 border-b border-border/50 pb-10"}>
+      {/* Root Department Header */}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${root.name}, main department, ${productCountLabel(root.productCount)}`}
         onPress={() => onCategoryPress(root)}
-        className="flex-row items-center justify-between gap-4 active:opacity-80"
+        className="min-h-touch flex-row items-center justify-between gap-4 active:opacity-80"
       >
         <View className="flex-1 flex-row items-center gap-4">
           <View className="h-16 w-16 overflow-hidden rounded-xl bg-muted/20 md:h-20 md:w-20">
@@ -116,7 +118,7 @@ function CategoryFamilySection({ family, onCategoryPress }: CategoryFamilySectio
               className="h-full w-full"
             />
           </View>
-          <View className="flex-1 gap-1">
+          <View className="flex-1 gap-0.5">
             <Text
               variant="caption"
               tone="primary"
@@ -133,9 +135,9 @@ function CategoryFamilySection({ family, onCategoryPress }: CategoryFamilySectio
           </View>
         </View>
 
-        <View className="flex-row items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5">
+        <View className="min-h-touch flex-row items-center gap-1.5 rounded-lg bg-secondary px-3.5 py-2">
           <Text variant="caption" className="font-semibold text-secondary-foreground">
-            Explore
+            Explore department
           </Text>
           <Icon as={ArrowRight} size={14} className="text-secondary-foreground" />
         </View>
@@ -143,18 +145,18 @@ function CategoryFamilySection({ family, onCategoryPress }: CategoryFamilySectio
 
       {/* Direct Subcategories grouping */}
       {children.length > 0 ? (
-        <View className="mt-2 gap-2.5 border-t border-border/60 pt-4">
+        <View className="gap-2.5 pt-1">
           <Text variant="caption" tone="muted" className="font-semibold">
             Subcategories:
           </Text>
-          <View className="flex-row flex-wrap gap-2.5">
+          <View className="flex-row flex-wrap gap-3">
             {children.map((child) => (
               <Pressable
                 key={child.id}
                 accessibilityRole="button"
                 accessibilityLabel={`${child.name}, subcategory of ${root.name}, ${productCountLabel(child.productCount)}`}
                 onPress={() => onCategoryPress(child)}
-                className="flex-row items-center gap-3 rounded-xl border border-border/80 bg-muted/30 p-2.5 pr-4 active:scale-[0.99] active:bg-muted/70"
+                className="min-h-touch flex-row items-center gap-3 rounded-xl border border-border/80 bg-card p-2.5 pr-4 shadow-sm active:scale-[0.99] active:bg-muted/50"
               >
                 <View className="h-10 w-10 overflow-hidden rounded-lg bg-muted/40">
                   <AppImage

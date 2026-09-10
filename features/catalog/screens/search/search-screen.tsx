@@ -90,7 +90,8 @@ export function SearchScreen() {
             accessibilityRole="button"
             accessibilityLabel="Clear search"
             onPress={handleClear}
-            className="h-9 w-9 items-center justify-center rounded-full active:bg-muted"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            className="h-12 w-12 items-center justify-center rounded-full active:bg-muted"
           >
             <Icon as={X} size={18} className="text-muted-foreground" />
           </Pressable>
@@ -133,7 +134,7 @@ export function SearchScreen() {
             <View className="flex-1 justify-center py-12">
               <EmptyState
                 title="No products found"
-                description={`No products match "${searchResult.query}". Check for spelling errors or try a broader search term.`}
+                description={`No matches for "${searchResult.query}". Try another product, brand, category, or option.`}
                 action={{ label: "Clear search", onPress: handleClear }}
               />
             </View>
@@ -153,7 +154,7 @@ function searchStatusMessage(searchResult: CatalogSearchResult): string {
     case "too-short":
       return "Enter at least 2 characters to search.";
     case "no-match":
-      return `No products match "${searchResult.query}".`;
+      return `No matches for "${searchResult.query}".`;
     case "results":
       return searchResult.products.length === 1
         ? "1 product found"

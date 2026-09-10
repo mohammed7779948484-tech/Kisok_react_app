@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { View } from "react-native";
+import { ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
@@ -82,6 +82,7 @@ export function ProductsScreen() {
     );
   }
 
+  const brands = view.brands;
   const hasActiveFilters = availabilityFilter !== "all" || selectedBrandId !== "all";
 
   const handleResetFilters = () => {
@@ -104,21 +105,61 @@ export function ProductsScreen() {
             onValueChange={(val) => val && setAvailabilityFilter(val)}
             accessibilityLabel="Filter by availability status"
           >
-            <ToggleGroupItem value="all" className="h-touch px-3 py-1">
+            <ToggleGroupItem value="all" className="h-touch min-h-touch px-3.5 py-1">
               <Text variant="caption">All items</Text>
             </ToggleGroupItem>
-            <ToggleGroupItem value="available" className="h-touch px-3 py-1">
+            <ToggleGroupItem value="available" className="h-touch min-h-touch px-3.5 py-1">
               <Text variant="caption">Available only</Text>
             </ToggleGroupItem>
           </ToggleGroup>
         </View>
 
         {hasActiveFilters ? (
-          <Button variant="ghost" size="compact" onPress={handleResetFilters}>
-            <Text className="text-xs text-primary">Reset filters</Text>
+          <Button
+            variant="ghost"
+            size="compact"
+            onPress={handleResetFilters}
+            className="min-h-touch"
+          >
+            <Text className="text-xs font-semibold text-primary">Clear filters</Text>
           </Button>
         ) : null}
       </View>
+
+      {/* Brand filter row */}
+      {brands.length > 0 ? (
+        <View className="flex-row items-center gap-2 pt-1">
+          <Text variant="caption" tone="muted" className="font-semibold">
+            Brand:
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerClassName="gap-2"
+          >
+            <ToggleGroup
+              type="single"
+              layout="content"
+              value={selectedBrandId}
+              onValueChange={(val) => val && setSelectedBrandId(val)}
+              accessibilityLabel="Filter by brand"
+            >
+              <ToggleGroupItem value="all" className="h-touch min-h-touch px-3.5 py-1">
+                <Text variant="caption">All brands</Text>
+              </ToggleGroupItem>
+              {brands.map((brand) => (
+                <ToggleGroupItem
+                  key={brand.id}
+                  value={brand.id}
+                  className="h-touch min-h-touch px-3.5 py-1"
+                >
+                  <Text variant="caption">{brand.name}</Text>
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </ScrollView>
+        </View>
+      ) : null}
     </View>
   );
 
@@ -134,9 +175,9 @@ export function ProductsScreen() {
         {filteredProducts.length === 0 ? (
           <View className="flex-1 justify-center p-8">
             <EmptyState
-              title="No matching products"
-              description="No products match your current filters. Clear the filters to see the full collection."
-              action={{ label: "Show all products", onPress: handleResetFilters }}
+              title="No products match these filters"
+              description="No products match your current filters. Clear filters to see the full collection."
+              action={{ label: "Clear filters", onPress: handleResetFilters }}
             />
           </View>
         ) : (
