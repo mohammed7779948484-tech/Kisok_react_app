@@ -258,6 +258,7 @@ export function UiLabScreen() {
             </Toggle>
           </View>
           <ToggleGroup
+            layout="segmented"
             type="multiple"
             value={group}
             onValueChange={setGroup}

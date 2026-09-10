@@ -36,10 +36,11 @@ export function AppImage({
   className,
   fallbackIcon = ImageOff,
   transition = 200,
+  recyclingKey,
   ...props
 }: AppImageProps) {
-  const [failed, setFailed] = useState(false);
-  const showFallback = !uri || failed;
+  const [failedUri, setFailedUri] = useState<string | null>(null);
+  const showFallback = !uri || failedUri === uri;
 
   if (showFallback) {
     return (
@@ -64,7 +65,8 @@ export function AppImage({
       // Catalog imagery is stable and re-viewed constantly on a kiosk, so let
       // expo-image keep it on disk between sessions.
       cachePolicy="memory-disk"
-      onError={() => setFailed(true)}
+      recyclingKey={recyclingKey ?? uri ?? undefined}
+      onError={() => setFailedUri(uri)}
       className={cn("bg-muted", className)}
       {...props}
     />

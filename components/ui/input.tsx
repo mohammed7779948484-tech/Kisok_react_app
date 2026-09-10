@@ -15,7 +15,7 @@ export type InputProps = TextInputProps & {
 
 type FormFieldContextValue = {
   inputId: string;
-  labelId: string;
+  labelId?: string;
   messageId?: string;
   invalid: boolean;
 };
@@ -34,7 +34,7 @@ function InputControl({
     <TextInput
       editable={editable}
       nativeID={props.nativeID ?? field?.inputId}
-      aria-labelledby={field?.labelId}
+      aria-labelledby={props["aria-labelledby"] ?? field?.labelId}
       aria-describedby={field?.messageId}
       aria-invalid={resolvedInvalid || undefined}
       className={cn(
@@ -69,9 +69,10 @@ export function FormField({
 }) {
   const generatedId = useId();
   const inputId = id ?? `field-${generatedId}`;
+  const labelId = label ? `${inputId}-label` : undefined;
   const field = {
     inputId,
-    labelId: `${inputId}-label`,
+    labelId,
     messageId: errorMessage || hint ? `${inputId}-message` : undefined,
     invalid: Boolean(errorMessage),
   };
@@ -79,8 +80,8 @@ export function FormField({
   return (
     <FormFieldContext.Provider value={field}>
       <View className={cn("w-full gap-2", className)}>
-        {label ? (
-          <Label nativeID={field.labelId} htmlFor={field.inputId}>
+        {label && labelId ? (
+          <Label nativeID={labelId} htmlFor={field.inputId}>
             {label}
           </Label>
         ) : null}

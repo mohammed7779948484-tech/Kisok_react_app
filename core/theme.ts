@@ -34,7 +34,7 @@ export const TOKENS = {
     secondaryForeground: "198 27% 19%",
     muted: "40 15% 91%",
     mutedForeground: "200 10% 38%",
-    accent: "24 48% 44%",
+    accent: "24 48% 43%",
     accentForeground: "42 33% 98%",
     success: "151 39% 31%",
     successForeground: "42 33% 98%",

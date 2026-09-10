@@ -16,11 +16,11 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary: "active:bg-primary/88 bg-primary",
+        primary: "bg-primary active:bg-primary/90",
         secondary: "bg-secondary active:bg-secondary/70",
         outline: "border border-input bg-card active:bg-secondary",
         ghost: "bg-transparent active:bg-secondary",
-        destructive: "active:bg-destructive/88 bg-destructive",
+        destructive: "bg-destructive active:bg-destructive/90",
       },
       size: {
         default: "h-control px-5",
