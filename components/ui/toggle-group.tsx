@@ -51,7 +51,16 @@ function ToggleGroup({
 export type ToggleGroupItemProps = React.ComponentProps<typeof ToggleGroupPrimitive.Item> &
   VariantProps<typeof toggleVariants>;
 
-function ToggleGroupItem({ className, children, variant, size, ...props }: ToggleGroupItemProps) {
+function ToggleGroupItem({
+  className,
+  children,
+  variant,
+  size,
+  role = "button",
+  accessibilityRole = "button",
+  accessibilityState,
+  ...props
+}: ToggleGroupItemProps) {
   const context = useContext(ToggleGroupContext);
   const { value } = ToggleGroupPrimitive.useRootContext();
   const selected = ToggleGroupPrimitive.utils.getIsSelected(value, props.value);
@@ -74,6 +83,13 @@ function ToggleGroupItem({ className, children, variant, size, ...props }: Toggl
       )}
     >
       <ToggleGroupPrimitive.Item
+        role={role}
+        accessibilityRole={accessibilityRole}
+        accessibilityState={{
+          selected,
+          checked: selected,
+          ...accessibilityState,
+        }}
         className={cn(
           toggleVariants({ variant: resolvedVariant, size: resolvedSize }),
           layout === "segmented"

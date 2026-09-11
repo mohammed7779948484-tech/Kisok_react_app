@@ -115,23 +115,22 @@ export function SearchScreen() {
     <CatalogShell
       currentDestination="search"
       settings={view.settings}
-      title="Search catalog"
+      title="Search"
       subtitle="Instant local discovery"
     >
-      <View className="flex-1">
-        {searchResult.state === "results" ? (
-          <CatalogGrid
-            data={searchResult.products}
-            renderItem={renderProductCard}
-            keyExtractor={productKeyExtractor}
-            onItemPress={handleProductPress}
-            listHeaderComponent={searchHeader}
-            testID="search-results-grid"
-            className="px-3 md:px-6"
-          />
-        ) : searchResult.state === "no-match" ? (
-          <View className="flex-1 px-5 md:px-8">
-            {searchHeader}
+      <View className="flex-1 px-5 md:px-8">
+        {searchHeader}
+        <View className="flex-1">
+          {searchResult.state === "results" ? (
+            <CatalogGrid
+              data={searchResult.products}
+              renderItem={renderProductCard}
+              keyExtractor={productKeyExtractor}
+              onItemPress={handleProductPress}
+              testID="search-results-grid"
+              className="-mx-2"
+            />
+          ) : searchResult.state === "no-match" ? (
             <View className="flex-1 justify-center py-12">
               <EmptyState
                 title="No products found"
@@ -139,10 +138,8 @@ export function SearchScreen() {
                 action={{ label: "Clear search", onPress: handleClear }}
               />
             </View>
-          </View>
-        ) : (
-          <View className="flex-1 px-5 md:px-8">{searchHeader}</View>
-        )}
+          ) : null}
+        </View>
       </View>
     </CatalogShell>
   );

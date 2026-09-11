@@ -67,7 +67,7 @@ export function Text({ className, asChild = false, variant = "body", tone, ...pr
         contextClass,
         className,
       )}
-      role={ROLE[resolvedVariant]}
+      role={props.accessibilityRole ? undefined : ROLE[resolvedVariant]}
       aria-level={ARIA_LEVEL[resolvedVariant]}
       {...props}
     />

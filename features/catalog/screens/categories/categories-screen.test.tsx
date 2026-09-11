@@ -53,10 +53,26 @@ jest.mock("expo-router", () => ({
 
 // AppImage's fallback icon renders a lucide icon; stub it so card fallback
 // paths render without the SVG machinery.
-jest.mock("lucide-react-native", () => ({
-  __esModule: true,
-  ImageOff: () => null,
-}));
+jest.mock("lucide-react-native", () => {
+  const createMockIcon = (name: string) => {
+    const MockIcon = () => null;
+    MockIcon.displayName = name;
+    return MockIcon;
+  };
+  return new Proxy(
+    { __esModule: true },
+    {
+      get: (target: any, prop: string | symbol) => {
+        if (prop in target) return target[prop];
+        if (typeof prop === "string") {
+          target[prop] = createMockIcon(prop);
+          return target[prop];
+        }
+        return undefined;
+      },
+    },
+  );
+});
 
 jest.useFakeTimers();
 
@@ -472,7 +488,9 @@ describe("CategoriesScreen", () => {
 
     // The populated grid stays on screen…
     expect(screen.getByRole("header", { name: "All categories" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Drínks, 4 products" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Drínks, main department, 4 products" }),
+    ).toBeOnTheScreen();
     // …and the full-screen error state does not replace it.
     expect(screen.queryByText("Something went wrong")).toBeNull();
     expect(screen.queryByText("We couldn't load the catalog. Please try again.")).toBeNull();

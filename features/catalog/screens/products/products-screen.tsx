@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 
@@ -23,6 +23,16 @@ export function ProductsScreen() {
   const [availabilityFilter, setAvailabilityFilter] = useState<string>("all");
   // Local-only brand filter: brandId or "all"
   const [selectedBrandId, setSelectedBrandId] = useState<string>("all");
+
+  // Gate F: Reconcile selectedBrandId if selected brand is removed from catalog
+  useEffect(() => {
+    if (selectedBrandId !== "all" && catalog.data?.brands) {
+      const exists = catalog.data.brands.some((b) => b.id === selectedBrandId);
+      if (!exists) {
+        setSelectedBrandId("all");
+      }
+    }
+  }, [catalog.data?.brands, selectedBrandId]);
 
   const handleProductPress = useCallback(
     (product: CatalogProductView) => {

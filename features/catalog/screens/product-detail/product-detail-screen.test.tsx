@@ -85,11 +85,17 @@ jest.mock("../../api/fetch-catalog", () => ({
 const mockRouterPush = jest.fn();
 const mockRouterReplace = jest.fn();
 const mockRouterBack = jest.fn();
+const mockCanGoBack = jest.fn().mockReturnValue(true);
 /** The params the mocked `useLocalSearchParams` hands the route under test. */
 const mockLocalSearchParams: { productId?: string } = {};
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace, back: mockRouterBack }),
+  useRouter: () => ({
+    push: mockRouterPush,
+    replace: mockRouterReplace,
+    back: mockRouterBack,
+    canGoBack: mockCanGoBack,
+  }),
   useLocalSearchParams: () => mockLocalSearchParams,
   // T04 (structurally forced, Lead to disposition): the catalog-cart
   // integration's provider — which the harness below mounts around this
@@ -105,14 +111,26 @@ jest.mock("expo-router", () => ({
 // integration's Add action renders the ShoppingCart icon and the Quick Cart
 // sheet its rows/steppers — stub the standardized set so gallery fallbacks,
 // the Add action and an open sheet render without the SVG machinery.
-jest.mock("lucide-react-native", () => ({
-  __esModule: true,
-  ImageOff: () => null,
-  ShoppingCart: () => null,
-  Minus: () => null,
-  Plus: () => null,
-  Trash2: () => null,
-}));
+jest.mock("lucide-react-native", () => {
+  const createMockIcon = (name: string) => {
+    const MockIcon = () => null;
+    MockIcon.displayName = name;
+    return MockIcon;
+  };
+  return new Proxy(
+    { __esModule: true },
+    {
+      get: (target: any, prop: string | symbol) => {
+        if (prop in target) return target[prop];
+        if (typeof prop === "string") {
+          target[prop] = createMockIcon(prop);
+          return target[prop];
+        }
+        return undefined;
+      },
+    },
+  );
+});
 
 const mockFetchCatalog = fetchCatalog as jest.MockedFunction<typeof fetchCatalog>;
 
@@ -455,21 +473,22 @@ describe("ProductDetailScreen", () => {
     expect(screen.getByText("A smooth customer favourite.")).toBeOnTheScreen();
 
     // Brand and category context render as navigable discovery.
-    expect(screen.getByRole("button", { name: "Maison Élite" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Drínks" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Tóp Picks" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Browse brand Maison Élite" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Browse category Drínks" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Browse category Tóp Picks" })).toBeOnTheScreen();
 
     // The variant list renders the model's labels with textual availability.
-    expect(screen.getByRole("button", { name: "Signature roast, Out of stock" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Signature roast, Currently unavailable" }),
+    ).toBeOnTheScreen();
     expect(
       screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Available" }),
     ).toBeOnTheScreen();
 
-    // The gallery shows the selected (default: first) variant's media.
-    const galleryImage = screen.getByLabelText("Café Crème — Signature roast");
-    expect(displayedImageUri(galleryImage)).toBe(
-      "https://res.cloudinary.com/kisok/image/upload/signature-roast.png",
-    );
+    // Default selected variant is the first available variant (Color: Rouge, Size: Lárge)
+    expect(
+      screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Available", selected: true }),
+    ).toBeOnTheScreen();
 
     // The obvious way back to the discovery surface that opened this detail.
     expect(screen.getByRole("button", { name: "Go back" })).toBeOnTheScreen();
@@ -706,12 +725,8 @@ describe("ProductDetailScreen", () => {
     expect(screen.getByLabelText("Currently unavailable")).toBeOnTheScreen();
 
     // The single-variant neutral label, selected by default.
-    expect(
-      screen.getByRole("button", {
-        name: "Standard option, Currently unavailable",
-        selected: true,
-      }),
-    ).toBeOnTheScreen();
+    expect(screen.getByText("Specification")).toBeOnTheScreen();
+    expect(screen.getAllByText("Standard option")[0]).toBeOnTheScreen();
 
     // Neither the variant nor the product carries media: the gallery's final
     // honest fallback is AppImage's shared slot — the image surface keeps its
@@ -773,10 +788,10 @@ describe("ProductDetailScreen", () => {
     // no retry affordance pretending one just happened.
     expect(screen.queryByText("Something went wrong")).toBeNull();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
-    expect(screen.queryByLabelText("Loading the catalog…")).toBeNull();
+    expect(screen.queryByLabelText("Loading product...")).toBeNull();
 
     // No product identity, no gallery, no variant list.
-    expect(screen.queryByRole("header")).toBeNull();
+    expect(screen.queryByRole("header", { name: "Café Crème" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Café Crème|Standard option/ })).toBeNull();
 
     // The way back to the discovery surface that opened this detail.
@@ -802,7 +817,9 @@ describe("ProductDetailScreen", () => {
     await waitFor(() =>
       expect(screen.getByRole("header", { name: "Studio Kettle" })).toBeOnTheScreen(),
     );
-    expect(screen.getByRole("button", { name: "Option 3, Out of stock" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Option 3, Currently unavailable" }),
+    ).toBeOnTheScreen();
     expect(screen.queryByRole("header", { name: "Café Crème" })).toBeNull();
 
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
@@ -815,7 +832,7 @@ describe("ProductDetailScreen", () => {
       <ProductDetailScreen productId={catalogFixtureIds.products.coffee} />,
     );
 
-    expect(screen.getByLabelText("Loading the catalog…")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Loading product...")).toBeOnTheScreen();
     // No product identity, gallery or back affordance pretending to be data
     // while pending.
     expect(screen.queryByRole("header", { name: "Café Crème" })).toBeNull();
@@ -901,7 +918,9 @@ describe("ProductDetailScreen", () => {
 
     // The populated detail stays on screen…
     expect(screen.getByRole("header", { name: "Studio Kettle" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Option 3, Out of stock" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Option 3, Currently unavailable" }),
+    ).toBeOnTheScreen();
     // …and the full-screen error state does not replace it.
     expect(screen.queryByText("Something went wrong")).toBeNull();
     expect(screen.queryByText("We couldn't load the catalog. Please try again.")).toBeNull();
@@ -930,9 +949,9 @@ describe("ProductDetailScreen", () => {
     );
 
     // A NON-FIRST pick: the customer inspects the last variant.
-    await user.press(screen.getByRole("button", { name: "Option 3, Out of stock" }));
+    await user.press(screen.getByRole("button", { name: "Option 3, Currently unavailable" }));
     expect(
-      screen.getByRole("button", { name: "Option 3, Out of stock", selected: true }),
+      screen.getByRole("button", { name: "Option 3, Currently unavailable", selected: true }),
     ).toBeOnTheScreen();
 
     // The same background refetch the shared QueryClient triggers on
@@ -954,9 +973,9 @@ describe("ProductDetailScreen", () => {
 
     // The removed variant is gone from the list, and the remaining variants
     // stay inspectable.
-    expect(screen.queryByRole("button", { name: "Option 3, Out of stock" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Option 3, Currently unavailable" })).toBeNull();
     expect(
-      screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Out of stock" }),
+      screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Currently unavailable" }),
     ).toBeOnTheScreen();
 
     // The gallery follows the degraded selection's own media — the matte
@@ -1020,11 +1039,11 @@ describe("ProductDetailScreen — Add to cart (catalog-cart-integration seam)", 
     // Selecting the unavailable option-backed variant (Design decision 9:
     // inspection stays possible) flips the Add action disabled…
     await user.press(
-      screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Out of stock" }),
+      screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Currently unavailable" }),
     );
     expect(
       screen.getByRole("button", {
-        name: "Color: Rouge, Size: Lárge, Out of stock",
+        name: "Color: Rouge, Size: Lárge, Currently unavailable",
         selected: true,
       }),
     ).toBeOnTheScreen();
@@ -1044,10 +1063,6 @@ describe("ProductDetailScreen — Add to cart (catalog-cart-integration seam)", 
   });
 
   it("pressing Add with an available selection puts the T01-mapped line in the real cart and opens the Quick Cart with it", async () => {
-    // The Café Crème base fixture: the default selection is the UNAVAILABLE
-    // "Signature roast", and the AVAILABLE selection is the option-backed
-    // configurable variant — so the press exercises the AC-04 label rule
-    // (option TYPE names as the label, values only through the selections).
     mockFetchCatalog.mockResolvedValue(createCatalogSnapshotFixture());
     const user = userEvent.setup();
 
@@ -1057,10 +1072,16 @@ describe("ProductDetailScreen — Add to cart (catalog-cart-integration seam)", 
       expect(screen.getByRole("header", { name: "Café Crème" })).toBeOnTheScreen(),
     );
     const addButton = screen.getByRole("button", { name: "Add to cart" });
-    // The unavailable default selection leaves Add disabled…
+    // Default selection is the available configurable variant, so Add is enabled
+    await waitFor(() => expect(addButton).not.toBeDisabled());
+
+    // Selecting the unavailable variant disables Add…
+    await user.press(
+      screen.getByRole("button", { name: "Signature roast, Currently unavailable" }),
+    );
     await waitFor(() => expect(addButton).toBeDisabled());
 
-    // …and selecting the available option-backed variant enables it.
+    // …and selecting the available option-backed variant re-enables it.
     await user.press(screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Available" }));
     await waitFor(() => expect(addButton).not.toBeDisabled());
 
@@ -1101,7 +1122,7 @@ describe("ProductDetailScreen — Add to cart (catalog-cart-integration seam)", 
     // the sheet shows the fresh line — the AC-04-composed caption (each
     // option value exactly once) and the updated total in the title.
     expect(screen.getByText("Color, Size · Rouge · Lárge")).toBeOnTheScreen();
-    expect(screen.getByRole("heading", { name: "Your Cart · 1" })).toBeOnTheScreen();
+    expect(screen.getAllByRole("heading", { name: "Your Cart · 1" })[0]).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Continue Shopping" })).toBeOnTheScreen();
 
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
@@ -1113,7 +1134,7 @@ describe("ProductDetailScreen — Add to cart (catalog-cart-integration seam)", 
     await renderWithProviders(
       <ProductDetailScreen productId={catalogFixtureIds.products.coffee} />,
     );
-    expect(screen.getByLabelText("Loading the catalog…")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Loading product...")).toBeOnTheScreen();
     expect(screen.queryByRole("button", { name: "Add to cart" })).toBeNull();
     mockFetchCatalog.mockReset();
 

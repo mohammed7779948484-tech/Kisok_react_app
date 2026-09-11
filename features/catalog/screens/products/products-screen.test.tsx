@@ -44,10 +44,26 @@ jest.mock("expo-router", () => ({
 
 // AppImage's fallback icon renders a lucide icon; stub it so card fallback
 // paths render without the SVG machinery.
-jest.mock("lucide-react-native", () => ({
-  __esModule: true,
-  ImageOff: () => null,
-}));
+jest.mock("lucide-react-native", () => {
+  const createMockIcon = (name: string) => {
+    const MockIcon = () => null;
+    MockIcon.displayName = name;
+    return MockIcon;
+  };
+  return new Proxy(
+    { __esModule: true },
+    {
+      get: (target: any, prop: string | symbol) => {
+        if (prop in target) return target[prop];
+        if (typeof prop === "string") {
+          target[prop] = createMockIcon(prop);
+          return target[prop];
+        }
+        return undefined;
+      },
+    },
+  );
+});
 
 jest.useFakeTimers();
 
@@ -277,10 +293,12 @@ describe("ProductsScreen", () => {
 
     // Unavailable products remain present with their textual availability.
     expect(
-      screen.getByRole("button", { name: "Everyday Tote, by KISOK Basics, Currently unavailable" }),
+      screen.getByRole("button", { name: "Everyday Tote, Currently unavailable" }),
     ).toBeOnTheScreen();
     expect(
-      screen.getByRole("button", { name: "Pocket Notebook, Currently unavailable" }),
+      screen.getByRole("button", {
+        name: "Pocket Notebook, by KISOK Basics, Currently unavailable",
+      }),
     ).toBeOnTheScreen();
     expect(
       screen.getByRole("button", { name: "Cotton Scarf, Currently unavailable" }),
@@ -305,8 +323,8 @@ describe("ProductsScreen", () => {
       const expectedLabel =
         name === "Café Crème"
           ? "Café Crème, by Maison Élite, Currently unavailable"
-          : name === "Everyday Tote"
-            ? "Everyday Tote, by KISOK Basics, Currently unavailable"
+          : name === "Pocket Notebook"
+            ? "Pocket Notebook, by KISOK Basics, Currently unavailable"
             : `${name}, Currently unavailable`;
       expect(screen.getByRole("button", { name: expectedLabel })).toBeOnTheScreen();
     }
@@ -330,9 +348,7 @@ describe("ProductsScreen", () => {
     await user.press(
       screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
     );
-    await user.press(
-      screen.getByRole("button", { name: "Everyday Tote, by KISOK Basics, Currently unavailable" }),
-    );
+    await user.press(screen.getByRole("button", { name: "Everyday Tote, Currently unavailable" }));
     await user.press(screen.getByRole("button", { name: "Trail Bottle, Available" }));
 
     expect(mockRouterPush).toHaveBeenCalledTimes(3);
@@ -444,7 +460,9 @@ describe("ProductsScreen", () => {
 
     // The populated grid stays on screen…
     expect(screen.getByRole("header", { name: "All products" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+    ).toBeOnTheScreen();
     // …and the full-screen error state does not replace it.
     expect(screen.queryByText("Something went wrong")).toBeNull();
     expect(screen.queryByText("We couldn't load the catalog. Please try again.")).toBeNull();

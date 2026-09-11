@@ -67,8 +67,11 @@ export function deriveVariantSelectionStrategy(
   // Check if any variant lacks options entirely
   const hasEmptyOptions = variants.some((v) => v.options.length === 0);
 
-  // Collect option types and signatures per variant
-  const dimensionMap = new Map<string, { typeName: string; values: Map<string, string> }>();
+  // Collect option types, signatures, and variant coverage count
+  const dimensionMap = new Map<
+    string,
+    { typeName: string; values: Map<string, string>; coverageCount: number }
+  >();
   const signatures = new Set<string>();
   let hasDuplicateSignatures = false;
 
@@ -97,7 +100,8 @@ export function deriveVariantSelectionStrategy(
       signatures.add(sig);
     }
 
-    // Accumulate dimensions
+    // Accumulate dimensions and track unique variant coverage
+    const seenTypesInVariant = new Set<string>();
     for (const opt of variant.options) {
       const typeId = opt.type.id;
       const typeName = opt.type.name;
@@ -105,9 +109,14 @@ export function deriveVariantSelectionStrategy(
       const val = opt.value.value;
 
       if (!dimensionMap.has(typeId)) {
-        dimensionMap.set(typeId, { typeName, values: new Map() });
+        dimensionMap.set(typeId, { typeName, values: new Map(), coverageCount: 0 });
       }
-      dimensionMap.get(typeId)!.values.set(valueId, val);
+      const entry = dimensionMap.get(typeId)!;
+      entry.values.set(valueId, val);
+      if (!seenTypesInVariant.has(typeId)) {
+        seenTypesInVariant.add(typeId);
+        entry.coverageCount += 1;
+      }
     }
   }
 
@@ -126,19 +135,21 @@ export function deriveVariantSelectionStrategy(
     dimensions.push({ typeId, typeName, values: valueList });
   }
 
-  // Separate fixed dimensions (only 1 value) from discriminating dimensions (>1 values)
+  // Separate fixed dimensions (only 1 value AND covers all variants) from discriminating dimensions (>1 values)
   const fixedDimensions: FixedOptionDimension[] = [];
   const discriminatingDimensions: OptionDimension[] = [];
 
   for (const dim of dimensions) {
-    if (dim.values.length <= 1 && dim.values[0]) {
+    const entry = dimensionMap.get(dim.typeId);
+    const coverage = entry?.coverageCount ?? 0;
+    if (coverage === variantCount && dim.values.length === 1 && dim.values[0]) {
       fixedDimensions.push({
         typeId: dim.typeId,
         typeName: dim.typeName,
         valueId: dim.values[0].valueId,
         value: dim.values[0].value,
       });
-    } else {
+    } else if (dim.values.length > 1) {
       discriminatingDimensions.push(dim);
     }
   }
@@ -192,7 +203,8 @@ export function deriveVariantSelectionStrategy(
   if (variantCount <= 4) {
     return {
       type: "small-concrete",
-      fixedDimensions: fixedDimensions.length > 0 ? fixedDimensions : undefined,
+      fixedDimensions:
+        isUniformDimensions && fixedDimensions.length > 0 ? fixedDimensions : undefined,
       variantCount,
     };
   }
@@ -200,7 +212,8 @@ export function deriveVariantSelectionStrategy(
   // Condition 4: Large Concrete Set (>= 5 variants)
   return {
     type: "large-concrete-picker",
-    fixedDimensions: fixedDimensions.length > 0 ? fixedDimensions : undefined,
+    fixedDimensions:
+      isUniformDimensions && fixedDimensions.length > 0 ? fixedDimensions : undefined,
     variantCount,
   };
 }
@@ -256,6 +269,42 @@ export function findVariantByOptionValues(
 }
 
 /**
+ * Resolves availability and compatibility for a candidate option value in a multi-dimensional selection.
+ * Checks whether selecting candidateValueId alongside current sibling selections produces a valid variant,
+ * and whether that candidate variant is in stock.
+ */
+export function resolveContextualOptionState(
+  variants: readonly CatalogVariantView[],
+  targetTypeId: string,
+  candidateValueId: string,
+  currentSelections: Record<string, string>,
+): { isCompatible: boolean; isAvailable: boolean; variant?: CatalogVariantView } {
+  const hypotheticalSelections = {
+    ...currentSelections,
+    [targetTypeId]: candidateValueId,
+  };
+  const match = resolveVariantByOptionValues(variants, hypotheticalSelections);
+  if (match.type === "resolved") {
+    return {
+      isCompatible: true,
+      isAvailable: match.variant.is_available,
+      variant: match.variant,
+    };
+  }
+  if (match.type === "ambiguous") {
+    const anyAvailable = match.candidates.some((v) => v.is_available);
+    return {
+      isCompatible: true,
+      isAvailable: anyAvailable,
+    };
+  }
+  return {
+    isCompatible: false,
+    isAvailable: false,
+  };
+}
+
+/**
  * Derives valid/compatible remaining option values for a given dimension based on current selections.
  */
 export function getValidOptionValuesForDimension(
@@ -291,6 +340,17 @@ export function getValidOptionValuesForDimension(
 }
 
 /**
+ * Checks whether phrase appears in text bounded by non-alphanumeric characters or string boundaries.
+ */
+function matchesTokenBoundary(text: string, phrase: string): boolean {
+  if (!text || !phrase) return false;
+  if (text === phrase) return true;
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "u");
+  return regex.test(text);
+}
+
+/**
  * Formats ordered structured variant details (e.g. "Color: Red · Size: Large"),
  * cleanly omitting information already communicated by title_override.
  */
@@ -300,15 +360,18 @@ export function formatVariantDetails(
 ): string | null {
   if (variant.options.length === 0) return null;
 
-  const titleLower = variant.title_override?.trim().toLowerCase() ?? "";
+  const normalizedTitle = variant.title_override?.normalize("NFD").toLowerCase().trim() ?? "";
 
   const relevantOptions = variant.options.filter((opt) => {
     const val = opt.value.value.trim();
     if (!val) return false;
     if (options?.omitOptionValues?.has(val)) return false;
-    // Omit if title_override already communicates this exact value
-    if (titleLower && titleLower === val.toLowerCase()) {
-      return false;
+    // Omit if title_override already communicates this exact value or phrase at token boundary
+    if (normalizedTitle) {
+      const normalizedVal = val.normalize("NFD").toLowerCase().trim();
+      if (matchesTokenBoundary(normalizedTitle, normalizedVal)) {
+        return false;
+      }
     }
     return true;
   });

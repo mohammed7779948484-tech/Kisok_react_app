@@ -59,7 +59,7 @@ export function ProductMediaGallery({
               <Pressable
                 key={item.mediaAssetId}
                 accessibilityRole="button"
-                accessibilityLabel={`${alt} thumbnail ${index + 1}`}
+                accessibilityLabel={`${alt} image ${index + 1}`}
                 accessibilityState={{ selected: isThumbSelected }}
                 aria-selected={isThumbSelected}
                 onPress={() => onSelectMedia(item.mediaAssetId)}

@@ -58,7 +58,13 @@ export const CategoryCard = memo(function CategoryCard({
             >
               {isSubcategory ? `In ${category.parent!.name}` : "Category"}
             </Text>
-            <Text variant="h3" numberOfLines={1} className="font-semibold">
+            <Text
+              variant="h3"
+              role={undefined}
+              aria-level={undefined}
+              numberOfLines={1}
+              className="font-semibold"
+            >
               {category.name}
             </Text>
           </View>

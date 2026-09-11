@@ -19,6 +19,7 @@ export type OptionPickerItem = {
   label: string;
   description?: string;
   isAvailable: boolean;
+  disabled?: boolean;
 };
 
 export type LargeOptionPickerSheetProps = {
@@ -88,11 +89,13 @@ export function LargeOptionPickerSheet({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`${fullLabel}, ${availabilityText}`}
-          accessibilityState={{ selected: isSelected }}
+          accessibilityState={{ selected: isSelected, disabled: item.disabled }}
+          disabled={item.disabled}
           onPress={() => handleSelect(item.id)}
           className={cn(
             "min-h-touch flex-row items-center justify-between border-b border-border/50 px-5 py-3.5 active:bg-muted/60",
             isSelected && "bg-muted/40",
+            item.disabled && "opacity-40",
           )}
         >
           <View className="flex-1 pr-3">

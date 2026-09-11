@@ -322,6 +322,30 @@ function ShowcaseFeaturedGrid({ items, onPress }: ShowcaseFeaturedGridProps) {
     );
   }
 
+  // Gate H: 4 items render as 2x2 on compact/medium and 4x1 on expanded landscape
+  if (count === 4) {
+    return (
+      <View className="flex-col gap-4 lg:flex-row">
+        <View className="flex-1 flex-row gap-4">
+          <View className="flex-1">
+            <ProductCard product={items[0]!} onPress={onPress} />
+          </View>
+          <View className="flex-1">
+            <ProductCard product={items[1]!} onPress={onPress} />
+          </View>
+        </View>
+        <View className="flex-1 flex-row gap-4">
+          <View className="flex-1">
+            <ProductCard product={items[2]!} onPress={onPress} />
+          </View>
+          <View className="flex-1">
+            <ProductCard product={items[3]!} onPress={onPress} />
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View className="flex-row flex-wrap gap-4">
       {items.map((product) => (

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { ArrowLeft, ChevronRight } from "lucide-react-native";
 import { useRouter } from "expo-router";
@@ -35,6 +35,20 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
   // Selected variant and image are screen-local React state
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [selectedMediaAssetId, setSelectedMediaAssetId] = useState<string | null>(null);
+
+  const product = catalog.data?.resolveProduct(productId);
+
+  // Gate E: Reconcile selectedVariantId if snapshot refreshes and previous variant ceased to exist
+  useEffect(() => {
+    if (product && selectedVariantId) {
+      const exists = product.variants.some((v) => v.id === selectedVariantId);
+      if (!exists) {
+        const recoveryVariant = resolveDefaultVariant(product.variants);
+        setSelectedVariantId(recoveryVariant?.id ?? null);
+        setSelectedMediaAssetId(null);
+      }
+    }
+  }, [product, selectedVariantId]);
 
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {
@@ -98,8 +112,6 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
       </Screen>
     );
   }
-
-  const product = view.resolveProduct(productId);
 
   if (product === undefined) {
     return (
@@ -166,7 +178,7 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
           size="compact"
           onPress={handleBack}
           className="min-h-touch gap-1.5 self-start pl-2"
-          accessibilityLabel="Go back to previous screen"
+          accessibilityLabel="Go back"
         >
           <Icon as={ArrowLeft} size={18} />
           <Text className="font-semibold">Back</Text>

@@ -9,6 +9,7 @@ import {
   formatVariantAvailability,
   formatVariantDetails,
   getValidOptionValuesForDimension,
+  resolveContextualOptionState,
   resolveDefaultVariant,
   resolveVariantByOptionValues,
 } from "./variant-selection";
@@ -240,6 +241,29 @@ describe("variant-selection", () => {
       const strategy = deriveVariantSelectionStrategy(variants);
       expect(strategy.type).toBe("large-concrete-picker");
     });
+
+    it("does not treat a dimension as fixed if coverage is less than variant count", () => {
+      // 3 variants: v1 has Flavor + Strength; v2 has Flavor + Strength; v3 has Flavor only.
+      // Strength has only 1 value ("20mg") but coverage is 2/3 variants.
+      const variants = [
+        makeMockVariant("v1", [
+          { typeId: "t1", typeName: "Flavor", valueId: "f1", value: "Mint" },
+          { typeId: "t2", typeName: "Strength", valueId: "s1", value: "20mg" },
+        ]),
+        makeMockVariant("v2", [
+          { typeId: "t1", typeName: "Flavor", valueId: "f2", value: "Berry" },
+          { typeId: "t2", typeName: "Strength", valueId: "s1", value: "20mg" },
+        ]),
+        makeMockVariant("v3", [
+          { typeId: "t1", typeName: "Flavor", valueId: "f3", value: "Mango" },
+        ]),
+      ];
+
+      const strategy = deriveVariantSelectionStrategy(variants);
+      // Because topology is non-uniform, falls back to small-concrete with fixedDimensions = undefined
+      expect(strategy.type).toBe("small-concrete");
+      expect(strategy.fixedDimensions).toBeUndefined();
+    });
   });
 
   describe("resolveVariantByOptionValues & findVariantByOptionValues", () => {
@@ -285,6 +309,59 @@ describe("variant-selection", () => {
       // findVariantByOptionValues must return undefined rather than guessing candidate[0]
       const found = findVariantByOptionValues(variants, { t1: "f1" });
       expect(found).toBeUndefined();
+    });
+  });
+
+  describe("resolveContextualOptionState", () => {
+    const variants = [
+      makeMockVariant(
+        "v1",
+        [
+          { typeId: "t1", typeName: "Flavor", valueId: "f1", value: "Mint" },
+          { typeId: "t2", typeName: "Strength", valueId: "s1", value: "20mg" },
+        ],
+        true,
+      ),
+      makeMockVariant(
+        "v2",
+        [
+          { typeId: "t1", typeName: "Flavor", valueId: "f1", value: "Mint" },
+          { typeId: "t2", typeName: "Strength", valueId: "s2", value: "50mg" },
+        ],
+        false, // out of stock
+      ),
+      makeMockVariant(
+        "v3",
+        [
+          { typeId: "t1", typeName: "Flavor", valueId: "f2", value: "Berry" },
+          { typeId: "t2", typeName: "Strength", valueId: "s1", value: "20mg" },
+        ],
+        true,
+      ),
+    ];
+
+    it("resolves compatible and in-stock option state", () => {
+      // Current selection: Flavor = Mint. Candidate: Strength = 20mg (v1, in-stock)
+      const state = resolveContextualOptionState(variants, "t2", "s1", { t1: "f1" });
+      expect(state.isCompatible).toBe(true);
+      expect(state.isAvailable).toBe(true);
+      expect(state.variant?.id).toBe("v1");
+    });
+
+    it("resolves compatible and out-of-stock option state", () => {
+      // Current selection: Flavor = Mint. Candidate: Strength = 50mg (v2, out of stock)
+      const state = resolveContextualOptionState(variants, "t2", "s2", { t1: "f1" });
+      expect(state.isCompatible).toBe(true);
+      expect(state.isAvailable).toBe(false);
+      expect(state.variant?.id).toBe("v2");
+    });
+
+    it("resolves incompatible option state for non-existent combinations", () => {
+      // Current selection: Flavor = Berry. Candidate: Strength = 50mg (no variant exists)
+      const state = resolveContextualOptionState(variants, "t2", "s2", { t1: "f2" });
+      expect(state.isCompatible).toBe(false);
+      expect(state.isAvailable).toBe(false);
+      expect(state.variant).toBeUndefined();
     });
   });
 
@@ -372,6 +449,41 @@ describe("variant-selection", () => {
 
       // Flavor: Watermelon is suppressed because title_override === "Watermelon"
       expect(formatVariantDetails(v)).toBe("20mg");
+    });
+
+    it("suppresses embedded option tokens cleanly at token boundaries", () => {
+      const v = makeMockVariant(
+        "v1",
+        [
+          { typeId: "t1", typeName: "Flavor", valueId: "f1", value: "Frozen Watermelon" },
+          { typeId: "t2", typeName: "Strength", valueId: "s1", value: "20mg" },
+        ],
+        true,
+        "Frozen Watermelon 20mg",
+      );
+
+      // Both Frozen Watermelon and 20mg are embedded at token boundaries in title_override
+      expect(formatVariantDetails(v)).toBeNull();
+    });
+
+    it("protects short option tokens from accidental substring collision", () => {
+      const v1 = makeMockVariant(
+        "v1",
+        [{ typeId: "t1", typeName: "Size", valueId: "m", value: "M" }],
+        true,
+        "Medium Roast",
+      );
+      // "M" does not token-boundary-match inside "Medium"
+      expect(formatVariantDetails(v1)).toBe("M");
+
+      const v2 = makeMockVariant(
+        "v2",
+        [{ typeId: "t1", typeName: "Model", valueId: "mod9", value: "9" }],
+        true,
+        "Device 900",
+      );
+      // "9" does not token-boundary-match inside "900"
+      expect(formatVariantDetails(v2)).toBe("9");
     });
 
     it("returns null when all attributes match title_override or no options exist", () => {

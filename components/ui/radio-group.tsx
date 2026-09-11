@@ -25,11 +25,26 @@ type RadioGroupItemProps = Omit<
   "children"
 > & { children?: React.ReactNode };
 
-function RadioGroupItem({ className, children, ...props }: RadioGroupItemProps) {
+function RadioGroupItem({
+  className,
+  children,
+  role,
+  accessibilityRole,
+  accessibilityState,
+  ...props
+}: RadioGroupItemProps) {
   const selected = useContext(RadioGroupValueContext) === props.value;
   return (
     <TextClassContext.Provider value={selected ? "text-primary-foreground" : "text-foreground"}>
       <RadioGroupPrimitive.Item
+        role={role}
+        accessibilityRole={accessibilityRole}
+        accessibilityState={{
+          disabled: props.disabled ?? false,
+          selected,
+          checked: selected,
+          ...accessibilityState,
+        }}
         className={cn(
           "min-h-control flex-row items-center gap-4 rounded-md border bg-card p-4 active:scale-[0.99]",
           selected ? "border-primary bg-primary" : "border-border active:bg-secondary/60",

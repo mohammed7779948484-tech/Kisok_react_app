@@ -217,7 +217,7 @@ export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) 
             {categoryDiscoveryHeader}
             <EmptyState
               title="No products from this brand"
-              description="This brand currently has no products in this category. Clear the brand filter to browse the full department."
+              description={`This brand currently has no products in this category. Clear the brand filter to browse the full ${category.parent !== null ? "category" : "department"}.`}
               action={{ label: "Show all brands", onPress: handleResetBrand }}
               className="min-h-80"
             />

@@ -86,7 +86,11 @@ export function CategoriesScreen() {
       settings={view.settings}
       title="All categories"
       subtitle="Shop by department and category"
-      countLabel={`${view.rootCategories.length} departments`}
+      countLabel={
+        view.rootCategories.length === 1
+          ? "1 department"
+          : `${view.rootCategories.length} departments`
+      }
     >
       <View className="flex-1 px-5 md:px-8">
         <FlashList<CategoryFamily>

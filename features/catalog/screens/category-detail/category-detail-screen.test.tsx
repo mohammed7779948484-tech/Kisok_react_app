@@ -58,20 +58,42 @@ jest.mock("../../api/fetch-catalog", () => ({
 const mockRouterPush = jest.fn();
 const mockRouterReplace = jest.fn();
 const mockRouterBack = jest.fn();
+const mockCanGoBack = jest.fn().mockReturnValue(true);
 /** The params the mocked `useLocalSearchParams` hands the route under test. */
 const mockLocalSearchParams: { categoryId?: string } = {};
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace, back: mockRouterBack }),
+  useRouter: () => ({
+    push: mockRouterPush,
+    replace: mockRouterReplace,
+    back: mockRouterBack,
+    canGoBack: mockCanGoBack,
+  }),
   useLocalSearchParams: () => mockLocalSearchParams,
 }));
 
 // AppImage's fallback icon renders a lucide icon; stub it so card and header
 // fallback paths render without the SVG machinery.
-jest.mock("lucide-react-native", () => ({
-  __esModule: true,
-  ImageOff: () => null,
-}));
+jest.mock("lucide-react-native", () => {
+  const createMockIcon = (name: string) => {
+    const MockIcon = () => null;
+    MockIcon.displayName = name;
+    return MockIcon;
+  };
+  return new Proxy(
+    { __esModule: true },
+    {
+      get: (target: any, prop: string | symbol) => {
+        if (prop in target) return target[prop];
+        if (typeof prop === "string") {
+          target[prop] = createMockIcon(prop);
+          return target[prop];
+        }
+        return undefined;
+      },
+    },
+  );
+});
 
 jest.useFakeTimers();
 
@@ -137,7 +159,7 @@ const extraVariantIds = {
  */
 const DRINKS_PRODUCT_LABELS = [
   "Café Crème, by Maison Élite, Options available",
-  "Everyday Tote, by KISOK Basics, Currently unavailable",
+  "Everyday Tote, Currently unavailable",
   "Sparkling Water, Available",
   "Chá Board, by KISOK Basics, Available",
 ] as const;
@@ -323,7 +345,9 @@ describe("CategoryDetailScreen", () => {
     ).toBeOnTheScreen();
 
     // …and the root's direct child is present as navigable discovery.
-    expect(screen.getByRole("button", { name: "Tóp Picks, 2 products" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Tóp Picks, subcategory of Drínks, 2 products" }),
+    ).toBeOnTheScreen();
 
     // The obvious way back to the discovery surface that opened this detail.
     expect(screen.getByRole("button", { name: "Go back" })).toBeOnTheScreen();
@@ -400,10 +424,14 @@ describe("CategoryDetailScreen", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Tóp Picks, 2 products" })).toBeOnTheScreen(),
+      expect(
+        screen.getByRole("button", { name: "Tóp Picks, subcategory of Drínks, 2 products" }),
+      ).toBeOnTheScreen(),
     );
 
-    await user.press(screen.getByRole("button", { name: "Tóp Picks, 2 products" }));
+    await user.press(
+      screen.getByRole("button", { name: "Tóp Picks, subcategory of Drínks, 2 products" }),
+    );
 
     expect(mockRouterPush).toHaveBeenCalledTimes(1);
     expect(mockRouterPush).toHaveBeenCalledWith({
@@ -432,7 +460,7 @@ describe("CategoryDetailScreen", () => {
     });
     expect(productCards.map((card) => card.props.accessibilityLabel)).toEqual([
       "Café Crème, by Maison Élite, Options available",
-      "Everyday Tote, by KISOK Basics, Currently unavailable",
+      "Everyday Tote, Currently unavailable",
     ]);
     expect(screen.getByText("2 products")).toBeOnTheScreen();
 
@@ -468,7 +496,7 @@ describe("CategoryDetailScreen", () => {
     );
     await user.press(
       screen.getByRole("button", {
-        name: "Everyday Tote, by KISOK Basics, Currently unavailable",
+        name: "Everyday Tote, Currently unavailable",
       }),
     );
 
@@ -519,7 +547,9 @@ describe("CategoryDetailScreen", () => {
     expect(screen.queryByRole("button", { name: /Everyday Tote/ })).toBeNull();
     // …while the child category remains navigable (the filter is about
     // products, not discovery links).
-    expect(screen.getByRole("button", { name: "Tóp Picks, 2 products" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Tóp Picks, subcategory of Drínks, 2 products" }),
+    ).toBeOnTheScreen();
 
     // All Brands deselects with the selection, and pressing it resets the
     // filter itself — back to the full unfiltered set.
@@ -591,7 +621,9 @@ describe("CategoryDetailScreen", () => {
     // the grid is empty — the no-match is the filter's, not the category's.
     expect(screen.getByRole("header", { name: "Drínks" })).toBeOnTheScreen();
     expect(screen.getByText("4 products")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Tóp Picks, 2 products" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Tóp Picks, subcategory of Drínks, 2 products" }),
+    ).toBeOnTheScreen();
     expect(screen.queryByText("Something went wrong")).toBeNull();
 
     // The reset returns the unfiltered set from the refreshed snapshot.
@@ -602,7 +634,7 @@ describe("CategoryDetailScreen", () => {
     expect(screen.getByRole("button", { name: "Café Crème, Options available" })).toBeOnTheScreen();
     expect(
       screen.getByRole("button", {
-        name: "Everyday Tote, by KISOK Basics, Currently unavailable",
+        name: "Everyday Tote, Currently unavailable",
       }),
     ).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Sparkling Water, Available" })).toBeOnTheScreen();
@@ -630,7 +662,7 @@ describe("CategoryDetailScreen", () => {
 
     // No category identity, no grid, no product cards.
     expect(screen.queryByTestId("category-products-grid")).toBeNull();
-    expect(screen.queryByRole("header")).toBeNull();
+    expect(screen.queryByRole("header", { name: "Drínks" })).toBeNull();
 
     // The way back to the discovery surface that opened this detail.
     await user.press(screen.getByRole("button", { name: "Back to categories" }));

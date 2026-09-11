@@ -68,14 +68,20 @@ export const ProductCard = memo(function ProductCard({
             </View>
 
             {/* Stable two-line title slot */}
-            <View className="min-h-[44px] justify-start">
-              <Text variant="h3" numberOfLines={2} className="font-semibold leading-tight">
+            <View className="h-11 justify-start">
+              <Text
+                variant="h3"
+                role={undefined}
+                aria-level={undefined}
+                numberOfLines={2}
+                className="font-semibold leading-tight"
+              >
                 {product.name}
               </Text>
             </View>
           </View>
 
-          <View className="flex-row flex-wrap items-center justify-between gap-2 pt-1">
+          <View className="h-7 flex-row items-center justify-between gap-2">
             <AvailabilityBadge
               type="product"
               isAvailable={product.isAvailable}

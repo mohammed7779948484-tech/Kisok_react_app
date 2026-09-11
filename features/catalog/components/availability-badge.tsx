@@ -10,6 +10,8 @@ export type AvailabilityBadgeProps = {
   /** Optional custom text override */
   label?: string;
   className?: string;
+  "aria-hidden"?: boolean;
+  accessible?: boolean;
 };
 
 export function AvailabilityBadge({
@@ -18,6 +20,8 @@ export function AvailabilityBadge({
   variantCount,
   label: customLabel,
   className,
+  "aria-hidden": ariaHidden,
+  accessible,
 }: AvailabilityBadgeProps) {
   const resolvedLabel =
     customLabel ??
@@ -32,10 +36,12 @@ export function AvailabilityBadge({
   return (
     <Badge
       variant={isAvailable ? "success" : "destructive"}
-      accessibilityLabel={resolvedLabel}
+      accessibilityLabel={ariaHidden ? undefined : resolvedLabel}
+      aria-hidden={ariaHidden}
+      accessible={accessible ?? (ariaHidden ? false : true)}
       className={className}
     >
-      <Text variant="caption" className="font-semibold">
+      <Text variant="caption" className="font-semibold" aria-hidden={ariaHidden}>
         {resolvedLabel}
       </Text>
     </Badge>

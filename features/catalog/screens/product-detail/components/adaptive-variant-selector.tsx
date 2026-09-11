@@ -19,7 +19,7 @@ import {
   formatVariantAvailability,
   formatVariantDetails,
   formatVariantSummary,
-  getValidOptionValuesForDimension,
+  resolveContextualOptionState,
   resolveVariantByOptionValues,
   type OptionDimension,
 } from "../../../model/variant-selection";
@@ -195,10 +195,19 @@ export function AdaptiveVariantSelector({
             <ToggleGroupItem
               key={val.valueId}
               value={val.valueId}
-              className="h-touch min-h-touch px-4 py-2.5"
+              className="h-touch min-h-touch flex-col items-center justify-center px-4 py-2"
               accessibilityLabel={`${val.value}, ${val.isAvailable ? "Available" : "Currently unavailable"}`}
             >
-              <Text>{val.value}</Text>
+              <Text className="font-semibold">{val.value}</Text>
+              {!val.isAvailable ? (
+                <Text
+                  variant="caption"
+                  tone="destructive"
+                  className="text-[11px] font-medium leading-none"
+                >
+                  Unavailable
+                </Text>
+              ) : null}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
@@ -219,11 +228,6 @@ export function AdaptiveVariantSelector({
 
         {strategy.dimensions.map((dim) => {
           const selectedValueId = currentSelections[dim.typeId] ?? "";
-          const validOptionIds = getValidOptionValuesForDimension(
-            variants,
-            dim.typeId,
-            currentSelections,
-          );
 
           const handleDimensionChange = (newValueId: string | undefined) => {
             if (!newValueId) return;
@@ -269,7 +273,7 @@ export function AdaptiveVariantSelector({
             );
           }
 
-          // Inline toggle group for <= 6 values
+          // Inline toggle group for <= 6 values with contextual availability & compatibility
           return (
             <View key={dim.typeId} className="gap-2.5">
               <Text variant="label" tone="primary">
@@ -283,16 +287,43 @@ export function AdaptiveVariantSelector({
                 accessibilityLabel={`Select ${dim.typeName}`}
               >
                 {dim.values.map((val) => {
-                  const isValidCombo = validOptionIds.has(val.valueId);
+                  const contextual = resolveContextualOptionState(
+                    variants,
+                    dim.typeId,
+                    val.valueId,
+                    currentSelections,
+                  );
+                  const isCompatible = contextual.isCompatible;
+                  const isAvailable = contextual.isAvailable;
+
+                  let a11yStatus = "Available";
+                  if (!isCompatible) {
+                    a11yStatus = "Not available with current selection";
+                  } else if (!isAvailable) {
+                    a11yStatus = "Currently unavailable";
+                  }
+
                   return (
                     <ToggleGroupItem
                       key={val.valueId}
                       value={val.valueId}
-                      disabled={!isValidCombo}
-                      className={cn("h-touch min-h-touch px-4 py-2", !isValidCombo && "opacity-30")}
-                      accessibilityLabel={`${val.value}, ${isValidCombo ? "Compatible" : "Not available with current selection"}`}
+                      disabled={!isCompatible}
+                      className={cn(
+                        "h-touch min-h-touch flex-col items-center justify-center px-4 py-2",
+                        !isCompatible && "opacity-30",
+                      )}
+                      accessibilityLabel={`${val.value}, ${a11yStatus}`}
                     >
-                      <Text>{val.value}</Text>
+                      <Text className="font-semibold">{val.value}</Text>
+                      {isCompatible && !isAvailable ? (
+                        <Text
+                          variant="caption"
+                          tone="destructive"
+                          className="text-[11px] font-medium leading-none"
+                        >
+                          Unavailable
+                        </Text>
+                      ) : null}
                     </ToggleGroupItem>
                   );
                 })}
@@ -309,11 +340,25 @@ export function AdaptiveVariantSelector({
               if (!open) setActiveDimensionPicker(null);
             }}
             title={`Choose ${activeDimensionPicker.typeName}`}
-            items={activeDimensionPicker.values.map((v) => ({
-              id: v.valueId,
-              label: v.value,
-              isAvailable: v.isAvailable,
-            }))}
+            items={activeDimensionPicker.values.map((v) => {
+              const contextual = resolveContextualOptionState(
+                variants,
+                activeDimensionPicker.typeId,
+                v.valueId,
+                currentSelections,
+              );
+              return {
+                id: v.valueId,
+                label: v.value,
+                isAvailable: contextual.isAvailable,
+                disabled: !contextual.isCompatible,
+                description: !contextual.isCompatible
+                  ? "Not available with current selection"
+                  : !contextual.isAvailable
+                    ? "Currently unavailable"
+                    : undefined,
+              };
+            })}
             selectedId={currentSelections[activeDimensionPicker.typeId] ?? ""}
             onSelect={(valId) => {
               const updated = { ...currentSelections, [activeDimensionPicker.typeId]: valId };
@@ -421,6 +466,8 @@ export function AdaptiveVariantSelector({
             <RadioGroupItem
               key={variant.id}
               value={variant.id}
+              role="button"
+              accessibilityRole="button"
               accessibilityLabel={`${variant.label}, ${availability.label}`}
               className={cn(
                 "rounded-xl border p-4 transition-all active:scale-[0.99]",
@@ -436,8 +483,12 @@ export function AdaptiveVariantSelector({
                     {details}
                   </Text>
                 ) : null}
-                <View className="pt-0.5">
-                  <AvailabilityBadge isAvailable={variant.is_available} type="variant" />
+                <View className="pt-0.5" aria-hidden>
+                  <AvailabilityBadge
+                    isAvailable={variant.is_available}
+                    type="variant"
+                    aria-hidden={true}
+                  />
                 </View>
               </View>
             </RadioGroupItem>

@@ -41,12 +41,27 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace }),
 }));
 
-// AppImage's fallback icon renders a lucide icon; stub it so card fallback
-// paths render without the SVG machinery.
-jest.mock("lucide-react-native", () => ({
-  __esModule: true,
-  ImageOff: () => null,
-}));
+jest.mock("lucide-react-native", () => {
+  const createMockIcon = (name: string) => {
+    const MockIcon = () => null;
+    MockIcon.displayName = name;
+    return MockIcon;
+  };
+
+  return new Proxy(
+    { __esModule: true },
+    {
+      get: (target: any, prop: string | symbol) => {
+        if (prop in target) return target[prop];
+        if (typeof prop === "string") {
+          target[prop] = createMockIcon(prop);
+          return target[prop];
+        }
+        return undefined;
+      },
+    },
+  );
+});
 
 jest.useFakeTimers();
 
@@ -208,7 +223,7 @@ describe("SearchScreen", () => {
     await waitFor(() => expect(screen.getByRole("header", { name: "Search" })).toBeOnTheScreen());
 
     // The accessibly labelled search input is present and still empty.
-    const input = screen.getByLabelText("Search products");
+    const input = screen.getByLabelText("Search catalog");
     expect(input).toHaveDisplayValue("");
 
     // Idle is a distinct inviting prompt — not the too-short hint, not the
@@ -233,7 +248,7 @@ describe("SearchScreen", () => {
     await renderWithProviders(<SearchScreen />);
 
     await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search products");
+    const input = screen.getByLabelText("Search catalog");
 
     await user.type(input, "   ");
 
@@ -340,7 +355,7 @@ describe("SearchScreen", () => {
     });
     expect(resultCards.map((card) => card.props.accessibilityLabel)).toEqual([
       "Café Crème, by Maison Élite, Options available",
-      "Everyday Tote, by KISOK Basics, Currently unavailable",
+      "Everyday Tote, Currently unavailable",
     ]);
     expect(screen.queryByRole("button", { name: /Pocket Notebook/ })).toBeNull();
   });

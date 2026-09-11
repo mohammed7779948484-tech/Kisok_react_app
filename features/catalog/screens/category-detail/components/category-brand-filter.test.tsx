@@ -2,6 +2,28 @@ import { renderWithProviders, screen, userEvent } from "@/core/testing";
 
 import { CategoryBrandFilter } from "./category-brand-filter";
 
+jest.mock("lucide-react-native", () => {
+  const createMockIcon = (name: string) => {
+    const MockIcon = () => null;
+    MockIcon.displayName = name;
+    return MockIcon;
+  };
+
+  return new Proxy(
+    { __esModule: true },
+    {
+      get: (target: any, prop: string | symbol) => {
+        if (prop in target) return target[prop];
+        if (typeof prop === "string") {
+          target[prop] = createMockIcon(prop);
+          return target[prop];
+        }
+        return undefined;
+      },
+    },
+  );
+});
+
 /**
  * Behaviour for the screen-local Category Brand Filter (AC-05).
  *

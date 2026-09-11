@@ -33,14 +33,10 @@ export function CategoryBrandFilter({
     }
   };
 
-  if (options.length === 0) {
-    return null;
-  }
-
   return (
     <View className={cn("gap-2", className)}>
       <Text variant="caption" tone="muted" className="font-semibold">
-        Filter by brand:
+        Filter by brand
       </Text>
       <ScrollView
         horizontal

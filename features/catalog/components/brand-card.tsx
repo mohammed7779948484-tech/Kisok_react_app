@@ -55,7 +55,13 @@ export const BrandCard = memo(function BrandCard({ brand, onPress, className }: 
             >
               Brand
             </Text>
-            <Text variant="h3" numberOfLines={1} className="font-semibold">
+            <Text
+              variant="h3"
+              role={undefined}
+              aria-level={undefined}
+              numberOfLines={1}
+              className="font-semibold"
+            >
               {brand.name}
             </Text>
           </View>

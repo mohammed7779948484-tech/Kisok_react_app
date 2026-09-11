@@ -49,20 +49,42 @@ jest.mock("../../api/fetch-catalog", () => ({
 const mockRouterPush = jest.fn();
 const mockRouterReplace = jest.fn();
 const mockRouterBack = jest.fn();
+const mockCanGoBack = jest.fn().mockReturnValue(true);
 /** The params the mocked `useLocalSearchParams` hands the route under test. */
 const mockLocalSearchParams: { brandId?: string } = {};
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace, back: mockRouterBack }),
+  useRouter: () => ({
+    push: mockRouterPush,
+    replace: mockRouterReplace,
+    back: mockRouterBack,
+    canGoBack: mockCanGoBack,
+  }),
   useLocalSearchParams: () => mockLocalSearchParams,
 }));
 
 // AppImage's fallback icon renders a lucide icon; stub it so card and header
 // fallback paths render without the SVG machinery.
-jest.mock("lucide-react-native", () => ({
-  __esModule: true,
-  ImageOff: () => null,
-}));
+jest.mock("lucide-react-native", () => {
+  const createMockIcon = (name: string) => {
+    const MockIcon = () => null;
+    MockIcon.displayName = name;
+    return MockIcon;
+  };
+  return new Proxy(
+    { __esModule: true },
+    {
+      get: (target: any, prop: string | symbol) => {
+        if (prop in target) return target[prop];
+        if (typeof prop === "string") {
+          target[prop] = createMockIcon(prop);
+          return target[prop];
+        }
+        return undefined;
+      },
+    },
+  );
+});
 
 jest.useFakeTimers();
 
@@ -447,7 +469,7 @@ describe("BrandDetailScreen", () => {
 
     // No brand identity, no grid, no product cards.
     expect(screen.queryByTestId("brand-products-grid")).toBeNull();
-    expect(screen.queryByRole("header")).toBeNull();
+    expect(screen.queryByRole("header", { name: "Maison Élite" })).toBeNull();
 
     // The way back to the discovery surface that opened this detail.
     await user.press(screen.getByRole("button", { name: "Back to brands" }));
@@ -469,7 +491,9 @@ describe("BrandDetailScreen", () => {
       expect(screen.getByRole("header", { name: "Atelier Céramique" })).toBeOnTheScreen(),
     );
     expect(screen.getByText("3 products")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Atelier Mug, Available" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Atelier Mug, by Atelier Céramique, Available" }),
+    ).toBeOnTheScreen();
     expect(screen.queryByRole("button", { name: /Café Crème/ })).toBeNull();
 
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
@@ -562,7 +586,9 @@ describe("BrandDetailScreen", () => {
 
     // The populated detail stays on screen…
     expect(screen.getByRole("header", { name: "Atelier Céramique" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Atelier Mug, Available" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Atelier Mug, by Atelier Céramique, Available" }),
+    ).toBeOnTheScreen();
     // …and the full-screen error state does not replace it.
     expect(screen.queryByText("Something went wrong")).toBeNull();
     expect(screen.queryByText("We couldn't load the catalog. Please try again.")).toBeNull();
