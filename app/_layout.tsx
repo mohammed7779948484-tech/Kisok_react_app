@@ -15,6 +15,7 @@ import { AuthProvider, useAuth } from "@/core/auth";
 import { QueryProvider } from "@/core/query";
 import { NAV_THEME } from "@/core/theme";
 import { StartupScreen } from "@/features/auth";
+import { DeviceModeProvider, deviceRoleAccess, useDeviceMode } from "@/features/device-mode";
 
 export const unstable_settings = { anchor: "index" };
 
@@ -24,9 +25,17 @@ export const unstable_settings = { anchor: "index" };
  * Route access is declared with `Stack.Protected` guards rather than redirect
  * effects, so an unreachable screen simply is not in the navigator. This is UX
  * protection only — Supabase RLS is the actual authorization boundary.
+ *
+ * Two things decide what is reachable: WHO is signed in (`useAuth`) and WHAT
+ * kind of tablet this is (`useDeviceMode`). The device check can only ever
+ * withhold an experience, never grant one — see `features/device-mode`.
+ *
+ * Exported for the guard-table test in `app/__tests__`; Expo Router uses the
+ * default export below.
  */
-function RootNavigator() {
+export function RootNavigator() {
   const { status, profile } = useAuth();
+  const deviceMode = useDeviceMode();
 
   // Hold the whole app on one screen until identity is known, so no route
   // renders against a half-resolved session.
@@ -35,6 +44,11 @@ function RootNavigator() {
   }
 
   const ready = status === "ready";
+  // "allowed" on an ordinary tablet, "blocked" on a customer kiosk, "pending"
+  // until the managed configuration has been read. Only `preparation` is ever
+  // withheld; the customer experience is correct on both kinds of tablet.
+  const preparationAccess =
+    ready && profile ? deviceRoleAccess(profile.role, deviceMode) : "pending";
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
@@ -52,8 +66,14 @@ function RootNavigator() {
         <Stack.Screen name="(customer)" />
       </Stack.Protected>
 
-      <Stack.Protected guard={ready && profile?.role === "preparation"}>
+      <Stack.Protected guard={profile?.role === "preparation" && preparationAccess === "allowed"}>
         <Stack.Screen name="(preparation)" />
+      </Stack.Protected>
+
+      {/* This tablet is the customer kiosk and a preparation employee signed in.
+          The account is valid; it simply belongs on an employee tablet. */}
+      <Stack.Protected guard={profile?.role === "preparation" && preparationAccess === "blocked"}>
+        <Stack.Screen name="device-mismatch" />
       </Stack.Protected>
 
       {/* Development-only surfaces. Unreachable in a production build. */}
@@ -82,7 +102,12 @@ export default function RootLayout() {
             <EnvGate>
               <QueryProvider>
                 <AuthProvider>
-                  <RootNavigator />
+                  {/* Reads the MDM-pushed managed configuration once and keeps
+                    it current. Mounted here because the root navigator's guards
+                    consume it. */}
+                  <DeviceModeProvider>
+                    <RootNavigator />
+                  </DeviceModeProvider>
                   {/* Hosts dialogs and adaptive sheets. Must be mounted once, here. */}
                   <PortalHost />
                 </AuthProvider>

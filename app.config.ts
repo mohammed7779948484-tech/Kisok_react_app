@@ -42,6 +42,10 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    // Declares the Android Enterprise managed-configuration schema so
+    // ManageEngine can push `kiosk_device_role` to this package. It adds
+    // manifest meta-data and res/xml only — no kiosk enforcement.
+    "./plugins/with-managed-configuration.ts",
     [
       "expo-splash-screen",
       {
