@@ -82,7 +82,9 @@ experience is correct on both device kinds.
 ## Constraints
 
 - Managed configurations are Android-only. On web and in jest the native module
-  is absent, which is itself the platform verdict: `standard`.
+  is absent, which is itself the platform verdict: `standard`. On Android the
+  module missing is NOT that verdict — it means a broken build, and derives
+  `unknown` so Preparation stays withheld.
 - `app/**` may not import Zustand, TanStack Query or Supabase; the feature
   exposes a provider and hooks.
 - No new Supabase contract, grant, or RLS change. None is needed.

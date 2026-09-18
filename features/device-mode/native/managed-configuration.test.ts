@@ -9,6 +9,10 @@ jest.mock("@/modules/kiosk-policy/src", () => ({
   getKioskPolicyModule: jest.fn(),
 }));
 
+// Mutable Platform, so the Android branch can be exercised from a suite that
+// jest-expo otherwise runs as ios.
+jest.mock("react-native", () => ({ Platform: { OS: "ios" } }));
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { getKioskPolicyModule } = require("@/modules/kiosk-policy/src") as {
   getKioskPolicyModule: jest.Mock;
@@ -30,10 +34,25 @@ beforeEach(() => {
 afterEach(() => resetLogging());
 
 describe("readDeviceMode", () => {
-  it("is standard where the native module does not exist — web, jest, any non-Android platform", async () => {
+  it("is standard where the native module does not exist on a NON-Android platform", async () => {
+    // Managed configurations are an Android Enterprise capability. On web and
+    // in jest there is no DPC at all, so absence is the platform's answer.
     getKioskPolicyModule.mockReturnValue(null);
 
     await expect(readDeviceMode()).resolves.toBe("standard");
+  });
+
+  it("is unknown when the module is missing ON ANDROID — that is a broken build, not an ordinary tablet", async () => {
+    // A kiosk APK whose module failed to register would otherwise enable
+    // Preparation on the locked tablet. Fail closed instead.
+    const { Platform } = jest.requireMock("react-native") as { Platform: { OS: string } };
+    const previous = Platform.OS;
+    Platform.OS = "android";
+    getKioskPolicyModule.mockReturnValue(null);
+
+    await expect(readDeviceMode()).resolves.toBe("unknown");
+
+    Platform.OS = previous;
   });
 
   it("derives customer-kiosk from the MDM-pushed managed configuration", async () => {

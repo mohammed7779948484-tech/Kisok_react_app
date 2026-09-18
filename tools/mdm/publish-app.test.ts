@@ -420,3 +420,27 @@ it("fails closed when the listing is longer than the page bound, rather than cre
   expect(result.failure).toMatch(/did not finish within 10 pages/i);
   expect(calls.some((c) => c.method === "POST" && c.url.includes("/api/v1/mdm/apps"))).toBe(false);
 });
+
+it("enforces the page bound on the paging.next path too, not just the offset path", async () => {
+  // The tenant answers with a paging.next envelope every time. If the bound is
+  // only checked on the offset path, the `continue` skips it, the loop ends on
+  // its own condition, and `absent` takes the create branch — a duplicate app
+  // after the APK is already uploaded.
+  const { deps: d, calls } = deps({
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
+    "GET /api/v1/mdm/apps": () => ({
+      status: 200,
+      body: {
+        apps: [{ app_id: 1, app_name: "Other", identifier: "com.other" }],
+        paging: { next: "https://mdm.manageengine.com/api/v1/mdm/apps?limit=50&offset=999" },
+      },
+    }),
+  });
+
+  const result = await publish(INPUTS, d);
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.failure).toMatch(/did not finish within 10 pages/i);
+  expect(calls.some((c) => c.method === "POST" && c.url.includes("/api/v1/mdm/apps"))).toBe(false);
+});

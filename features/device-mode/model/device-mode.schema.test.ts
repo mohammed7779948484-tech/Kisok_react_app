@@ -37,10 +37,21 @@ describe("deriveDeviceMode", () => {
     expect(deriveDeviceMode({})).toBe("standard");
   });
 
-  it("is standard for any other value of the key", () => {
-    expect(deriveDeviceMode({ kiosk_device_role: "employee" })).toBe("standard");
-    expect(deriveDeviceMode({ kiosk_device_role: "CUSTOMER_KIOSK" })).toBe("standard");
-    expect(deriveDeviceMode({ kiosk_device_role: true })).toBe("standard");
+  // BEHAVIOUR CHANGE. These rows previously asserted "standard", which was a
+  // fail-OPEN: a present-but-unrecognised value only ever comes from an MDM
+  // that manages this device, and calling that an ordinary employee tablet is
+  // the one wrong answer. An ordinary tablet has NO managed configuration at
+  // all, so absence — not a wrong value — is what means "standard".
+  it("is unknown for any other PRESENT value of the key, including a wrong type", () => {
+    expect(deriveDeviceMode({ kiosk_device_role: "employee" })).toBe("unknown");
+    expect(deriveDeviceMode({ kiosk_device_role: "CUSTOMER_KIOSK" })).toBe("unknown");
+    expect(deriveDeviceMode({ kiosk_device_role: "customer-kiosk" })).toBe("unknown");
+    expect(deriveDeviceMode({ kiosk_device_role: true })).toBe("unknown");
+    expect(deriveDeviceMode({ kiosk_device_role: 1 })).toBe("unknown");
+  });
+
+  it("is still standard when the key is absent but other restrictions exist", () => {
+    expect(deriveDeviceMode({ some_other_policy: "x" })).toBe("standard");
   });
 
   it("is unknown while Android reports restrictions_pending, even with a role already set", () => {

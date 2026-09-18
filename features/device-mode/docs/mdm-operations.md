@@ -30,7 +30,7 @@ all seven are present.
 Compute the fingerprint once, from the keystore:
 
 ```bash
-keytool -exportcert -keystore <keystore> -alias <alias> | sha256sum
+keytool -exportcert -keystore <keystore> -alias <alias> | sha256sum | cut -d' ' -f1
 ```
 
 **Environment.** The workflow targets a GitHub environment named

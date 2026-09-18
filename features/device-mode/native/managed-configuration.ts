@@ -1,3 +1,5 @@
+import { Platform } from "react-native";
+
 import { getKioskPolicyModule } from "@/modules/kiosk-policy/src";
 import { createLogger } from "@/core/logging";
 
@@ -12,19 +14,29 @@ const log = createLogger("device-mode");
 /**
  * The platform boundary: the only place that touches the native module.
  *
- * Absence of the module is a legitimate platform answer. Managed
- * configurations are an Android Enterprise capability, so on web, in jest and
- * on any non-Android platform there is no managing DPC and the device is, by
- * definition, an ordinary one.
+ * Absence of the module means different things on different platforms, and
+ * conflating them is a fail-open:
  *
- * A device that DOES have the module but whose payload cannot be read or
- * trusted is a different case, and it fails closed to `unknown` — claiming
- * `standard` there would fail open on a managed device, which is the one
- * outcome this feature exists to prevent.
+ * - NOT Android (web, jest) — managed configurations are an Android
+ *   Enterprise capability, so there is no DPC at all and the device is by
+ *   definition an ordinary one. `standard`.
+ * - Android — the module SHOULD be there. Missing means autolinking or
+ *   registration failed, i.e. a broken build, and a kiosk APK in that state
+ *   would otherwise enable Preparation on a locked tablet. `unknown`.
+ *
+ * A device that has the module but whose payload cannot be read or trusted
+ * fails closed the same way — claiming `standard` on a managed device is the
+ * one outcome this feature exists to prevent.
  */
 export async function readDeviceMode(): Promise<DeviceMode> {
   const nativeModule = getKioskPolicyModule();
-  if (nativeModule === null) return "standard";
+  if (nativeModule === null) {
+    if (Platform.OS !== "android") return "standard";
+    log.error(
+      "The kiosk-policy native module is missing on Android; holding device mode as unknown",
+    );
+    return "unknown";
+  }
 
   try {
     const parsed = managedConfigurationSchema.parse(await nativeModule.getManagedConfiguration());

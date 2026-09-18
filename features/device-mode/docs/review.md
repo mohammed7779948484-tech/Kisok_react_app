@@ -128,6 +128,47 @@ landed in one commit, so there is no commit-level proof the plan was READY
 before T01 began. It was — but the record cannot demonstrate it, and saying so
 is better than asserting a gate nobody can check.
 
+## Round 3 review — CodeRabbit, manually triggered on the draft (35ec2d0)
+
+Five findings, three major. **All five verified against the code and all five
+were real** — the three major ones are fail-opens, which is the exact failure
+class this feature exists to prevent, so none was arguable.
+
+| ID   | Severity | Finding                                                                        | Disposition                                                            |
+| ---- | -------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| CR-1 | minor    | The documented `sha256sum` command emits a trailing `  -` the verifier rejects | **FIXED** — `\| cut -d' ' -f1`; confirmed against `normalizeDigest`    |
+| CR-2 | minor    | `plan.md`'s `deviceRoleAccess` contract predated the `unavailable` state       | **FIXED** — contract and the D1 derivation table both updated          |
+| CR-3 | major    | A present-but-unrecognised `kiosk_device_role` derived `standard`              | **FIXED** — absent is `standard`; any other present value is `unknown` |
+| CR-4 | major    | A native module missing ON ANDROID derived `standard`                          | **FIXED** — `standard` only off Android; on Android it is `unknown`    |
+| CR-5 | major    | The page bound sat after the `paging.next` `continue`, so that path skipped it | **FIXED** — hoisted; it now guards both advance paths                  |
+
+### Why these three matter, and what they say about the earlier passes
+
+**CR-3 is the one I had pinned with a test.** `deriveDeviceMode` mapped every
+unrecognised value to `standard`, and a test asserted exactly that. But only an
+MDM managing this device can set `kiosk_device_role` at all — an employee
+tablet has no managed configuration whatsoever. So a typo, a stale value or a
+wrong primitive type means "a managed device whose policy I cannot read", and
+calling that an ordinary tablet is a fail-open. Absence is the positive
+evidence for `standard`; a wrong value never was. The R02 `choice` restriction
+makes the typo hard to enter through the console, but it does not make the
+derivation correct, and the two earlier review rounds both read past it.
+
+**CR-5 is the same mistake twice.** N01 added the page bound, but placed it
+after the `paging.next` `continue`, so only the offset path was guarded — the
+identical positioning error as the first R04 attempt, and the N01 test only
+exercised the offset path, so it passed. The bound is now hoisted above both
+advance paths and there is a `paging.next` fixture.
+
+**CR-4** conflated two different absences: no module because the platform has
+no DPC (web, jest — genuinely ordinary) and no module on Android (autolinking
+or registration failed — a broken kiosk build). The second now derives
+`unknown`.
+
+Three independent reviewers, three passes, and the third still found two
+fail-opens the first two missed. Worth recording plainly rather than framing
+as convergence.
+
 ## Feature gate
 
 `PASS` — recorded in `todo.md`. The draft PR may be handed to a human. It is

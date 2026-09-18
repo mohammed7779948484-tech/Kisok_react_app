@@ -73,14 +73,27 @@ export type DeviceRoleAccess = "allowed" | "blocked" | "pending";
 /**
  * Derive the device mode from the MDM-pushed managed configuration.
  *
- * `restrictions_pending` wins over everything: a role value sitting beside it
+ * Three cases, and the distinction between the first two is the whole point:
+ *
+ * - The key is ABSENT → `standard`. An ordinary employee tablet has no
+ *   managed configuration at all, so absence is positive evidence.
+ * - The key holds exactly `customer_kiosk` → `customer-kiosk`.
+ * - The key is PRESENT with anything else → `unknown`, never `standard`.
+ *   Only an MDM that manages this device can set that key, so a value we do
+ *   not recognise — a typo, a stale value, a wrong primitive type — means a
+ *   managed device whose policy we cannot read. Calling that an ordinary
+ *   tablet would fail OPEN and put Preparation on a kiosk.
+ *
+ * `restrictions_pending` wins over all of it: a role value sitting beside it
  * is not yet the settled policy.
  */
 export function deriveDeviceMode(restrictions: ManagedConfiguration["restrictions"]): DeviceMode {
   if (restrictions[RESTRICTIONS_PENDING_KEY] === true) return "unknown";
-  return restrictions[KIOSK_DEVICE_ROLE_KEY] === CUSTOMER_KIOSK_ROLE
-    ? "customer-kiosk"
-    : "standard";
+
+  const role = restrictions[KIOSK_DEVICE_ROLE_KEY];
+  if (role === undefined) return "standard";
+  if (role === CUSTOMER_KIOSK_ROLE) return "customer-kiosk";
+  return "unknown";
 }
 
 /**

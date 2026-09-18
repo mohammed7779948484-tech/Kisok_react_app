@@ -30,7 +30,10 @@ is `kiosk_device_role`. Derivation is a pure function:
 ```
 restrictions_pending === true            → "unknown"   (documented pending semantics)
 kiosk_device_role === "customer_kiosk"   → "customer-kiosk"
-anything else / empty / no module        → "standard"
+kiosk_device_role ABSENT                 → "standard"  (an ordinary tablet has no managed config)
+kiosk_device_role present, any other     → "unknown"   (only an MDM can set it — fail closed)
+no native module, non-Android            → "standard"  (no DPC exists on that platform)
+no native module, ON Android             → "unknown"   (a broken build, not an ordinary tablet)
 ```
 
 `"unknown"` is also the initial value on Android before the first read resolves,
@@ -39,8 +42,8 @@ and the value after a failed or schema-invalid read (AC-07 fail-closed).
 **D2 — One pure access function is the entire guard.**
 `deviceRoleAccess(role, mode) → "allowed" | "blocked" | "pending"`. Customer is
 always `allowed`. Preparation is `allowed` only on `standard`, `blocked` on
-`customer-kiosk`, `pending` on `unknown`. Nothing else in the app reasons about
-device policy.
+`customer-kiosk` or `unavailable`, and `pending` on `unknown`. Nothing else in
+the app reasons about device policy.
 
 **D3 — React Context, not a store.** Device mode is a provider-owned platform
 value read once and refreshed on a system broadcast — the same shape as
