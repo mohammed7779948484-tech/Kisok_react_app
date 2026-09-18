@@ -53,6 +53,13 @@ const RESTRICTIONS_RESOURCE = "kiosk_restrictions";
  * `customer_kiosk` as the Customer Kiosk tablet and everything else — absent,
  * empty, or any other value — as an ordinary device.
  *
+ * `choice`, NOT `string`, and that is the important part. A free-text field
+ * lets an operator type `customer-kiosk` or `Customer_Kiosk`, which derives as
+ * an ordinary device and quietly makes Preparation reachable on the kiosk
+ * tablet — the exact outcome this feature exists to prevent, failing OPEN with
+ * no signal. A choice restriction makes the console offer the one valid value
+ * instead, so the typo cannot be expressed.
+ *
  * No `android:defaultValue`: an ordinary tablet has no managed configuration at
  * all, and "absent" is already the correct, fail-safe reading.
  */
@@ -64,7 +71,9 @@ const RESTRICTIONS_XML = `<?xml version="1.0" encoding="utf-8"?>
          an unset value, behaves as a normal employee tablet. -->
     <restriction
         android:key="kiosk_device_role"
-        android:restrictionType="string"
+        android:restrictionType="choice"
+        android:entries="@array/kiosk_device_role_entries"
+        android:entryValues="@array/kiosk_device_role_values"
         android:title="@string/kiosk_device_role_title"
         android:description="@string/kiosk_device_role_description" />
 </restrictions>
@@ -73,7 +82,16 @@ const RESTRICTIONS_XML = `<?xml version="1.0" encoding="utf-8"?>
 const STRINGS_XML = `<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="kiosk_device_role_title">Kiosk device role</string>
-    <string name="kiosk_device_role_description">Set to customer_kiosk on the store Customer Kiosk tablet. Leave unset on employee tablets.</string>
+    <string name="kiosk_device_role_description">Choose Customer kiosk tablet on the store Customer Kiosk tablet. Leave unset on employee tablets.</string>
+
+    <!-- The label an administrator sees, and the value the app actually reads.
+         The two arrays are positional: entries[i] is shown for values[i]. -->
+    <string-array name="kiosk_device_role_entries">
+        <item>Customer kiosk tablet</item>
+    </string-array>
+    <string-array name="kiosk_device_role_values">
+        <item>customer_kiosk</item>
+    </string-array>
 </resources>
 `;
 

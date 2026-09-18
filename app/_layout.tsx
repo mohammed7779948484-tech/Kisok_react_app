@@ -44,11 +44,13 @@ export function RootNavigator() {
   }
 
   const ready = status === "ready";
-  // "allowed" on an ordinary tablet, "blocked" on a customer kiosk, "pending"
-  // until the managed configuration has been read. Only `preparation` is ever
-  // withheld; the customer experience is correct on both kinds of tablet.
-  const preparationAccess =
-    ready && profile ? deviceRoleAccess(profile.role, deviceMode) : "pending";
+  // "allowed" on an ordinary tablet, "blocked" on a customer kiosk or a device
+  // whose configuration could not be read, "pending" until it has been read.
+  // A customer always resolves to "allowed", so only `preparation` is ever
+  // withheld — and `app/index.tsx` branches on exactly this same value, so the
+  // navigator and the entry redirect can never disagree about who goes where.
+  const deviceAccess = ready && profile ? deviceRoleAccess(profile.role, deviceMode) : "pending";
+  const preparationAccess = profile?.role === "preparation" ? deviceAccess : "pending";
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
@@ -66,13 +68,13 @@ export function RootNavigator() {
         <Stack.Screen name="(customer)" />
       </Stack.Protected>
 
-      <Stack.Protected guard={profile?.role === "preparation" && preparationAccess === "allowed"}>
+      <Stack.Protected guard={preparationAccess === "allowed"}>
         <Stack.Screen name="(preparation)" />
       </Stack.Protected>
 
       {/* This tablet is the customer kiosk and a preparation employee signed in.
           The account is valid; it simply belongs on an employee tablet. */}
-      <Stack.Protected guard={profile?.role === "preparation" && preparationAccess === "blocked"}>
+      <Stack.Protected guard={preparationAccess === "blocked"}>
         <Stack.Screen name="device-mismatch" />
       </Stack.Protected>
 

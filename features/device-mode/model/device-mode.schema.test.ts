@@ -78,3 +78,13 @@ describe("deviceRoleAccess", () => {
     expect(deviceRoleAccess("admin", "standard")).toBe("blocked");
   });
 });
+
+describe("deviceRoleAccess — a device whose configuration could not be read", () => {
+  it("blocks preparation instead of holding it forever", () => {
+    expect(deviceRoleAccess("preparation", "unavailable")).toBe("blocked");
+  });
+
+  it("still lets a customer use the tablet — the customer experience needs no device context", () => {
+    expect(deviceRoleAccess("customer", "unavailable")).toBe("allowed");
+  });
+});

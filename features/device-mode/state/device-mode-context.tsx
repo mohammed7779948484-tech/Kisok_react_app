@@ -19,6 +19,19 @@ import type { DeviceMode } from "../model/device-mode.schema";
  */
 const DeviceModeContext = createContext<DeviceMode>("unknown");
 
+/**
+ * How many times an unresolved read is retried before the mode settles on
+ * `unavailable`, and the delay before each retry.
+ *
+ * Nothing re-reads on its own unless the MDM changes something, so without
+ * this a single failed read — or a `restrictions_pending` that never settles —
+ * would hold a preparation employee on the startup screen indefinitely, with
+ * no way to hand a kiosk tablet back. Giving up is what makes the state
+ * explainable and the sign-out reachable; it does not fail open, because
+ * `unavailable` still blocks preparation.
+ */
+const RETRY_DELAYS_MS = [500, 1000, 2000] as const;
+
 export function DeviceModeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<DeviceMode>("unknown");
   // Reads are disk I/O with no ordering guarantee, and two change broadcasts
@@ -29,21 +42,42 @@ export function DeviceModeProvider({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     let active = true;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const refresh = () => {
+    const refresh = (attempt: number) => {
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
       const token = (latestRead.current += 1);
+
       void readDeviceMode().then((next) => {
-        if (active && token === latestRead.current) setMode(next);
+        if (!active || token !== latestRead.current) return;
+
+        if (next !== "unknown") {
+          setMode(next);
+          return;
+        }
+
+        const delay = RETRY_DELAYS_MS[attempt];
+        if (delay === undefined) {
+          // Out of attempts. Settle somewhere the UI can explain.
+          setMode("unavailable");
+          return;
+        }
+
+        setMode("unknown");
+        retryTimer = setTimeout(() => refresh(attempt + 1), delay);
       });
     };
 
     // Subscribe BEFORE the first read, so a change broadcast that arrives
-    // while that read is in flight is not lost.
-    const unsubscribe = subscribeToManagedConfigurationChanges(refresh);
-    refresh();
+    // while that read is in flight is not lost. A broadcast restarts the
+    // attempt count — the MDM changing something is exactly the event that
+    // can turn an unreadable device into a readable one.
+    const unsubscribe = subscribeToManagedConfigurationChanges(() => refresh(0));
+    refresh(0);
 
     return () => {
       active = false;
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
       unsubscribe();
     };
   }, []);

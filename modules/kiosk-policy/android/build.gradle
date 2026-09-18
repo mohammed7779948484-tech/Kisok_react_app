@@ -31,6 +31,12 @@ if (useManagedAndroidSdkVersions) {
   }
 }
 
+dependencies {
+  // ContextCompat.registerReceiver — the API 33+ receiver-export flag. Declared
+  // explicitly rather than relied on transitively through useCoreDependencies().
+  implementation "androidx.core:core-ktx:1.13.1"
+}
+
 android {
   namespace "expo.modules.kioskpolicy"
   defaultConfig {

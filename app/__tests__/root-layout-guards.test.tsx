@@ -93,3 +93,19 @@ it("keeps the customer group on both device kinds", async () => {
   expect(screen.getByText("screen:(customer)")).toBeTruthy();
   expect(screen.queryByText("screen:device-mismatch")).toBeNull();
 });
+
+it("removes the preparation group when the device configuration could not be read", async () => {
+  await renderNavigator("preparation", "unavailable");
+
+  expect(screen.queryByText("screen:(preparation)")).toBeNull();
+  // Terminal, not a hold: the employee gets a screen with a way out.
+  expect(screen.getByText("screen:device-mismatch")).toBeTruthy();
+});
+
+it("never shows the device-mismatch screen to a customer, on any device mode", async () => {
+  for (const mode of ["standard", "customer-kiosk", "unknown", "unavailable"] as const) {
+    await renderNavigator("customer", mode);
+    expect(screen.queryByText("screen:device-mismatch")).toBeNull();
+    expect(screen.getByText("screen:(customer)")).toBeTruthy();
+  }
+});

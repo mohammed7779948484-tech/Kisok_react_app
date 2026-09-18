@@ -121,3 +121,63 @@ it("reports unknown outside the provider rather than throwing on a store tablet"
 
   expect(screen.getByText("unknown")).toBeTruthy();
 });
+
+describe("a read that keeps failing", () => {
+  it("retries, then settles on unavailable instead of holding on unknown forever", async () => {
+    jest.useFakeTimers();
+    nativeSource.readDeviceMode.mockResolvedValue("unknown");
+
+    await renderProvider();
+    expect(screen.getByText("unknown")).toBeTruthy();
+
+    // Drain every scheduled retry.
+    for (let i = 0; i < 6; i += 1) {
+      await act(async () => {
+        jest.runOnlyPendingTimers();
+      });
+    }
+
+    expect(screen.getByText("unavailable")).toBeTruthy();
+    expect(nativeSource.readDeviceMode.mock.calls.length).toBeGreaterThan(1);
+    jest.useRealTimers();
+  });
+
+  it("recovers if a retry succeeds — no unavailable state is published", async () => {
+    jest.useFakeTimers();
+    nativeSource.readDeviceMode
+      .mockResolvedValueOnce("unknown")
+      .mockResolvedValue("customer-kiosk");
+
+    await renderProvider();
+    for (let i = 0; i < 6; i += 1) {
+      await act(async () => {
+        jest.runOnlyPendingTimers();
+      });
+    }
+
+    expect(screen.getByText("customer-kiosk")).toBeTruthy();
+    jest.useRealTimers();
+  });
+
+  it("a managed-configuration change restarts the attempts after it gave up", async () => {
+    jest.useFakeTimers();
+    nativeSource.readDeviceMode.mockResolvedValue("unknown");
+    await renderProvider();
+    for (let i = 0; i < 6; i += 1) {
+      await act(async () => {
+        jest.runOnlyPendingTimers();
+      });
+    }
+    expect(screen.getByText("unavailable")).toBeTruthy();
+
+    const notify = nativeSource.subscribeToManagedConfigurationChanges.mock
+      .calls[0]![0] as () => void;
+    nativeSource.readDeviceMode.mockResolvedValue("standard");
+    await act(async () => {
+      notify();
+    });
+
+    expect(screen.getByText("standard")).toBeTruthy();
+    jest.useRealTimers();
+  });
+});

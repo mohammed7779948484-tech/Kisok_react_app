@@ -110,7 +110,7 @@ const POLL_MAX_ATTEMPTS = 20;
 
 /** Bounds the App Repository walk so a broken envelope cannot loop forever. */
 const LIST_PAGE_SIZE = 50;
-const LIST_MAX_PAGES = 40;
+const LIST_MAX_PAGES = 10;
 
 const MULTIPART_BOUNDARY = "KisokReleaseBoundary7f3a1c";
 
@@ -310,7 +310,7 @@ export function resolveInputs(
   const required = (flag: string | undefined, envName: string, envValue: string | undefined) => {
     const value = flag ?? envValue;
     if (value === undefined || value.trim() === "") {
-      problems.push(`${envName} is not set${flag === undefined ? "" : ""}.`);
+      problems.push(`${envName} is not set.`);
       return "";
     }
     return value;
@@ -346,6 +346,12 @@ async function request(
   what: string,
   url: string,
   init: { method?: string; headers?: Record<string, string>; body?: string | Uint8Array },
+  /**
+   * Accept a 2xx that carries no body. A write may legitimately answer 204 or
+   * 200-with-nothing, and treating that as a failure AFTER the change landed
+   * would send the next dispatch to re-upload an APK that is already there.
+   */
+  options: { allowEmptyBody?: boolean } = {},
 ): Promise<unknown> {
   let response: FetchResponse;
   try {
@@ -357,6 +363,8 @@ async function request(
   if (!response.ok) {
     fail(`${what} failed with HTTP ${response.status}: ${body.slice(0, 500)}`);
   }
+  if (options.allowEmptyBody === true && body.trim() === "") return {};
+
   const parsed = tryParseJson(body);
   if (!isRecord(parsed)) {
     fail(`${what} returned a body that is not a JSON object — failing closed`);
@@ -495,7 +503,11 @@ async function findApp(
   deps: PublishDeps,
 ): Promise<AppMatch> {
   const origin = new URL(hosts.mdm).origin;
-  let url = `${hosts.mdm}/api/v1/mdm/apps`;
+  // The limit is sent on the FIRST page too. Without it the tenant's own
+  // default page size applies, and the "a page shorter than LIST_PAGE_SIZE is
+  // the last page" heuristic below would stop the walk after one page — which
+  // would report KISOK absent and CREATE a duplicate enterprise app.
+  let url = `${hosts.mdm}/api/v1/mdm/apps?limit=${LIST_PAGE_SIZE}&offset=0`;
   let seen = 0;
   const collected: ListedApp[] = [];
 
@@ -538,7 +550,19 @@ async function findApp(
       continue;
     }
 
-    if (apps.length < LIST_PAGE_SIZE) break;
+    // Terminators, most reliable first. A documented total WINS over the
+    // short-page heuristic: a tenant may answer with fewer rows than the limit
+    // and still have more to give, and stopping there would report KISOK
+    // absent and create a duplicate enterprise app.
+    const metadata = isRecord(parsed.metadata) ? parsed.metadata : undefined;
+    const total = readInteger(metadata?.total_record_count);
+    if (total !== undefined) {
+      if (seen >= total) break;
+    } else if (apps.length < LIST_PAGE_SIZE) {
+      break;
+    }
+    // An empty page with more promised would otherwise loop to the bound.
+    if (apps.length === 0) break;
     url = `${hosts.mdm}/api/v1/mdm/apps?limit=${LIST_PAGE_SIZE}&offset=${seen}`;
   }
 
@@ -550,10 +574,14 @@ async function findApp(
  * the exit code and the redaction of whatever is printed.
  */
 export async function publish(inputs: PublishInputs, deps: PublishDeps): Promise<PublishResult> {
+  // Mutable on purpose: the exchanged access token is a credential too, and a
+  // ManageEngine error body that echoes the bearer would otherwise reach the
+  // CI log in clear text. It joins the set the moment it exists.
   const secrets = collectSecretValues(inputs);
   try {
     const hosts = resolveDataCentre(inputs.dataCentre);
     const token = await exchangeToken(inputs, hosts, deps);
+    secrets.push(token);
 
     if (inputs.dryRun) {
       const match = await findApp(inputs, hosts, token, deps);
@@ -586,6 +614,7 @@ export async function publish(inputs: PublishInputs, deps: PublishDeps): Promise
             app_file: fileId,
           }),
         },
+        { allowEmptyBody: true },
       );
       return {
         ok: true,

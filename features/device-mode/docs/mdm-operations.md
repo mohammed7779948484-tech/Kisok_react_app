@@ -75,19 +75,32 @@ updating something it cannot positively identify — resolve that in the console
 KISOK declares an Android Enterprise managed-configuration schema in its
 manifest, so the console can set app configuration values for it. Set:
 
-```
-kiosk_device_role = customer_kiosk
-```
+**Kiosk device role → "Customer kiosk tablet"** (the stored value is
+`customer_kiosk`)
 
 on the **Customer Kiosk tablet only**. Leave it unset everywhere else — absence
 is what makes a tablet an ordinary employee device, and that is the fail-safe
 direction.
+
+The restriction is declared as a **choice**, not free text, so the console
+offers that single option rather than a text box. This is deliberate: a typed
+`customer-kiosk` or `Customer_Kiosk` would derive as an ordinary device and
+quietly make Preparation reachable on the kiosk tablet, which is the one
+failure this feature exists to prevent.
 
 ⚠️ The single assumption most worth confirming: that this tenant can push an app
 configuration to an **in-house enterprise** APK, not only to a Managed Google
 Play app. If the console does not offer app configuration for the KISOK
 enterprise app, stop and report it — the guard still fails closed (Preparation
 is withheld, never wrongly granted), but it would never reach the kiosk verdict.
+
+### What the tablet does if the configuration cannot be read
+
+The app retries the read a few times and then settles on an "unavailable"
+state. Preparation stays blocked — an unreadable tablet is never assumed to be
+an ordinary one — and the employee gets a screen that says so and offers sign
+out, rather than an indefinite loading screen with no way off the tablet. A
+customer is never affected: the customer experience needs no device context.
 
 ### 3. Employee tablets
 

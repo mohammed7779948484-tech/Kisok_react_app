@@ -1,3 +1,5 @@
+import { resetLogging, setLogSink } from "@/core/logging";
+
 import { readDeviceMode, subscribeToManagedConfigurationChanges } from "./managed-configuration";
 
 const getManagedConfiguration = jest.fn();
@@ -21,7 +23,11 @@ function installModule() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // The fail-closed paths log by design; the suite runs with no console output.
+  setLogSink(() => {});
 });
+
+afterEach(() => resetLogging());
 
 describe("readDeviceMode", () => {
   it("is standard where the native module does not exist — web, jest, any non-Android platform", async () => {
@@ -53,11 +59,17 @@ describe("readDeviceMode", () => {
     await expect(readDeviceMode()).resolves.toBe("unknown");
   });
 
-  it("fails closed to unknown when the native read rejects", async () => {
+  it("fails closed to unknown when the native read rejects, and says so", async () => {
     installModule();
     getManagedConfiguration.mockRejectedValue(new Error("binder died"));
+    const logged: { level: string; message: string }[] = [];
+    setLogSink((entry) => logged.push({ level: entry.level, message: entry.message }));
 
     await expect(readDeviceMode()).resolves.toBe("unknown");
+
+    // A device that silently reports "unknown" with nothing in the log is
+    // indistinguishable from one that was never read.
+    expect(logged.some((entry) => entry.level === "error")).toBe(true);
   });
 });
 

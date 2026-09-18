@@ -57,8 +57,15 @@ export type ManagedConfiguration = z.infer<typeof managedConfigurationSchema>;
  * native read resolves, while Android reports `restrictions_pending`, and when
  * a read fails or fails validation — all cases where claiming `standard` would
  * be a guess that fails OPEN on a managed device.
+ *
+ * `unavailable` is where `unknown` STOPS. A read can fail permanently, and
+ * nothing re-reads by itself unless the MDM changes something, so a plain
+ * `unknown` would hold a preparation employee on a loading screen forever with
+ * no way off a kiosk tablet. After the provider has retried and given up, the
+ * mode becomes `unavailable`: still fail-closed for preparation, but a
+ * terminal state the UI can explain and offer a sign-out from.
  */
-export type DeviceMode = "customer-kiosk" | "standard" | "unknown";
+export type DeviceMode = "customer-kiosk" | "standard" | "unknown" | "unavailable";
 
 /** Whether a signed-in role may use its experience on this device. */
 export type DeviceRoleAccess = "allowed" | "blocked" | "pending";
@@ -82,8 +89,10 @@ export function deriveDeviceMode(restrictions: ManagedConfiguration["restriction
  * - `customer` is `allowed` on every mode: the customer experience is correct
  *   on a kiosk tablet and on an ordinary one, so device mode never delays it.
  * - `preparation` is `allowed` only on a `standard` device — exactly today's
- *   routing — `blocked` on a Customer Kiosk, and `pending` while the mode is
- *   not yet known, because holding briefly is honest and guessing is not.
+ *   routing — `blocked` on a Customer Kiosk, `pending` while the mode is not
+ *   yet known (holding briefly is honest and guessing is not), and `blocked`
+ *   once the read has failed for good: an unreadable device is never assumed
+ *   to be an ordinary one.
  * - Any other role has no tablet experience at all. `core/auth` already
  *   resolves those to `unauthorized` before `ready`, so this row is
  *   unreachable through `useAuth()` today; it exists so the function is total
@@ -95,7 +104,7 @@ export function deriveDeviceMode(restrictions: ManagedConfiguration["restriction
 export function deviceRoleAccess(role: AppRole, mode: DeviceMode): DeviceRoleAccess {
   if (role === "customer") return "allowed";
   if (role !== "preparation") return "blocked";
-  if (mode === "customer-kiosk") return "blocked";
+  if (mode === "customer-kiosk" || mode === "unavailable") return "blocked";
   if (mode === "unknown") return "pending";
   return "allowed";
 }

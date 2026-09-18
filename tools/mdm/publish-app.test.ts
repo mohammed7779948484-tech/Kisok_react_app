@@ -169,7 +169,7 @@ function fakeFetch(routes: Record<string, () => { status: number; body: unknown 
     return {
       ok: status >= 200 && status < 300,
       status,
-      text: async () => JSON.stringify(body),
+      text: async () => (body === undefined ? "" : JSON.stringify(body)),
     };
   };
   return { fetchLike, calls };
@@ -307,4 +307,84 @@ it("in dry-run mode it authenticates and reads, but never uploads or writes", as
   expect(result.ok).toBe(true);
   expect(calls.some((c) => c.url.includes("/emsapi/files"))).toBe(false);
   expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/api/v1/mdm/apps"))).toBe(false);
+});
+
+it("walks past the first page — a match on page 2 is an UPDATE, never a duplicate create", async () => {
+  // The tenant's page is smaller than our page-size constant. If termination
+  // relied on "a short page means the end", KISOK would look absent and the
+  // run would create a second enterprise app after already uploading the APK.
+  let page = 0;
+  const { deps: d, calls } = deps({
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
+    "GET /api/v1/mdm/apps": () => {
+      page += 1;
+      return page === 1
+        ? {
+            status: 200,
+            body: {
+              apps: [{ app_id: 1, app_name: "Other", identifier: "com.other" }],
+              metadata: { total_record_count: 2 },
+            },
+          }
+        : {
+            status: 200,
+            body: {
+              apps: [{ app_id: 55, app_name: "KISOK", identifier: "com.kisok.kiosk" }],
+              metadata: { total_record_count: 2 },
+            },
+          };
+    },
+    "PUT /api/v1/mdm/apps": () => ({ status: 200, body: { status: "ok" } }),
+  });
+
+  const result = await publish(INPUTS, d);
+
+  expect(result).toMatchObject({ ok: true, action: "updated" });
+  expect(calls.filter((c) => c.method === "GET").length).toBe(2);
+  expect(calls.some((c) => c.method === "POST" && c.url.includes("/api/v1/mdm/apps"))).toBe(false);
+});
+
+it("accepts a 2xx write with an empty body — the update already happened", async () => {
+  const { deps: d } = deps({
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
+    "GET /api/v1/mdm/apps": () => ({
+      status: 200,
+      body: { apps: [{ app_id: 55, app_name: "KISOK", identifier: "com.kisok.kiosk" }] },
+    }),
+    "PUT /api/v1/mdm/apps": () => ({ status: 204, body: undefined }),
+  });
+
+  const result = await publish(INPUTS, d);
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.action).toBe("updated");
+});
+
+it("redacts the exchanged access token, not just the three credentials", async () => {
+  const { deps: d } = deps({
+    "POST /emsapi/files": () => ({
+      status: 500,
+      body: { message: "upstream rejected bearer at-secret-value" },
+    }),
+  });
+  const withToken = { ...INPUTS };
+
+  const result = await publish(withToken, {
+    ...d,
+    fetch: async (url, init) => {
+      if (url.includes("/oauth/v2/token")) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ access_token: "at-secret-value" }),
+        };
+      }
+      return d.fetch(url, init);
+    },
+  });
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.failure).not.toContain("at-secret-value");
 });

@@ -38,8 +38,17 @@ class KioskPolicyModule : Module() {
    * Non-null means "currently registered". Set when the first JS listener
    * subscribes, cleared when the last one leaves and again on module
    * destruction, so the dynamic receiver cannot outlive the module.
+   *
+   * `@Volatile` plus a synchronized register/unregister pair: OnDestroy can run
+   * on a different thread from OnStopObserving, and an unsynchronized
+   * read-modify-write there could either double-unregister or, in the reverse
+   * interleaving, leave a receiver registered past the module's lifetime.
    */
+  @Volatile
   private var restrictionsReceiver: BroadcastReceiver? = null
+
+  /** Guards every read-modify-write of `restrictionsReceiver`. */
+  private val receiverLock = Any()
 
   override fun definition() = ModuleDefinition {
     Name("KioskPolicy")
@@ -51,26 +60,31 @@ class KioskPolicyModule : Module() {
     }
 
     OnStartObserving("onManagedConfigurationChanged") {
-      if (restrictionsReceiver != null) return@OnStartObserving
+      synchronized(receiverLock) {
+        if (restrictionsReceiver != null) return@OnStartObserving
 
-      val receiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-          if (intent.action == Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED) {
-            // The event carries no payload: JS re-reads the configuration, so
-            // there is only ever one way to obtain it.
-            this@KioskPolicyModule.sendEvent("onManagedConfigurationChanged", emptyMap<String, Any?>())
+        val receiver = object : BroadcastReceiver() {
+          override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED) {
+              // The event carries no payload: JS re-reads the configuration, so
+              // there is only ever one way to obtain it.
+              this@KioskPolicyModule.sendEvent(
+                "onManagedConfigurationChanged",
+                emptyMap<String, Any?>()
+              )
+            }
           }
         }
+        // A system-sent protected broadcast. RECEIVER_NOT_EXPORTED satisfies the
+        // API 33+ registration requirement and never blocks system delivery.
+        ContextCompat.registerReceiver(
+          context,
+          receiver,
+          IntentFilter(Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED),
+          ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        restrictionsReceiver = receiver
       }
-      // A system-sent protected broadcast. RECEIVER_NOT_EXPORTED satisfies the
-      // API 33+ registration requirement and never blocks system delivery.
-      ContextCompat.registerReceiver(
-        context,
-        receiver,
-        IntentFilter(Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED),
-        ContextCompat.RECEIVER_NOT_EXPORTED
-      )
-      restrictionsReceiver = receiver
     }
 
     OnStopObserving("onManagedConfigurationChanged") {
@@ -83,12 +97,14 @@ class KioskPolicyModule : Module() {
   }
 
   private fun unregisterRestrictionsReceiver() {
-    restrictionsReceiver?.let { receiver ->
-      // Tearing down observation must never crash the app if the react context
-      // died first and the receiver is already gone.
-      runCatching { context.unregisterReceiver(receiver) }
+    synchronized(receiverLock) {
+      restrictionsReceiver?.let { receiver ->
+        // Tearing down observation must never crash the app if the react context
+        // died first and the receiver is already gone.
+        runCatching { context.unregisterReceiver(receiver) }
+      }
+      restrictionsReceiver = null
     }
-    restrictionsReceiver = null
   }
 
   /**

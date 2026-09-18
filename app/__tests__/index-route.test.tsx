@@ -95,3 +95,16 @@ describe("before the device mode is known", () => {
     expect(screen.getByText("redirect:/(customer)")).toBeTruthy();
   });
 });
+
+describe("a device whose configuration could not be read", () => {
+  it("sends a preparation profile to the mismatch screen instead of holding forever", async () => {
+    await renderRoute("ready", "preparation", "unavailable");
+    expect(screen.getByText("redirect:/device-mismatch")).toBeTruthy();
+    expect(screen.queryByText("startup")).toBeNull();
+  });
+
+  it("still lets a customer straight through", async () => {
+    await renderRoute("ready", "customer", "unavailable");
+    expect(screen.getByText("redirect:/(customer)")).toBeTruthy();
+  });
+});
