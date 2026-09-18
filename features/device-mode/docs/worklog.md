@@ -144,6 +144,11 @@ INERT PATH (no MYAPP_UPLOAD_* env):
    workflow depend on the debug-signed release)
 
 ACTIVE PATH (all four set):
+  MYAPP_UPLOAD_STORE_FILE=kisok-upload.keystore MYAPP_UPLOAD_KEY_ALIAS=test-alias \
+  MYAPP_UPLOAD_STORE_PASSWORD=test-store-pw MYAPP_UPLOAD_KEY_PASSWORD=test-key-pw \
+    npx expo prebuild --platform android --no-install --clean
+  (throwaway local values, never real signing material)
+
   android/gradle.properties:69-72  → the four MYAPP_UPLOAD_* entries
   android/app/build.gradle         → the guarded signingConfigs.release block
   android/app/build.gradle:124     → buildTypes.release now on signingConfigs.release
@@ -193,7 +198,8 @@ GATE: PASS
 ```
 
 NOT VERIFIED: every ManageEngine HTTP call. No request has been made against a
-real tenant. See "Explicitly not verified" below.
+real tenant, so the whole contract is TENANT VALIDATION REQUIRED — see
+`mdm-operations.md` and the PR's "Explicitly NOT verified" section.
 
 ### T10 — the release workflow (`config`)
 
@@ -321,8 +327,10 @@ pnpm verify → PASS
 ### Native compile
 
 ```
-android-build / "Android prebuild check" (label-gated): SUCCESS on be1e961
+android-build / "Android prebuild check" (label-gated): SUCCESS on 81f686a
   https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/35295784503
+  (this was first recorded here as be1e961; the API reports the run's head_sha
+   as 81f686a — corrected rather than left as a plausible-looking wrong id)
 ```
 
 That run predates the Kotlin `synchronized`/`@Volatile` change and the new
@@ -349,7 +357,10 @@ Verify (typecheck, lint, format, tests, guards, db, generator) : SUCCESS
 Expo doctor                                                    : SUCCESS
 Web bundle                                                     : SUCCESS
 Android prebuild check (label-gated native tier)               : SUCCESS
-Maestro flows                                                  : SKIPPED — honest skip, not a pass.
+  https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/35297426092
+
+Maestro flows — a SEPARATE label-gated workflow, not a job of the CI run above.
+  SKIPPED, an honest skip and never counted as a pass.
   No `e2e` label: this guard adds no new customer journey to drive, and the one
   state worth driving on a device (a kiosk-configured tablet) cannot be
   reproduced on an emulator without a DPC.
@@ -370,3 +381,13 @@ device mode is `standard` by design. This is real regression evidence for the
 more. The `customer_kiosk` and `unavailable` paths CANNOT be reached in a
 browser — they are covered by the model, provider, screen and route tests, and
 remain PHYSICAL/TENANT VALIDATION REQUIRED on hardware.
+
+**`DeviceMismatchScreen` has never been opened in a browser, and cannot be.**
+It is the only new screen in this feature, and on web the native module is
+absent, so the device mode is always `standard` and `deviceRoleAccess` never
+returns `blocked` — the route is not in the navigator. Its evidence is five
+behaviour tests (both device states, the sign-out call with `scope: "local"`,
+and the failed-sign-out message). It composes `Screen`, `Button` and `Text`
+from the design system, so it inherits their tokens and 48dp targets, but
+nobody has looked at it at a tablet size. Settling that needs either hardware
+or a temporary provider stub in the UI Lab.

@@ -88,6 +88,47 @@ tablet into a kiosk one, so a stale `standard` is not something to keep trusting
 The fix only prevents the _flash_ to `unknown` mid-retry, which is what was
 tearing down a working session.
 
-## Quality audit
+## Quality audit — `quality-auditor`, fresh context, on db5fe97
 
-PENDING.
+Verdict: "the delivery is substantially sound … Everything I could re-run
+reproduced." The auditor re-ran `pnpm verify` (95/1284), the four focused
+suites, the three guard scripts, and checked the CI run IDs against the GitHub
+API. All matched the worklog exactly. **No code defects found.** Fourteen
+findings, all about the RECORD rather than the software.
+
+| ID    | Finding                                                                    | Disposition                                                                  |
+| ----- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| QA-01 | `brief.md` AC-09 claimed a workflow run as its observable; none exists     | **FIXED** — AC-09 and AC-10 now say NEVER DISPATCHED / NEVER EXECUTED        |
+| QA-02 | Round 2 `PASS` did not say the pipeline had never been executed            | **FIXED** — the gate now states it rests on static evidence only             |
+| QA-03 | The final-head CI and runtime evidence was uncommitted                     | **ALREADY FIXED** — committed as 7df2408 while the audit was running         |
+| QA-04 | The new screen has never been opened in a browser                          | **FIXED (recorded)** — it is unreachable on web by design; now stated        |
+| QA-05 | T07's active path showed file contents but named no command                | **FIXED** — the prebuild invocation is recorded                              |
+| QA-06 | `plan.md` `READY`-before-T01 is unfalsifiable (one commit)                 | **ACCEPTED** — true, and not repairable after the fact                       |
+| QA-07 | Release tooling is ~7x the product guard                                   | **ACCEPTED, owned** — see R12 above; the judgement is the Lead's             |
+| QA-08 | Three small additions no task named (`versionCode`, `--dry-run`, artifact) | **FIXED** — recorded in `plan.md`                                            |
+| QA-09 | PR #16's body described the branch two commits ago                         | **FIXED** — rewritten                                                        |
+| QA-10 | `todo.md` checkpoint stale                                                 | **FIXED**                                                                    |
+| QA-11 | Dangling "see below" pointer in `worklog.md`                               | **FIXED**                                                                    |
+| QA-12 | The first native run was attributed to be1e961; the API says 81f686a       | **FIXED** — corrected, with the correction noted rather than silently edited |
+| QA-13 | `docs/ci.md` did not list the new `android-release.yml`                    | **FIXED** — documented, including why it is the one workflow with secrets    |
+| QA-14 | Maestro framed as a job of the CI run; it is a separate workflow           | **FIXED**                                                                    |
+
+Two worth keeping visible rather than burying in a table:
+
+**QA-01 was the real honesty gap.** `worklog.md`, `plan.md` and
+`mdm-operations.md` all said plainly that the release workflow had never been
+dispatched — but `brief.md`'s AC-09 row still listed "workflow run" as its
+observable, unqualified, and the PR body did not mention AC-09 or AC-10 at all.
+A reader of the brief alone would have concluded the pipeline was exercised end
+to end. Both now say NEVER DISPATCHED and NEVER EXECUTED.
+
+**QA-06 cannot be repaired and should not be papered over.** `plan.md` says
+`Status: READY`, but the brief, plan, todo, worklog and all of Round 1's code
+landed in one commit, so there is no commit-level proof the plan was READY
+before T01 began. It was — but the record cannot demonstrate it, and saying so
+is better than asserting a gate nobody can check.
+
+## Feature gate
+
+`PASS` — recorded in `todo.md`. The draft PR may be handed to a human. It is
+never merged by an agent.

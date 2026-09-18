@@ -117,6 +117,22 @@ They are independent — round 2 touches no app code.
 | T10  | config          | AC-09, AC-10   | `.github/workflows/android-release.yml`: one dispatch, build → verify → publish               | T07–T09  | manual (workflow)                         |
 | T11  | config          | —              | `features/device-mode/docs/mdm-operations.md`: console setup and required secrets by name     | T10      | manual (docs)                             |
 
+## Added during implementation, outside the task table
+
+Recorded because each arrived without a task naming it, and a silent addition
+is the thing an audit should be able to catch:
+
+- `app.config.ts` `android.versionCode: 1` (T07/T10). The release workflow fails
+  closed when it is absent, and Expo's hidden `?? 1` default would otherwise
+  ship versionCode 1 forever — Android refuses an update that does not increase
+  it. Small, and the pipeline does not work without it.
+- `--dry-run` on `publish-app.ts` and the `dry_run` workflow input (T09/T10).
+  Authenticates and reads without uploading or writing. Given that no
+  ManageEngine call has ever been made, a rehearsal that cannot mutate the
+  tenant is worth its ~15 lines.
+- The "Publish the verified APK as a build artifact" workflow step (T10), so a
+  human can inspect exactly what was sent.
+
 ## Risks
 
 | Risk                                                                           | Mitigation                                                                                                                            |

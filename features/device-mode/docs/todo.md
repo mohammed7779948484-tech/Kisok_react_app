@@ -3,11 +3,11 @@
 ## Current checkpoint
 
 ```
-Current round     : Round 2 — release pipeline
-Current task      : T11 (done)
+Current round     : complete — both rounds delivered
+Current task      : —
 Current stage     : done
-Last gate         : ROUND 2 GATE: PASS
-Next legal action : independent code review, then the feature gate
+Last gate         : quality audit complete (2 review rounds + 2 remediation passes)
+Next legal action : FEATURE GATE, then hand the draft PR to a human. Never merge.
 Blocked by        : —
 ```
 
@@ -31,6 +31,33 @@ Blocked by        : —
 
 ```
 ROUND 1 GATE (runtime guard): PASS
-ROUND 2 GATE (release pipeline): PASS
-FEATURE GATE: PENDING
+ROUND 2 GATE (release pipeline): PASS — with one thing stated plainly, so the
+  Feature Gate does not read more into it than it means: this gate rests on
+  STATIC evidence only (unit tests, workflow YAML parse, check:ci-scripts, a
+  line-by-line secret-safety read). The release workflow has NEVER been
+  dispatched and no ManageEngine call has ever been made. AC-09 and AC-10 are
+  implemented and unit-tested, not exercised. See brief.md AC-09/AC-10.
+FEATURE GATE: PASS — see the checklist below.
+
+## Feature gate
+
+- [x] Every Task Gate PASS (T01–T11)
+- [x] Every Round Gate PASS
+- [x] Every AC verified, or its gap recorded — AC-01..AC-08 verified;
+      AC-09/AC-10 implemented and unit-tested but never executed, recorded
+      as such in brief.md, todo.md, worklog.md, mdm-operations.md and the PR
+- [x] `pnpm verify` PASS after the final change — 95 suites / 1284 tests
+- [x] Required fast GitHub CI PASS on the final HEAD
+- [x] Required runtime evidence recorded, with its limits stated
+- [x] Required native tier PASS — android-build SUCCESS on the final head
+- [x] Reviewer findings dispositioned — 12 + 6, all closed or argued
+- [x] Blocking/major fixes re-reviewed — the re-review caught R08 as falsely
+      closed, which is why there were two remediation passes
+- [x] Quality audit clean of code defects; its record findings are actioned
+- [x] Anything not verified explicitly recorded
+- [x] Shared/core changes justified — app/_layout.tsx, app/index.tsx,
+      app.config.ts, docs/ci.md; no core/ or components/ change
+- [x] PR evidence matches the worklog
+
+FEATURE GATE: PASS
 ```
