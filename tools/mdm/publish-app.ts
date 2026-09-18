@@ -564,6 +564,19 @@ async function findApp(
     // An empty page with more promised would otherwise loop to the bound.
     if (apps.length === 0) break;
     url = `${hosts.mdm}/api/v1/mdm/apps?limit=${LIST_PAGE_SIZE}&offset=${seen}`;
+
+    if (page === LIST_MAX_PAGES) {
+      // Running out of pages is NOT evidence that KISOK is absent. Falling
+      // through to `absent` here would take the create branch and add a second
+      // enterprise app — the duplicate this matching exists to prevent.
+      return {
+        status: "ambiguous",
+        reason:
+          `the App Repository listing did not finish within ${LIST_MAX_PAGES} pages ` +
+          `(${seen} entries read), so ${inputs.packageName} cannot be confirmed present or ` +
+          "absent — failing closed rather than risking a duplicate app",
+      };
+    }
   }
 
   return matchAppByPackage(collected, inputs.packageName, inputs.appName);

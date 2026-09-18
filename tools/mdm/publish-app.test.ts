@@ -176,7 +176,12 @@ function fakeFetch(routes: Record<string, () => { status: number; body: unknown 
 }
 
 const TOKEN_ROUTE = {
-  "POST /oauth/v2/token": () => ({ status: 200, body: { access_token: "at" } }),
+  // A realistic length matters: redaction is a plain substring replace, so a
+  // two-character fixture token would scrub fragments of ordinary words.
+  "POST /oauth/v2/token": () => ({
+    status: 200,
+    body: { access_token: "1000.accesstokenfixture.value" },
+  }),
 };
 
 function deps(routes: Record<string, () => { status: number; body: unknown }>) {
@@ -387,4 +392,31 @@ it("redacts the exchanged access token, not just the three credentials", async (
   expect(result.ok).toBe(false);
   if (result.ok) return;
   expect(result.failure).not.toContain("at-secret-value");
+});
+
+it("fails closed when the listing is longer than the page bound, rather than creating a duplicate", async () => {
+  // The repository reports more apps than the walk is allowed to read. Falling
+  // through to "absent" here would create a SECOND enterprise app, which is
+  // exactly what the package-identity matching exists to prevent.
+  const { deps: d, calls } = deps({
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
+    "GET /api/v1/mdm/apps": () => ({
+      status: 200,
+      body: {
+        apps: Array.from({ length: 50 }, (_, i) => ({
+          app_id: i + 1,
+          app_name: `Other ${i}`,
+          identifier: `com.other.${i}`,
+        })),
+        metadata: { total_record_count: 100000 },
+      },
+    }),
+  });
+
+  const result = await publish(INPUTS, d);
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.failure).toMatch(/did not finish within 10 pages/i);
+  expect(calls.some((c) => c.method === "POST" && c.url.includes("/api/v1/mdm/apps"))).toBe(false);
 });

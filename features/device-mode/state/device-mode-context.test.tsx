@@ -181,3 +181,45 @@ describe("a read that keeps failing", () => {
     jest.useRealTimers();
   });
 });
+
+describe("a settled device whose re-read starts failing", () => {
+  it("keeps the mode it already read while retrying, instead of flashing unknown", async () => {
+    jest.useFakeTimers();
+    nativeSource.readDeviceMode.mockResolvedValue("standard");
+    await renderProvider();
+    expect(screen.getByText("standard")).toBeTruthy();
+
+    const notify = nativeSource.subscribeToManagedConfigurationChanges.mock
+      .calls[0]![0] as () => void;
+    nativeSource.readDeviceMode.mockResolvedValue("unknown");
+    await act(async () => {
+      notify();
+    });
+
+    // Mid-retry: tearing a working session down to `unknown` would unmount the
+    // preparation stack under an employee for a transient read blip.
+    expect(screen.getByText("standard")).toBeTruthy();
+    jest.useRealTimers();
+  });
+
+  it("still falls to unavailable once the retries are exhausted — it does not trust a stale reading", async () => {
+    jest.useFakeTimers();
+    nativeSource.readDeviceMode.mockResolvedValue("standard");
+    await renderProvider();
+
+    const notify = nativeSource.subscribeToManagedConfigurationChanges.mock
+      .calls[0]![0] as () => void;
+    nativeSource.readDeviceMode.mockResolvedValue("unknown");
+    await act(async () => {
+      notify();
+    });
+    for (let i = 0; i < 6; i += 1) {
+      await act(async () => {
+        jest.runOnlyPendingTimers();
+      });
+    }
+
+    expect(screen.getByText("unavailable")).toBeTruthy();
+    jest.useRealTimers();
+  });
+});

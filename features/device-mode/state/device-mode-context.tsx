@@ -39,6 +39,9 @@ export function DeviceModeProvider({ children }: { children: React.ReactNode }) 
   // publish: a late earlier one would silently downgrade a kiosk tablet to
   // "standard", which is the one failure this feature exists to prevent.
   const latestRead = useRef(0);
+  // Whether any read has ever produced a real verdict. Used to avoid dropping
+  // a working session back to `unknown` for a transient re-read failure.
+  const hasSettled = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -52,18 +55,25 @@ export function DeviceModeProvider({ children }: { children: React.ReactNode }) 
         if (!active || token !== latestRead.current) return;
 
         if (next !== "unknown") {
+          hasSettled.current = true;
           setMode(next);
           return;
         }
 
         const delay = RETRY_DELAYS_MS[attempt];
         if (delay === undefined) {
-          // Out of attempts. Settle somewhere the UI can explain.
+          // Out of attempts. Settle somewhere the UI can explain — and do NOT
+          // keep trusting an earlier reading: a change broadcast is exactly
+          // the event that can turn an ordinary tablet into a kiosk one.
           setMode("unavailable");
           return;
         }
 
-        setMode("unknown");
+        // Only publish `unknown` before anything has ever been read. Once a
+        // mode is settled, a transient re-read failure must not unmount the
+        // preparation stack under an employee mid-shift; the retry window is
+        // short, and exhausting it still falls to `unavailable` above.
+        if (!hasSettled.current) setMode("unknown");
         retryTimer = setTimeout(() => refresh(attempt + 1), delay);
       });
     };

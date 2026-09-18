@@ -230,3 +230,102 @@ pnpm verify → PASS (typecheck, lint, format, 93 suites / 1182 tests,
               db:verify, generate:smoke)
 ROUND 2 GATE: PASS
 ```
+
+## Remediation — independent review, round 1 (commit 4123266)
+
+Findings and dispositions are in `review.md`; this is the evidence.
+
+### R01 — committed `expo prebuild` mutation of `package.json`
+
+```
+git diff develop..HEAD -- package.json   → (before) 12 lines
+git checkout develop -- package.json
+git diff develop..HEAD -- package.json   → 0 lines
+```
+
+Confirmed rather than assumed: prebuild rewrites `"android"` to
+`expo run:android` and adds `"ios"`. It was restored after the FIRST prebuild
+(T06) but not after the two T07 signing prebuilds, and `git add -A` swept it in.
+
+### R02 — free-text restriction fails open on a typo (`config`)
+
+```
+VERIFY: npx expo prebuild --platform android --no-install --clean → "✔ Finished prebuild"
+
+android/app/src/main/res/xml/kiosk_restrictions.xml
+  → android:restrictionType="choice"
+    android:entries="@array/kiosk_device_role_entries"
+    android:entryValues="@array/kiosk_device_role_values"
+android/app/src/main/res/values/kiosk_device_role_strings.xml
+  → both string-arrays, positionally paired, one entry: customer_kiosk
+```
+
+### R03 — a failed read stranded preparation (`behavior`)
+
+```
+RED:   npx jest features/device-mode/state → 3 failed, 6 passed
+       (retries / recovery / restart-after-giving-up all absent)
+GREEN: npx jest features/device-mode/state → 9 passed
+       then 11 passed after the N02 rows below
+Model: npx jest features/device-mode/model → 16 passed (2 new `unavailable` rows)
+Screen: npx jest features/device-mode/screens → 5 passed (2 new unreadable-device rows)
+Routes: npx jest app/__tests__ → 20 passed (4 new rows)
+```
+
+One test correction recorded: the first negative assertion
+(`queryByText(/is the customer kiosk/i)`) was too loose — the new copy
+legitimately contains "in case it is the customer kiosk". The implementation was
+right; the assertion was tightened to the title string.
+
+### R04 — pagination could create a duplicate app (`bug`)
+
+```
+RED:   npx jest tools/mdm → 3 failed, 20 passed
+GREEN: npx jest tools/mdm → 24 passed
+```
+
+The first fix attempt was WRONG and the test caught it: the short-page break
+still fired ahead of the documented-total check, so the two-page listing still
+terminated on page 1. A documented `total_record_count` now wins over the
+short-page heuristic.
+
+### R06 — a two-character fixture token hid a redaction problem
+
+The token fixture was `"at"`, so pushing the access token into the redaction set
+scrubbed that substring out of ordinary words (`the app cre***REDACTED***ion`).
+An earlier edit that was supposed to fix this silently did not apply — prettier
+had reformatted the target string — and the mangled output in a later failure
+message is what revealed it. Redaction stays unconditional (mangling is the safe
+direction; a skipped short secret is not), and the fixture is now realistic.
+
+### N01/N02/N04, R08 — second remediation pass
+
+```
+RED:   npx jest tools/mdm features/device-mode/state → 2 failed, 33 passed
+GREEN: npx jest tools/mdm features/device-mode app/__tests__ → 84 passed
+act warnings in features/device-mode/screens: 8 → 0
+```
+
+R08 was recorded as FIXED in the first pass and was NOT: only `app/_layout.tsx`
+had changed (`git diff 81f686a..4123266 -- app/index.tsx` was empty). Both files
+now compute and branch on the same `deviceAccess` value.
+
+### Final local gate
+
+```
+pnpm verify → PASS
+  Test Suites: 95 passed, 95 total
+  Tests:       1284 passed, 1284 total
+```
+
+### Native compile
+
+```
+android-build / "Android prebuild check" (label-gated): SUCCESS on be1e961
+  https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/35295784503
+```
+
+That run predates the Kotlin `synchronized`/`@Volatile` change and the new
+`androidx.core:core-ktx` gradle dependency, so it does NOT cover the current
+code. The run on the final head is recorded below when it lands; until then the
+native compile of the remediated module is **UNVERIFIED**.

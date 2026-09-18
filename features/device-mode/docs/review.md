@@ -14,20 +14,20 @@ writes no device policy, and the tests exercise real behaviour rather than
 mocks." Twelve findings, concentrated in operational edges and the release
 tooling.
 
-| ID  | Severity | Finding                                                                | Disposition                                                                 |
-| --- | -------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| R01 | major    | `expo prebuild`'s mutation of `package.json` was committed             | **FIXED** — confirmed and reverted                                          |
-| R02 | major    | Free-text `kiosk_device_role` fails OPEN on an operator typo           | **FIXED** — declared as a `choice` restriction                              |
-| R03 | major    | A failed read strands preparation on the startup screen forever        | **FIXED** — bounded retry, then a terminal `unavailable` with sign-out      |
-| R04 | major    | Pagination could stop on page 1 and CREATE a duplicate app             | **FIXED** — `limit` on the first request, and a total-aware terminator      |
-| R05 | minor    | A 2xx write with an empty body was reported as a failed run            | **FIXED** — writes accept an empty 2xx body                                 |
-| R06 | minor    | The exchanged access token was not in the redaction set                | **FIXED** — it joins the set as soon as it exists                           |
-| R07 | minor    | Two tests printed `console.error`; the suite runs with no output       | **FIXED** — silent sink, and the log is now asserted rather than ignored    |
-| R08 | minor    | `app/index.tsx` and `app/_layout.tsx` stated the same rule differently | **FIXED** — both branch on one value                                        |
-| R09 | minor    | Kotlin receiver field unsynchronized; `androidx.core` only transitive  | **FIXED** — `@Volatile` + a lock, and the dependency declared explicitly    |
-| R10 | minor    | No native compile evidence recorded                                    | **CLOSED** — the label-gated `android-build` job is green; see `worklog.md` |
-| R11 | minor    | Dead ternary with two identical branches                               | **FIXED** — deleted                                                         |
-| R12 | minor    | Release tooling is large relative to the product guard                 | **PARTLY ACCEPTED** — see below                                             |
+| ID  | Severity | Finding                                                                | Disposition                                                                                        |
+| --- | -------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| R01 | major    | `expo prebuild`'s mutation of `package.json` was committed             | **FIXED** — confirmed and reverted                                                                 |
+| R02 | major    | Free-text `kiosk_device_role` fails OPEN on an operator typo           | **FIXED** — declared as a `choice` restriction                                                     |
+| R03 | major    | A failed read strands preparation on the startup screen forever        | **FIXED** — bounded retry, then a terminal `unavailable` with sign-out                             |
+| R04 | major    | Pagination could stop on page 1 and CREATE a duplicate app             | **FIXED** — `limit` on the first request, and a total-aware terminator                             |
+| R05 | minor    | A 2xx write with an empty body was reported as a failed run            | **FIXED** — writes accept an empty 2xx body                                                        |
+| R06 | minor    | The exchanged access token was not in the redaction set                | **FIXED** — it joins the set as soon as it exists                                                  |
+| R07 | minor    | Two tests printed `console.error`; the suite runs with no output       | **FIXED** — silent sink, and the log is now asserted rather than ignored                           |
+| R08 | minor    | `app/index.tsx` and `app/_layout.tsx` stated the same rule differently | **FIXED in the second pass** — the first pass changed only `_layout.tsx` and the row overstated it |
+| R09 | minor    | Kotlin receiver field unsynchronized; `androidx.core` only transitive  | **FIXED** — `@Volatile` + a lock, and the dependency declared explicitly                           |
+| R10 | minor    | No native compile evidence recorded                                    | **CLOSED** — the label-gated `android-build` job is green; see `worklog.md`                        |
+| R11 | minor    | Dead ternary with two identical branches                               | **FIXED** — deleted                                                                                |
+| R12 | minor    | Release tooling is large relative to the product guard                 | **PARTLY ACCEPTED** — see below                                                                    |
 
 ### Two findings worth reading rather than just ticking
 
@@ -63,6 +63,30 @@ right that it is the same criticism the plan levelled at the superseded
   the delivery gate, it was already correct, and its 65 tests include the
   mismatch cases that make it a gate rather than decoration. Rewriting it
   smaller would have discarded that evidence for no behavioural gain.
+
+## Round 2 review — re-review of the remediation (4123266)
+
+Nine of twelve closed and verified. Two not closed as recorded, and four new
+items. The reviewer also confirmed the Kotlin question I raised:
+`return@OnStartObserving` from inside `synchronized { }` is correct — it is an
+`inline` function, so the labelled return crosses it legally and the inlined
+`finally` releases the monitor.
+
+| ID  | Severity | Finding                                                                | Disposition                                                   |
+| --- | -------- | ---------------------------------------------------------------------- | ------------------------------------------------------------- |
+| R08 | minor    | Not actually fixed — only `_layout.tsx` had changed                    | **FIXED** — both files branch on the same `deviceAccess`      |
+| R10 | minor    | Compile evidence missing, and the green run predates the Kotlin change | **RECORDED as unverified** pending the run on the final head  |
+| N01 | minor    | Exhausting the page bound fell through to `absent` → duplicate app     | **FIXED** — returns `ambiguous` naming the bound              |
+| N02 | minor    | A transient re-read failure dropped a settled session to `unknown`     | **FIXED** — the settled mode is held through the retry window |
+| N03 | minor    | `worklog.md` recorded nothing for the remediation commit               | **FIXED** — the remediation section above                     |
+| N04 | minor    | The screen suite still printed act warnings, and the new tests added 3 | **FIXED** — presses wrapped in `act`; 8 warnings → 0          |
+
+N02's fix deliberately stops short of what it could have done: once the retries
+are exhausted the mode still falls to `unavailable` rather than keeping the last
+good reading. A change broadcast is exactly the event that can turn an ordinary
+tablet into a kiosk one, so a stale `standard` is not something to keep trusting.
+The fix only prevents the _flash_ to `unknown` mid-retry, which is what was
+tearing down a working session.
 
 ## Quality audit
 
