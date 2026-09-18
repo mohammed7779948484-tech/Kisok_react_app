@@ -391,3 +391,60 @@ and the failed-sign-out message). It composes `Screen`, `Button` and `Text`
 from the design system, so it inherits their tokens and 48dp targets, but
 nobody has looked at it at a tablet size. Settling that needs either hardware
 or a temporary provider stub in the UI Lab.
+
+## Round 3 remediation — CodeRabbit (commit ff60aad)
+
+Five findings, three major, all verified against the code before acting and all
+real. See `review.md` for the dispositions and reasoning.
+
+### CR-3 — unrecognised `kiosk_device_role` derived `standard` (`behavior-change`)
+
+The old rows asserted the fail-open, so this is a deliberate behaviour change
+and the old assertions were replaced, not loosened:
+
+```
+RED:   npx jest features/device-mode/model
+       → 1 failed, 16 passed
+       ✕ is unknown for any other PRESENT value of the key, including a wrong type
+GREEN: npx jest features/device-mode → 41 passed
+```
+
+### CR-4 — missing native module derived `standard` on Android (`behavior-change`)
+
+```
+PROBE: Platform.OS under this jest config → "ios"
+       (so the existing non-Android rows keep their meaning without change)
+RED:   npx jest features/device-mode/native → 1 failed, 8 passed
+       ✕ is unknown when the module is missing ON ANDROID
+GREEN: npx jest features/device-mode → 42 passed
+```
+
+### CR-5 — the page bound sat after the `paging.next` `continue` (`bug`)
+
+```
+RED:   npx jest tools/mdm → 1 failed, 24 passed
+       ✕ enforces the page bound on the paging.next path too, not just the offset path
+GREEN: npx jest tools/mdm → 25 passed
+```
+
+Worth recording as a pattern rather than an incident: this is the THIRD time in
+this feature that a fix was placed after a `continue`/short-circuit and the
+accompanying test only drove the path that already worked. The first was R04's
+terminator order, the second was N01's bound on the offset path, this is the
+third. The lesson is not "be careful" — it is that a guard added to a loop with
+two advance paths needs a test per path.
+
+### Final gate on ff60aad
+
+```
+pnpm verify → PASS
+  Test Suites: 95 passed, 95 total
+  Tests:       1287 passed, 1287 total
+
+GitHub checks, all on ff60aad:
+  Verify (typecheck, lint, format, tests, guards, db, generator) : SUCCESS
+  Expo doctor                                                    : SUCCESS
+  Web bundle                                                     : SUCCESS
+  Android prebuild check (label-gated native tier)               : SUCCESS
+  Maestro flows                                                  : SKIPPED, not a pass
+```

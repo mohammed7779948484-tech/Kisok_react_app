@@ -5,9 +5,10 @@
 ```
 Current round     : complete — both rounds delivered
 Current task      : —
-Current stage     : done
-Last gate         : quality audit complete (2 review rounds + 2 remediation passes)
-Next legal action : FEATURE GATE, then hand the draft PR to a human. Never merge.
+Current stage     : round 3 remediation pushed (ff60aad), re-review in flight
+Last gate         : FEATURE GATE reopened by round 3, then re-passed
+Next legal action : confirm the round 3 re-review is clean, then hand the draft
+                    PR to a human. Never merge.
 Blocked by        : —
 ```
 
@@ -37,7 +38,10 @@ ROUND 2 GATE (release pipeline): PASS — with one thing stated plainly, so the
   line-by-line secret-safety read). The release workflow has NEVER been
   dispatched and no ManageEngine call has ever been made. AC-09 and AC-10 are
   implemented and unit-tested, not exercised. See brief.md AC-09/AC-10.
-FEATURE GATE: PASS — see the checklist below.
+FEATURE GATE: PASS — reopened once. It had been recorded PASS before the third
+review round, and that was wrong: CR-3, CR-4 and CR-5 were live fail-opens at
+that moment. Recorded here rather than silently re-ticked, because a gate that
+only ever moves forward is not measuring anything. — see the checklist below.
 
 ## Feature gate
 
@@ -50,9 +54,10 @@ FEATURE GATE: PASS — see the checklist below.
 - [x] Required fast GitHub CI PASS on the final HEAD
 - [x] Required runtime evidence recorded, with its limits stated
 - [x] Required native tier PASS — android-build SUCCESS on the final head
-- [x] Reviewer findings dispositioned — 12 + 6, all closed or argued
-- [x] Blocking/major fixes re-reviewed — the re-review caught R08 as falsely
-      closed, which is why there were two remediation passes
+- [x] Reviewer findings dispositioned — 12 + 6 + 5 across three rounds
+- [x] Blocking/major fixes re-reviewed — round 2 caught R08 as falsely closed;
+      round 3 (CodeRabbit) found three FAIL-OPENS that rounds 1 and 2 both read
+      past, so the gate was reopened and re-passed rather than left standing
 - [x] Quality audit clean of code defects; its record findings are actioned
 - [x] Anything not verified explicitly recorded
 - [x] Shared/core changes justified — app/_layout.tsx, app/index.tsx,
