@@ -39,9 +39,10 @@ export function DeviceModeProvider({ children }: { children: React.ReactNode }) 
   // publish: a late earlier one would silently downgrade a kiosk tablet to
   // "standard", which is the one failure this feature exists to prevent.
   const latestRead = useRef(0);
-  // Whether any read has ever produced a real verdict. Used to avoid dropping
-  // a working session back to `unknown` for a transient re-read failure.
-  const hasSettled = useRef(false);
+  // The last verdict a read actually produced, or null before the first one.
+  // Used to avoid dropping a working session back to `unknown` for a transient
+  // re-read failure — but only when holding it is the SAFE direction.
+  const lastSettled = useRef<DeviceMode | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -55,7 +56,7 @@ export function DeviceModeProvider({ children }: { children: React.ReactNode }) 
         if (!active || token !== latestRead.current) return;
 
         if (next !== "unknown") {
-          hasSettled.current = true;
+          lastSettled.current = next;
           setMode(next);
           return;
         }
@@ -69,11 +70,15 @@ export function DeviceModeProvider({ children }: { children: React.ReactNode }) 
           return;
         }
 
-        // Only publish `unknown` before anything has ever been read. Once a
-        // mode is settled, a transient re-read failure must not unmount the
-        // preparation stack under an employee mid-shift; the retry window is
-        // short, and exhausting it still falls to `unavailable` above.
-        if (!hasSettled.current) setMode("unknown");
+        // Retention is DOWNGRADE-ONLY. Holding a settled verdict through the
+        // retry window avoids unmounting the preparation stack under an
+        // employee for a transient blip — but only a DPC broadcast can trigger
+        // a re-read, so this only ever happens on a MANAGED device, and there
+        // a retained `standard` is retained on exactly the tablet where it is
+        // the wrong answer (one being converted to the kiosk, say). So keep a
+        // verdict that WITHHOLDS preparation, and publish `unknown` at once
+        // when the retained one would grant it.
+        if (lastSettled.current !== "customer-kiosk") setMode("unknown");
         retryTimer = setTimeout(() => refresh(attempt + 1), delay);
       });
     };

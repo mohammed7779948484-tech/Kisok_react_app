@@ -572,11 +572,15 @@ async function findApp(
     const total = readInteger(metadata?.total_record_count);
     if (total !== undefined) {
       if (seen >= total) break;
-    } else if (apps.length < LIST_PAGE_SIZE) {
-      break;
+      // A total promised more rows and this page delivered none. That is an
+      // incomplete listing, not the end of one — breaking here would run the
+      // match over partial data and create a duplicate app. Fail closed.
+      if (apps.length === 0) return outOfPages();
+    } else {
+      // No metadata to contradict it, so a short or empty page really is the
+      // end of the listing and an absent KISOK really is absent.
+      if (apps.length < LIST_PAGE_SIZE) break;
     }
-    // An empty page with more promised would otherwise loop to the bound.
-    if (apps.length === 0) break;
     if (page === LIST_MAX_PAGES) return outOfPages();
     url = `${hosts.mdm}/api/v1/mdm/apps?limit=${LIST_PAGE_SIZE}&offset=${seen}`;
   }

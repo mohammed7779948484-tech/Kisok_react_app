@@ -448,3 +448,61 @@ GitHub checks, all on ff60aad:
   Android prebuild check (label-gated native tier)               : SUCCESS
   Maestro flows                                                  : SKIPPED, not a pass
 ```
+
+## Round 4 remediation — re-review of the round 3 fixes (commit follows)
+
+The re-review confirmed CR-1…CR-5 correct, and answered the question it was
+set — _is there a fourth fail-open?_ — with yes.
+
+### N04/N07 — the Kotlin layer (`bug`, native: no local test possible)
+
+```
+NO LOCAL TEST: this container has no Android SDK, and the module has no JVM
+test harness. The contract is covered from the JS side instead:
+  - N07: deriveDeviceMode({ kiosk_device_role: "" }) → "unknown"
+    (the native layer now emits "" for a DPC-cleared key rather than dropping it)
+  - N04: readDeviceMode already fails closed to "unknown" on a throw, which is
+    the existing, tested catch — the change is that the native side now THROWS
+    instead of returning an empty map.
+VERIFIED BY: the android-build CI job compiles the new CodedException subclass.
+```
+
+### N05 — the empty-page fall-through (`bug`)
+
+```
+RED:   npx jest tools/mdm → 1 failed, 26 passed
+       ✕ fails closed on an EMPTY page while the documented total promises more
+GREEN: npx jest tools/mdm → 27 passed
+       (the companion row pins that an empty page with NO total is still a
+        legitimate end of the listing, so the fix did not over-correct)
+```
+
+### N06 — non-boolean `restrictions_pending` (`behavior-change`)
+
+```
+RED:   npx jest features/device-mode/model → 1 failed, 17 passed
+GREEN: 18 passed
+```
+
+### N08 — retention must be downgrade-only (`behavior-change`)
+
+```
+RED:   npx jest features/device-mode/state → 1 failed, 12 passed
+       ✕ does NOT keep a settled `standard` when a re-read starts failing
+GREEN: 13 passed, after updating the ONE superseded test.
+
+SUPERSEDED TEST, named rather than loosened: the N02 row asserted that a
+settled `standard` was held through the retry window. That assertion WAS the
+fail-open N08 describes, so the retained-verdict case is now pinned with
+`customer-kiosk` — the verdict it is safe to hold — and the `standard` case is
+pinned as NOT held.
+```
+
+### Final local gate
+
+```
+pnpm verify → PASS
+  Test Suites: 95 passed, 95 total
+  Tests:       1293 passed, 1293 total
+pnpm check:docs → "Documentation matches the current workflow (89 files checked)."
+```

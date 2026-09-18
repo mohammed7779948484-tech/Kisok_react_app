@@ -169,6 +169,63 @@ Three independent reviewers, three passes, and the third still found two
 fail-opens the first two missed. Worth recording plainly rather than framing
 as convergence.
 
+## Round 4 review — re-review of the round 3 fixes (ff60aad)
+
+All five CR fixes confirmed correct and complete, with the `restrictions_pending`
+precedence intact and the wholesale `react-native` mock confirmed not to be
+hiding anything (jest-expo pins `Platform.OS = "ios"`, so the other 94 suites
+genuinely take the non-Android branch rather than the branch being dead).
+
+It also answered the question I set it — _is there a fourth fail-open?_ — with
+yes, in the one file no round had re-read since the first commit.
+
+| ID  | Severity | Finding                                                                                        | Disposition                                                        |
+| --- | -------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| N04 | major    | Kotlin turned an unreadable read (null service, null bundle) into an empty bundle → `standard` | **FIXED** — both throw; JS fails closed to `unknown`               |
+| N05 | major    | CR-5's class survived: an EMPTY page with a total promising more still fell to `absent`        | **FIXED** — returns `ambiguous`; the no-metadata case still breaks |
+| N06 | minor    | A present non-boolean `restrictions_pending` fell through to the role check                    | **FIXED** — present and not `false` is `unknown`                   |
+| N07 | minor    | A key the DPC set to NULL was dropped, so a cleared role looked absent                         | **FIXED** — emitted as `""`, which derives `unknown`               |
+| N08 | minor    | Retention held a settled `standard` through the retry window on a managed device               | **FIXED** — retention is downgrade-only                            |
+| N09 | minor    | `mdm-operations.md` did not state CR-3's operational consequence                               | **FIXED**                                                          |
+| N10 | —        | The invariant the guard rests on was only a caveat                                             | **RECORDED as an accepted risk** — below                           |
+
+**N04 is the finding that justifies the whole round.** The three previous
+rounds were all looking at the JS layer; the Kotlin made an unreadable state
+indistinguishable from an unmanaged device _before_ JS could see it, so the
+fail-closed derivation above it had nothing to work with. Same mistake as CR-4,
+one layer down.
+
+**N05 is the fourth instance of one pattern.** A guard added to this loop, and
+a test that only drove the path which already worked. R04's terminator order,
+N01's offset-path bound, CR-5's `paging.next` bound, and now the empty-page
+branch — where my own comment ("an empty page with more promised would
+otherwise loop to the bound") shows I considered the case and chose the wrong
+answer.
+
+**N08 deserves naming.** Retention looked like pure UX polish. But only a DPC
+broadcast can trigger a re-read, so it only ever engages on a MANAGED device —
+meaning a retained `standard` was retained on exactly the tablets where it is
+wrong, such as one being converted to the kiosk. It is now downgrade-only:
+`customer-kiosk` is held, `standard` is not.
+
+## Accepted risks
+
+**AR-01 — the guard depends on the app configuration staying applied, and
+cannot detect its removal.** A kiosk tablet whose KISOK app configuration is
+deleted in the console, never delivered, or not reapplied after a factory reset
+or app reinstall presents an empty restrictions bundle. At the Android API
+level that is indistinguishable from an unmanaged tablet, so the app derives
+`standard` and Preparation becomes reachable on the locked tablet with no
+signal.
+
+No unprivileged Android API distinguishes "managed device with no app config"
+from "unmanaged device", so this cannot be closed in the client — the app
+cannot tell, and inventing a way for it to tell would mean the device-management
+framework this work exists to avoid building. It is a console-discipline
+invariant: verify the app configuration is present after any factory reset,
+re-enrolment or KISOK reinstall. Recorded in `mdm-operations.md` §2 and in the
+physical-tablet checklist.
+
 ## Feature gate
 
 `PASS` — recorded in `todo.md`. The draft PR may be handed to a human. It is

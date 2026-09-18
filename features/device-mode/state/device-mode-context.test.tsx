@@ -183,11 +183,15 @@ describe("a read that keeps failing", () => {
 });
 
 describe("a settled device whose re-read starts failing", () => {
-  it("keeps the mode it already read while retrying, instead of flashing unknown", async () => {
+  // SUPERSEDED: this originally asserted that a settled `standard` was held
+  // through the retry window too. That was a fail-open — see the
+  // downgrade-only tests below — so the retained-verdict case is now pinned
+  // with `customer-kiosk`, the verdict it is safe to hold.
+  it("keeps a withholding verdict while retrying, instead of flashing unknown", async () => {
     jest.useFakeTimers();
-    nativeSource.readDeviceMode.mockResolvedValue("standard");
+    nativeSource.readDeviceMode.mockResolvedValue("customer-kiosk");
     await renderProvider();
-    expect(screen.getByText("standard")).toBeTruthy();
+    expect(screen.getByText("customer-kiosk")).toBeTruthy();
 
     const notify = nativeSource.subscribeToManagedConfigurationChanges.mock
       .calls[0]![0] as () => void;
@@ -196,9 +200,7 @@ describe("a settled device whose re-read starts failing", () => {
       notify();
     });
 
-    // Mid-retry: tearing a working session down to `unknown` would unmount the
-    // preparation stack under an employee for a transient read blip.
-    expect(screen.getByText("standard")).toBeTruthy();
+    expect(screen.getByText("customer-kiosk")).toBeTruthy();
     jest.useRealTimers();
   });
 
@@ -220,6 +222,45 @@ describe("a settled device whose re-read starts failing", () => {
     }
 
     expect(screen.getByText("unavailable")).toBeTruthy();
+    jest.useRealTimers();
+  });
+});
+
+describe("retention during retries is downgrade-only", () => {
+  it("does NOT keep a settled `standard` when a re-read starts failing", async () => {
+    // Only a DPC broadcast can trigger a re-read, so this only ever happens on
+    // a MANAGED device — exactly where holding on to `standard` is the wrong
+    // answer. A tablet being converted to the kiosk is the live case.
+    jest.useFakeTimers();
+    nativeSource.readDeviceMode.mockResolvedValue("standard");
+    await renderProvider();
+    expect(screen.getByText("standard")).toBeTruthy();
+
+    const notify = nativeSource.subscribeToManagedConfigurationChanges.mock
+      .calls[0]![0] as () => void;
+    nativeSource.readDeviceMode.mockResolvedValue("unknown");
+    await act(async () => {
+      notify();
+    });
+
+    expect(screen.getByText("unknown")).toBeTruthy();
+    jest.useRealTimers();
+  });
+
+  it("DOES keep a settled `customer-kiosk` while retrying — that verdict withholds preparation", async () => {
+    jest.useFakeTimers();
+    nativeSource.readDeviceMode.mockResolvedValue("customer-kiosk");
+    await renderProvider();
+    expect(screen.getByText("customer-kiosk")).toBeTruthy();
+
+    const notify = nativeSource.subscribeToManagedConfigurationChanges.mock
+      .calls[0]![0] as () => void;
+    nativeSource.readDeviceMode.mockResolvedValue("unknown");
+    await act(async () => {
+      notify();
+    });
+
+    expect(screen.getByText("customer-kiosk")).toBeTruthy();
     jest.useRealTimers();
   });
 });

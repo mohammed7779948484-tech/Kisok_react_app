@@ -84,11 +84,14 @@ export type DeviceRoleAccess = "allowed" | "blocked" | "pending";
  *   managed device whose policy we cannot read. Calling that an ordinary
  *   tablet would fail OPEN and put Preparation on a kiosk.
  *
- * `restrictions_pending` wins over all of it: a role value sitting beside it
- * is not yet the settled policy.
+ * `restrictions_pending` wins over all of it, and is read with the same rule:
+ * Android documents it as a boolean, so `true` means pending and `false` means
+ * settled, but any OTHER present value is a flag we cannot interpret from a
+ * DPC that is managing this device — which is `unknown`, not settled.
  */
 export function deriveDeviceMode(restrictions: ManagedConfiguration["restrictions"]): DeviceMode {
-  if (restrictions[RESTRICTIONS_PENDING_KEY] === true) return "unknown";
+  const pending = restrictions[RESTRICTIONS_PENDING_KEY];
+  if (pending !== undefined && pending !== false) return "unknown";
 
   const role = restrictions[KIOSK_DEVICE_ROLE_KEY];
   if (role === undefined) return "standard";

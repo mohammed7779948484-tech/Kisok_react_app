@@ -83,10 +83,27 @@ is what makes a tablet an ordinary employee device, and that is the fail-safe
 direction.
 
 The restriction is declared as a **choice**, not free text, so the console
-offers that single option rather than a text box. This is deliberate: a typed
-`customer-kiosk` or `Customer_Kiosk` would derive as an ordinary device and
-quietly make Preparation reachable on the kiosk tablet, which is the one
-failure this feature exists to prevent.
+offers that single option rather than a text box.
+
+**An unset key is the only correct employee-tablet configuration.** Setting
+`kiosk_device_role` to anything other than `customer_kiosk` does not mean
+"ordinary tablet" — it withholds Preparation on that tablet until the value is
+removed. That is deliberate: only an MDM can set the key at all, so a value the
+app does not recognise means a managed device whose policy it cannot read, and
+guessing "ordinary" there is the one failure this feature exists to prevent.
+The `choice` restriction stops an administrator typing a wrong value through
+the normal UI, but ManageEngine's raw key/value app-config path can still set
+one.
+
+⚠️ **Removing the KISOK app configuration silently disables the guard.** A
+kiosk tablet presents an empty restrictions bundle if its app configuration is
+deleted, never delivered, or fails to reapply after a factory reset or an app
+reinstall — and at the Android API level that is indistinguishable from an
+unmanaged tablet. The app derives `standard` and Preparation becomes reachable
+on the locked tablet, with no signal. There is no unprivileged Android API that
+tells the two apart, so this cannot be fixed in the client: it is a
+console-discipline invariant. Check the app configuration is present after any
+factory reset, re-enrolment or KISOK reinstall.
 
 ⚠️ The single assumption most worth confirming: that this tenant can push an app
 configuration to an **in-house enterprise** APK, not only to a Managed Google

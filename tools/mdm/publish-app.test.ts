@@ -444,3 +444,36 @@ it("enforces the page bound on the paging.next path too, not just the offset pat
   expect(result.failure).toMatch(/did not finish within 10 pages/i);
   expect(calls.some((c) => c.method === "POST" && c.url.includes("/api/v1/mdm/apps"))).toBe(false);
 });
+
+it("fails closed on an EMPTY page while the documented total promises more", async () => {
+  // The last surviving path to `matchAppByPackage` over partial data: a total
+  // says there are more rows, but the page comes back empty. Breaking here
+  // reports KISOK absent and creates a duplicate after the APK is uploaded.
+  const { deps: d, calls } = deps({
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
+    "GET /api/v1/mdm/apps": () => ({
+      status: 200,
+      body: { apps: [], metadata: { total_record_count: 500 } },
+    }),
+  });
+
+  const result = await publish(INPUTS, d);
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(calls.some((c) => c.method === "POST" && c.url.includes("/api/v1/mdm/apps"))).toBe(false);
+});
+
+it("an empty page with NO total is still the honest end of the listing", async () => {
+  // Without metadata there is nothing promising more, so an empty page really
+  // does end the walk — and KISOK really is absent, so create is correct.
+  const { deps: d } = deps({
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
+    "GET /api/v1/mdm/apps": () => ({ status: 200, body: { apps: [] } }),
+    "POST /api/v1/mdm/apps": () => ({ status: 200, body: { app_id: 77 } }),
+  });
+
+  const result = await publish(INPUTS, d);
+
+  expect(result).toMatchObject({ ok: true, action: "created" });
+});

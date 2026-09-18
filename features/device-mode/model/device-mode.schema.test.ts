@@ -54,6 +54,13 @@ describe("deriveDeviceMode", () => {
     expect(deriveDeviceMode({ some_other_policy: "x" })).toBe("standard");
   });
 
+  // The native layer emits "" for a key the DPC set to null (some consoles
+  // clear a value that way) rather than dropping it, precisely so this derives
+  // "present but unrecognised" instead of looking like an unmanaged device.
+  it("is unknown for a cleared role, which the native layer emits as an empty string", () => {
+    expect(deriveDeviceMode({ kiosk_device_role: "" })).toBe("unknown");
+  });
+
   it("is unknown while Android reports restrictions_pending, even with a role already set", () => {
     expect(deriveDeviceMode({ restrictions_pending: true })).toBe("unknown");
     expect(
@@ -61,8 +68,16 @@ describe("deriveDeviceMode", () => {
     ).toBe("unknown");
   });
 
-  it("ignores a restrictions_pending that is not true", () => {
+  it("treats an explicit restrictions_pending: false as settled", () => {
     expect(deriveDeviceMode({ restrictions_pending: false })).toBe("standard");
+  });
+
+  // Same reasoning as the role key: only a DPC sets this at all, so a value we
+  // cannot interpret means a managed device we cannot read — not a settled one.
+  it("is unknown for a PRESENT restrictions_pending that is not a boolean", () => {
+    expect(deriveDeviceMode({ restrictions_pending: "true" })).toBe("unknown");
+    expect(deriveDeviceMode({ restrictions_pending: 1 })).toBe("unknown");
+    expect(deriveDeviceMode({ restrictions_pending: "" })).toBe("unknown");
   });
 });
 

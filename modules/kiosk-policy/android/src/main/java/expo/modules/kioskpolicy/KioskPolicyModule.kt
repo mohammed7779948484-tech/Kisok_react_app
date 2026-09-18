@@ -7,9 +7,22 @@ import android.content.IntentFilter
 import android.content.RestrictionsManager
 import android.os.Bundle
 import androidx.core.content.ContextCompat
+import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+
+/**
+ * The managed configuration could not be READ. Distinct from "there is no
+ * managed configuration", which is an empty map and a legitimate answer.
+ *
+ * It must stay distinct: JS derives an ordinary device from an empty bundle,
+ * so collapsing an unreadable state into one would put the Preparation
+ * experience on a locked kiosk tablet. Throwing lets `readDeviceMode`'s
+ * existing catch fail closed to `unknown`.
+ */
+class RestrictionsUnreadableException(reason: String) :
+  CodedException("ERR_KIOSK_POLICY_UNREADABLE", "Managed configuration unreadable: $reason", null)
 
 /**
  * KISOK kiosk-policy — reads the MDM-pushed managed configuration for THIS
@@ -111,19 +124,30 @@ class KioskPolicyModule : Module() {
    * Every key currently set for this package — including
    * `restrictions_pending` when the DPC sets it — reduced to JSON-safe
    * primitives. String/Boolean/Int pass through; anything else becomes its
-   * string form. A null value means "unset" in Android bundle semantics, so
-   * the key is dropped rather than emitted as null, which would fail the Zod
-   * boundary in JS and reject the whole payload.
+   * string form.
+   *
+   * An EMPTY map means "this package has no managed configuration", which JS
+   * reads as an ordinary tablet. So nothing that merely failed to be read may
+   * return an empty map: a missing system service and a null bundle are
+   * unreadable states, not evidence of an unmanaged device, and they throw so
+   * the JS layer can fail closed to `unknown` instead.
+   *
+   * A key present with a NULL value is the same distinction one level down: it
+   * is a key the DPC set (some consoles clear a value that way), not a key
+   * that was never set, so it is emitted as an empty string rather than
+   * dropped. JS then sees a present-but-unrecognised value and withholds
+   * Preparation, instead of seeing an absent key and granting it.
    */
   private fun readApplicationRestrictions(): Map<String, Any> {
     val restrictionsManager = context.getSystemService(RestrictionsManager::class.java)
-      ?: return emptyMap()
-    val restrictions: Bundle = restrictionsManager.applicationRestrictions ?: return emptyMap()
+      ?: throw RestrictionsUnreadableException("RestrictionsManager is unavailable")
+    val restrictions: Bundle = restrictionsManager.applicationRestrictions
+      ?: throw RestrictionsUnreadableException("the application restrictions bundle is null")
 
     val result = mutableMapOf<String, Any>()
     for (key in restrictions.keySet()) {
-      val value = restrictions.get(key) ?: continue
-      result[key] = when (value) {
+      result[key] = when (val value = restrictions.get(key)) {
+        null -> ""
         is String, is Boolean, is Int -> value
         else -> value.toString()
       }
