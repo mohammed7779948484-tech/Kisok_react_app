@@ -121,3 +121,112 @@ pnpm test:ci     → Test Suites: 93 passed, 93 total
   (every pre-existing customer, preparation and auth/sign-out suite still green)
 ROUND 1 GATE: PASS
 ```
+
+## Round 2 — the release pipeline
+
+### T07 — release-signing plugin (`config`, salvaged)
+
+Taken unchanged from the superseded `feature/kiosk-runtime`
+(`plugins/with-android-release-signing.ts`). Re-read against
+https://reactnative.dev/docs/signed-apk-android before reuse: it writes the
+documented `MYAPP_UPLOAD_*` gradle properties and the `hasProperty`-guarded
+`signingConfigs.release` block. No change was needed.
+
+BOTH paths were exercised, because an env-guarded plugin that was only ever
+run one way is half untested:
+
+```
+INERT PATH (no MYAPP_UPLOAD_* env):
+  npx expo prebuild --platform android --no-install --clean
+  grep -c MYAPP_UPLOAD android/gradle.properties      → 0
+  grep signingConfig android/app/build.gradle         → both build types on signingConfigs.debug
+  (the Expo template default is preserved byte-for-byte — local dev and the e2e
+   workflow depend on the debug-signed release)
+
+ACTIVE PATH (all four set):
+  android/gradle.properties:69-72  → the four MYAPP_UPLOAD_* entries
+  android/app/build.gradle         → the guarded signingConfigs.release block
+  android/app/build.gradle:124     → buildTypes.release now on signingConfigs.release
+  (line 119, the debug build type, is untouched)
+GATE: PASS
+```
+
+### T08 — verify-release-apk (`behavior`, salvaged)
+
+Taken unchanged from the superseded branch with its 868-line colocated test.
+
+```
+npx jest tools/release → Tests: 65 passed, 65 total
+```
+
+The suite includes the mismatch cases that make it a real gate: a wrong
+`--package`, the Android debug certificate, a certificate whose SHA-256 is not
+the pin, and a missing `assets/index.android.bundle`. Reused rather than
+rewritten — it was already correct, already tested, and rewriting it would have
+thrown away evidence.
+
+### T09 — ManageEngine publish script (`behavior`, new and much smaller)
+
+The superseded branch's `tools/mdm/upload-beta.ts` was 2189 lines carrying
+Beta/Production group validation, label resolution and rollout orchestration —
+infrastructure for a fleet that does not exist. It was NOT reused. Its verified
+knowledge of the REST contracts was.
+
+```
+RED:   npx jest tools/mdm → suite failed to run (module absent)
+GREEN: npx jest tools/mdm → Tests: 20 passed, 20 total
+
+Two of those tests initially failed for a reason worth recording: the fake
+fetch matched routes by URL only, so the create POST received the list
+response. The HARNESS was wrong, not the implementation — routes are now keyed
+"METHOD /path".
+
+GUARD PROVEN TO REJECT (not just to pass):
+  env -u MDM_CLIENT_ID -u MDM_CLIENT_SECRET -u MDM_REFRESH_TOKEN \
+    node tools/mdm/publish-app.ts
+  → error: MDM_CLIENT_ID is not set.
+    error: MDM_CLIENT_SECRET is not set.
+    error: MDM_REFRESH_TOKEN is not set.
+    error: APK_PATH (or --apk) is not set.
+  exit 1, before any network call.
+GATE: PASS
+```
+
+NOT VERIFIED: every ManageEngine HTTP call. No request has been made against a
+real tenant. See "Explicitly not verified" below.
+
+### T10 — the release workflow (`config`)
+
+One manual dispatch: build → verify → publish. The superseded branch split this
+across two workflows and then needed run-provenance validation to trust the
+artifact hand-off; one run removes that problem instead of solving it.
+
+```
+pnpm check:ci-scripts → "Workflow scripts resolve correctly and `pnpm verify`
+                         matches the CI verify job (4 workflows, 10 checks)."
+YAML parse           → jobs: ['release'], 15 steps
+```
+
+Secret safety, read line by line: the seven secrets appear only as step `env`;
+the presence check prints NAMES only; the keystore is decoded into the
+gitignored `android/` tree and never into the artifact; `publish-app.ts`
+redacts the three MDM credentials out of everything it prints, and its
+top-level catch refuses to print a raw error at all.
+
+NOT VERIFIED: the workflow has never been dispatched. It requires secrets this
+environment does not have.
+
+### T11 — operations doc (`config`)
+
+```
+pnpm check:docs → "Documentation matches the current workflow (89 files checked)."
+```
+
+### Round 2 gate
+
+```
+pnpm verify → PASS (typecheck, lint, format, 93 suites / 1182 tests,
+              check:docs, check:commits, check:e2e-appid, check:ci-scripts,
+              db:verify, generate:smoke)
+ROUND 2 GATE: PASS
+```
