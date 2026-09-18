@@ -25,7 +25,7 @@ tooling.
 | R07 | minor    | Two tests printed `console.error`; the suite runs with no output       | **FIXED** — silent sink, and the log is now asserted rather than ignored                           |
 | R08 | minor    | `app/index.tsx` and `app/_layout.tsx` stated the same rule differently | **FIXED in the second pass** — the first pass changed only `_layout.tsx` and the row overstated it |
 | R09 | minor    | Kotlin receiver field unsynchronized; `androidx.core` only transitive  | **FIXED** — `@Volatile` + a lock, and the dependency declared explicitly                           |
-| R10 | minor    | No native compile evidence recorded                                    | **CLOSED** — the label-gated `android-build` job is green; see `worklog.md`                        |
+| R10 | minor    | No native compile evidence recorded                                    | **CLOSED** — `android-build` SUCCESS on the FINAL head db5fe97; run id in `worklog.md`             |
 | R11 | minor    | Dead ternary with two identical branches                               | **FIXED** — deleted                                                                                |
 | R12 | minor    | Release tooling is large relative to the product guard                 | **PARTLY ACCEPTED** — see below                                                                    |
 
@@ -72,14 +72,14 @@ items. The reviewer also confirmed the Kotlin question I raised:
 `inline` function, so the labelled return crosses it legally and the inlined
 `finally` releases the monitor.
 
-| ID  | Severity | Finding                                                                | Disposition                                                   |
-| --- | -------- | ---------------------------------------------------------------------- | ------------------------------------------------------------- |
-| R08 | minor    | Not actually fixed — only `_layout.tsx` had changed                    | **FIXED** — both files branch on the same `deviceAccess`      |
-| R10 | minor    | Compile evidence missing, and the green run predates the Kotlin change | **RECORDED as unverified** pending the run on the final head  |
-| N01 | minor    | Exhausting the page bound fell through to `absent` → duplicate app     | **FIXED** — returns `ambiguous` naming the bound              |
-| N02 | minor    | A transient re-read failure dropped a settled session to `unknown`     | **FIXED** — the settled mode is held through the retry window |
-| N03 | minor    | `worklog.md` recorded nothing for the remediation commit               | **FIXED** — the remediation section above                     |
-| N04 | minor    | The screen suite still printed act warnings, and the new tests added 3 | **FIXED** — presses wrapped in `act`; 8 warnings → 0          |
+| ID  | Severity | Finding                                                                | Disposition                                                                                                  |
+| --- | -------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| R08 | minor    | Not actually fixed — only `_layout.tsx` had changed                    | **FIXED** — both files branch on the same `deviceAccess`                                                     |
+| R10 | minor    | Compile evidence missing, and the green run predates the Kotlin change | **CLOSED** — SUCCESS on db5fe97, which compiles the remediated Kotlin and resolves the new gradle dependency |
+| N01 | minor    | Exhausting the page bound fell through to `absent` → duplicate app     | **FIXED** — returns `ambiguous` naming the bound                                                             |
+| N02 | minor    | A transient re-read failure dropped a settled session to `unknown`     | **FIXED** — the settled mode is held through the retry window                                                |
+| N03 | minor    | `worklog.md` recorded nothing for the remediation commit               | **FIXED** — the remediation section above                                                                    |
+| N04 | minor    | The screen suite still printed act warnings, and the new tests added 3 | **FIXED** — presses wrapped in `act`; 8 warnings → 0                                                         |
 
 N02's fix deliberately stops short of what it could have done: once the retries
 are exhausted the mode still falls to `unavailable` rather than keeping the last

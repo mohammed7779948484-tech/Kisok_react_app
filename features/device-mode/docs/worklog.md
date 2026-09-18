@@ -326,6 +326,47 @@ android-build / "Android prebuild check" (label-gated): SUCCESS on be1e961
 ```
 
 That run predates the Kotlin `synchronized`/`@Volatile` change and the new
-`androidx.core:core-ktx` gradle dependency, so it does NOT cover the current
-code. The run on the final head is recorded below when it lands; until then the
-native compile of the remediated module is **UNVERIFIED**.
+`androidx.core:core-ktx` gradle dependency, so it does NOT cover that code.
+
+The run on the FINAL head does:
+
+```
+Android prebuild check — SUCCESS on db5fe97
+  https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/35297426092
+  (expo prebuild --platform android, then ./gradlew assembleDebug)
+```
+
+That compiles `KioskPolicyModule.kt` with the `@Volatile` field, the
+`synchronized(receiverLock)` blocks and the labelled return, and resolves the
+newly declared `androidx.core:core-ktx` dependency. R10 is closed on evidence
+that covers the shipped code, not on an earlier run.
+
+### Fast CI on the final head db5fe97
+
+```
+Verify (typecheck, lint, format, tests, guards, db, generator) : SUCCESS
+  https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/35297426008
+Expo doctor                                                    : SUCCESS
+Web bundle                                                     : SUCCESS
+Android prebuild check (label-gated native tier)               : SUCCESS
+Maestro flows                                                  : SKIPPED — honest skip, not a pass.
+  No `e2e` label: this guard adds no new customer journey to drive, and the one
+  state worth driving on a device (a kiosk-configured tablet) cannot be
+  reproduced on an emulator without a DPC.
+```
+
+### Runtime evidence — browser, tablet sizes
+
+```
+pnpm web on :8099, driven with Playwright/Chromium at
+  tablet portrait 768x1024, tablet landscape 1280x800, narrow web 420x900
+→ the app boots and renders the sign-in screen at all three sizes
+→ console errors: NONE at any size
+```
+
+What that does and does not prove: on web the native module is absent, so the
+device mode is `standard` by design. This is real regression evidence for the
+"ordinary device, nothing changes" path (AC-01, signed-out row) and nothing
+more. The `customer_kiosk` and `unavailable` paths CANNOT be reached in a
+browser — they are covered by the model, provider, screen and route tests, and
+remain PHYSICAL/TENANT VALIDATION REQUIRED on hardware.
