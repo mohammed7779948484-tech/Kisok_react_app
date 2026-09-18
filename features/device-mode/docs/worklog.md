@@ -464,7 +464,16 @@ test harness. The contract is covered from the JS side instead:
   - N04: readDeviceMode already fails closed to "unknown" on a throw, which is
     the existing, tested catch — the change is that the native side now THROWS
     instead of returning an empty map.
-VERIFIED BY: the android-build CI job compiles the new CodedException subclass.
+VERIFIED BY: the android-build CI job, which compiles the new CodedException
+subclass. Result on the head carrying it:
+
+  Android prebuild check — SUCCESS on 2ff9f6b
+    https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/35298812598
+
+That is the check that matters here: RestrictionsUnreadableException extends
+expo.modules.kotlin.exception.CodedException with a (code, message, cause)
+constructor, and that signature could not be verified in this container — it
+has no Android SDK. A green assembleDebug is the proof.
 ```
 
 ### N05 — the empty-page fall-through (`bug`)
@@ -505,4 +514,11 @@ pnpm verify → PASS
   Test Suites: 95 passed, 95 total
   Tests:       1293 passed, 1293 total
 pnpm check:docs → "Documentation matches the current workflow (89 files checked)."
+
+GitHub checks, all on 2ff9f6b:
+  Verify (typecheck, lint, format, tests, guards, db, generator) : SUCCESS
+  Expo doctor                                                    : SUCCESS
+  Web bundle                                                     : SUCCESS
+  Android prebuild check (label-gated native tier)               : SUCCESS
+  Maestro flows                                                  : SKIPPED, not a pass
 ```
