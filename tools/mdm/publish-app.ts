@@ -115,10 +115,21 @@ export interface AppDetails {
   appId: number | string;
   /** The name the TENANT gives this app — not ours. See the update body. */
   appName: string | undefined;
+  /**
+   * Set when the body echoed an app_id that is not the one requested, so this
+   * payload describes some OTHER app and nothing in it may be trusted.
+   */
+  respondsToAnotherApp: number | string | undefined;
   bundleIdentifier: string | undefined;
   appType: number | undefined;
   platformType: unknown;
   releaseLabels: ReleaseLabel[];
+  /**
+   * How many `release_labels` entries could not be read. A dropped label is
+   * not a label that is not there: it could be the Stable one, and choosing
+   * from the survivors would push the release into the wrong channel.
+   */
+  unreadableLabels: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -285,14 +296,20 @@ function readInteger(value: unknown): number | undefined {
  * enterprise app. The package check could confirm a match but could never find
  * one. Scanning every entry is what makes "absent" mean absent.
  */
-export function listedAppIds(apps: readonly ListedApp[]): {
+export function listedAppIds(apps: readonly unknown[]): {
   ids: (number | string)[];
   unusable: number;
 } {
   const ids: (number | string)[] = [];
   let unusable = 0;
   for (const app of apps) {
-    const appId = readId(app.app_id);
+    // An entry that is not even an object is as unreadable as one with no
+    // app_id, and must be counted the same way. An earlier version dropped
+    // these in the listing walk instead, so they never reached this counter:
+    // the walk collected nothing, reported nothing unusable, and `absent`
+    // took the create branch — the exact fail-open the app_id count exists
+    // to prevent, one layer up.
+    const appId = isRecord(app) ? readId(app.app_id) : undefined;
     if (appId === undefined) unusable += 1;
     else ids.push(appId);
   }
@@ -319,21 +336,32 @@ export function parseAppDetails(body: unknown, appId: number | string): AppDetai
   const app = isRecord(record.app) ? record.app : record;
   const rawLabels = Array.isArray(app.release_labels) ? app.release_labels : [];
   const releaseLabels: ReleaseLabel[] = [];
+  let unreadableLabels = 0;
   for (const label of rawLabels) {
-    if (!isRecord(label)) continue;
-    const id = readId(label.release_label_id);
-    const name = label.release_label_name;
-    if (id === undefined || typeof name !== "string") continue;
+    const id = isRecord(label) ? readId(label.release_label_id) : undefined;
+    const name = isRecord(label) ? label.release_label_name : undefined;
+    if (id === undefined || typeof name !== "string") {
+      unreadableLabels += 1;
+      continue;
+    }
     releaseLabels.push({ releaseLabelId: id, releaseLabelName: name });
   }
   const bundle = app[BUNDLE_IDENTIFIER_FIELD];
+  // Does this body describe the app we asked for? The request is addressed by
+  // path, so a body carrying a different app_id means the response is not the
+  // one requested, and everything read out of it — the name we echo back on
+  // update above all — belongs to another app.
+  const echoedId = readId(app.app_id);
+  const mismatchedId = echoedId !== undefined && String(echoedId) !== String(appId);
   return {
     appId,
+    respondsToAnotherApp: mismatchedId ? echoedId : undefined,
     appName: typeof app.app_name === "string" ? app.app_name : undefined,
     bundleIdentifier: typeof bundle === "string" ? bundle : undefined,
     appType: readInteger(app.app_type),
     platformType: app.platform_type,
     releaseLabels,
+    unreadableLabels,
   };
 }
 
@@ -350,7 +378,7 @@ export function parseAppDetails(body: unknown, appId: number | string): AppDetai
  * documented but its integer enum could not be confirmed from an authoritative
  * source, and asserting a guessed value would either reject the right app or
  * accept the wrong one. Its observed value is reported instead. See
- * `docs/mdm-operations.md`.
+ * `features/device-mode/docs/mdm-operations.md`.
  */
 export type Identification =
   | { ok: true }
@@ -360,6 +388,18 @@ export type Identification =
   | { ok: false; kind: "unverifiable"; reason: string };
 
 export function identifyApp(details: AppDetails, packageName: string): Identification {
+  // A body about a different app tells us nothing about the one we asked for,
+  // and its app_name is the field the update echoes back — trusting it would
+  // rename the tenant's app to a stranger's.
+  if (details.respondsToAnotherApp !== undefined) {
+    return {
+      ok: false,
+      kind: "unverifiable",
+      reason:
+        `the App Details read for app_id ${details.appId} answered with app_id ` +
+        `${JSON.stringify(details.respondsToAnotherApp)}, so it describes a different app`,
+    };
+  }
   // The distinction this function exists to make. "This is a different app"
   // and "I could not tell what this app is" are not the same answer, and
   // collapsing them means an unreadable entry gets treated as absence — which
@@ -397,7 +437,20 @@ export function identifyApp(details: AppDetails, packageName: string): Identific
 export function selectReleaseLabel(
   labels: readonly ReleaseLabel[],
   appId: number | string,
+  unreadableLabels = 0,
 ): { ok: true; label: ReleaseLabel } | { ok: false; reason: string } {
+  // A label we could not read could be the Stable one. Dropping it would turn
+  // "several labels, refuse to guess" into "one label, use it" and push the
+  // release into whichever channel happened to parse.
+  if (unreadableLabels > 0) {
+    return {
+      ok: false,
+      reason:
+        `App Details for app_id ${appId} carried ${unreadableLabels} release label ` +
+        `entr${unreadableLabels === 1 ? "y" : "ies"} this script could not read, so the ` +
+        "channel to update cannot be determined — refusing to guess",
+    };
+  }
   if (labels.length === 0) {
     return {
       ok: false,
@@ -688,7 +741,7 @@ async function findApp(
   // would report KISOK absent and CREATE a duplicate enterprise app.
   let url = `${hosts.mdm}/api/v1/mdm/apps?limit=${LIST_PAGE_SIZE}&offset=0`;
   let seen = 0;
-  const collected: ListedApp[] = [];
+  const collected: unknown[] = [];
 
   for (let page = 1; page <= LIST_MAX_PAGES; page += 1) {
     const parsed = (await request(deps, `the App Repository listing (page ${page})`, url, {
@@ -700,7 +753,9 @@ async function findApp(
     if (!Array.isArray(apps)) {
       fail(`the App Repository listing (page ${page}) carried no "apps" array — failing closed`);
     }
-    for (const app of apps) if (isRecord(app)) collected.push(app);
+    // Every entry, including ones that are not objects. Filtering here would
+    // hide them from the unusable count that fails the run closed.
+    for (const app of apps) collected.push(app);
 
     seen += apps.length;
     const paging = isRecord(parsed.paging) ? parsed.paging : undefined;
@@ -773,7 +828,7 @@ async function findApp(
  * one would silently take the create branch and duplicate the app.
  */
 async function verifyCandidates(
-  collected: readonly ListedApp[],
+  collected: readonly unknown[],
   inputs: PublishInputs,
   hosts: { mdm: string },
   token: string,
@@ -856,7 +911,7 @@ async function verifyCandidates(
       `platform_type as reported: ${JSON.stringify(app.platformType)}`,
   );
 
-  const label = selectReleaseLabel(app.releaseLabels, app.appId);
+  const label = selectReleaseLabel(app.releaseLabels, app.appId, app.unreadableLabels);
   if (!label.ok) return { status: "ambiguous", reason: label.reason };
   if (!isSafePathSegment(label.label.releaseLabelId)) {
     return {
@@ -895,7 +950,10 @@ export async function publish(inputs: PublishInputs, deps: PublishDeps): Promise
     // Read the APK before any network call. It is a required input, and
     // discovering a bad path after a token exchange and a full repository walk
     // breaks the "checked before the first network call" promise above.
-    const apkBytes = inputs.dryRun ? new Uint8Array() : await readApkOrFail(inputs, deps);
+    // Read the APK even on a dry run. Dry run exists to prove a real dispatch
+    // would work, and a wrong --apk path is exactly the failure it should
+    // catch; skipping the read moved that failure to the real run.
+    const apkBytes = await readApkOrFail(inputs, deps);
 
     const token = await exchangeToken(inputs, hosts, deps);
     secrets.push(token);

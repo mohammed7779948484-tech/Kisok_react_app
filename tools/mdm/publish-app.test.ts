@@ -214,6 +214,12 @@ describe("selectReleaseLabel", () => {
   it("refuses when the app carries no release labels at all", () => {
     expect(selectReleaseLabel([], 55).ok).toBe(false);
   });
+
+  it("refuses when any label entry could not be read, even if one parsed", () => {
+    const result = selectReleaseLabel([{ releaseLabelId: 8, releaseLabelName: "Beta" }], 55, 1);
+
+    expect(result.ok).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -696,6 +702,143 @@ describe("nothing is created or updated off something unverified", () => {
     );
   }
 
+  it("stops when a listed entry is not even an object", async () => {
+    // The unusable count only fails the run closed if these reach it. An
+    // earlier version filtered non-objects out of the listing walk, so the
+    // walk collected nothing, counted nothing, and `absent` CREATED a
+    // duplicate app off a repository it could not read.
+    const { deps: d, calls } = deps({
+      "GET /api/v1/mdm/apps": () => ({
+        status: 200,
+        body: { apps: [null, "com.kisok.kiosk", 7] },
+      }),
+    });
+
+    const result = await publish(INPUTS, d);
+
+    expect(result.ok).toBe(false);
+    expect(mutations(calls)).toHaveLength(0);
+  });
+
+  it("stops rather than treating a dropped entry as a page fully read", async () => {
+    // total_record_count once counted the dropped entries, so `seen >= total`
+    // ended the walk as though the repository had been read.
+    const { deps: d, calls } = deps({
+      "GET /api/v1/mdm/apps": () => ({
+        status: 200,
+        body: { apps: [null, null], metadata: { total_record_count: 2 } },
+      }),
+    });
+
+    expect((await publish(INPUTS, d)).ok).toBe(false);
+    expect(mutations(calls)).toHaveLength(0);
+  });
+
+  it("stops when TWO entries both claim our package", async () => {
+    const ours = (appId: number) => () => ({
+      status: 200,
+      body: {
+        app_id: appId,
+        app_name: "KISOK",
+        app_type: 2,
+        bundle_identifier: "com.kisok.kiosk",
+        release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
+      },
+    });
+    const { deps: d, calls } = deps({
+      "GET /api/v1/mdm/apps": () => ({
+        status: 200,
+        body: { apps: [{ app_id: 55 }, { app_id: 56 }] },
+      }),
+      "GET /api/v1/mdm/apps/55": ours(55),
+      "GET /api/v1/mdm/apps/56": ours(56),
+    });
+
+    const result = await publish(INPUTS, d);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure).toContain("refusing to guess which to update");
+    expect(mutations(calls)).toHaveLength(0);
+  });
+
+  it("stops when the matched app carries no app_name to echo back", async () => {
+    // app_name is documented-mandatory on the update body. Without this guard
+    // JSON.stringify drops the undefined and the PUT goes out without it.
+    const { deps: d, calls } = deps({
+      "GET /api/v1/mdm/apps": () => ({ status: 200, body: LISTING }),
+      "GET /api/v1/mdm/apps/55": () => ({
+        status: 200,
+        body: {
+          app_id: 55,
+          app_type: 2,
+          bundle_identifier: "com.kisok.kiosk",
+          release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
+        },
+      }),
+    });
+
+    const result = await publish(INPUTS, d);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure).toContain("app_name");
+    expect(mutations(calls)).toHaveLength(0);
+  });
+
+  it("stops when App Details answers about a DIFFERENT app than the one addressed", async () => {
+    // Everything read out of that body belongs to another app — including the
+    // app_name the update echoes back, which would rename ours to a stranger's.
+    const { deps: d, calls } = deps({
+      "GET /api/v1/mdm/apps": () => ({ status: 200, body: LISTING }),
+      "GET /api/v1/mdm/apps/55": () => ({
+        status: 200,
+        body: {
+          app_id: 999,
+          app_name: "Totally other",
+          app_type: 2,
+          bundle_identifier: "com.kisok.kiosk",
+          release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
+        },
+      }),
+    });
+
+    const result = await publish(INPUTS, d);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure).toContain("describes a different app");
+    expect(mutations(calls)).toHaveLength(0);
+  });
+
+  it("stops rather than pushing to the wrong channel when a release label is unreadable", async () => {
+    // The unreadable one could be Stable. Dropping it turned "several labels,
+    // refuse to guess" into "one label, use it" — and shipped into Beta.
+    const { deps: d, calls } = deps({
+      "GET /api/v1/mdm/apps": () => ({ status: 200, body: LISTING }),
+      "GET /api/v1/mdm/apps/55": () => ({
+        status: 200,
+        body: {
+          app_id: 55,
+          app_name: "KISOK",
+          app_type: 2,
+          bundle_identifier: "com.kisok.kiosk",
+          release_labels: [
+            { release_label_id: 9 },
+            { release_label_id: 8, release_label_name: "Beta" },
+          ],
+        },
+      }),
+    });
+
+    const result = await publish(INPUTS, d);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure).toContain("refusing to guess");
+    expect(mutations(calls)).toHaveLength(0);
+  });
+
   it("stops when App Details carries no bundle_identifier", async () => {
     const { deps: d, calls } = deps({
       "GET /api/v1/mdm/apps": () => ({ status: 200, body: LISTING }),
@@ -824,4 +967,26 @@ it("updates without renaming the app the operator named", async () => {
 
   const put = calls.find((c) => c.method === "PUT")!;
   expect(JSON.parse(String(put.body)).app_name).toBe("KISOK Kiosk");
+});
+
+it("reads the APK on a dry run too, so a wrong path fails before the real dispatch", async () => {
+  // Dry run exists to prove a real dispatch would work. Skipping the read
+  // moved a wrong --apk path's failure to the run that actually ships.
+  const { fetchLike } = fakeFetch({ ...TOKEN_ROUTE });
+  let read = false;
+  const result = await publish(
+    { ...INPUTS, dryRun: true },
+    {
+      fetch: fetchLike,
+      readApk: async () => {
+        read = true;
+        throw new Error("ENOENT: no such file");
+      },
+      sleep: async () => {},
+      log: () => {},
+    },
+  );
+
+  expect(read).toBe(true);
+  expect(result.ok).toBe(false);
 });

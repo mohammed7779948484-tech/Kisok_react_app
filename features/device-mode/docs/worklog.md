@@ -821,3 +821,102 @@ pnpm exec expo prebuild --platform android --no-install --clean → "✔ Finishe
 `prebuild` rewrites `package.json` (`expo start --android` → `expo run:android`,
 and it adds an `ios` script). Reverted — this project ships Android tablets and
 the script change is a prebuild artefact, not a decision.
+
+## Round 8 — the fresh review of round 7, and the class behind six rounds of it
+
+The round-7 fixes were handed to an independent reviewer with instructions to
+prove findings with probes rather than reading. It found the round-7 fix
+leaking one layer up, and named the pattern the branch had been rediscovering.
+
+### F1 (blocking) — the unusable count could not see what the walk had dropped
+
+`findApp` collected only entries that were objects:
+
+```ts
+for (const app of apps) if (isRecord(app)) collected.push(app);
+```
+
+`listedAppIds` carefully counts entries it cannot address as `unusable`, and
+`verifyCandidates` stops on a non-zero count — but a non-object entry never
+reached the counter. `collected` came back empty, `unusable` was 0, and
+`absent` took the CREATE branch. Reviewer probes against the real `publish()`:
+
+| probe | listing                                              | before             |
+| ----- | ---------------------------------------------------- | ------------------ |
+| P1    | `{apps:[null,"com.kisok.kiosk",7]}`                  | uploaded + CREATED |
+| P2    | `{apps:[null,null],metadata:{total_record_count:2}}` | uploaded + CREATED |
+
+P2 is the worse one: `seen += apps.length` counted the dropped entries, so
+`seen >= total` ended the walk as though the repository had been read in full.
+The walk now collects every entry and `listedAppIds` counts a non-object the
+same as a missing `app_id`.
+
+### F2 (major) — a dropped release label could retarget the release
+
+`parseAppDetails` skipped a `release_labels` entry with no readable name.
+`selectReleaseLabel` then saw one survivor and took the "only label — use it"
+branch, so the "several labels and none is Stable — refuse to guess" guard
+never ran. Probe P3, with labels `[{id:9}, {id:8,name:"Beta"}]`, pushed the
+release into Beta and reported success. The unreadable label could have been
+Stable. `parseAppDetails` now reports `unreadableLabels` and any non-zero
+count refuses.
+
+### F3 (major) — two guards with no test, one of them this round's headline
+
+The reviewer mutated the source a line at a time and re-ran the suite:
+
+| mutation                                        | suite before | now      |
+| ----------------------------------------------- | ------------ | -------- |
+| `if (verified.length > 1)` → `if (false)`       | 45 passed    | 1 failed |
+| `if (app.appName === undefined)` → `if (false)` | 45 passed    | 1 failed |
+
+The second is the guard round 7's own commit message claimed to have added.
+With it gone, `JSON.stringify` drops the undefined and the PUT goes out
+without the field the code calls documented-mandatory — silently.
+
+### F4, F5, F6
+
+App Details is now checked to be about the app that was addressed: a body
+echoing a different `app_id` is unverifiable, not a source of an `app_name` to
+rename ours with (probe P4 had renamed app 55 to "Totally other"). `--dry-run`
+reads the APK instead of skipping it, so a wrong `--apk` path fails on the dry
+run the operator is told to trust rather than on the real dispatch. The module
+docstring's path to `mdm-operations.md` was wrong, and the update body's
+contract — `app_name` mandatory, `force_update_in_label` true — lived only in a
+code comment; it is now in the TENANT VALIDATION list an operator checks.
+
+### Every new guard was mutation-tested, not just run
+
+Each fix was reverted one at a time against the new suite:
+
+```
+F1  drop non-record entries again        → 2 failed
+F2  ignore unreadable labels again       → 2 failed
+F3a duplicate-package stop removed       → 1 failed
+F3b missing app_name accepted            → 1 failed
+F4  app_id echo unchecked                → 1 failed
+F5  dry run skips the APK read again     → 1 failed
+restored                                 → 53 passed
+```
+
+### The class, finally
+
+The reviewer's closing point is the one worth keeping: F1 and F2 are the same
+defect shape as R6-01, found one layer up and one layer down. Six rounds fixed
+the instance at the point of discovery instead of the rule. The rule is
+**never discard an input you could not read** — an unreadable entry is not an
+absent one, and `absent` is the branch that mutates.
+
+So the remaining drop sites in the file were audited as a class rather than
+waiting for round 9. `parseAppDetails` falling back to `{}` on a non-record
+body, a non-array `release_labels`, a non-record `paging`, the CLI flag loop
+and the file-upload status walk all end in a `fail()` or a stop, so they are
+fail-closed already. The two that were not are the two fixed above.
+
+### Round 8 gate
+
+```
+npx jest tools/mdm → 53 passed, 53 total
+pnpm verify        → PASS (exit 0)
+pnpm exec expo prebuild --platform android --no-install --clean → "✔ Finished prebuild"
+```

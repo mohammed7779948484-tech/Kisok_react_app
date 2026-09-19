@@ -231,6 +231,33 @@ turned two other green tests red — which is how R6-01 surfaced.
 
 **Rejected:** nothing in this round. All five findings were real.
 
+## Round 8 findings — the independent review of round 7
+
+Six findings, all accepted, none rejected. Details and probe output in
+`worklog.md`.
+
+| id  | severity | what                                                                                                                                 |
+| --- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| F1  | blocking | a listing entry that is not an object was dropped before the unusable count could see it, so an unreadable repository reached CREATE |
+| F2  | major    | an unreadable release label was dropped, collapsing "refuse to guess" into "use the only one" and shipping to the wrong channel      |
+| F3  | major    | the duplicate-package stop and the missing-`app_name` stop had no test — including the guard round 7's commit message claimed to add |
+| F4  | minor    | App Details was never checked to be about the app addressed                                                                          |
+| F5  | minor    | `--dry-run` skipped the APK read, so it could not catch a wrong `--apk`                                                              |
+| F6  | minor    | a wrong doc path, and the update contract documented only in a code comment                                                          |
+
+**The class, named at last.** F1 and F2 are R6-01's shape one layer up and one
+layer down, which makes six rounds of the same defect fixed six times at the
+point of discovery. The rule is _never discard an input you could not read_: an
+unreadable entry is not an absent one, and `absent` is the branch that mutates.
+Every remaining drop site in the file was audited against that rule this round
+rather than waiting for the next review to find the next one.
+
+**F3 is the uncomfortable one.** A guard can be correct, described accurately
+in a commit message, and still be worth nothing — round 7 shipped two that no
+test would have noticed the removal of. Every guard added this round was
+reverted one at a time against the suite to prove it is load-bearing, and that
+is now the standard for this file rather than a round-8 exercise.
+
 ## Accepted risks
 
 **AR-01 — the guard depends on the app configuration staying applied, and

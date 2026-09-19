@@ -47,9 +47,10 @@ infrastructure for a fleet that does not exist.
 1. Bump `android.versionCode` in `app.config.ts` (Android refuses an update
    whose versionCode is not greater) and `version` if the name should change.
 2. Actions → **Android release to ManageEngine** → Run workflow.
-   Tick **dry run** the first time: it authenticates and reads the App
-   Repository but uploads and changes nothing, which is the cheapest way to
-   confirm the credentials and the data centre.
+   Tick **dry run** the first time: it reads the built APK, authenticates and
+   reads the App Repository, but uploads and changes nothing — the cheapest way
+   to confirm the credentials, the data centre and that the app resolves to a
+   single repository entry.
 3. Run it for real. It builds a signed APK, verifies package identity,
    versionCode, versionName, the signing certificate and the embedded JS
    bundle, then uploads and creates or updates the KISOK enterprise app.
@@ -61,10 +62,26 @@ app in the console neither hides it from the pipeline nor causes a duplicate,
 and an entry that merely shares the name is never touched. If two entries claim
 the same package the run stops rather than guessing.
 
+Anything the run cannot READ stops it too, rather than being skipped: a
+repository entry that is not a readable object, an App Details response that
+answers about a different app than the one addressed, an app with no
+`bundle_identifier`, or a release label whose name cannot be read. The reason
+is always the same — an entry that cannot be judged could be ours, and treating
+it as absent is what creates a duplicate enterprise app.
+
 Two consequences worth knowing:
 
 - **The order is verify, then upload.** An App Repository state the script
   cannot read costs nothing — no APK is uploaded until the app is identified.
+- **The update body's contract has never been observed.** The run sends
+  `app_name`, `app_type`, `app_file` and `force_update_in_label: true` to
+  `PUT /api/v1/mdm/apps/{app_id}/labels/{release_label_id}`, on the
+  documentation's word that `app_name` is mandatory and that
+  `force_update_in_label` is what makes the new build the one devices receive.
+  `app_name` is echoed back from App Details, never taken from the workflow, so
+  a release cannot rename the app you named in the console. Confirm on the first
+  real dispatch that the app's version moves and its name does not.
+  **TENANT VALIDATION REQUIRED.**
 - **`platform_type` is not asserted.** The field is documented, but its integer
   enum could not be confirmed from an authoritative source (one example shows
   `2` beside an iOS bundle id, another describes `2` as Android), so the run
