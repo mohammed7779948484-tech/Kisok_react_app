@@ -55,9 +55,23 @@ infrastructure for a fleet that does not exist.
    bundle, then uploads and creates or updates the KISOK enterprise app.
 
 The app is matched in the App Repository by **package identity**
-(`com.kisok.kiosk`), never by display name alone. If an entry is found that
-carries the name but no matching package field, the run stops rather than
-updating something it cannot positively identify — resolve that in the console.
+(`com.kisok.kiosk`), read from the documented App Details endpoint. The display
+name plays no part: every repository entry is read and checked, so renaming the
+app in the console neither hides it from the pipeline nor causes a duplicate,
+and an entry that merely shares the name is never touched. If two entries claim
+the same package the run stops rather than guessing.
+
+Two consequences worth knowing:
+
+- **The order is verify, then upload.** An App Repository state the script
+  cannot read costs nothing — no APK is uploaded until the app is identified.
+- **`platform_type` is not asserted.** The field is documented, but its integer
+  enum could not be confirmed from an authoritative source (one example shows
+  `2` beside an iOS bundle id, another describes `2` as Android), so the run
+  logs the value it observed instead of testing it. Identity rests on
+  `bundle_identifier` — which on Android IS the package name — plus the
+  documented Enterprise `app_type`. If you can confirm the enum from your
+  tenant, that check can be tightened. **TENANT VALIDATION REQUIRED.**
 
 ## ManageEngine console setup
 

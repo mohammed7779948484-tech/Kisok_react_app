@@ -672,3 +672,83 @@ NOT VERIFIED: the Kotlin compile (no Android SDK in this container — the
 android-build CI job covers it), and every ManageEngine call. No request has
 been made against a real tenant; the corrected contracts are still
 TENANT VALIDATION REQUIRED and the first `dry_run` dispatch is the proof.
+
+## Round 6 — fresh review of the round 5 contract fixes
+
+The fresh reviewer confirmed the contract corrections and the workflow pinning,
+and found that round 5 had reopened the very failure class this branch has
+closed three times. Recorded plainly because it is the fourth instance.
+
+### R5-01 — BLOCKING, and a regression I introduced (`bug`)
+
+Round 5 replaced undocumented list-field matching with documented App Details
+verification — correct — but selected which entries to verify by exact display
+name. So an app already in the repository under any other name ("KISOK Kiosk",
+a rename, a different case) was never examined, the walk concluded `absent`,
+and a DUPLICATE enterprise app was created. The package check could confirm a
+match but could never find one.
+
+Proven before and after with the same probe:
+
+```
+BEFORE (686b163):
+  RESULT {"ok":true,"action":"created", ...}
+  CALLS  POST /oauth/v2/token | GET /apps?limit=50&offset=0 | POST /emsapi/files | POST /apps
+  (the existing app_id 55 was never read at all)
+
+AFTER:
+  RESULT {"ok":true,"action":"updated","detail":"updated com.kisok.kiosk (app_id 55, release label 9) ..."}
+  CALLS  POST /oauth/v2/token | GET /apps?limit=50&offset=0 | GET /apps/55
+         | POST /emsapi/files | PUT /apps/55/labels/9
+```
+
+The listing is now used only for its documented `app_id`, every entry is read
+through App Details, and `MAX_DETAIL_READS` (200) bounds the work — exceeding
+it fails the run rather than concluding `absent` from a partial scan. The
+deleted round-5 test that asserted name-based selection is replaced by one
+asserting the opposite.
+
+### R5-02 — the guard test passed for the wrong reason (`bug`)
+
+The name-only test registered no App Details route, and the fixture matcher
+used `url.includes(...)`, so the App Details request silently received the
+LISTING body — which happened to lack `bundle_identifier`, so the test passed
+through a branch it was not testing. The matcher now compares
+`new URL(url).pathname` for equality, and an unregistered path throws. That
+change alone turned two other tests red, which is the point of it.
+
+### R5-03 — the headline fix had no test (`behavior`)
+
+Round 5's own framing was that a single wrong header made the pipeline
+non-functional and nothing caught it. Nothing still caught it: no test read the
+recorded headers. There is now one asserting every authenticated call carries
+`Authorization: Zoho-oauthtoken …` and `Accept: application/json`, and that the
+credentials never travel in a header on the token call.
+
+### R5-04 — three places still claimed the property the code had lost
+
+The module docstring, the workflow comment and `mdm-operations.md` all still
+said matching was by package identity and never by display name. Round 5 had
+inverted that. All three now describe what the code does: every entry is read,
+the name neither selects nor excludes one.
+
+### R5-05 to R5-09 — accepted and fixed
+
+`platform_type`'s unconfirmed enum is now actually recorded in
+`mdm-operations.md` (the source pointed at a section that did not exist);
+response-supplied ids are validated before being spliced into an authenticated
+URL path (`isSafePathSegment`); the module docstring no longer says "five calls"
+for seven, no longer overclaims that orphan files are impossible, and no longer
+says the contracts were carried over unverified; the APK is read before the
+first network call again; a mis-titled test is renamed; leftover `identifier`
+fixtures are gone; and the duplicate least-privilege comment is removed.
+
+### Final gate
+
+```
+npx jest tools/mdm → 37 passed
+pnpm verify        → PASS (exit 0)
+  Test Suites: 95 passed, 95 total
+  Tests:       1303 passed, 1303 total
+pnpm exec expo prebuild --platform android → "✔ Finished prebuild"
+```

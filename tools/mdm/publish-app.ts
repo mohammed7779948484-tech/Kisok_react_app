@@ -8,7 +8,7 @@
  * MDM_CLIENT_SECRET, MDM_REFRESH_TOKEN — and are never accepted as flags,
  * never printed, and redacted out of every message this script emits.
  *
- * The pipeline is deliberately five calls and no more:
+ * The pipeline:
  *
  *     refresh-token grant          POST {accounts}/oauth/v2/token
  *     list candidates              GET  {mdm}/api/v1/mdm/apps
@@ -19,12 +19,14 @@
  *                                  PUT  {mdm}/api/v1/mdm/apps/{app_id}/labels/{release_label_id}
  *
  * Identity is resolved and verified BEFORE the upload, so an App Repository
- * state this script cannot read leaves no orphan file behind.
+ * state this script cannot read no longer uploads first and fails second. It
+ * does not make orphans impossible: an upload that succeeds and is followed by
+ * a failed create/update still leaves the file behind.
  *
  * Headers follow the documented contract: `Authorization: Zoho-oauthtoken
  * <token>` (NOT Bearer) and `Content-Type: application/json`. `Accept:
- * application/json` is sent on JSON calls as convention — it could not be
- * confirmed as a documented requirement.
+ * application/json` rides along on every authenticated call, including the
+ * multipart upload — it is convention, NOT a confirmed documented requirement.
  *
  * There is no group, label or rollout orchestration: one physical customer
  * tablet is planned, and device assignment is a console decision.
@@ -32,8 +34,10 @@
  * Fail closed everywhere. Every required input is checked before the first
  * network call; every unexpected response shape stops the run with a message
  * naming the endpoint. The one rule worth stating twice: the application is
- * matched by PACKAGE IDENTITY (`com.kisok.kiosk`). An App Repository entry
- * that merely shares the display name is never updated.
+ * matched by PACKAGE IDENTITY (`com.kisok.kiosk`), read from App Details.
+ * The display name selects nothing — every listed entry is checked, so an
+ * entry that merely shares the name is never updated AND an entry under a
+ * different name is never missed.
  *
  * ⚠️ TENANT VALIDATION REQUIRED. These contracts are carried over from the
  * superseded feature/kiosk-runtime branch, which recorded them from the live
@@ -135,6 +139,13 @@ const POLL_MAX_ATTEMPTS = 20;
 /** Bounds the App Repository walk so a broken envelope cannot loop forever. */
 const LIST_PAGE_SIZE = 50;
 const LIST_MAX_PAGES = 10;
+
+/**
+ * How many App Details reads one run will make. Identity requires reading
+ * every listed entry, so this bounds the work — and exceeding it fails the run
+ * rather than concluding `absent` from a partial scan.
+ */
+const MAX_DETAIL_READS = 200;
 
 const MULTIPART_BOUNDARY = "KisokReleaseBoundary7f3a1c";
 
@@ -254,26 +265,36 @@ function readInteger(value: unknown): number | undefined {
  * unrelated app. The run stops and a human decides.
  */
 /**
- * Narrow the listing to the entries worth fetching App Details for.
+ * Every listed entry that carries a usable `app_id`.
  *
- * The LIST response documents `app_id` and `app_name`; it does NOT document a
- * package field, so the display name is only a CANDIDATE filter here — never
- * proof. Every candidate is then positively identified by its
- * `bundle_identifier` from App Details, and an unverifiable candidate fails
- * the run rather than being skipped.
+ * `app_id` is the documented list field, and it is ALL the listing is used
+ * for: identity is established from App Details, never from the listing.
+ *
+ * Deliberately NOT filtered by display name. A previous version selected only
+ * entries named exactly "KISOK", which meant an app sitting in the repository
+ * under any other name — "KISOK Kiosk", a rename, a different case — was never
+ * examined at all, so the walk concluded `absent` and CREATED a duplicate
+ * enterprise app. The package check could confirm a match but could never find
+ * one. Scanning every entry is what makes "absent" mean absent.
  */
-export function selectCandidates(
-  apps: readonly ListedApp[],
-  appName: string,
-): { appId: number | string; appName: string }[] {
-  const candidates: { appId: number | string; appName: string }[] = [];
+export function listedAppIds(apps: readonly ListedApp[]): (number | string)[] {
+  const ids: (number | string)[] = [];
   for (const app of apps) {
-    if (app.app_name !== appName) continue;
     const appId = readId(app.app_id);
-    if (appId === undefined) continue;
-    candidates.push({ appId, appName });
+    if (appId !== undefined) ids.push(appId);
   }
-  return candidates;
+  return ids;
+}
+
+/**
+ * Is this value safe to splice into a URL path segment?
+ *
+ * Ids come from the MDM's own responses, but so does `paging.next`, which is
+ * origin-checked for exactly this reason: a response-supplied value must not
+ * be able to retarget an authenticated request (`"1/../../other"`).
+ */
+export function isSafePathSegment(value: number | string): boolean {
+  return typeof value === "number" ? Number.isInteger(value) : /^[A-Za-z0-9_-]+$/.test(value);
 }
 
 /** Parse the App Details fields this pipeline reads. */
@@ -581,13 +602,25 @@ async function pollFileReady(
   );
 }
 
+/** Read the APK up front, so a bad path fails before any network call. */
+async function readApkOrFail(inputs: PublishInputs, deps: PublishDeps): Promise<Uint8Array> {
+  try {
+    return await deps.readApk(inputs.apkPath);
+  } catch (caught) {
+    fail(
+      `the APK at ${inputs.apkPath} could not be read: ` +
+        (caught instanceof Error ? caught.message : String(caught)),
+    );
+  }
+}
+
 async function uploadApk(
   inputs: PublishInputs,
   hosts: { mdm: string },
   token: string,
+  bytes: Uint8Array,
   deps: PublishDeps,
 ): Promise<number | string> {
-  const bytes = await deps.readApk(inputs.apkPath);
   const fileName = inputs.apkPath.split("/").pop() ?? "app-release.apk";
 
   const parsed = (await request(deps, "the APK upload", `${hosts.mdm}/emsapi/files`, {
@@ -726,34 +759,42 @@ async function verifyCandidates(
   token: string,
   deps: PublishDeps,
 ): Promise<AppMatch> {
-  const candidates = selectCandidates(collected, inputs.appName);
-  if (candidates.length === 0) return { status: "absent" };
+  const ids = listedAppIds(collected);
+  if (ids.length === 0) return { status: "absent" };
 
-  const verified: AppDetails[] = [];
-  const rejected: string[] = [];
-
-  for (const candidate of candidates) {
-    const body = await request(
-      deps,
-      `the App Details read for app_id ${candidate.appId}`,
-      `${hosts.mdm}/api/v1/mdm/apps/${candidate.appId}`,
-      { method: "GET", headers: authHeaders(token) },
-    );
-    const details = parseAppDetails(body, candidate.appId);
-    const identity = identifyApp(details, inputs.packageName);
-    if (identity.ok) verified.push(details);
-    else rejected.push(identity.reason);
-  }
-
-  if (verified.length === 0) {
+  if (ids.length > MAX_DETAIL_READS) {
     return {
       status: "ambiguous",
       reason:
-        `${candidates.length} App Repository entr${candidates.length === 1 ? "y is" : "ies are"} ` +
-        `named "${inputs.appName}" but none is ${inputs.packageName}: ${rejected.join("; ")}. ` +
-        "Refusing to create a second app beside them, or to update one that is not ours",
+        `the App Repository holds ${ids.length} entries, more than the ${MAX_DETAIL_READS} this ` +
+        `script will read App Details for, so ${inputs.packageName} cannot be confirmed present ` +
+        "or absent — failing closed rather than risking a duplicate app",
     };
   }
+
+  const verified: AppDetails[] = [];
+
+  for (const appId of ids) {
+    if (!isSafePathSegment(appId)) {
+      return {
+        status: "ambiguous",
+        reason: `the App Repository listing returned an app_id that is not a plain id: ${JSON.stringify(appId)}`,
+      };
+    }
+    const body = await request(
+      deps,
+      `the App Details read for app_id ${appId}`,
+      `${hosts.mdm}/api/v1/mdm/apps/${appId}`,
+      { method: "GET", headers: authHeaders(token) },
+    );
+    const details = parseAppDetails(body, appId);
+    // Only OUR package is of interest; every other app in the repository is
+    // simply not a match, not an error.
+    if (identifyApp(details, inputs.packageName).ok) verified.push(details);
+  }
+
+  if (verified.length === 0) return { status: "absent" };
+
   if (verified.length > 1) {
     return {
       status: "ambiguous",
@@ -764,14 +805,21 @@ async function verifyCandidates(
   }
 
   const app = verified[0]!;
-  const label = selectReleaseLabel(app.releaseLabels, app.appId);
-  if (!label.ok) return { status: "ambiguous", reason: label.reason };
-
   deps.log(
-    `identified ${inputs.packageName} as app_id ${app.appId}, release label ` +
-      `"${label.label.releaseLabelName}" (${label.label.releaseLabelId}); ` +
+    `identified ${inputs.packageName} as app_id ${app.appId}; ` +
       `platform_type as reported: ${JSON.stringify(app.platformType)}`,
   );
+
+  const label = selectReleaseLabel(app.releaseLabels, app.appId);
+  if (!label.ok) return { status: "ambiguous", reason: label.reason };
+  if (!isSafePathSegment(label.label.releaseLabelId)) {
+    return {
+      status: "ambiguous",
+      reason: `release_label_id is not a plain id: ${JSON.stringify(label.label.releaseLabelId)}`,
+    };
+  }
+
+  deps.log(`using release label "${label.label.releaseLabelName}" (${label.label.releaseLabelId})`);
   return { status: "found", appId: app.appId, releaseLabelId: label.label.releaseLabelId };
 }
 
@@ -786,6 +834,12 @@ export async function publish(inputs: PublishInputs, deps: PublishDeps): Promise
   const secrets = collectSecretValues(inputs);
   try {
     const hosts = resolveDataCentre(inputs.dataCentre);
+
+    // Read the APK before any network call. It is a required input, and
+    // discovering a bad path after a token exchange and a full repository walk
+    // breaks the "checked before the first network call" promise above.
+    const apkBytes = inputs.dryRun ? undefined : await readApkOrFail(inputs, deps);
+
     const token = await exchangeToken(inputs, hosts, deps);
     secrets.push(token);
 
@@ -807,7 +861,7 @@ export async function publish(inputs: PublishInputs, deps: PublishDeps): Promise
       };
     }
 
-    const fileId = await uploadApk(inputs, hosts, token, deps);
+    const fileId = await uploadApk(inputs, hosts, token, apkBytes!, deps);
 
     if (match.status === "found") {
       // The documented update path is label-scoped:

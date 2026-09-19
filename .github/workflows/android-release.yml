@@ -26,7 +26,6 @@ on:
         default: false
 
 # Least privilege: read the repository, nothing more.
-# Least privilege, unchanged: the job only reads the repository.
 permissions:
   contents: read
 
@@ -244,7 +243,8 @@ jobs:
       # Only a VERIFIED artifact is published. The script uploads the APK, waits
       # for ManageEngine's documented file processing if it reports the file as
       # pending, then creates KISOK or updates the existing enterprise app —
-      # matched by PACKAGE IDENTITY, never by display name alone. It redacts the
+      # matched by PACKAGE IDENTITY read from App Details — every repository
+      # entry is checked, so the display name neither selects nor excludes one. It redacts the
       # three credentials out of everything it prints.
       - name: Publish to the ManageEngine App Repository
         env:

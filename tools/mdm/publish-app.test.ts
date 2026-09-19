@@ -6,7 +6,8 @@ import {
   redactSecrets,
   resolveDataCentre,
   resolveInputs,
-  selectCandidates,
+  isSafePathSegment,
+  listedAppIds,
   selectReleaseLabel,
   publish,
   type FetchLike,
@@ -103,6 +104,25 @@ describe("resolveInputs", () => {
 });
 
 describe("identity — established from App Details, never from the listing", () => {
+  it("offers EVERY listed entry for verification, regardless of display name", () => {
+    // Filtering the listing by display name meant an app sitting under any
+    // other name was never examined, so the walk concluded `absent` and
+    // created a duplicate. The name selects nothing.
+    expect(
+      listedAppIds([
+        { app_id: 1, app_name: "Something else" },
+        { app_id: 2, app_name: "KISOK Kiosk" },
+        { app_name: "no id" },
+      ]),
+    ).toEqual([1, 2]);
+  });
+
+  it("rejects an id that could retarget an authenticated request", () => {
+    expect(isSafePathSegment(55)).toBe(true);
+    expect(isSafePathSegment("55")).toBe(true);
+    expect(isSafePathSegment("1/../../other")).toBe(false);
+  });
+
   const DETAILS = {
     app_id: 55,
     app_name: "KISOK",
@@ -111,20 +131,6 @@ describe("identity — established from App Details, never from the listing", ()
     platform_type: 2,
     release_labels: [{ release_label_id: 9, release_label_name: "Stable", app_version: "1.0.0" }],
   };
-
-  it("selects listing candidates by the DOCUMENTED app_name, and nothing else", () => {
-    // The list response documents app_id and app_name. It does NOT document a
-    // package field, so the name is a candidate filter, never proof.
-    expect(
-      selectCandidates(
-        [
-          { app_id: 1, app_name: "Other" },
-          { app_id: 2, app_name: "KISOK" },
-        ],
-        "KISOK",
-      ),
-    ).toEqual([{ appId: 2, appName: "KISOK" }]);
-  });
 
   it("parses the documented App Details fields", () => {
     const details = parseAppDetails(DETAILS, 55);
@@ -211,14 +217,15 @@ function fakeFetch(routes: Record<string, () => { status: number; body: unknown 
     // Routes are keyed "METHOD /path" so a POST that creates and a GET that
     // lists never collide on the same path.
     const method = init?.method ?? "GET";
-    // Longest matching path wins, so "GET /api/v1/mdm/apps/55" (App Details)
-    // is never shadowed by "GET /api/v1/mdm/apps" (the listing).
-    const key = Object.keys(routes)
-      .filter((route) => {
-        const [routeMethod, routePath] = route.split(" ");
-        return routeMethod === method && url.includes(routePath!);
-      })
-      .sort((a, b) => b.split(" ")[1]!.length - a.split(" ")[1]!.length)[0];
+    // Match the PATHNAME exactly. Substring matching let an unregistered
+    // sub-path (e.g. App Details for an app with no fixture) silently receive
+    // the listing route's body instead of throwing — which made one test pass
+    // for entirely the wrong reason.
+    const pathname = new URL(url).pathname;
+    const key = Object.keys(routes).find((route) => {
+      const [routeMethod, routePath] = route.split(" ");
+      return routeMethod === method && pathname === routePath;
+    });
     if (!key) throw new Error(`unexpected ${method} request: ${url}`);
     const { status, body } = routes[key]!();
     return {
@@ -336,7 +343,7 @@ it("waits for the documented file processing when the upload comes back pending"
   expect(result.ok).toBe(true);
 });
 
-it("fails closed, without uploading, when the file upload reports the documented FAILED status", async () => {
+it("creates and updates nothing when the file upload reports the documented FAILED status", async () => {
   const { deps: d, calls } = deps({
     "GET /api/v1/mdm/apps": () => ({ status: 200, body: { apps: [] } }),
     "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 3 } }),
@@ -349,20 +356,26 @@ it("fails closed, without uploading, when the file upload reports the documented
   expect(calls.some((c) => c.method !== "GET" && c.url.includes("/api/v1/mdm/apps"))).toBe(false);
 });
 
-it("refuses to touch an app that matches only by display name", async () => {
+it("leaves an app with a different package alone, and creates ours beside it", async () => {
   const { deps: d, calls } = deps({
     "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
     "GET /api/v1/mdm/apps": () => ({
       status: 200,
       body: { apps: [{ app_id: 3, app_name: "KISOK" }] },
     }),
+    // Same display name, DIFFERENT package: a different app entirely.
+    "GET /api/v1/mdm/apps/3": () => ({
+      status: 200,
+      body: { app_id: 3, app_name: "KISOK", app_type: 2, bundle_identifier: "com.someone.else" },
+    }),
+    "POST /api/v1/mdm/apps": () => ({ status: 200, body: { app_id: 101 } }),
   });
 
   const result = await publish(INPUTS, d);
 
-  expect(result.ok).toBe(false);
-  if (result.ok) return;
-  expect(result.failure).toMatch(/com\.kisok\.kiosk/);
+  // Ours is genuinely not in the repository, so creating it is correct — and
+  // the same-named app for another package is never touched.
+  expect(result).toMatchObject({ ok: true, action: "created" });
   expect(calls.some((c) => c.method === "PUT")).toBe(false);
 });
 
@@ -405,7 +418,7 @@ it("walks past the first page — a match on page 2 is an UPDATE, never a duplic
         ? {
             status: 200,
             body: {
-              apps: [{ app_id: 1, app_name: "Other", identifier: "com.other" }],
+              apps: [{ app_id: 1, app_name: "Other" }],
               metadata: { total_record_count: 2 },
             },
           }
@@ -427,6 +440,10 @@ it("walks past the first page — a match on page 2 is an UPDATE, never a duplic
         platform_type: 2,
         release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
       },
+    }),
+    "GET /api/v1/mdm/apps/1": () => ({
+      status: 200,
+      body: { app_id: 1, app_name: "Other", app_type: 2, bundle_identifier: "com.other" },
     }),
     "PUT /api/v1/mdm/apps/55/labels/9": () => ({ status: 200, body: { status: "ok" } }),
   });
@@ -510,7 +527,6 @@ it("fails closed when the listing is longer than the page bound, rather than cre
         apps: Array.from({ length: 50 }, (_, i) => ({
           app_id: i + 1,
           app_name: `Other ${i}`,
-          identifier: `com.other.${i}`,
         })),
         metadata: { total_record_count: 100000 },
       },
@@ -535,7 +551,7 @@ it("enforces the page bound on the paging.next path too, not just the offset pat
     "GET /api/v1/mdm/apps": () => ({
       status: 200,
       body: {
-        apps: [{ app_id: 1, app_name: "Other", identifier: "com.other" }],
+        apps: [{ app_id: 1, app_name: "Other" }],
         paging: { next: "https://mdm.manageengine.com/api/v1/mdm/apps?limit=50&offset=999" },
       },
     }),
@@ -580,4 +596,75 @@ it("an empty page with NO total is still the honest end of the listing", async (
   const result = await publish(INPUTS, d);
 
   expect(result).toMatchObject({ ok: true, action: "created" });
+});
+
+it("UPDATES an app that exists under a DIFFERENT display name — never creates a duplicate", async () => {
+  // The regression this guards: selecting listing candidates by display name
+  // meant a repository entry named anything but "KISOK" was never examined,
+  // so the walk concluded `absent` and created a SECOND enterprise app for a
+  // package that was already there.
+  const { deps: d, calls } = deps({
+    "GET /api/v1/mdm/apps": () => ({
+      status: 200,
+      body: { apps: [{ app_id: 55, app_name: "KISOK Kiosk" }] },
+    }),
+    "GET /api/v1/mdm/apps/55": () => ({
+      status: 200,
+      body: {
+        app_id: 55,
+        app_name: "KISOK Kiosk",
+        app_type: 2,
+        bundle_identifier: "com.kisok.kiosk",
+        release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
+      },
+    }),
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
+    "PUT /api/v1/mdm/apps/55/labels/9": () => ({ status: 200, body: { status: "ok" } }),
+  });
+
+  const result = await publish(INPUTS, d);
+
+  expect(result).toMatchObject({ ok: true, action: "updated" });
+  expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/api/v1/mdm/apps"))).toBe(false);
+});
+
+it("sends the DOCUMENTED Zoho-oauthtoken scheme, never Bearer", async () => {
+  // The headline fix of this contract round: `Bearer` is not recognised, so
+  // every ManageEngine call would have come back 401 and nothing caught it.
+  const { deps: d, calls } = deps({
+    "GET /api/v1/mdm/apps": () => ({ status: 200, body: { apps: [] } }),
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
+    "POST /api/v1/mdm/apps": () => ({ status: 200, body: { app_id: 101 } }),
+  });
+
+  await publish(INPUTS, d);
+
+  const authenticated = calls.filter((c) => !c.url.includes("/oauth/v2/token"));
+  expect(authenticated.length).toBeGreaterThan(0);
+  for (const call of authenticated) {
+    expect(call.headers.Authorization).toBe("Zoho-oauthtoken 1000.accesstokenfixture.value");
+    expect(call.headers.Accept).toBe("application/json");
+  }
+  // The credentials themselves never travel in a header.
+  const tokenCall = calls.find((c) => c.url.includes("/oauth/v2/token"))!;
+  expect(tokenCall.headers.Authorization).toBeUndefined();
+});
+
+it("fails before any network call when the APK cannot be read", async () => {
+  const { deps: d, calls } = deps({});
+
+  const result = await publish(
+    { ...INPUTS, apkPath: "/nope/missing.apk" },
+    {
+      ...d,
+      readApk: async () => {
+        throw new Error("ENOENT");
+      },
+    },
+  );
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.failure).toMatch(/could not be read/i);
+  expect(calls).toHaveLength(0);
 });
