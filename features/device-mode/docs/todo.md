@@ -50,11 +50,19 @@ only ever moves forward is not measuring anything. — see the checklist below.
 - [x] Every AC verified, or its gap recorded — AC-01..AC-08 verified;
       AC-09/AC-10 implemented and unit-tested but never executed, recorded
       as such in brief.md, todo.md, worklog.md, mdm-operations.md and the PR
-- [x] `pnpm verify` PASS after the final change — 95 suites / 1284 tests
-- [x] Required fast GitHub CI PASS on the final HEAD
+- [x] `pnpm verify` PASS after the final change — 95 suites / 1319 tests
+      (exit 0) on head `5a5cf61`
+- [x] Required fast GitHub CI PASS on the final HEAD — `5a5cf61`: Verify,
+      Expo doctor, Web bundle and Android prebuild all SUCCESS; Maestro
+      SKIPPED (honest skip, never counted as PASS)
 - [x] Required runtime evidence recorded, with its limits stated
 - [x] Required native tier PASS — android-build SUCCESS on the final head
-- [x] Reviewer findings dispositioned — 12 + 6 + 5 across three rounds
+- [x] Reviewer findings dispositioned — 12 + 6 + 5 + 4 + 9 + 6 + 6 across
+      eight rounds; rounds 7 and 8 each reopened the gate rather than
+      standing on the previous PASS
+- [x] Every guard in tools/mdm is mutation-tested — each was reverted one at
+      a time and the suite went red, after round 8 found two guards no test
+      would have missed the removal of
 - [x] Blocking/major fixes re-reviewed — round 2 caught R08 as falsely closed;
       round 3 (CodeRabbit) found three FAIL-OPENS that rounds 1 and 2 both read
       past, so the gate was reopened and re-passed rather than left standing
