@@ -112,9 +112,17 @@ describe("identity — established from App Details, never from the listing", ()
       listedAppIds([
         { app_id: 1, app_name: "Something else" },
         { app_id: 2, app_name: "KISOK Kiosk" },
-        { app_name: "no id" },
       ]),
-    ).toEqual([1, 2]);
+    ).toEqual({ ids: [1, 2], unusable: 0 });
+  });
+
+  it("counts an entry it cannot even address, rather than dropping it", () => {
+    // A silently dropped entry is one that cannot be ruled out, and it would
+    // hide our app behind an `absent` verdict.
+    expect(listedAppIds([{ app_id: 1, app_name: "a" }, { app_name: "no id" }])).toEqual({
+      ids: [1],
+      unusable: 1,
+    });
   });
 
   it("rejects an id that could retarget an authenticated request", () => {
@@ -144,22 +152,31 @@ describe("identity — established from App Details, never from the listing", ()
     expect(identifyApp(parseAppDetails(DETAILS, 55), "com.kisok.kiosk")).toEqual({ ok: true });
   });
 
-  it("refuses an app whose bundle_identifier is a different package", () => {
+  it("calls a DIFFERENT package somebody else's app — safe to skip", () => {
     const other = parseAppDetails({ ...DETAILS, bundle_identifier: "com.other.app" }, 55);
 
-    expect(identifyApp(other, "com.kisok.kiosk").ok).toBe(false);
+    expect(identifyApp(other, "com.kisok.kiosk")).toEqual({ ok: false, kind: "other-package" });
   });
 
-  it("refuses an app that carries NO bundle_identifier — absence is not identity", () => {
+  it("calls a MISSING bundle_identifier unverifiable — NOT safe to skip", () => {
+    // The distinction that matters: "not ours" and "cannot tell" must not take
+    // the same branch, or an unreadable entry becomes an absence and the run
+    // creates a duplicate.
     const bare = parseAppDetails({ app_id: 55, app_name: "KISOK", app_type: 2 }, 55);
+    const result = identifyApp(bare, "com.kisok.kiosk");
 
-    expect(identifyApp(bare, "com.kisok.kiosk").ok).toBe(false);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.kind).toBe("unverifiable");
   });
 
-  it("refuses an app that is not the Enterprise app type", () => {
+  it("calls OUR package with a non-Enterprise app_type unverifiable, not a mismatch", () => {
     const store = parseAppDetails({ ...DETAILS, app_type: 0 }, 55);
+    const result = identifyApp(store, "com.kisok.kiosk");
 
-    expect(identifyApp(store, "com.kisok.kiosk").ok).toBe(false);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.kind).toBe("unverifiable");
   });
 });
 
@@ -667,4 +684,144 @@ it("fails before any network call when the APK cannot be read", async () => {
   if (result.ok) return;
   expect(result.failure).toMatch(/could not be read/i);
   expect(calls).toHaveLength(0);
+});
+
+describe("nothing is created or updated off something unverified", () => {
+  const LISTING = { apps: [{ app_id: 55, app_name: "KISOK" }] };
+
+  function mutations(calls: { method: string; url: string }[]) {
+    return calls.filter(
+      (c) =>
+        c.method !== "GET" && (c.url.includes("/api/v1/mdm/apps") || c.url.includes("/emsapi/")),
+    );
+  }
+
+  it("stops when App Details carries no bundle_identifier", async () => {
+    const { deps: d, calls } = deps({
+      "GET /api/v1/mdm/apps": () => ({ status: 200, body: LISTING }),
+      "GET /api/v1/mdm/apps/55": () => ({
+        status: 200,
+        body: { app_id: 55, app_name: "KISOK", app_type: 2 },
+      }),
+    });
+
+    const result = await publish(INPUTS, d);
+
+    expect(result.ok).toBe(false);
+    expect(mutations(calls)).toHaveLength(0);
+  });
+
+  it("stops when an entry claims our package but is not the Enterprise type", async () => {
+    const { deps: d, calls } = deps({
+      "GET /api/v1/mdm/apps": () => ({ status: 200, body: LISTING }),
+      "GET /api/v1/mdm/apps/55": () => ({
+        status: 200,
+        body: { app_id: 55, app_name: "KISOK", app_type: 0, bundle_identifier: "com.kisok.kiosk" },
+      }),
+    });
+
+    const result = await publish(INPUTS, d);
+
+    expect(result.ok).toBe(false);
+    expect(mutations(calls)).toHaveLength(0);
+  });
+
+  it("stops when a listed entry carries no usable app_id", async () => {
+    const { deps: d, calls } = deps({
+      "GET /api/v1/mdm/apps": () => ({
+        status: 200,
+        body: { apps: [{ app_id: null, app_name: "KISOK" }] },
+      }),
+    });
+
+    const result = await publish(INPUTS, d);
+
+    expect(result.ok).toBe(false);
+    expect(mutations(calls)).toHaveLength(0);
+  });
+
+  it("names the broken contract when an entry carries no identity field", async () => {
+    // An unidentifiable entry stops the run (above). This asserts the message
+    // also tells the operator WHY on the first real dispatch: a tenant whose
+    // App Details carry no bundle_identifier is a contract failure, not an
+    // absence, and it must not read as "your app is not there".
+    const { deps: d, calls } = deps({
+      "GET /api/v1/mdm/apps": () => ({
+        status: 200,
+        body: { apps: [{ app_id: 1, app_name: "Other" }] },
+      }),
+      "GET /api/v1/mdm/apps/1": () => ({
+        status: 200,
+        body: { app_id: 1, app_name: "Other", app_type: 2 },
+      }),
+    });
+
+    const result = await publish(INPUTS, d);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure).toMatch(/documented contract this script relies on/i);
+    expect(mutations(calls)).toHaveLength(0);
+  });
+
+  it("stops when an app_id could retarget an authenticated request", async () => {
+    const { deps: d, calls } = deps({
+      "GET /api/v1/mdm/apps": () => ({
+        status: 200,
+        body: { apps: [{ app_id: "1/../../other", app_name: "KISOK" }] },
+      }),
+    });
+
+    const result = await publish(INPUTS, d);
+
+    expect(result.ok).toBe(false);
+    expect(calls.filter((c) => c.url.includes("/apps/"))).toHaveLength(0);
+    expect(mutations(calls)).toHaveLength(0);
+  });
+
+  it("stops when the repository is larger than the App Details read bound", async () => {
+    const many = Array.from({ length: 201 }, (_, i) => ({ app_id: i + 1, app_name: `App ${i}` }));
+    const { deps: d, calls } = deps({
+      "GET /api/v1/mdm/apps": () => ({
+        status: 200,
+        body: { apps: many, metadata: { total_record_count: 201 } },
+      }),
+    });
+
+    const result = await publish(INPUTS, d);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure).toMatch(/more than the 200/);
+    expect(mutations(calls)).toHaveLength(0);
+  });
+});
+
+it("updates without renaming the app the operator named", async () => {
+  // Any package match is updated now, whatever the console calls it — so
+  // pushing our own app_name would revert the operator's rename on every
+  // release. `app_name` is documented-mandatory, so it is echoed, not ours.
+  const { deps: d, calls } = deps({
+    "GET /api/v1/mdm/apps": () => ({
+      status: 200,
+      body: { apps: [{ app_id: 55, app_name: "KISOK Kiosk" }] },
+    }),
+    "GET /api/v1/mdm/apps/55": () => ({
+      status: 200,
+      body: {
+        app_id: 55,
+        app_name: "KISOK Kiosk",
+        app_type: 2,
+        bundle_identifier: "com.kisok.kiosk",
+        release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
+      },
+    }),
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
+    "PUT /api/v1/mdm/apps/55/labels/9": () => ({ status: 200, body: { status: "ok" } }),
+  });
+
+  await publish(INPUTS, d);
+
+  const put = calls.find((c) => c.method === "PUT")!;
+  expect(JSON.parse(String(put.body)).app_name).toBe("KISOK Kiosk");
 });

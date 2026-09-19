@@ -208,6 +208,29 @@ meaning a retained `standard` was retained on exactly the tablets where it is
 wrong, such as one being converted to the kiosk. It is now downgrade-only:
 `customer-kiosk` is held, `standard` is not.
 
+## Round 7 findings
+
+**R6-01 (blocking, mine) — a fifth fail-open, in the fix for the fourth.**
+Round 6's `identifyApp` returned a boolean, so "this is somebody else's
+package" and "I could not verify this at all" were the same answer, and both
+led to `absent` → CREATE. The pattern is exactly CR-4, R04, N01, CR-5 and N05
+again: a guard that can only say no, standing where the caller needs it to say
+_why_ no. The rule this branch keeps relearning is that a verification result
+must carry its reason, because the caller's safe default differs per reason.
+
+**R6-03 (major) — the update renamed the operator's app.** The label-scoped
+update echoed the workflow's own `app_name` rather than the tenant's. It passed
+five review rounds because every test fixture named the app the same thing the
+workflow does; the moment a fixture disagreed, the bug was one probe away. A
+fixture that agrees with the code under test proves nothing.
+
+**R6-04 — a test that passed for the wrong reason.** The fake fetch matched
+routes by substring, so a request to the App Details endpoint fell through to
+the listing route and the guard under test never ran. Exact-pathname matching
+turned two other green tests red — which is how R6-01 surfaced.
+
+**Rejected:** nothing in this round. All five findings were real.
+
 ## Accepted risks
 
 **AR-01 — the guard depends on the app configuration staying applied, and

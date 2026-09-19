@@ -39,12 +39,12 @@
  * entry that merely shares the name is never updated AND an entry under a
  * different name is never missed.
  *
- * ⚠️ TENANT VALIDATION REQUIRED. These contracts are carried over from the
- * superseded feature/kiosk-runtime branch, which recorded them from the live
- * ManageEngine help pages; they could not be re-opened while writing this
- * (the vendor domain is blocked by the build environment's egress policy).
- * The first real dispatch is the proof. Nothing here guesses silently — an
- * unrecognised response fails the run.
+ * ⚠️ TENANT VALIDATION REQUIRED. These contracts were re-verified against the
+ * vendor's current API documentation, but no request has ever been made
+ * against a real tenant, so nothing here has been OBSERVED. The first real
+ * dispatch is the proof. Nothing guesses silently: an unrecognised response
+ * shape, an entry that cannot be identified, or a repository whose App Details
+ * carry no identity field all stop the run instead of mutating anything.
  *
  * No repository or npm imports: node builtins only, so it runs under Node's
  * native TypeScript type-stripping with plain `node`.
@@ -94,7 +94,13 @@ export type PublishResult =
 export type ListedApp = Record<string, unknown>;
 
 export type AppMatch =
-  | { status: "found"; appId: number | string; releaseLabelId: number | string }
+  | {
+      status: "found";
+      appId: number | string;
+      releaseLabelId: number | string;
+      /** The tenant's own app_name, echoed back on update so a console rename survives. */
+      appName: string;
+    }
   | { status: "absent" }
   | { status: "ambiguous"; reason: string };
 
@@ -107,6 +113,8 @@ export interface ReleaseLabel {
 /** The subset of App Details this pipeline reads. */
 export interface AppDetails {
   appId: number | string;
+  /** The name the TENANT gives this app — not ours. See the update body. */
+  appName: string | undefined;
   bundleIdentifier: string | undefined;
   appType: number | undefined;
   platformType: unknown;
@@ -277,13 +285,20 @@ function readInteger(value: unknown): number | undefined {
  * enterprise app. The package check could confirm a match but could never find
  * one. Scanning every entry is what makes "absent" mean absent.
  */
-export function listedAppIds(apps: readonly ListedApp[]): (number | string)[] {
+export function listedAppIds(apps: readonly ListedApp[]): {
+  ids: (number | string)[];
+  unusable: number;
+} {
   const ids: (number | string)[] = [];
+  let unusable = 0;
   for (const app of apps) {
     const appId = readId(app.app_id);
-    if (appId !== undefined) ids.push(appId);
+    if (appId === undefined) unusable += 1;
+    else ids.push(appId);
   }
-  return ids;
+  // An entry we cannot even address is one we cannot rule out. Dropping it
+  // silently would let it hide our app behind an `absent` verdict.
+  return { ids, unusable };
 }
 
 /**
@@ -314,6 +329,7 @@ export function parseAppDetails(body: unknown, appId: number | string): AppDetai
   const bundle = app[BUNDLE_IDENTIFIER_FIELD];
   return {
     appId,
+    appName: typeof app.app_name === "string" ? app.app_name : undefined,
     bundleIdentifier: typeof bundle === "string" ? bundle : undefined,
     appType: readInteger(app.app_type),
     platformType: app.platform_type,
@@ -336,32 +352,36 @@ export function parseAppDetails(body: unknown, appId: number | string): AppDetai
  * accept the wrong one. Its observed value is reported instead. See
  * `docs/mdm-operations.md`.
  */
-export function identifyApp(
-  details: AppDetails,
-  packageName: string,
-): { ok: true } | { ok: false; reason: string } {
+export type Identification =
+  | { ok: true }
+  /** Positively somebody else's app. Skipping it is safe. */
+  | { ok: false; kind: "other-package" }
+  /** Could not be judged either way. Skipping it is NOT safe. */
+  | { ok: false; kind: "unverifiable"; reason: string };
+
+export function identifyApp(details: AppDetails, packageName: string): Identification {
+  // The distinction this function exists to make. "This is a different app"
+  // and "I could not tell what this app is" are not the same answer, and
+  // collapsing them means an unreadable entry gets treated as absence — which
+  // takes the create branch and duplicates the app.
   if (details.bundleIdentifier === undefined) {
     return {
       ok: false,
+      kind: "unverifiable",
       reason:
-        `App Details for app_id ${details.appId} carried no ${BUNDLE_IDENTIFIER_FIELD}, so it ` +
-        "cannot be positively identified",
+        `app_id ${details.appId} carried no ${BUNDLE_IDENTIFIER_FIELD}, so it cannot be ` +
+        "judged either ours or another app's",
     };
   }
-  if (details.bundleIdentifier !== packageName) {
-    return {
-      ok: false,
-      reason:
-        `App Details for app_id ${details.appId} carries ${BUNDLE_IDENTIFIER_FIELD} ` +
-        `"${details.bundleIdentifier}", not ${packageName}`,
-    };
-  }
+  if (details.bundleIdentifier !== packageName) return { ok: false, kind: "other-package" };
+
   if (details.appType !== APP_TYPE_ENTERPRISE) {
     return {
       ok: false,
+      kind: "unverifiable",
       reason:
-        `App Details for app_id ${details.appId} carries app_type ${String(details.appType)}, ` +
-        `not the Enterprise type ${APP_TYPE_ENTERPRISE}`,
+        `app_id ${details.appId} claims ${packageName} but carries app_type ` +
+        `${String(details.appType)}, not the Enterprise type ${APP_TYPE_ENTERPRISE}`,
     };
   }
   return { ok: true };
@@ -759,22 +779,33 @@ async function verifyCandidates(
   token: string,
   deps: PublishDeps,
 ): Promise<AppMatch> {
-  const ids = listedAppIds(collected);
-  if (ids.length === 0) return { status: "absent" };
+  const listed = listedAppIds(collected);
 
-  if (ids.length > MAX_DETAIL_READS) {
+  if (listed.unusable > 0) {
     return {
       status: "ambiguous",
       reason:
-        `the App Repository holds ${ids.length} entries, more than the ${MAX_DETAIL_READS} this ` +
-        `script will read App Details for, so ${inputs.packageName} cannot be confirmed present ` +
-        "or absent — failing closed rather than risking a duplicate app",
+        `${listed.unusable} App Repository entr${listed.unusable === 1 ? "y" : "ies"} carried no ` +
+        `usable app_id, so ${inputs.packageName} cannot be confirmed present or absent — one of ` +
+        "them could be ours",
+    };
+  }
+  if (listed.ids.length === 0) return { status: "absent" };
+
+  if (listed.ids.length > MAX_DETAIL_READS) {
+    return {
+      status: "ambiguous",
+      reason:
+        `the App Repository holds ${listed.ids.length} entries, more than the ` +
+        `${MAX_DETAIL_READS} this script will read App Details for, so ${inputs.packageName} ` +
+        "cannot be confirmed present or absent — failing closed rather than risking a duplicate app",
     };
   }
 
   const verified: AppDetails[] = [];
+  const unverifiable: string[] = [];
 
-  for (const appId of ids) {
+  for (const appId of listed.ids) {
     if (!isSafePathSegment(appId)) {
       return {
         status: "ambiguous",
@@ -788,9 +819,24 @@ async function verifyCandidates(
       { method: "GET", headers: authHeaders(token) },
     );
     const details = parseAppDetails(body, appId);
-    // Only OUR package is of interest; every other app in the repository is
-    // simply not a match, not an error.
-    if (identifyApp(details, inputs.packageName).ok) verified.push(details);
+    const identity = identifyApp(details, inputs.packageName);
+    if (identity.ok) verified.push(details);
+    // A DIFFERENT package is positively somebody else's app — skipping it is
+    // safe. Anything we could not judge is not, and must stop the run.
+    else if (identity.kind === "unverifiable") unverifiable.push(identity.reason);
+  }
+
+  if (unverifiable.length > 0) {
+    return {
+      status: "ambiguous",
+      reason:
+        `${unverifiable.length} App Repository entr${unverifiable.length === 1 ? "y" : "ies"} ` +
+        `could not be identified: ${unverifiable.join("; ")}. One of them could be ` +
+        `${inputs.packageName}, so this run will not create or update anything. If EVERY entry ` +
+        `reads this way, this tenant's App Details response does not carry ` +
+        `${BUNDLE_IDENTIFIER_FIELD} and the documented contract this script relies on for ` +
+        "identity does not hold",
+    };
   }
 
   if (verified.length === 0) return { status: "absent" };
@@ -818,9 +864,20 @@ async function verifyCandidates(
       reason: `release_label_id is not a plain id: ${JSON.stringify(label.label.releaseLabelId)}`,
     };
   }
+  if (app.appName === undefined) {
+    return {
+      status: "ambiguous",
+      reason: `app_id ${app.appId} carried no app_name, which the update body requires`,
+    };
+  }
 
   deps.log(`using release label "${label.label.releaseLabelName}" (${label.label.releaseLabelId})`);
-  return { status: "found", appId: app.appId, releaseLabelId: label.label.releaseLabelId };
+  return {
+    status: "found",
+    appId: app.appId,
+    releaseLabelId: label.label.releaseLabelId,
+    appName: app.appName,
+  };
 }
 
 /**
@@ -838,7 +895,7 @@ export async function publish(inputs: PublishInputs, deps: PublishDeps): Promise
     // Read the APK before any network call. It is a required input, and
     // discovering a bad path after a token exchange and a full repository walk
     // breaks the "checked before the first network call" promise above.
-    const apkBytes = inputs.dryRun ? undefined : await readApkOrFail(inputs, deps);
+    const apkBytes = inputs.dryRun ? new Uint8Array() : await readApkOrFail(inputs, deps);
 
     const token = await exchangeToken(inputs, hosts, deps);
     secrets.push(token);
@@ -861,7 +918,7 @@ export async function publish(inputs: PublishInputs, deps: PublishDeps): Promise
       };
     }
 
-    const fileId = await uploadApk(inputs, hosts, token, apkBytes!, deps);
+    const fileId = await uploadApk(inputs, hosts, token, apkBytes, deps);
 
     if (match.status === "found") {
       // The documented update path is label-scoped:
@@ -878,7 +935,12 @@ export async function publish(inputs: PublishInputs, deps: PublishDeps): Promise
           method: "PUT",
           headers: { ...authHeaders(token), "Content-Type": "application/json" },
           body: JSON.stringify({
-            app_name: inputs.appName,
+            // The TENANT's own name, read back from App Details — not ours.
+            // `app_name` is documented-mandatory on this endpoint, so it must
+            // be sent; sending `inputs.appName` would quietly rename the app
+            // in the console on every release, because any package match is
+            // now updated regardless of what the operator called it.
+            app_name: match.appName,
             app_type: APP_TYPE_ENTERPRISE,
             app_file: fileId,
             force_update_in_label: true,

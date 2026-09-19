@@ -752,3 +752,72 @@ pnpm verify        → PASS (exit 0)
   Tests:       1303 passed, 1303 total
 pnpm exec expo prebuild --platform android → "✔ Finished prebuild"
 ```
+
+## Round 7 — the review that found the fail-opens my own round-6 fix created
+
+Round 6 replaced display-name matching with package identity read from the
+documented App Details endpoint. The independent re-review found that the
+replacement leaked in two places, and that a third contract was wrong in a way
+no round had caught.
+
+### R6-01 (blocking) — every rejection collapsed into "not a match"
+
+`identifyApp` returned a boolean. An entry that was somebody ELSE's package and
+an entry the script could not verify at all (App Details missing
+`bundle_identifier`, an unreadable `app_id`, a non-Enterprise `app_type`) both
+came back `false`, so `findApp` filtered them out identically and returned
+`absent` — and `absent` means CREATE. A repository the script could not read
+produced a duplicate enterprise app rather than a stop.
+
+Probed before fixing, with the real `publish()` against a fake fetch:
+
+| probe | repository state                               | before  | after     |
+| ----- | ---------------------------------------------- | ------- | --------- |
+| H1    | App Details carries no `bundle_identifier`     | MUTATED | `STOPPED` |
+| H2    | listed entry's `app_id` is not addressable     | MUTATED | `STOPPED` |
+| H3    | our package, but not the Enterprise `app_type` | MUTATED | `STOPPED` |
+
+Fixed by making the result a discriminated union — `{ok:true}`,
+`{ok:false,kind:"other-package"}`, `{ok:false,kind:"unverifiable",reason}` —
+and failing closed on any `unverifiable`. Only `other-package` may be skipped,
+because only that one is a fact. `listedAppIds` now reports entries it cannot
+even address (`unusable`), and a non-zero count is itself a stop.
+
+### R6-03 (major) — the update silently renamed the tenant's app
+
+The label-scoped update echoed `inputs.appName` back to ManageEngine. Probe H7
+against an app the console calls "KISOK Kiosk" sent
+`{"app_name":"KISOK",...}` — the pipeline would have renamed the operator's
+app on every release. It now echoes `match.appName`, read from App Details, and
+`verifyCandidates` refuses a match whose name it could not read rather than
+substituting one.
+
+```
+H7 → PUT /api/v1/mdm/apps/55/labels/9
+     {"app_name":"KISOK Kiosk","app_type":2,"app_file":42,"force_update_in_label":true}
+```
+
+### R6-04 to R6-06
+
+The App Details route matcher in the fake fetch matched by substring, so a test
+that meant to prove a guard was reading the LISTING body instead and passing
+for the wrong reason; matching is now by exact pathname, which turned two other
+tests red and exposed R6-01. The headline `Zoho-oauthtoken` fix had no test at
+all — it does now, asserting the scheme is never `Bearer`. Dead defensive state
+(`sawAnyBundleIdentifier`) was deleted rather than kept.
+
+### Round 7 gate
+
+```
+npx jest tools/mdm → 45 passed, 45 total
+pnpm verify        → PASS (exit 0)
+pnpm exec expo prebuild --platform android --no-install --clean → "✔ Finished prebuild"
+  android/app/src/main/AndroidManifest.xml carries
+    <meta-data android:name="android.content.APP_RESTRICTIONS"
+               android:resource="@xml/kiosk_restrictions"/>
+  android/app/src/main/res/xml/kiosk_restrictions.xml renders the choice restriction
+```
+
+`prebuild` rewrites `package.json` (`expo start --android` → `expo run:android`,
+and it adds an `ios` script). Reverted — this project ships Android tablets and
+the script change is a prebuild artefact, not a decision.
