@@ -1,0 +1,272 @@
+name: Android release to ManageEngine
+
+# MANUAL DISPATCH ONLY, and deliberately so: this is the only workflow that
+# touches the Android signing secrets and the ManageEngine credentials.
+# `workflow_dispatch` requires write access to the repository, which is the
+# access boundary for who may spend that material. No push or pull_request
+# trigger may ever reach it.
+#
+# One run does the whole pipeline, so there is no artifact hand-off between
+# runs to validate:
+#
+#   build a signed release APK
+#     -> verify its package identity, signature, version and embedded bundle
+#     -> upload it to the ManageEngine App Repository
+#     -> create KISOK, or update the existing enterprise app (matched by package)
+#
+# ManageEngine then installs or updates it on the enrolled tablets. KISOK
+# contains no updater: enterprise apps on a kiosk device are updated silently
+# by MDM, and an ordinary employee tablet gets ManageEngine's own update prompt.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Authenticate and read from ManageEngine, but upload and change nothing"
+        type: boolean
+        default: false
+
+# Least privilege: read the repository, nothing more.
+permissions:
+  contents: read
+
+# SERIALIZED, never cancelled: killing a gradle build mid-signing wastes the
+# whole run, and cancelling between the upload and the app update would leave
+# ManageEngine holding an orphan file.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, verify and publish to ManageEngine
+    runs-on: ubuntu-latest
+    # The job spends the signing and MDM secrets, so it runs in a dedicated
+    # GitHub environment. A repository admin creates `android-release` and sets
+    # its protection rules; moving the secrets from repository to environment
+    # scope is what activates that boundary.
+    environment: android-release
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The job never pushes, so do not leave a token in .git/config.
+          persist-credentials: false
+
+      # FAIL CLOSED immediately, before any toolchain setup or build work.
+      # GitHub renders an unset secret as an empty string and secrets cannot be
+      # used in `if:`, so the documented primitive is: pass them as step env,
+      # then check for non-empty. Only NAMES are ever printed.
+      - name: Check every required secret is present (fail closed)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          MDM_CLIENT_ID: ${{ secrets.MDM_CLIENT_ID }}
+          MDM_CLIENT_SECRET: ${{ secrets.MDM_CLIENT_SECRET }}
+          MDM_REFRESH_TOKEN: ${{ secrets.MDM_REFRESH_TOKEN }}
+        run: |
+          missing=0
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS \
+                      ANDROID_KEY_PASSWORD MDM_CLIENT_ID MDM_CLIENT_SECRET MDM_REFRESH_TOKEN; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not set. Add it as an Actions secret; this workflow refuses to run without all seven."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      # pnpm must be installed BEFORE setup-node, or `cache: pnpm` cannot find it.
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      # Node 24 for the whole job: tools/release/verify-release-apk.ts and
+      # tools/mdm/publish-app.ts are plain TypeScript run with `node`, which
+      # needs native type-stripping.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The expected APK identity is DERIVED from the evaluated app config, never
+      # hard-coded. versionName keeps Expo's own defaulting; versionCode does NOT
+      # — an absent android.versionCode is a named failure here, because Expo's
+      # hidden `?? 1` default would ship versionCode 1 forever and silently break
+      # the N->N+1 update contract Android enforces. Every derived value is
+      # validated as a simple token before it reaches $GITHUB_ENV, so a
+      # newline-bearing value cannot inject extra env lines.
+      - name: Evaluate the expected APK identity from the app config
+        run: |
+          pnpm exec expo config --json > "$RUNNER_TEMP/evaluated-app-config.json"
+          node -e '
+            const fs = require("node:fs");
+            const config = JSON.parse(
+              fs.readFileSync(`${process.env.RUNNER_TEMP}/evaluated-app-config.json`, "utf8"),
+            );
+            const android = config.android ?? {};
+            const packageName = android.package;
+            const versionName = android.version ?? config.version;
+            const versionCode = android.versionCode;
+            if (versionCode === undefined) {
+              console.error("evaluated app config is missing android.versionCode — set it explicitly in app.config.ts and bump it for every release");
+              process.exit(1);
+            }
+            const identity = [
+              ["android.package", packageName],
+              ["android.version (or the root version)", versionName],
+            ];
+            const missing = identity.filter(([, v]) => typeof v !== "string" || v.length === 0);
+            if (missing.length > 0) {
+              console.error(`evaluated app config is missing: ${missing.map(([k]) => k).join(", ")}`);
+              process.exit(1);
+            }
+            for (const [, value] of identity) {
+              if (!/^[A-Za-z0-9._+-]+$/.test(value)) {
+                console.error(`evaluated app config value is not a simple token: ${JSON.stringify(value)}`);
+                process.exit(1);
+              }
+            }
+            const versionCodeToken = String(versionCode);
+            if (!/^[0-9]+$/.test(versionCodeToken)) {
+              console.error(`evaluated android.versionCode is not a plain non-negative integer: ${JSON.stringify(versionCode)}`);
+              process.exit(1);
+            }
+            fs.appendFileSync(
+              process.env.GITHUB_ENV,
+              `EXPECTED_PACKAGE_NAME=${packageName}\n` +
+                `EXPECTED_VERSION_NAME=${versionName}\n` +
+                `EXPECTED_VERSION_CODE=${versionCodeToken}\n`,
+            );
+            console.log(`expected APK identity: package ${packageName}, versionName ${versionName}, versionCode ${versionCodeToken}`);
+          '
+
+      # Generates the native project from app.config.ts. The MYAPP_UPLOAD_* env
+      # is what plugins/with-android-release-signing.ts reads — all four or
+      # nothing, and the presence check above already proved all four are set —
+      # so the guarded signing config lands in the generated tree. The
+      # EXPO_PUBLIC_* placeholders are scoped to THIS step deliberately: they
+      # exist so the config can be evaluated. Gradle's own bundling runs
+      # `expo export:embed`, where process env would WIN over the committed
+      # .env the shipped artifact must carry.
+      - name: Expo prebuild (Android)
+        run: pnpm exec expo prebuild --platform android --no-install --clean
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+          EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+          EXPO_PUBLIC_ENVIRONMENT: local
+          MYAPP_UPLOAD_STORE_FILE: kisok-upload.keystore
+          MYAPP_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          MYAPP_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      # prebuild MUTATES package.json (it rewrites the android script and adds
+      # an ios one). Restore the committed file — a local restore, no credentials.
+      - name: Restore package.json after prebuild
+        run: git checkout -- package.json
+
+      # Decode AFTER prebuild: android/app/ does not exist before it, and the
+      # --clean prebuild would wipe a file decoded earlier. The keystore lands
+      # only in the generated, gitignored android/ tree — it never enters the
+      # repository, the logs, or any uploaded artifact.
+      - name: Decode the upload keystore into the generated android tree
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/kisok-upload.keystore
+          if [ ! -s android/app/kisok-upload.keystore ]; then
+            echo "::error::Decoding ANDROID_KEYSTORE_BASE64 produced an empty keystore — the secret is set but is not base64 keystore content."
+            exit 1
+          fi
+
+      # Release variant: embeds the JS bundle and signs with the upload key. No
+      # -PreactNativeArchitectures override — this artifact targets real store
+      # tablets, so both ABIs come from expo-build-properties in app.config.ts.
+      - name: Assemble the signed release APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+
+      # ubuntu-latest ships the Android SDK at ANDROID_HOME with
+      # build-tools/<version>/ directories. Take the newest aapt2/apksigner and
+      # pass them EXPLICITLY, rather than relying on PATH resolution.
+      - name: Locate aapt2 and apksigner in the runner SDK
+        run: |
+          aapt2="$(find "$ANDROID_HOME/build-tools" -name aapt2 -type f | sort -V | tail -n1)"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n1)"
+          if [ -z "$aapt2" ] || [ -z "$apksigner" ]; then
+            echo "::error::Could not find aapt2/apksigner under $ANDROID_HOME/build-tools — the APK cannot be verified."
+            exit 1
+          fi
+          echo "AAPT2_PATH=$aapt2" >> "$GITHUB_ENV"
+          echo "APKSIGNER_PATH=$apksigner" >> "$GITHUB_ENV"
+
+      # The delivery gate: package identity, versionCode/versionName, the pinned
+      # signing-certificate SHA-256, and an embedded JS bundle. The certificate
+      # pin is the real identity check — Android compares signing certificates
+      # byte for byte when installing an update, so a non-debug DN alone proves
+      # nothing. The script's exit code is the gate; the success-line assertion
+      # is belt and braces, so a renamed or mis-invoked script cannot pass
+      # silently.
+      - name: Verify the signed APK
+        shell: bash
+        env:
+          # A PUBLIC Actions VARIABLE, never a secret: the certificate
+          # fingerprint is computable by anyone holding the shipped APK.
+          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_UPLOAD_CERT_SHA256 }}
+        run: |
+          set -o pipefail
+          if [ -z "$EXPECTED_CERT_SHA256" ]; then
+            echo "::error::ANDROID_UPLOAD_CERT_SHA256 is not set. Create it as a repository Actions VARIABLE (Settings -> Secrets and variables -> Actions -> Variables). It is PUBLIC, not a secret. Compute it with 'keytool -exportcert -keystore <keystore> -alias <alias> | sha256sum', or from a known-good APK with 'apksigner verify --print-certs'."
+            exit 1
+          fi
+          log="$RUNNER_TEMP/verify-release-apk.log"
+          node tools/release/verify-release-apk.ts \
+            --apk android/app/build/outputs/apk/release/app-release.apk \
+            --package "$EXPECTED_PACKAGE_NAME" \
+            --version-code "$EXPECTED_VERSION_CODE" \
+            --version-name "$EXPECTED_VERSION_NAME" \
+            --cert-sha256 "$EXPECTED_CERT_SHA256" \
+            --aapt2 "$AAPT2_PATH" \
+            --apksigner "$APKSIGNER_PATH" \
+            2>&1 | tee "$log"
+          if ! grep -q "APK verification passed" "$log"; then
+            echo "::error::verify-release-apk produced no 'APK verification passed' line — the script may be mis-invoked or renamed."
+            exit 1
+          fi
+
+      # Only a VERIFIED artifact is published. The script uploads the APK, waits
+      # for ManageEngine's documented file processing if it reports the file as
+      # pending, then creates KISOK or updates the existing enterprise app —
+      # matched by PACKAGE IDENTITY read from App Details — every repository
+      # entry is checked, so the display name neither selects nor excludes one. It redacts the
+      # three credentials out of everything it prints.
+      - name: Publish to the ManageEngine App Repository
+        env:
+          MDM_CLIENT_ID: ${{ secrets.MDM_CLIENT_ID }}
+          MDM_CLIENT_SECRET: ${{ secrets.MDM_CLIENT_SECRET }}
+          MDM_REFRESH_TOKEN: ${{ secrets.MDM_REFRESH_TOKEN }}
+          # The tenant's data centre decides both the Zoho accounts host the
+          # refresh token is sent to and the MDM API host. Defaults to the US
+          # data centre; override with an Actions VARIABLE for another tenant.
+          MDM_DATA_CENTRE: ${{ vars.MDM_DATA_CENTRE || 'us' }}
+        run: |
+          node tools/mdm/publish-app.ts \
+            --apk android/app/build/outputs/apk/release/app-release.apk \
+            ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      # The APK a human can inspect between this run and the tablets picking it
+      # up. It contains the public client config only — the signing material
+      # stays in the runner's ephemeral android/ tree.
+      - name: Publish the verified APK as a build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kisok-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
+          if-no-files-found: error

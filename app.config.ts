@@ -29,6 +29,11 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: BUNDLE_ID,
+    // EXPLICIT, never Expo's hidden `?? 1` default. Android refuses an update
+    // whose versionCode is not greater, so every MDM-delivered release must
+    // bump this; the release workflow fails closed when it is absent rather
+    // than silently shipping versionCode 1 forever.
+    versionCode: 1,
   },
   ios: {
     supportsTablet: true,
@@ -42,6 +47,15 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    // Declares the Android Enterprise managed-configuration schema so
+    // ManageEngine can push `kiosk_device_role` to this package. It adds
+    // manifest meta-data and res/xml only — no kiosk enforcement.
+    "./plugins/with-managed-configuration.ts",
+    // Env-guarded release signing. Inert unless all four MYAPP_UPLOAD_* vars
+    // are present at prebuild time, so local dev and the e2e workflow keep the
+    // template's debug-signed release. Values only ever reach the generated,
+    // gitignored android/ tree.
+    "./plugins/with-android-release-signing.ts",
     [
       "expo-splash-screen",
       {
