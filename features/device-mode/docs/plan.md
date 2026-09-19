@@ -138,12 +138,12 @@ is the thing an audit should be able to catch:
 
 ## Risks
 
-| Risk                                                                           | Mitigation                                                                                                                            |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| ManageEngine cannot push a managed configuration to an in-house enterprise app | TENANT VALIDATION REQUIRED before the kiosk tablet is trusted; the guard fails closed (preparation held/blocked), it never fails open |
-| The ManageEngine REST contract drifted since it was recorded                   | Every call fails closed with a message naming the endpoint; the first dispatch is the proof                                           |
-| The native read races auth resolution                                          | `pending` holds preparation on the startup screen; it is not a guess                                                                  |
-| Device-mode logic spreading through the app                                    | One pure function (D2); ESLint keeps `app/**` thin                                                                                    |
+| Risk                                                                           | Mitigation                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ManageEngine cannot push a managed configuration to an in-house enterprise app | TENANT VALIDATION REQUIRED **before** the kiosk tablet goes into service. This does NOT fail closed: no configuration means an empty bundle, which derives `standard` and grants Preparation. It is the one input the client cannot make safe — see AR-01 |
+| The ManageEngine REST contract drifted since it was recorded                   | Every call fails closed with a message naming the endpoint; the first dispatch is the proof                                                                                                                                                               |
+| The native read races auth resolution                                          | `pending` holds preparation on the startup screen; it is not a guess                                                                                                                                                                                      |
+| Device-mode logic spreading through the app                                    | One pure function (D2); ESLint keeps `app/**` thin                                                                                                                                                                                                        |
 
 ## Verification
 

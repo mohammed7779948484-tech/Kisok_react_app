@@ -1,10 +1,13 @@
 import {
   buildTokenExchangeBody,
   collectSecretValues,
-  matchAppByPackage,
+  identifyApp,
+  parseAppDetails,
   redactSecrets,
   resolveDataCentre,
   resolveInputs,
+  selectCandidates,
+  selectReleaseLabel,
   publish,
   type FetchLike,
   type PublishInputs,
@@ -99,46 +102,94 @@ describe("resolveInputs", () => {
   });
 });
 
-describe("matchAppByPackage", () => {
-  it("matches on package identity, not on the display name", () => {
-    const match = matchAppByPackage(
-      [
-        { app_id: 1, app_name: "KISOK", identifier: "com.other.app" },
-        { app_id: 2, app_name: "Something else", identifier: "com.kisok.kiosk" },
-      ],
-      "com.kisok.kiosk",
-      "KISOK",
-    );
+describe("identity — established from App Details, never from the listing", () => {
+  const DETAILS = {
+    app_id: 55,
+    app_name: "KISOK",
+    app_type: 2,
+    bundle_identifier: "com.kisok.kiosk",
+    platform_type: 2,
+    release_labels: [{ release_label_id: 9, release_label_name: "Stable", app_version: "1.0.0" }],
+  };
 
-    expect(match).toEqual({ status: "found", appId: 2 });
-  });
-
-  it("accepts any of the package-identity field spellings the API may use", () => {
-    for (const key of ["identifier", "bundle_id", "package_name", "app_package_name"]) {
-      expect(
-        matchAppByPackage(
-          [{ app_id: 9, app_name: "KISOK", [key]: "com.kisok.kiosk" }],
-          "com.kisok.kiosk",
-          "KISOK",
-        ),
-      ).toEqual({ status: "found", appId: 9 });
-    }
-  });
-
-  it("reports absent when nothing carries that package — the create path", () => {
+  it("selects listing candidates by the DOCUMENTED app_name, and nothing else", () => {
+    // The list response documents app_id and app_name. It does NOT document a
+    // package field, so the name is a candidate filter, never proof.
     expect(
-      matchAppByPackage(
-        [{ app_id: 1, app_name: "Other", identifier: "com.other" }],
-        "com.kisok.kiosk",
+      selectCandidates(
+        [
+          { app_id: 1, app_name: "Other" },
+          { app_id: 2, app_name: "KISOK" },
+        ],
         "KISOK",
       ),
-    ).toEqual({ status: "absent" });
+    ).toEqual([{ appId: 2, appName: "KISOK" }]);
   });
 
-  it("refuses to update an entry that only matches by NAME, with no package identity", () => {
-    const match = matchAppByPackage([{ app_id: 4, app_name: "KISOK" }], "com.kisok.kiosk", "KISOK");
+  it("parses the documented App Details fields", () => {
+    const details = parseAppDetails(DETAILS, 55);
 
-    expect(match.status).toBe("ambiguous");
+    expect(details.bundleIdentifier).toBe("com.kisok.kiosk");
+    expect(details.appType).toBe(2);
+    expect(details.releaseLabels).toEqual([{ releaseLabelId: 9, releaseLabelName: "Stable" }]);
+  });
+
+  it("positively identifies our app by bundle_identifier and the Enterprise app_type", () => {
+    expect(identifyApp(parseAppDetails(DETAILS, 55), "com.kisok.kiosk")).toEqual({ ok: true });
+  });
+
+  it("refuses an app whose bundle_identifier is a different package", () => {
+    const other = parseAppDetails({ ...DETAILS, bundle_identifier: "com.other.app" }, 55);
+
+    expect(identifyApp(other, "com.kisok.kiosk").ok).toBe(false);
+  });
+
+  it("refuses an app that carries NO bundle_identifier — absence is not identity", () => {
+    const bare = parseAppDetails({ app_id: 55, app_name: "KISOK", app_type: 2 }, 55);
+
+    expect(identifyApp(bare, "com.kisok.kiosk").ok).toBe(false);
+  });
+
+  it("refuses an app that is not the Enterprise app type", () => {
+    const store = parseAppDetails({ ...DETAILS, app_type: 0 }, 55);
+
+    expect(identifyApp(store, "com.kisok.kiosk").ok).toBe(false);
+  });
+});
+
+describe("selectReleaseLabel", () => {
+  it("uses the only label when there is exactly one", () => {
+    const result = selectReleaseLabel([{ releaseLabelId: 9, releaseLabelName: "Stable" }], 55);
+
+    expect(result).toEqual({ ok: true, label: { releaseLabelId: 9, releaseLabelName: "Stable" } });
+  });
+
+  it("prefers the Stable label when there are several", () => {
+    const result = selectReleaseLabel(
+      [
+        { releaseLabelId: 8, releaseLabelName: "Beta" },
+        { releaseLabelId: 9, releaseLabelName: "Stable" },
+      ],
+      55,
+    );
+
+    expect(result).toEqual({ ok: true, label: { releaseLabelId: 9, releaseLabelName: "Stable" } });
+  });
+
+  it("refuses to guess when there are several and none is Stable", () => {
+    const result = selectReleaseLabel(
+      [
+        { releaseLabelId: 8, releaseLabelName: "Beta" },
+        { releaseLabelId: 7, releaseLabelName: "Pilot" },
+      ],
+      55,
+    );
+
+    expect(result.ok).toBe(false);
+  });
+
+  it("refuses when the app carries no release labels at all", () => {
+    expect(selectReleaseLabel([], 55).ok).toBe(false);
   });
 });
 
@@ -160,10 +211,14 @@ function fakeFetch(routes: Record<string, () => { status: number; body: unknown 
     // Routes are keyed "METHOD /path" so a POST that creates and a GET that
     // lists never collide on the same path.
     const method = init?.method ?? "GET";
-    const key = Object.keys(routes).find((route) => {
-      const [routeMethod, routePath] = route.split(" ");
-      return routeMethod === method && url.includes(routePath!);
-    });
+    // Longest matching path wins, so "GET /api/v1/mdm/apps/55" (App Details)
+    // is never shadowed by "GET /api/v1/mdm/apps" (the listing).
+    const key = Object.keys(routes)
+      .filter((route) => {
+        const [routeMethod, routePath] = route.split(" ");
+        return routeMethod === method && url.includes(routePath!);
+      })
+      .sort((a, b) => b.split(" ")[1]!.length - a.split(" ")[1]!.length)[0];
     if (!key) throw new Error(`unexpected ${method} request: ${url}`);
     const { status, body } = routes[key]!();
     return {
@@ -225,10 +280,21 @@ it("UPDATES the existing app when the package is already in the repository", asy
       listed = true;
       return {
         status: 200,
-        body: { apps: [{ app_id: 55, app_name: "KISOK", identifier: "com.kisok.kiosk" }] },
+        body: { apps: [{ app_id: 55, app_name: "KISOK" }] },
       };
     },
-    "PUT /api/v1/mdm/apps": () => ({ status: 200, body: { status: "ok" } }),
+    "GET /api/v1/mdm/apps/55": () => ({
+      status: 200,
+      body: {
+        app_id: 55,
+        app_name: "KISOK",
+        app_type: 2,
+        bundle_identifier: "com.kisok.kiosk",
+        platform_type: 2,
+        release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
+      },
+    }),
+    "PUT /api/v1/mdm/apps/55/labels/9": () => ({ status: 200, body: { status: "ok" } }),
   });
 
   const result = await publish(INPUTS, d);
@@ -237,7 +303,16 @@ it("UPDATES the existing app when the package is already in the repository", asy
   expect(result.ok).toBe(true);
   if (!result.ok) return;
   expect(result.action).toBe("updated");
-  expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/api/v1/mdm/apps/55"))).toBe(true);
+  // The DOCUMENTED update path is label-scoped, and force_update_in_label is
+  // required to update the version in a label that already carries the app.
+  const put = calls.find((c) => c.method === "PUT")!;
+  expect(put.url).toMatch(/\/api\/v1\/mdm\/apps\/55\/labels\/9$/);
+  expect(JSON.parse(String(put.body))).toMatchObject({
+    app_name: "KISOK",
+    app_type: 2,
+    app_file: 7,
+    force_update_in_label: true,
+  });
 });
 
 it("waits for the documented file processing when the upload comes back pending", async () => {
@@ -263,13 +338,15 @@ it("waits for the documented file processing when the upload comes back pending"
 
 it("fails closed, without uploading, when the file upload reports the documented FAILED status", async () => {
   const { deps: d, calls } = deps({
+    "GET /api/v1/mdm/apps": () => ({ status: 200, body: { apps: [] } }),
     "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 3 } }),
   });
 
   const result = await publish(INPUTS, d);
 
   expect(result.ok).toBe(false);
-  expect(calls.some((c) => c.url.includes("/api/v1/mdm/apps"))).toBe(false);
+  // No app was created or updated off the back of a failed upload.
+  expect(calls.some((c) => c.method !== "GET" && c.url.includes("/api/v1/mdm/apps"))).toBe(false);
 });
 
 it("refuses to touch an app that matches only by display name", async () => {
@@ -285,12 +362,13 @@ it("refuses to touch an app that matches only by display name", async () => {
 
   expect(result.ok).toBe(false);
   if (result.ok) return;
-  expect(result.failure).toMatch(/package/i);
+  expect(result.failure).toMatch(/com\.kisok\.kiosk/);
   expect(calls.some((c) => c.method === "PUT")).toBe(false);
 });
 
 it("never puts a credential in a failure message", async () => {
   const { deps: d } = deps({
+    "GET /api/v1/mdm/apps": () => ({ status: 200, body: { apps: [] } }),
     "POST /emsapi/files": () => ({ status: 401, body: { error: "invalid token refresh-token" } }),
   });
 
@@ -334,18 +412,32 @@ it("walks past the first page — a match on page 2 is an UPDATE, never a duplic
         : {
             status: 200,
             body: {
-              apps: [{ app_id: 55, app_name: "KISOK", identifier: "com.kisok.kiosk" }],
+              apps: [{ app_id: 55, app_name: "KISOK" }],
               metadata: { total_record_count: 2 },
             },
           };
     },
-    "PUT /api/v1/mdm/apps": () => ({ status: 200, body: { status: "ok" } }),
+    "GET /api/v1/mdm/apps/55": () => ({
+      status: 200,
+      body: {
+        app_id: 55,
+        app_name: "KISOK",
+        app_type: 2,
+        bundle_identifier: "com.kisok.kiosk",
+        platform_type: 2,
+        release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
+      },
+    }),
+    "PUT /api/v1/mdm/apps/55/labels/9": () => ({ status: 200, body: { status: "ok" } }),
   });
 
   const result = await publish(INPUTS, d);
 
   expect(result).toMatchObject({ ok: true, action: "updated" });
-  expect(calls.filter((c) => c.method === "GET").length).toBe(2);
+  const listings = calls.filter((c) => c.method === "GET" && /\/apps\?/.test(c.url));
+  const detailReads = calls.filter((c) => c.method === "GET" && /\/apps\/55$/.test(c.url));
+  expect(listings.length).toBe(2);
+  expect(detailReads.length).toBe(1);
   expect(calls.some((c) => c.method === "POST" && c.url.includes("/api/v1/mdm/apps"))).toBe(false);
 });
 
@@ -354,9 +446,20 @@ it("accepts a 2xx write with an empty body — the update already happened", asy
     "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
     "GET /api/v1/mdm/apps": () => ({
       status: 200,
-      body: { apps: [{ app_id: 55, app_name: "KISOK", identifier: "com.kisok.kiosk" }] },
+      body: { apps: [{ app_id: 55, app_name: "KISOK" }] },
     }),
-    "PUT /api/v1/mdm/apps": () => ({ status: 204, body: undefined }),
+    "GET /api/v1/mdm/apps/55": () => ({
+      status: 200,
+      body: {
+        app_id: 55,
+        app_name: "KISOK",
+        app_type: 2,
+        bundle_identifier: "com.kisok.kiosk",
+        platform_type: 2,
+        release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
+      },
+    }),
+    "PUT /api/v1/mdm/apps/55/labels/9": () => ({ status: 204, body: undefined }),
   });
 
   const result = await publish(INPUTS, d);
@@ -368,9 +471,10 @@ it("accepts a 2xx write with an empty body — the update already happened", asy
 
 it("redacts the exchanged access token, not just the three credentials", async () => {
   const { deps: d } = deps({
+    "GET /api/v1/mdm/apps": () => ({ status: 200, body: { apps: [] } }),
     "POST /emsapi/files": () => ({
       status: 500,
-      body: { message: "upstream rejected bearer at-secret-value" },
+      body: { message: "upstream rejected token at-secret-value" },
     }),
   });
   const withToken = { ...INPUTS };

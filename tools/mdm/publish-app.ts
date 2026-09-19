@@ -11,11 +11,20 @@
  * The pipeline is deliberately five calls and no more:
  *
  *     refresh-token grant          POST {accounts}/oauth/v2/token
+ *     list candidates              GET  {mdm}/api/v1/mdm/apps
+ *     IDENTIFY by bundle id        GET  {mdm}/api/v1/mdm/apps/{app_id}
  *     upload the APK               POST {mdm}/emsapi/files
  *     wait, only if pending        POST {mdm}/emsapi/fileupload/status
- *     find KISOK by PACKAGE        GET  {mdm}/api/v1/mdm/apps
  *     create or update             POST {mdm}/api/v1/mdm/apps
- *                                  PUT  {mdm}/api/v1/mdm/apps/{app_id}
+ *                                  PUT  {mdm}/api/v1/mdm/apps/{app_id}/labels/{release_label_id}
+ *
+ * Identity is resolved and verified BEFORE the upload, so an App Repository
+ * state this script cannot read leaves no orphan file behind.
+ *
+ * Headers follow the documented contract: `Authorization: Zoho-oauthtoken
+ * <token>` (NOT Bearer) and `Content-Type: application/json`. `Accept:
+ * application/json` is sent on JSON calls as convention — it could not be
+ * confirmed as a documented requirement.
  *
  * There is no group, label or rollout orchestration: one physical customer
  * tablet is planned, and device assignment is a console decision.
@@ -81,9 +90,24 @@ export type PublishResult =
 export type ListedApp = Record<string, unknown>;
 
 export type AppMatch =
-  | { status: "found"; appId: number | string }
+  | { status: "found"; appId: number | string; releaseLabelId: number | string }
   | { status: "absent" }
   | { status: "ambiguous"; reason: string };
+
+/** One release label on the App Details response. */
+export interface ReleaseLabel {
+  releaseLabelId: number | string;
+  releaseLabelName: string;
+}
+
+/** The subset of App Details this pipeline reads. */
+export interface AppDetails {
+  appId: number | string;
+  bundleIdentifier: string | undefined;
+  appType: number | undefined;
+  platformType: unknown;
+  releaseLabels: ReleaseLabel[];
+}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -131,17 +155,21 @@ const DATA_CENTRES: Record<string, { accounts: string; mdm: string }> = {
 };
 
 /**
- * Field spellings that may carry the package identity in an App Repository
- * entry. Several are accepted because the exact spelling could not be
- * re-verified against the live documentation; matching is still POSITIVE —
- * one of these must equal the package, or the entry is not a match.
+ * The DOCUMENTED identity field on the App Details response
+ * (`GET /api/v1/mdm/apps/{app_id}`), whose fields are app_id, app_name,
+ * app_category, app_type, bundle_identifier, version, platform_type,
+ * description, icon, store_url, is_app_paid, country_code, store_id,
+ * added_time, modified_time and release_labels.
+ *
+ * An earlier version guessed at `identifier` / `bundle_id` / `package_name` /
+ * `app_package_name` on the LIST response. None of those is documented, so a
+ * tenant returning none of them made every app look unidentifiable. Identity
+ * is now established from App Details, where the field is specified.
  */
-const PACKAGE_IDENTITY_KEYS = [
-  "identifier",
-  "bundle_id",
-  "package_name",
-  "app_package_name",
-] as const;
+const BUNDLE_IDENTIFIER_FIELD = "bundle_identifier";
+
+/** The release label whose version this pipeline updates. */
+const STABLE_RELEASE_LABEL = "Stable";
 
 // ---------------------------------------------------------------------------
 // Secret handling
@@ -225,38 +253,128 @@ function readInteger(value: unknown): number | undefined {
  * far as this script is concerned, and updating it could overwrite an
  * unrelated app. The run stops and a human decides.
  */
-export function matchAppByPackage(
+/**
+ * Narrow the listing to the entries worth fetching App Details for.
+ *
+ * The LIST response documents `app_id` and `app_name`; it does NOT document a
+ * package field, so the display name is only a CANDIDATE filter here — never
+ * proof. Every candidate is then positively identified by its
+ * `bundle_identifier` from App Details, and an unverifiable candidate fails
+ * the run rather than being skipped.
+ */
+export function selectCandidates(
   apps: readonly ListedApp[],
-  packageName: string,
   appName: string,
-): AppMatch {
+): { appId: number | string; appName: string }[] {
+  const candidates: { appId: number | string; appName: string }[] = [];
   for (const app of apps) {
-    const identity = PACKAGE_IDENTITY_KEYS.map((key) => app[key]).find(
-      (value) => typeof value === "string" && value === packageName,
-    );
-    if (identity === undefined) continue;
+    if (app.app_name !== appName) continue;
     const appId = readId(app.app_id);
-    if (appId === undefined) {
-      return {
-        status: "ambiguous",
-        reason: `an App Repository entry carries package ${packageName} but no usable app_id`,
-      };
-    }
-    return { status: "found", appId };
+    if (appId === undefined) continue;
+    candidates.push({ appId, appName });
   }
+  return candidates;
+}
 
-  const nameOnly = apps.find((app) => app.app_name === appName);
-  if (nameOnly) {
+/** Parse the App Details fields this pipeline reads. */
+export function parseAppDetails(body: unknown, appId: number | string): AppDetails {
+  const record = isRecord(body) ? body : {};
+  // Some tenants nest the object; accept either shape without inventing one.
+  const app = isRecord(record.app) ? record.app : record;
+  const rawLabels = Array.isArray(app.release_labels) ? app.release_labels : [];
+  const releaseLabels: ReleaseLabel[] = [];
+  for (const label of rawLabels) {
+    if (!isRecord(label)) continue;
+    const id = readId(label.release_label_id);
+    const name = label.release_label_name;
+    if (id === undefined || typeof name !== "string") continue;
+    releaseLabels.push({ releaseLabelId: id, releaseLabelName: name });
+  }
+  const bundle = app[BUNDLE_IDENTIFIER_FIELD];
+  return {
+    appId,
+    bundleIdentifier: typeof bundle === "string" ? bundle : undefined,
+    appType: readInteger(app.app_type),
+    platformType: app.platform_type,
+    releaseLabels,
+  };
+}
+
+/**
+ * Is this App Details payload positively OUR application?
+ *
+ * Two documented assertions, both required:
+ *  - `bundle_identifier` equals the package exactly. On Android this IS the
+ *    package name, so it is the identity, and it is platform-specific by
+ *    construction — no other platform has a `com.kisok.kiosk`.
+ *  - `app_type` is 2, the documented Enterprise (in-house) app type.
+ *
+ * `platform_type` is deliberately NOT asserted against a number: the field is
+ * documented but its integer enum could not be confirmed from an authoritative
+ * source, and asserting a guessed value would either reject the right app or
+ * accept the wrong one. Its observed value is reported instead. See
+ * `docs/mdm-operations.md`.
+ */
+export function identifyApp(
+  details: AppDetails,
+  packageName: string,
+): { ok: true } | { ok: false; reason: string } {
+  if (details.bundleIdentifier === undefined) {
     return {
-      status: "ambiguous",
+      ok: false,
       reason:
-        `an App Repository entry is named "${appName}" but carries no package identity matching ` +
-        `${packageName} (checked ${PACKAGE_IDENTITY_KEYS.join(", ")}). Refusing to update an app ` +
-        `identified only by its display name — confirm the entry in the console`,
+        `App Details for app_id ${details.appId} carried no ${BUNDLE_IDENTIFIER_FIELD}, so it ` +
+        "cannot be positively identified",
     };
   }
+  if (details.bundleIdentifier !== packageName) {
+    return {
+      ok: false,
+      reason:
+        `App Details for app_id ${details.appId} carries ${BUNDLE_IDENTIFIER_FIELD} ` +
+        `"${details.bundleIdentifier}", not ${packageName}`,
+    };
+  }
+  if (details.appType !== APP_TYPE_ENTERPRISE) {
+    return {
+      ok: false,
+      reason:
+        `App Details for app_id ${details.appId} carries app_type ${String(details.appType)}, ` +
+        `not the Enterprise type ${APP_TYPE_ENTERPRISE}`,
+    };
+  }
+  return { ok: true };
+}
 
-  return { status: "absent" };
+/**
+ * Which release label to update.
+ *
+ * One label — use it. Several — the one named "Stable", the documented
+ * example name for the default channel. Several with no "Stable" is not a
+ * guess this script gets to make.
+ */
+export function selectReleaseLabel(
+  labels: readonly ReleaseLabel[],
+  appId: number | string,
+): { ok: true; label: ReleaseLabel } | { ok: false; reason: string } {
+  if (labels.length === 0) {
+    return {
+      ok: false,
+      reason: `App Details for app_id ${appId} carried no release_labels to update`,
+    };
+  }
+  if (labels.length === 1) return { ok: true, label: labels[0]! };
+
+  const stable = labels.find((label) => label.releaseLabelName === STABLE_RELEASE_LABEL);
+  if (stable) return { ok: true, label: stable };
+
+  return {
+    ok: false,
+    reason:
+      `app_id ${appId} has ${labels.length} release labels and none is named ` +
+      `"${STABLE_RELEASE_LABEL}" (${labels.map((l) => l.releaseLabelName).join(", ")}) — ` +
+      "refusing to guess which one to update",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -372,9 +490,17 @@ async function request(
   return parsed;
 }
 
+/**
+ * The documented ManageEngine MDM Cloud auth scheme.
+ *
+ * `Zoho-oauthtoken`, NOT `Bearer`. The API documentation's own curl example is
+ *     -H 'Authorization: Zoho-oauthtoken ba4604e8e433g9c892e360d53463oec5'
+ * and a `Bearer` prefix is simply not recognised, so every call would have
+ * come back 401. `Accept` rides along on the JSON calls; it is conventional
+ * rather than confirmed-mandatory (see the header note in the module doc).
+ */
 function authHeaders(token: string): Record<string, string> {
-  // ManageEngine's documented scheme for an OAuth access token.
-  return { Authorization: `Bearer ${token}` };
+  return { Authorization: `Zoho-oauthtoken ${token}`, Accept: "application/json" };
 }
 
 async function exchangeToken(
@@ -523,10 +649,6 @@ async function findApp(
     }
     for (const app of apps) if (isRecord(app)) collected.push(app);
 
-    // Match as we go: a hit on page 1 need not walk the whole repository.
-    const match = matchAppByPackage(collected, inputs.packageName, inputs.appName);
-    if (match.status === "found") return match;
-
     seen += apps.length;
     const paging = isRecord(parsed.paging) ? parsed.paging : undefined;
     const next = typeof paging?.next === "string" && paging.next !== "" ? paging.next : undefined;
@@ -585,7 +707,72 @@ async function findApp(
     url = `${hosts.mdm}/api/v1/mdm/apps?limit=${LIST_PAGE_SIZE}&offset=${seen}`;
   }
 
-  return matchAppByPackage(collected, inputs.packageName, inputs.appName);
+  return verifyCandidates(collected, inputs, hosts, token, deps);
+}
+
+/**
+ * Turn listed candidates into a positively identified app, or refuse.
+ *
+ * `GET /api/v1/mdm/apps/{app_id}` is the documented App Details endpoint and
+ * the only place `bundle_identifier` is specified, so identity is established
+ * here rather than from the listing. Every candidate is fetched: a candidate
+ * whose details cannot be read is a failure, never a skip, because skipping
+ * one would silently take the create branch and duplicate the app.
+ */
+async function verifyCandidates(
+  collected: readonly ListedApp[],
+  inputs: PublishInputs,
+  hosts: { mdm: string },
+  token: string,
+  deps: PublishDeps,
+): Promise<AppMatch> {
+  const candidates = selectCandidates(collected, inputs.appName);
+  if (candidates.length === 0) return { status: "absent" };
+
+  const verified: AppDetails[] = [];
+  const rejected: string[] = [];
+
+  for (const candidate of candidates) {
+    const body = await request(
+      deps,
+      `the App Details read for app_id ${candidate.appId}`,
+      `${hosts.mdm}/api/v1/mdm/apps/${candidate.appId}`,
+      { method: "GET", headers: authHeaders(token) },
+    );
+    const details = parseAppDetails(body, candidate.appId);
+    const identity = identifyApp(details, inputs.packageName);
+    if (identity.ok) verified.push(details);
+    else rejected.push(identity.reason);
+  }
+
+  if (verified.length === 0) {
+    return {
+      status: "ambiguous",
+      reason:
+        `${candidates.length} App Repository entr${candidates.length === 1 ? "y is" : "ies are"} ` +
+        `named "${inputs.appName}" but none is ${inputs.packageName}: ${rejected.join("; ")}. ` +
+        "Refusing to create a second app beside them, or to update one that is not ours",
+    };
+  }
+  if (verified.length > 1) {
+    return {
+      status: "ambiguous",
+      reason:
+        `${verified.length} App Repository entries claim ${inputs.packageName} ` +
+        `(app_ids ${verified.map((v) => v.appId).join(", ")}) — refusing to guess which to update`,
+    };
+  }
+
+  const app = verified[0]!;
+  const label = selectReleaseLabel(app.releaseLabels, app.appId);
+  if (!label.ok) return { status: "ambiguous", reason: label.reason };
+
+  deps.log(
+    `identified ${inputs.packageName} as app_id ${app.appId}, release label ` +
+      `"${label.label.releaseLabelName}" (${label.label.releaseLabelId}); ` +
+      `platform_type as reported: ${JSON.stringify(app.platformType)}`,
+  );
+  return { status: "found", appId: app.appId, releaseLabelId: label.label.releaseLabelId };
 }
 
 /**
@@ -602,28 +789,37 @@ export async function publish(inputs: PublishInputs, deps: PublishDeps): Promise
     const token = await exchangeToken(inputs, hosts, deps);
     secrets.push(token);
 
+    // RESOLVE AND VERIFY FIRST, upload second. An ambiguous repository state
+    // must cost nothing: uploading before this point left an orphan file in
+    // the tenant every time identity could not be established.
+    const match = await findApp(inputs, hosts, token, deps);
+    if (match.status === "ambiguous") fail(match.reason);
+
     if (inputs.dryRun) {
-      const match = await findApp(inputs, hosts, token, deps);
-      if (match.status === "ambiguous") fail(match.reason);
       return {
         ok: true,
         action: "dry-run",
         detail:
           match.status === "found"
-            ? `authenticated; ${inputs.packageName} is app_id ${match.appId} — a real run would UPDATE it`
+            ? `authenticated; ${inputs.packageName} is app_id ${match.appId} in release label ` +
+              `${match.releaseLabelId} — a real run would UPDATE that label`
             : `authenticated; ${inputs.packageName} is not in the App Repository — a real run would CREATE it`,
       };
     }
 
     const fileId = await uploadApk(inputs, hosts, token, deps);
-    const match = await findApp(inputs, hosts, token, deps);
-    if (match.status === "ambiguous") fail(match.reason);
 
     if (match.status === "found") {
+      // The documented update path is label-scoped:
+      //   PUT /api/v1/mdm/apps/{app_id}/labels/{release_label_id}
+      // and `force_update_in_label` must be true to update the app VERSION in
+      // a label that already carries the app — which is exactly this flow.
+      // An earlier version PUT to /apps/{app_id} with no label segment and no
+      // force flag, which is not the documented endpoint at all.
       await request(
         deps,
-        `the app update for app_id ${match.appId}`,
-        `${hosts.mdm}/api/v1/mdm/apps/${match.appId}`,
+        `the app update for app_id ${match.appId} in release label ${match.releaseLabelId}`,
+        `${hosts.mdm}/api/v1/mdm/apps/${match.appId}/labels/${match.releaseLabelId}`,
         {
           method: "PUT",
           headers: { ...authHeaders(token), "Content-Type": "application/json" },
@@ -631,6 +827,7 @@ export async function publish(inputs: PublishInputs, deps: PublishDeps): Promise
             app_name: inputs.appName,
             app_type: APP_TYPE_ENTERPRISE,
             app_file: fileId,
+            force_update_in_label: true,
           }),
         },
         { allowEmptyBody: true },
@@ -638,7 +835,9 @@ export async function publish(inputs: PublishInputs, deps: PublishDeps): Promise
       return {
         ok: true,
         action: "updated",
-        detail: `updated ${inputs.packageName} (app_id ${match.appId}) with file ${fileId}`,
+        detail:
+          `updated ${inputs.packageName} (app_id ${match.appId}, release label ` +
+          `${match.releaseLabelId}) with file ${fileId}`,
       };
     }
 

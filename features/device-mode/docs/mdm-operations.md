@@ -78,9 +78,16 @@ manifest, so the console can set app configuration values for it. Set:
 **Kiosk device role → "Customer kiosk tablet"** (the stored value is
 `customer_kiosk`)
 
-on the **Customer Kiosk tablet only**. Leave it unset everywhere else — absence
-is what makes a tablet an ordinary employee device, and that is the fail-safe
-direction.
+on the **Customer Kiosk tablet only**. Leave it unset everywhere else: an
+absent key is what the app reads as an ordinary employee tablet.
+
+Be precise about which direction that is safe in. Absence is safe on an
+employee tablet, where it is the truth. It is NOT a fail-safe on the kiosk
+tablet — there, an absent key is the one input that wrongly grants Preparation.
+Everything else about this feature fails closed; **this single case does not**,
+and it cannot, because the app has no way to tell an unconfigured managed
+device from an unmanaged one. That makes the app configuration on the kiosk
+tablet an operational invariant, not a convenience. See AR-01 below.
 
 The restriction is declared as a **choice**, not free text, so the console
 offers that single option rather than a text box.
@@ -108,8 +115,13 @@ factory reset, re-enrolment or KISOK reinstall.
 ⚠️ The single assumption most worth confirming: that this tenant can push an app
 configuration to an **in-house enterprise** APK, not only to a Managed Google
 Play app. If the console does not offer app configuration for the KISOK
-enterprise app, stop and report it — the guard still fails closed (Preparation
-is withheld, never wrongly granted), but it would never reach the kiosk verdict.
+enterprise app, **stop — do not put the tablet into service.**
+
+An earlier version of this page claimed the guard "still fails closed" in that
+case. That was wrong, and the correction matters: with no app configuration the
+kiosk tablet presents an EMPTY restrictions bundle, the app derives `standard`,
+and Preparation is reachable on the locked tablet. A tenant that cannot push
+the configuration does not get a degraded-but-safe guard — it gets no guard.
 
 ### What the tablet does if the configuration cannot be read
 

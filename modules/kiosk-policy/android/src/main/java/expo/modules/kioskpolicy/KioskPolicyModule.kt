@@ -88,8 +88,22 @@ class KioskPolicyModule : Module() {
             }
           }
         }
-        // A system-sent protected broadcast. RECEIVER_NOT_EXPORTED satisfies the
-        // API 33+ registration requirement and never blocks system delivery.
+        // RECEIVER_NOT_EXPORTED, deliberately, and re-verified rather than
+        // assumed:
+        //
+        //  - ACTION_APPLICATION_RESTRICTIONS_CHANGED is declared
+        //    <protected-broadcast> in AOSP frameworks/base
+        //    core/res/AndroidManifest.xml, so only the system can send it —
+        //    no third-party app can reach this receiver whatever the flag is.
+        //  - Android's broadcast guide requires one of the two export flags on
+        //    API 33+; RECEIVER_EXPORTED is only needed to receive broadcasts
+        //    from OTHER apps, including highly privileged ones such as
+        //    Bluetooth and telephony that run outside the system UID. This
+        //    broadcast comes from system_server itself, which NOT_EXPORTED
+        //    receives.
+        //
+        // So EXPORTED would widen the receiver's exposure while adding no
+        // delivery. NOT_EXPORTED is the correct flag here, not the cautious one.
         ContextCompat.registerReceiver(
           context,
           receiver,

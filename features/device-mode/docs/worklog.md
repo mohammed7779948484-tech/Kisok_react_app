@@ -522,3 +522,153 @@ GitHub checks, all on 2ff9f6b:
   Android prebuild check (label-gated native tier)               : SUCCESS
   Maestro flows                                                  : SKIPPED, not a pass
 ```
+
+## Round 5 remediation — external contracts re-verified against current sources
+
+Every contract below was re-checked from a primary source in this session, not
+from PR #9 and not from memory. `www.manageengine.com` remains blocked by the
+build environment's egress policy, so ManageEngine facts come from the vendor's
+own API documentation as surfaced in search results, and are quoted.
+
+### Finding 1 — the auth scheme was wrong (`bug`)
+
+The documented scheme is `Authorization: Zoho-oauthtoken <token>`; the API
+doc's own curl example is
+`-H 'Authorization: Zoho-oauthtoken ba4604e8e433g9c892e360d53463oec5'`.
+The code sent `Bearer`, which is not recognised — **every ManageEngine call
+would have returned 401.** The whole pipeline was untested against a tenant, so
+nothing caught it.
+
+### Finding 2/4 — the update endpoint and force_update_in_label (`bug`)
+
+Documented: `PUT /api/v1/mdm/apps/{app_id}/labels/{release_label_id}`, and
+`force_update_in_label` must be true "to update the app version in the specific
+label which already has an app" — exactly this flow.
+
+The code did `PUT /api/v1/mdm/apps/{app_id}` with no label segment and no force
+flag. Worth recording honestly: **PR #9 had this right**, and an earlier round
+of this branch regressed it while "simplifying" toward the endpoint named in
+the brief. Reverting to the documented path is not new work; it is undoing a
+regression this branch introduced.
+
+### Finding 3 — identity came from undocumented fields (`behavior-change`)
+
+The App LIST response documents `app_id` and `app_name`. It does not document a
+package field. The code guessed four spellings — `identifier`, `bundle_id`,
+`package_name`, `app_package_name` — none documented; a tenant returning none
+made every entry unidentifiable and the run fail.
+
+`bundle_identifier` IS documented, on App Details
+(`GET /api/v1/mdm/apps/{app_id}`, fields: app_id, app_name, app_category,
+app_type, bundle_identifier, version, platform_type, description, icon,
+store_url, is_app_paid, country_code, store_id, added_time, modified_time,
+release_labels). Identity now comes from there: the listing selects candidates
+by documented `app_name`, App Details positively verifies
+`bundle_identifier == com.kisok.kiosk` and `app_type == 2`, and anything
+ambiguous fails the run.
+
+**`platform_type` is deliberately NOT asserted.** The field is documented but
+its integer enum could not be confirmed — one source shows `platform_type: 2`
+against an iOS agent bundle id, another describes `2` as Android. Asserting a
+guessed value would reject the right app or accept the wrong one, so the
+observed value is reported in the run log instead and the gap is recorded in
+`mdm-operations.md`. This is a partial implementation of the requested check,
+stated as partial.
+
+### Finding 6 — verify before mutating (`behavior-change`)
+
+`publish()` now resolves and verifies identity BEFORE uploading. Previously an
+unreadable repository state uploaded the APK first and only then failed,
+leaving an orphan file in the tenant every time.
+
+```
+RED:   npx jest tools/mdm → 6 failed, 27 passed
+GREEN: npx jest tools/mdm → 33 passed
+```
+
+Several of those failures were stale FIXTURES, not implementation faults, and
+two of my replacements silently no-op'd because prettier had reformatted the
+target strings — the same trap recorded twice earlier in this worklog. The
+route matcher now prefers the longest matching path so App Details can never be
+shadowed by the listing route.
+
+### Finding 5 — headers
+
+`Authorization: Zoho-oauthtoken` and `Content-Type: application/json` are
+documented. `Accept: application/json` is sent on JSON calls as convention; it
+could NOT be confirmed as a documented requirement, and is labelled as such in
+the source rather than claimed as doc-driven.
+
+### Finding 7 — REJECTED, with evidence (`config`)
+
+The receiver flag was re-checked and deliberately NOT changed:
+
+```
+AOSP frameworks/base core/res/AndroidManifest.xml (main), line 461:
+  <protected-broadcast android:name="android.intent.action.APPLICATION_RESTRICTIONS_CHANGED" />
+```
+
+Only the system can send a protected broadcast, so no third-party app can reach
+this receiver whatever the flag is. Android's broadcast guide requires one of
+the two export flags on API 33+, and `RECEIVER_EXPORTED` is needed only to
+receive broadcasts from other apps — including highly privileged ones such as
+Bluetooth and telephony that run outside the system UID. This broadcast comes
+from system_server, which `RECEIVER_NOT_EXPORTED` receives. `EXPORTED` would
+widen exposure and add no delivery. The evidence is now in the Kotlin.
+
+### Finding 8 — workflow hardening (`config`)
+
+Every action pinned to an immutable 40-character commit SHA, resolved with
+`git ls-remote` against each upstream repository in this session:
+
+```
+actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1       # v7.0.1
+pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86      # v6.0.10
+actions/setup-node@820762786026740c76f36085b0efc47a31fe5020     # v7.0.0
+actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961     # v5.7.0
+actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+```
+
+`npx --yes expo` replaced with `pnpm exec expo`: `npx --yes` resolves from the
+registry at run time, which is an unpinned dependency fetched inside the one
+workflow holding the signing key and the tenant credentials. Verified locally:
+
+```
+pnpm exec expo --version → 54.0.27
+pnpm exec expo prebuild --platform android --no-install --clean → "✔ Finished prebuild"
+```
+
+Manual dispatch, `permissions: contents: read`, the `android-release`
+environment and the fail-closed secret-presence check are all unchanged.
+
+```
+pnpm check:ci-scripts → "Workflow scripts resolve correctly ... (4 workflows, 10 checks)"
+YAML parse → 15 steps, unpinned actions: NONE
+```
+
+### Finding 9 — two false fail-closed claims corrected (`config`)
+
+`mdm-operations.md` said absence of the key "is the fail-safe direction" and
+that a tenant unable to push app config would leave the guard "still failing
+closed (Preparation is withheld, never wrongly granted)". **Both were wrong in
+the same direction.** With no app configuration the kiosk tablet presents an
+empty bundle, the client derives `standard`, and Preparation is granted. A
+tenant that cannot push the configuration gets no guard at all, not a degraded
+one. `plan.md`'s risk row carried the same claim and is corrected.
+
+No new runtime was invented for this: it stays an operational invariant
+(AR-01), now stated accurately.
+
+### Final gate
+
+```
+pnpm verify → PASS (exit 0)
+  Test Suites: 95 passed, 95 total
+  Tests:       1299 passed, 1299 total
+pnpm exec expo prebuild --platform android → "✔ Finished prebuild"
+```
+
+NOT VERIFIED: the Kotlin compile (no Android SDK in this container — the
+android-build CI job covers it), and every ManageEngine call. No request has
+been made against a real tenant; the corrected contracts are still
+TENANT VALIDATION REQUIRED and the first `dry_run` dispatch is the proof.
