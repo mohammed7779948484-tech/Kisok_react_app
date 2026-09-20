@@ -84,7 +84,7 @@ export interface FetchResponse {
 
 export type FetchLike = (
   url: string,
-  init?: { method?: string; headers?: Record<string, string>; body?: string | Uint8Array },
+  init?: { method?: string; headers?: Record<string, string>; body?: RequestInit["body"] },
 ) => Promise<FetchResponse>;
 
 export interface PublishDeps {
@@ -181,8 +181,6 @@ const LIST_MAX_PAGES = 10;
  * rather than concluding `absent` from a partial scan.
  */
 const MAX_DETAIL_READS = 200;
-
-const MULTIPART_BOUNDARY = "KisokReleaseBoundary7f3a1c";
 
 /**
  * Data-centre hosts. Selection is EXPLICIT — there is no "try them all"
@@ -617,7 +615,7 @@ async function request(
   deps: PublishDeps,
   what: string,
   url: string,
-  init: { method?: string; headers?: Record<string, string>; body?: string | Uint8Array },
+  init: { method?: string; headers?: Record<string, string>; body?: RequestInit["body"] },
   /**
    * Accept a 2xx that carries no body. A write may legitimately answer 204 or
    * 200-with-nothing, and treating that as a failure AFTER the change landed
@@ -672,18 +670,6 @@ async function exchangeToken(
     fail("the token exchange returned no access_token — failing closed");
   }
   return token;
-}
-
-/** The documented multipart framing: exactly one file part. */
-function buildMultipartBody(fileName: string, bytes: Uint8Array): Uint8Array {
-  const head = Buffer.from(
-    `--${MULTIPART_BOUNDARY}\r\n` +
-      `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n` +
-      `Content-Type: application/vnd.android.package-archive\r\n\r\n`,
-    "utf8",
-  );
-  const tail = Buffer.from(`\r\n--${MULTIPART_BOUNDARY}--\r\n`, "utf8");
-  return Buffer.concat([head, Buffer.from(bytes), tail]);
 }
 
 async function pollFileReady(
@@ -755,15 +741,20 @@ async function uploadApk(
   deps: PublishDeps,
 ): Promise<number | string> {
   const fileName = inputs.apkPath.split("/").pop() ?? "app-release.apk";
+  const form = new FormData();
+  form.append(
+    "file",
+    new Blob([new Uint8Array(bytes)], { type: "application/vnd.android.package-archive" }),
+    fileName,
+  );
 
   const parsed = (await request(deps, "the APK upload", `${hosts.mdm}/emsapi/files`, {
     method: "POST",
     headers: {
       ...authHeaders(token),
       Module: "MDM_APP_MGMT",
-      "Content-Type": `multipart/form-data; boundary=${MULTIPART_BOUNDARY}`,
     },
-    body: buildMultipartBody(fileName, bytes),
+    body: form,
   })) as Record<string, unknown>;
 
   const fileId = readId(parsed.fileID);
