@@ -82,6 +82,14 @@ Two consequences worth knowing:
   a release cannot rename the app you named in the console. Confirm on the first
   real dispatch that the app's version moves and its name does not.
   **TENANT VALIDATION REQUIRED.**
+- **Two further contracts were proposed and could NOT be verified.** Whether
+  App Details is documented at `GET /apps/{app_id}` or at the label-scoped
+  `GET /apps/{app_id}/labels/{release_label_id}`, and whether
+  `release_label_type` 1 means Stable, are both unresolved: this build
+  environment's egress policy blocks the vendor's documentation outright (403
+  at the gateway), and a search summary of a page is not the page. Neither was
+  changed on a guess. The dry run settles both cheaply — it prints the App
+  Details response it reads. **TENANT VALIDATION REQUIRED.**
 - **`platform_type` is not asserted.** The field is documented, but its integer
   enum could not be confirmed from an authoritative source (one example shows
   `2` beside an iOS bundle id, another describes `2` as Android), so the run

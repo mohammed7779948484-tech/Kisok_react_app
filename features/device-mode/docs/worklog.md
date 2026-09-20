@@ -920,3 +920,123 @@ npx jest tools/mdm → 53 passed, 53 total
 pnpm verify        → PASS (exit 0)
 pnpm exec expo prebuild --platform android --no-install --clean → "✔ Finished prebuild"
 ```
+
+## Round 9 — three proposed contract changes that could NOT be verified
+
+Three ManageEngine contract changes were proposed, each conditional on current
+official documentation confirming it. The verification is the deliverable here,
+and it came back negative on all three.
+
+### The egress block is a gateway policy denial, not a flake
+
+```
+WebFetch https://www.manageengine.com/mobile-device-management/api/apps/
+  → EGRESS_BLOCKED
+curl  www.manageengine.com | manageengine.com | ...-msp
+  → curl: (56) CONNECT tunnel failed, response 403   (all three hosts)
+$HTTPS_PROXY/__agentproxy/status → recentRelayFailures:
+  "gateway answered 403 to CONNECT (policy denial or upstream failure)"
+```
+
+The vendor's documentation cannot be opened first-hand from this environment.
+Search-engine summaries of those same pages are second-hand model output, not
+the documentation, so they are evidence that a page exists — not proof of what
+it says.
+
+### F1 — label-scoped App Details: NOT confirmed, and the change as specified would regress round 6
+
+Search summaries report BOTH `GET /api/v1/mdm/apps/{app_id}` ("the basic app
+details endpoint") and `GET /api/v1/mdm/apps/{app_id}/labels/{release_label_id}`
+as documented. Nothing available distinguishes which is authoritative for
+reading `bundle_identifier`.
+
+The specified remedy — take app_id AND release label data from the App List,
+then call the label-scoped endpoint — has a structural problem independent of
+the documentation question. Round 6 established that the List response's
+identity fields (`identifier`, `bundle_id`, `package_name`,
+`app_package_name`) are **undocumented**, which is why identity moved to App
+Details in the first place. Requiring a `release_label_id` from the List before
+identity can be read makes the run depend on List fields again. If the List
+does not carry `release_labels`, identity resolution has no entry point at all.
+
+Changing this blind would trade a working, tested path for an unverified one
+and reopen a closed finding. **Not implemented. Requires one tenant call to
+settle**, which the dry run makes cheap.
+
+### F2 — `release_label_type` 1 = Stable, 2 = Beta: NOT confirmed
+
+A search summary shows `"release_label_type": 1` appearing in a response
+example. No available source states what 1 or 2 MEAN. Selecting the release
+channel from an enum whose semantics are unconfirmed is exactly the guess that
+would push a release into the wrong channel — the F2 failure of round 8, made
+deliberately. **Not implemented.**
+
+Current behaviour is unchanged and already fails closed: one label is used,
+several selects the one named "Stable", several with no "Stable" refuses, and
+any unreadable label entry refuses.
+
+### F3 — `platform_type` Android = 2: NOT confirmed, and the evidence conflicts
+
+| source (via search summary) | value                                                              |
+| --------------------------- | ------------------------------------------------------------------ |
+| Profiles example            | `platform_type: 1` on "IOS Restrictions Policy"                    |
+| Devices example             | `platform_type: "android"` (a STRING) beside `platform_type_id: 2` |
+| Apps example                | `platform_type: 2`                                                 |
+
+Three different resources, two different types for the same field name, and no
+enum definition. An earlier round already recorded one Apps example showing `2`
+beside an iOS bundle id. Asserting `platform_type === 2` on this basis could
+reject the right app (blocking every release) or accept a wrong one.
+**Not implemented**, per the explicit instruction not to guess an enum value.
+
+Identity continues to rest on `bundle_identifier` — which on Android IS the
+package name — plus the documented Enterprise `app_type`, with the observed
+`platform_type` logged rather than tested.
+
+### What WAS fixed: a shipped comment that contradicted the code
+
+`plugins/with-managed-configuration.ts` generates
+`res/xml/kiosk_restrictions.xml`, and its comment told the operator that
+`kiosk_device_role` set to "anything else, including an unset value, behaves as
+a normal employee tablet". That has been false since round 3 fixed CR-3: only
+an ABSENT key derives `standard`; any other present value derives `unknown` and
+withholds Preparation. The file's docstring carried the same inversion, still
+claiming a typo "derives as an ordinary device and quietly makes Preparation
+reachable" — the pre-CR-3 behaviour, used to justify the `choice` restriction.
+
+Both now state what the code does. The `choice` restriction keeps its
+justification, correctly: it stops the typo being expressible, rather than
+stopping it from failing open.
+
+### Round 9 gate
+
+```
+npx jest tools/mdm features/device-mode plugins → 5 suites, 99 passed
+pnpm verify        → PASS (exit 0), 95 suites / 1319 tests
+pnpm exec expo prebuild --platform android --no-install --clean
+  → "✔ Finished prebuild"; the corrected comment is present in the
+    generated android/app/src/main/res/xml/kiosk_restrictions.xml
+```
+
+### CodeRabbit, re-verified against the current head
+
+All five inline threads are resolved, and each fix was confirmed present in the
+code rather than trusted from the thread state: the `cut -d' ' -f1` in the
+documented keytool command; `unavailable` in plan.md's `deviceRoleAccess`
+contract; `deriveDeviceMode` returning `unknown` for a present-but-unrecognised
+role; `readDeviceMode` returning `unknown` when the module is missing ON
+Android only; and `if (page === LIST_MAX_PAGES) return outOfPages();` guarding
+the `paging.next` path.
+
+The top-level comment's **"Merge Risk: High"** is stamped
+`sourceCommitId: 35ec2d0`, nine commits behind the current head, and its two
+stated reasons are precisely those findings — "configuration or
+native-registration failures can defeat the kiosk guard" (CR-3/CR-4) and "a
+long ManageEngine listing can create a duplicate application" (CR-5). All
+three are fixed and tested. **The warning is stale, not current.**
+
+The one failing pre-merge check, Docstring Coverage 44.44% against CodeRabbit's
+own 80% threshold, is also scoped to `35ec2d0`. It is an advisory style metric
+with no correctness claim attached, and writing docstrings to hit a
+third-party tool's arbitrary threshold is not a change this PR should carry.
+Recorded, not actioned.

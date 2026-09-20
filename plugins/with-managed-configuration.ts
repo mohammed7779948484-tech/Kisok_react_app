@@ -54,11 +54,12 @@ const RESTRICTIONS_RESOURCE = "kiosk_restrictions";
  * empty, or any other value — as an ordinary device.
  *
  * `choice`, NOT `string`, and that is the important part. A free-text field
- * lets an operator type `customer-kiosk` or `Customer_Kiosk`, which derives as
- * an ordinary device and quietly makes Preparation reachable on the kiosk
- * tablet — the exact outcome this feature exists to prevent, failing OPEN with
- * no signal. A choice restriction makes the console offer the one valid value
- * instead, so the typo cannot be expressed.
+ * lets an operator type `customer-kiosk` or `Customer_Kiosk`. The app reads
+ * any present-but-unrecognised value as `unknown`, so such a typo does not
+ * make Preparation reachable — it withholds Preparation on the tablet until
+ * the value is corrected, with the mismatch screen as the only signal. A
+ * choice restriction makes the console offer the one valid value instead, so
+ * the typo cannot be expressed in the first place.
  *
  * No `android:defaultValue`: an ordinary tablet has no managed configuration at
  * all, and "absent" is already the correct, fail-safe reading.
@@ -67,8 +68,12 @@ const RESTRICTIONS_XML = `<?xml version="1.0" encoding="utf-8"?>
 <restrictions xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Set by the MDM on the store's Customer Kiosk tablet. The ONLY value
-         KISOK treats as a kiosk is "customer_kiosk"; anything else, including
-         an unset value, behaves as a normal employee tablet. -->
+         KISOK treats as a kiosk is "customer_kiosk". Leaving the key UNSET is
+         what an ordinary employee tablet looks like. Any OTHER present value
+         is read as unknown, not as an ordinary tablet: only an MDM can set
+         this key, so a value the app does not recognise means a managed device
+         whose policy it cannot read, and Preparation stays withheld there
+         until the value is removed or corrected. -->
     <restriction
         android:key="kiosk_device_role"
         android:restrictionType="choice"
