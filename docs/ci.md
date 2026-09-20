@@ -103,10 +103,44 @@ Minutes of runtime, so it is not on every PR: paying that on a docs change
 trains everyone to ignore the result. See [`.maestro/README.md`](../.maestro/README.md)
 for when a feature actually deserves a flow.
 
+## Manual dispatch only — `.github/workflows/android-release.yml`
+
+The one workflow that spends real credentials, and the only one no trigger can
+reach on its own: `workflow_dispatch` requires write access to the repository,
+which is the access boundary for who may spend the Android signing key and the
+ManageEngine tenant credentials. It runs in a dedicated `android-release`
+GitHub environment so those secrets can carry environment protection rules.
+
+One dispatch does the whole pipeline — build a signed release APK, verify it,
+upload it to the ManageEngine App Repository, then create or update the KISOK
+enterprise app. It is one run rather than two on purpose: a build workflow
+handing an artifact to a separate upload workflow needs run-provenance
+validation to trust what it downloaded, and not splitting it removes that
+problem instead of solving it.
+
+The gate before anything is published is `tools/release/verify-release-apk.ts`:
+package identity (`com.kisok.kiosk`), versionCode, versionName, a pinned
+signing-certificate SHA-256, and an embedded JS bundle. Android compares
+signing certificates byte for byte when installing an update, so the pin — not
+a non-debug distinguished name — is what proves identity.
+
+Secrets are checked for presence immediately after checkout, before any
+toolchain setup, and only their NAMES are ever printed. `tools/mdm/publish-app.ts`
+redacts the three MDM credentials, and the access token it exchanges, out of
+everything it emits.
+
+It takes a `dry_run` input: authenticate and read from ManageEngine without
+uploading or changing anything. Use it first.
+
+Required secrets and variables, and the ManageEngine console setup, are in
+[`features/device-mode/docs/mdm-operations.md`](../features/device-mode/docs/mdm-operations.md).
+
 ## Design notes
 
-- **No secrets.** Ordinary validation uses placeholder Supabase values, so any
-  contributor's PR gets the same signal. `expo export` needs no login.
+- **No secrets — except in the release workflow.** Ordinary validation uses
+  placeholder Supabase values, so any contributor's PR gets the same signal, and
+  `expo export` needs no login. `android-release.yml` is the deliberate
+  exception, which is why it is manual-dispatch only and environment-scoped.
 - **The web bundle is primed first.** `pnpm export:web` runs
   `tools/prime-nativewind-cache.mjs` before bundling. NativeWind writes
   its CSS cache _during_ the build, but Metro resolves it beforehand, so the

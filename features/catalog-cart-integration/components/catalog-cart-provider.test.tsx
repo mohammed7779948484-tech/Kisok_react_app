@@ -492,6 +492,12 @@ describe("customer layout mount (plan decision 1; brief AC-11 thin-mount share)"
       "expo-router",
       "@/features/catalog-cart-integration",
       "@/features/checkout",
+      // `@/features/release-notes` joined the set when the one-time
+      // post-update "What's New" message was mounted here: it is a CUSTOMER
+      // message, and this layout is the smallest point that renders only under
+      // the customer guard. Through the public index, exactly the shape this
+      // pin enforces.
+      "@/features/release-notes",
     ]);
     expect(specifiers.filter((specifier) => !sanctioned.has(specifier))).toEqual([]);
   });
