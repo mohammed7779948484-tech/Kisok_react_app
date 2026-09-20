@@ -70,8 +70,29 @@ everywhere it runs.
 ### Pointing somewhere else
 
 Create `.env.local` (git-ignored) with the same variables. Expo loads it after
-`.env`, so it wins. That is where a staging or production value belongs, and it
-must never be committed.
+`.env`, so it wins. That is where a staging or production value belongs for a
+local build, and it must never be committed.
+
+### Production Android release
+
+The ManageEngine release workflow does **not** ship the committed shared-test
+`.env`. Its `release` job runs in the GitHub Environment `android-release` and
+requires these Environment **variables**:
+
+- `EXPO_PUBLIC_SUPABASE_URL` — production Supabase project URL
+- `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — production publishable key
+- `EXPO_PUBLIC_ENVIRONMENT=production`
+
+They are public client configuration, not secrets. After the runner enters the
+`android-release` Environment, the workflow binds those values through the
+`vars` context, validates them, and writes the validated values to `GITHUB_ENV`.
+That makes the same production values available to Expo prebuild and Gradle's
+later `expo export:embed` bundling step. The run fails before toolchain setup if
+they are missing/malformed, if `EXPO_PUBLIC_ENVIRONMENT` is not `production`, or
+if the URL/key match the committed shared-test `.env`.
+
+Ordinary CI continues to use placeholders; only the manual main-only Android
+release workflow imports the production Environment variables.
 
 ## Variables
 

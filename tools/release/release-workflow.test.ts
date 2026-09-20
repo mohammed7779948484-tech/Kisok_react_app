@@ -75,6 +75,27 @@ describe("the Android release workflow", () => {
     expect(source).toMatch(/^permissions:\n {2}contents: read\n(?=\n?\S)/m);
   });
 
+  it("pins production Supabase config for release builds", () => {
+    const validation = source.slice(
+      source.indexOf("Validate production Supabase client config"),
+      source.indexOf("pnpm/action-setup@"),
+    );
+
+    expect(source).toContain("NODE_ENV: production");
+    expect(validation).toContain("vars.EXPO_PUBLIC_SUPABASE_URL");
+    expect(validation).toContain("vars.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
+    expect(validation).toContain("vars.EXPO_PUBLIC_ENVIRONMENT");
+    expect(validation).toContain('environment !== "production"');
+    expect(validation).toContain('startsWith("sb_publishable_")');
+    expect(validation).toContain('readFileSync(".env", "utf8")');
+    expect(validation).toContain("process.env.GITHUB_ENV");
+    expect(validation).toContain("EXPO_PUBLIC_SUPABASE_URL=${url}");
+    expect(validation).toContain("EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${key}");
+    expect(validation).toContain("EXPO_PUBLIC_ENVIRONMENT=${environment}");
+    expect(source).not.toContain("https://ci-placeholder.supabase.co");
+    expect(source).not.toContain("sb_publishable_ci_placeholder");
+  });
+
   it("serializes runs and never cancels one mid-flight", () => {
     expect(source).toMatch(/^\s{2}cancel-in-progress: false$/m);
   });
