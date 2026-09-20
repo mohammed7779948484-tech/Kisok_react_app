@@ -48,8 +48,6 @@ jobs:
     # after the runner has entered this environment.
     environment: android-release
     timeout-minutes: 60
-    env:
-      NODE_ENV: production
     steps:
       # MAIN ONLY, and checked in the job rather than assumed.
       #
