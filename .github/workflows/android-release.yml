@@ -43,9 +43,13 @@ jobs:
     # The job spends the signing and MDM secrets, so it runs in a dedicated
     # GitHub environment. A repository admin creates `android-release` and sets
     # its protection rules; moving the secrets from repository to environment
-    # scope is what activates that boundary.
+    # scope is what activates that boundary. Production EXPO_PUBLIC_* values
+    # are also stored there as environment variables and imported below only
+    # after the runner has entered this environment.
     environment: android-release
     timeout-minutes: 60
+    env:
+      NODE_ENV: production
     steps:
       # MAIN ONLY, and checked in the job rather than assumed.
       #
@@ -101,6 +105,75 @@ jobs:
             fi
           done
           exit "$missing"
+
+      # Environment-level GitHub variables become available after the runner
+      # enters `android-release`. Bind them at STEP scope, validate them, then
+      # promote the validated values through GITHUB_ENV for every later build
+      # and bundle step. The committed .env deliberately points at TEST.
+      - name: Validate production Supabase client config (fail closed)
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+          EXPO_PUBLIC_ENVIRONMENT: ${{ vars.EXPO_PUBLIC_ENVIRONMENT }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? "";
+          const key = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "";
+          const environment = process.env.EXPO_PUBLIC_ENVIRONMENT ?? "";
+          const errors = [];
+
+          if (environment !== "production") {
+            errors.push("EXPO_PUBLIC_ENVIRONMENT must equal production");
+          }
+
+          try {
+            const parsed = new URL(url);
+            if (parsed.protocol !== "https:" || !parsed.hostname) {
+              errors.push("EXPO_PUBLIC_SUPABASE_URL must be a full HTTPS URL");
+            }
+          } catch {
+            errors.push("EXPO_PUBLIC_SUPABASE_URL must be a full HTTPS URL");
+          }
+
+          if (!key.startsWith("sb_publishable_") || key.length <= "sb_publishable_".length) {
+            errors.push("EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY must be a Supabase publishable key");
+          }
+
+          for (const [name, value] of [
+            ["EXPO_PUBLIC_SUPABASE_URL", url],
+            ["EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY", key],
+            ["EXPO_PUBLIC_ENVIRONMENT", environment],
+          ]) {
+            if (!value || /[\r\n]/.test(value)) errors.push(`${name} is missing or malformed`);
+          }
+
+          const committedEnv = fs.readFileSync(".env", "utf8");
+          const readCommitted = (name) => {
+            const match = committedEnv.match(new RegExp(`^${name}=(.*)$`, "m"));
+            return match?.[1]?.trim();
+          };
+          if (url === readCommitted("EXPO_PUBLIC_SUPABASE_URL")) {
+            errors.push("production Supabase URL matches the committed shared-test .env");
+          }
+          if (key === readCommitted("EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY")) {
+            errors.push("production Supabase publishable key matches the committed shared-test .env");
+          }
+
+          if (errors.length > 0) {
+            for (const error of errors) console.error(`::error::${error}`);
+            process.exit(1);
+          }
+
+          fs.appendFileSync(
+            process.env.GITHUB_ENV,
+            `EXPO_PUBLIC_SUPABASE_URL=${url}\n` +
+              `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${key}\n` +
+              `EXPO_PUBLIC_ENVIRONMENT=${environment}\n`,
+          );
+          console.log("production Supabase client config check passed");
+          NODE
 
       # pnpm must be installed BEFORE setup-node, or `cache: pnpm` cannot find it.
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
@@ -176,17 +249,12 @@ jobs:
       # Generates the native project from app.config.ts. The MYAPP_UPLOAD_* env
       # is what plugins/with-android-release-signing.ts reads — all four or
       # nothing, and the presence check above already proved all four are set —
-      # so the guarded signing config lands in the generated tree. The
-      # EXPO_PUBLIC_* placeholders are scoped to THIS step deliberately: they
-      # exist so the config can be evaluated. Gradle's own bundling runs
-      # `expo export:embed`, where process env would WIN over the committed
-      # .env the shipped artifact must carry.
+      # so the guarded signing config lands in the generated tree. The validated
+      # production EXPO_PUBLIC_* values were promoted through GITHUB_ENV above,
+      # so both prebuild and Gradle's later `expo export:embed` inherit them.
       - name: Expo prebuild (Android)
         run: pnpm exec expo prebuild --platform android --no-install --clean
         env:
-          EXPO_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
-          EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
-          EXPO_PUBLIC_ENVIRONMENT: local
           MYAPP_UPLOAD_STORE_FILE: kisok-upload.keystore
           MYAPP_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           MYAPP_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -248,7 +316,7 @@ jobs:
         run: |
           set -o pipefail
           if [ -z "$EXPECTED_CERT_SHA256" ]; then
-            echo "::error::ANDROID_UPLOAD_CERT_SHA256 is not set. Create it as a repository Actions VARIABLE (Settings -> Secrets and variables -> Actions -> Variables). It is PUBLIC, not a secret. Compute it with 'keytool -exportcert -keystore <keystore> -alias <alias> | sha256sum', or from a known-good APK with 'apksigner verify --print-certs'."
+            echo "::error::ANDROID_UPLOAD_CERT_SHA256 is not set. Create it as a repository Actions VARIABLE (Settings -> Secrets and variables -> Actions -> Variables). It is PUBLIC, not a secret. Compute it with 'keytool -exportcert -keystore <keystore> -alias <alias> | sha256sum | cut -d\" \" -f1', or from a known-good APK with 'apksigner verify --print-certs'."
             exit 1
           fi
           log="$RUNNER_TEMP/verify-release-apk.log"
