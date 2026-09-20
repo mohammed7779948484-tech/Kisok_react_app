@@ -36,7 +36,13 @@ export interface ReleaseIdentity {
  */
 export function readReleaseIdentity(): ReleaseIdentity | undefined {
   const config = Constants.expoConfig;
-  const versionName = typeof config?.version === "string" ? config.version : undefined;
+  const androidVersion = config?.android?.version;
+  const versionName =
+    typeof androidVersion === "string"
+      ? androidVersion
+      : typeof config?.version === "string"
+        ? config.version
+        : undefined;
   const versionCode = config?.android?.versionCode;
   const code = typeof versionCode === "number" ? String(versionCode) : undefined;
 

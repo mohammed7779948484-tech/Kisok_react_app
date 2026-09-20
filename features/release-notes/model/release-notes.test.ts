@@ -11,6 +11,15 @@ describe("readReleaseIdentity", () => {
     expect(readReleaseIdentity()).toEqual({ token: "1.1.0+4", versionName: "1.1.0" });
   });
 
+  it("prefers android.version over the root version when Android overrides it", () => {
+    Constants.expoConfig = {
+      version: "1.1.0",
+      android: { version: "1.1.1", versionCode: 4 },
+    };
+
+    expect(readReleaseIdentity()).toEqual({ token: "1.1.1+4", versionName: "1.1.1" });
+  });
+
   it("changes when ONLY versionCode moves", () => {
     // Android enforces N->N+1 on versionCode, so a release can ship a new
     // build without touching the marketing version. A versionName-only token

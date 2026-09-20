@@ -88,27 +88,19 @@ class KioskPolicyModule : Module() {
             }
           }
         }
-        // RECEIVER_NOT_EXPORTED, deliberately, and re-verified rather than
-        // assumed:
+        // ACTION_APPLICATION_RESTRICTIONS_CHANGED is a SYSTEM broadcast, so
+        // register this dynamic receiver as EXPORTED. Android's broadcast
+        // guidance uses RECEIVER_EXPORTED for broadcasts sent by the system or
+        // other apps, and AOSP CTS registers this exact action as EXPORTED when
+        // proving application-restrictions changes are delivered.
         //
-        //  - ACTION_APPLICATION_RESTRICTIONS_CHANGED is declared
-        //    <protected-broadcast> in AOSP frameworks/base
-        //    core/res/AndroidManifest.xml, so only the system can send it —
-        //    no third-party app can reach this receiver whatever the flag is.
-        //  - Android's broadcast guide requires one of the two export flags on
-        //    API 33+; RECEIVER_EXPORTED is only needed to receive broadcasts
-        //    from OTHER apps, including highly privileged ones such as
-        //    Bluetooth and telephony that run outside the system UID. This
-        //    broadcast comes from system_server itself, which NOT_EXPORTED
-        //    receives.
-        //
-        // So EXPORTED would widen the receiver's exposure while adding no
-        // delivery. NOT_EXPORTED is the correct flag here, not the cautious one.
+        // The action itself is a protected broadcast, so ordinary third-party
+        // apps cannot spoof it merely because the dynamic receiver is exported.
         ContextCompat.registerReceiver(
           context,
           receiver,
           IntentFilter(Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED),
-          ContextCompat.RECEIVER_NOT_EXPORTED
+          ContextCompat.RECEIVER_EXPORTED
         )
         restrictionsReceiver = receiver
       }

@@ -57,21 +57,32 @@ export function WhatsNewGate() {
 
   if (release === undefined) return null;
 
-  const notes = releaseNotesFor(release.token);
+  // Capture the narrowed value for callbacks declared below. TypeScript does
+  // not preserve the render-time narrowing of a state value inside closures.
+  const currentRelease = release;
+  const notes = releaseNotesFor(currentRelease.token);
 
-  async function dismiss() {
-    // Close first. Persistence may fail on a tablet with a full or locked
-    // store, and the customer must never be trapped behind this dialog.
+  function closeForSession() {
+    // Back / accessibility escape / overlay dismissal hides the message for
+    // this session only. It is NOT an acknowledgement, so the stored release
+    // stays unchanged and the notice can appear again after a restart.
     setOpen(false);
-    await writeLastSeenRelease(release!.token);
+  }
+
+  async function acknowledge() {
+    // Continue is the only acknowledgement path. Close first: persistence may
+    // fail on a tablet with a full or locked store, and the customer must never
+    // be trapped behind this dialog because local storage is unavailable.
+    setOpen(false);
+    await writeLastSeenRelease(currentRelease.token);
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : void dismiss())}>
+    <Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : closeForSession())}>
       <DialogContent accessibilityLabel="KISOK has been updated">
         <DialogHeader>
           <DialogTitle>KISOK has been updated</DialogTitle>
-          <DialogDescription>Version {release.versionName}</DialogDescription>
+          <DialogDescription>Version {currentRelease.versionName}</DialogDescription>
         </DialogHeader>
 
         {notes.length > 0 ? (
@@ -84,11 +95,11 @@ export function WhatsNewGate() {
         ) : (
           // A release whose notes were forgotten still tells the truth, rather
           // than rendering an empty panel.
-          <Text>KISOK has been updated to version {release.versionName}.</Text>
+          <Text>KISOK has been updated to version {currentRelease.versionName}.</Text>
         )}
 
         <DialogFooter>
-          <Button onPress={() => void dismiss()}>
+          <Button onPress={() => void acknowledge()}>
             <Text>Continue</Text>
           </Button>
         </DialogFooter>

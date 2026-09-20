@@ -41,11 +41,29 @@ describe("WhatsNewGate", () => {
     expect(screen.getByText("Version 1.1.0")).toBeOnTheScreen();
   });
 
+  it("does not persist an implicit dialog dismissal as an acknowledgement", () => {
+    // Dialog primitives may request close for Back / accessibility escape /
+    // overlay dismissal. Those paths are session-only; only Continue may write
+    // LAST_SEEN_RELEASE_KEY. Pin the wiring so a future refactor cannot route
+    // `onOpenChange(false)` through the acknowledgement function again.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { join } = require("node:path") as typeof import("node:path");
+    const source = readFileSync(join(__dirname, "whats-new-gate.tsx"), "utf8");
+
+    expect(source).toContain("onOpenChange={(next) => (next ? setOpen(true) : closeForSession())}");
+    expect(source).toContain("<Button onPress={() => void acknowledge()}>");
+    expect(source).not.toContain(
+      "onOpenChange={(next) => (next ? setOpen(true) : void acknowledge())}",
+    );
+  });
+
   it("persists the new release only when the customer taps Continue", async () => {
     await AsyncStorage.setItem(LAST_SEEN_RELEASE_KEY, "1.0.0+1");
     await renderWithProviders(<WhatsNewGate />);
     await screen.findByText("KISOK has been updated");
-    // Still the OLD token while the dialog is open: dismissal is the ack.
+    // Still the OLD token while the dialog is open: only Continue is the ack.
     expect(await AsyncStorage.getItem(LAST_SEEN_RELEASE_KEY)).toBe("1.0.0+1");
 
     await userEvent.press(screen.getByText("Continue"));
@@ -95,7 +113,6 @@ describe("WhatsNewGate", () => {
   it("renders nothing when the running build has no readable version identity", async () => {
     Constants.expoConfig = {};
     await AsyncStorage.setItem(LAST_SEEN_RELEASE_KEY, "1.0.0+1");
-
     await renderWithProviders(<WhatsNewGate />);
 
     await waitFor(() => expect(screen.queryByText("KISOK has been updated")).not.toBeOnTheScreen());
