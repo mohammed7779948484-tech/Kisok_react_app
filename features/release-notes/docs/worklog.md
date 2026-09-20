@@ -27,18 +27,36 @@ only the versionCode.
 ### A test that passed for the wrong reason
 
 The first version of the failure tests used `jest.restoreAllMocks()` in
-`afterEach` with `mockRejectedValue`. Two problems, both caught by running the
-suite rather than the test:
+`afterEach` with a persistent `mockRejectedValue`. Three tests then failed in
+the full suite and passed in isolation — the signature of leakage between
+tests.
 
-1. `mockRejectedValue` builds the rejected promise EAGERLY, so it surfaced as
-   an unhandled rejection attributed to a LATER test.
-2. AsyncStorage's own jest mock is already a `jest.fn`, so `restoreAllMocks`
-   RESET its implementation instead of restoring it — every subsequent
-   `getItem` returned `undefined` and the dialog silently stopped rendering.
-   Three tests failed in the full run and passed in isolation, which is the
-   signature of leakage.
+The fix (`mockImplementationOnce`) was right, but the explanation first written
+here was half wrong, and a reviewer caught it. Corrected, with the probe that
+settles it:
 
-Both replaced with `mockImplementationOnce`, which leaves the real mock intact.
+| probe                                                 | next test |
+| ----------------------------------------------------- | --------- |
+| `mockImplementationOnce`, no restore                  | passes    |
+| `mockImplementationOnce` + `restoreAllMocks()`        | passes    |
+| persistent `mockImplementation` + `restoreAllMocks()` | **fails** |
+
+So the real cause is the third row: **`jest.restoreAllMocks()` does not give
+AsyncStorage's mock its implementation back.** The module's jest mock is itself
+a `jest.fn`, so after restore `getItem` resolves `undefined` instead of reading
+the in-memory store, and the dialog silently stops rendering in every later
+test.
+
+What was WRONG in the first write-up: it also claimed `mockRejectedValue`
+builds its rejected promise EAGERLY, at configuration time. It does not —
+`mockRejectedValue(v)` is sugar for `mockImplementation(() => Promise.reject(v))`
+and the promise is created per call. That claim was an invented mechanism for a
+symptom (a rejection attributed to a later test) that the leakage above already
+explains. Recording it because a plausible-sounding cause that was never tested
+is exactly the kind of thing this worklog exists to catch.
+
+`mockImplementationOnce` fixes it by never leaving a replaced implementation
+behind in the first place.
 
 ## T03 — mount point
 

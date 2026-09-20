@@ -70,9 +70,15 @@ sign-out pipeline; no new auth path.
 manual dispatch, so no artifact hand-off between runs and no run-provenance
 validation are needed.
 
-**D7 — Match the App Repository entry by package identity.** `com.kisok.kiosk`
-is the identity; the display name is only a fallback tie-break and never the
-sole matcher.
+**D7 — Match the App Repository entry by package identity**, read from
+LABEL-SCOPED App Details (`GET /apps/{app_id}/labels/{release_label_id}`).
+`com.kisok.kiosk` is the identity and the display name selects nothing: every
+addressable candidate is checked, so an entry under another name is never
+missed and an entry that merely shares the name is never touched. Identity
+requires `bundle_identifier`, `app_type` 2 (Enterprise) and `platform_type` 2
+(Android) together. Any entry that cannot be READ — no `app_id`, no resolvable
+Stable label, unreadable details — fails the run closed rather than counting as
+absence, because absence is the branch that creates.
 
 ## Update experience (researched before implementation, as required)
 
@@ -104,10 +110,14 @@ needed. `current_active_profile()` already supplies the role this guard reads.
 
 **ManageEngine REST** (US data centre, confirmed by the product owner):
 `accounts.zoho.com` for the refresh-token grant, `mdm.manageengine.com` for the
-API. Calls: token exchange → `POST /emsapi/files` (+ `POST
-/emsapi/fileupload/status` while pending) → `GET /api/v1/mdm/apps` (paged, match
-on package identity) → `POST /api/v1/mdm/apps` (create) or `PUT
-/api/v1/mdm/apps/{app_id}` (update).
+API. Calls: token exchange → `GET /api/v1/mdm/apps` (paged; the Stable label
+comes from here, by `release_label_type` 1) → `GET
+/api/v1/mdm/apps/{app_id}/labels/{release_label_id}` (read package identity) →
+`POST /emsapi/files` (+ `POST /emsapi/fileupload/status` while pending) →
+`POST /api/v1/mdm/apps` (create) or `PUT
+/api/v1/mdm/apps/{app_id}/labels/{release_label_id}` (update). Identity is
+resolved BEFORE the upload, so a repository state the script cannot read costs
+nothing.
 
 ## Tasks
 

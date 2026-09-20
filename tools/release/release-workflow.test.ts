@@ -32,12 +32,13 @@ function stepHeaders(): string[] {
 
 describe("the Android release workflow", () => {
   it("is MANUAL only — no push or pull_request trigger may ever reach it", () => {
-    const block = triggerBlock();
+    // An ALLOWLIST, not a denylist. Naming push/pull_request/schedule would
+    // still let `repository_dispatch` or `workflow_call` in — either of which
+    // would let something other than a human with write access spend the
+    // signing keystore and the ManageEngine credentials.
+    const triggers = [...triggerBlock().matchAll(/^ {2}([A-Za-z_][\w-]*):/gm)].map((m) => m[1]);
 
-    expect(block).toContain("workflow_dispatch:");
-    expect(block).not.toMatch(/^\s{2}push:/m);
-    expect(block).not.toMatch(/^\s{2}pull_request:/m);
-    expect(block).not.toMatch(/^\s{2}schedule:/m);
+    expect(triggers).toEqual(["workflow_dispatch"]);
   });
 
   it("keeps its manual dry_run input", () => {
@@ -68,7 +69,10 @@ describe("the Android release workflow", () => {
 
   it("runs in the android-release environment with least privilege", () => {
     expect(source).toMatch(/^\s{4}environment: android-release$/m);
-    expect(source).toMatch(/^permissions:\n\s{2}contents: read$/m);
+    // Exactly one permissions block, and exactly one permission in it: a
+    // second block at job level would silently widen the token.
+    expect([...source.matchAll(/^[ \t]*permissions[ \t]*:/gm)]).toHaveLength(1);
+    expect(source).toMatch(/^permissions:\n {2}contents: read\n(?=\n?\S)/m);
   });
 
   it("serializes runs and never cancels one mid-flight", () => {
