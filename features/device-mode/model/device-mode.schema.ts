@@ -32,10 +32,12 @@ export const RESTRICTIONS_PENDING_KEY = "restrictions_pending";
 
 /**
  * One managed-configuration value. `RestrictionsManager` delivers a `Bundle`
- * whose values are Boolean, int, String or String[]; the native module drops
- * null-valued keys (Android treats an explicit null as unset) and reduces
- * anything that is not a String/Boolean/Int to its string form, so only these
- * three primitives ever cross the bridge. A value outside this union means the
+ * whose values are Boolean, int, String or String[]; the native module maps a
+ * present null to the EMPTY STRING — deliberately, so a key the DPC delivered
+ * as null stays present to JS and derives `unknown` rather than disappearing
+ * and deriving `standard` — and reduces anything that is not a
+ * String/Boolean/Int to its string form, so only these three primitives ever
+ * cross the bridge. A value outside this union means the
  * native contract broke, and the whole payload is rejected.
  */
 export const restrictionValueSchema = z.union([z.string(), z.number(), z.boolean()]);

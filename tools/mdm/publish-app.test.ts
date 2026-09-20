@@ -7,8 +7,8 @@ import {
   resolveDataCentre,
   resolveInputs,
   isSafePathSegment,
-  listedAppIds,
-  selectReleaseLabel,
+  listedCandidates,
+  selectStableLabel,
   publish,
   type FetchLike,
   type PublishInputs,
@@ -24,6 +24,13 @@ const INPUTS: PublishInputs = {
   dataCentre: "us",
   dryRun: false,
 };
+
+/**
+ * The documented Stable label as the LIST response carries it. `type` is the
+ * selector; the name is UI text and deliberately varies across fixtures.
+ */
+const STABLE_LABEL = { release_label_id: 9, release_label_type: 1, release_label_name: "Stable" };
+const BETA_LABEL = { release_label_id: 8, release_label_type: 2, release_label_name: "Beta" };
 
 describe("secret handling", () => {
   it("redacts every secret value, wherever it appears in a message", () => {
@@ -103,26 +110,92 @@ describe("resolveInputs", () => {
   });
 });
 
-describe("identity — established from App Details, never from the listing", () => {
+describe("the Stable label is resolved from the LISTING, by type not by name", () => {
+  it("selects the label whose release_label_type is 1", () => {
+    const result = selectStableLabel([BETA_LABEL, STABLE_LABEL], 55);
+
+    expect(result).toEqual({
+      ok: true,
+      label: { releaseLabelId: 9, releaseLabelType: 1, releaseLabelName: "Stable" },
+    });
+  });
+
+  it("selects Stable even when the tenant renamed the display label", () => {
+    // release_label_name is UI text. A tenant renaming "Stable" to anything
+    // must not make the release unroutable, and a channel that merely CALLS
+    // itself Stable must not be picked.
+    const renamed = { release_label_id: 12, release_label_type: 1, release_label_name: "Live" };
+    const result = selectStableLabel([BETA_LABEL, renamed], 55);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.label.releaseLabelId).toBe(12);
+  });
+
+  it("never selects a Beta label for production", () => {
+    const result = selectStableLabel([BETA_LABEL], 55);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain("no release label of the documented Stable type");
+  });
+
+  it("refuses when an app carries SEVERAL Stable labels", () => {
+    const result = selectStableLabel(
+      [STABLE_LABEL, { release_label_id: 10, release_label_type: 1 }],
+      55,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toContain("refusing to guess");
+  });
+
+  it("refuses when a label entry has no readable id or type", () => {
+    // It could be the Stable one, and the id is what ADDRESSES App Details.
+    expect(selectStableLabel([{ release_label_name: "Stable" }], 55).ok).toBe(false);
+    expect(selectStableLabel([{ release_label_id: 9 }], 55).ok).toBe(false);
+  });
+
+  it("refuses when release_labels is missing or not an array", () => {
+    expect(selectStableLabel(undefined, 55).ok).toBe(false);
+    expect(selectStableLabel("Stable", 55).ok).toBe(false);
+  });
+
   it("offers EVERY listed entry for verification, regardless of display name", () => {
     // Filtering the listing by display name meant an app sitting under any
     // other name was never examined, so the walk concluded `absent` and
     // created a duplicate. The name selects nothing.
-    expect(
-      listedAppIds([
-        { app_id: 1, app_name: "Something else" },
-        { app_id: 2, app_name: "KISOK Kiosk" },
-      ]),
-    ).toEqual({ ids: [1, 2], unusable: 0 });
+    const listed = listedCandidates([
+      { app_id: 1, app_name: "Something else", release_labels: [STABLE_LABEL] },
+      { app_id: 2, app_name: "KISOK Kiosk", release_labels: [STABLE_LABEL] },
+    ]);
+
+    expect(listed.unusable).toBe(0);
+    expect(listed.candidates.map((c) => c.appId)).toEqual([1, 2]);
   });
 
   it("counts an entry it cannot even address, rather than dropping it", () => {
     // A silently dropped entry is one that cannot be ruled out, and it would
     // hide our app behind an `absent` verdict.
-    expect(listedAppIds([{ app_id: 1, app_name: "a" }, { app_name: "no id" }])).toEqual({
-      ids: [1],
-      unusable: 1,
-    });
+    const listed = listedCandidates([
+      { app_id: 1, release_labels: [STABLE_LABEL] },
+      { app_name: "no id" },
+    ]);
+
+    expect(listed.candidates).toHaveLength(1);
+    expect(listed.unusable).toBe(1);
+  });
+
+  it("counts an entry whose Stable label cannot be resolved as unusable, not as 'not ours'", () => {
+    // Without a Stable label id there is no way to READ this entry's identity,
+    // so it cannot be declared someone else's app.
+    const listed = listedCandidates([
+      { app_id: 7, app_name: "Mystery", release_labels: [BETA_LABEL] },
+    ]);
+
+    expect(listed.candidates).toHaveLength(0);
+    expect(listed.unusable).toBe(1);
   });
 
   it("rejects an id that could retarget an authenticated request", () => {
@@ -130,14 +203,15 @@ describe("identity — established from App Details, never from the listing", ()
     expect(isSafePathSegment("55")).toBe(true);
     expect(isSafePathSegment("1/../../other")).toBe(false);
   });
+});
 
+describe("identity — established from label-scoped App Details", () => {
   const DETAILS = {
     app_id: 55,
     app_name: "KISOK",
     app_type: 2,
-    bundle_identifier: "com.kisok.kiosk",
     platform_type: 2,
-    release_labels: [{ release_label_id: 9, release_label_name: "Stable", app_version: "1.0.0" }],
+    bundle_identifier: "com.kisok.kiosk",
   };
 
   it("parses the documented App Details fields", () => {
@@ -145,10 +219,11 @@ describe("identity — established from App Details, never from the listing", ()
 
     expect(details.bundleIdentifier).toBe("com.kisok.kiosk");
     expect(details.appType).toBe(2);
-    expect(details.releaseLabels).toEqual([{ releaseLabelId: 9, releaseLabelName: "Stable" }]);
+    expect(details.platformType).toBe(2);
+    expect(details.appName).toBe("KISOK");
   });
 
-  it("positively identifies our app by bundle_identifier and the Enterprise app_type", () => {
+  it("positively identifies our app by bundle_identifier, Enterprise app_type AND Android platform_type", () => {
     expect(identifyApp(parseAppDetails(DETAILS, 55), "com.kisok.kiosk")).toEqual({ ok: true });
   });
 
@@ -178,45 +253,22 @@ describe("identity — established from App Details, never from the listing", ()
     if (result.ok) return;
     expect(result.kind).toBe("unverifiable");
   });
-});
 
-describe("selectReleaseLabel", () => {
-  it("uses the only label when there is exactly one", () => {
-    const result = selectReleaseLabel([{ releaseLabelId: 9, releaseLabelName: "Stable" }], 55);
-
-    expect(result).toEqual({ ok: true, label: { releaseLabelId: 9, releaseLabelName: "Stable" } });
-  });
-
-  it("prefers the Stable label when there are several", () => {
-    const result = selectReleaseLabel(
-      [
-        { releaseLabelId: 8, releaseLabelName: "Beta" },
-        { releaseLabelId: 9, releaseLabelName: "Stable" },
-      ],
-      55,
-    );
-
-    expect(result).toEqual({ ok: true, label: { releaseLabelId: 9, releaseLabelName: "Stable" } });
-  });
-
-  it("refuses to guess when there are several and none is Stable", () => {
-    const result = selectReleaseLabel(
-      [
-        { releaseLabelId: 8, releaseLabelName: "Beta" },
-        { releaseLabelId: 7, releaseLabelName: "Pilot" },
-      ],
-      55,
-    );
+  it("calls OUR package on a NON-Android platform_type unverifiable", () => {
+    // platform_type 1 is iOS. Something registered under our identifier on
+    // another platform is not the app this pipeline builds.
+    const ios = parseAppDetails({ ...DETAILS, platform_type: 1 }, 55);
+    const result = identifyApp(ios, "com.kisok.kiosk");
 
     expect(result.ok).toBe(false);
+    if (result.ok) return;
+    if (result.kind !== "unverifiable") return;
+    expect(result.reason).toContain("not Android");
   });
 
-  it("refuses when the app carries no release labels at all", () => {
-    expect(selectReleaseLabel([], 55).ok).toBe(false);
-  });
-
-  it("refuses when any label entry could not be read, even if one parsed", () => {
-    const result = selectReleaseLabel([{ releaseLabelId: 8, releaseLabelName: "Beta" }], 55, 1);
+  it("calls OUR package with no platform_type at all unverifiable", () => {
+    const bare = parseAppDetails({ ...DETAILS, platform_type: undefined }, 55);
+    const result = identifyApp(bare, "com.kisok.kiosk");
 
     expect(result.ok).toBe(false);
   });
@@ -310,10 +362,10 @@ it("UPDATES the existing app when the package is already in the repository", asy
       listed = true;
       return {
         status: 200,
-        body: { apps: [{ app_id: 55, app_name: "KISOK" }] },
+        body: { apps: [{ app_id: 55, app_name: "KISOK", release_labels: [STABLE_LABEL] }] },
       };
     },
-    "GET /api/v1/mdm/apps/55": () => ({
+    "GET /api/v1/mdm/apps/55/labels/9": () => ({
       status: 200,
       body: {
         app_id: 55,
@@ -321,7 +373,6 @@ it("UPDATES the existing app when the package is already in the repository", asy
         app_type: 2,
         bundle_identifier: "com.kisok.kiosk",
         platform_type: 2,
-        release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
       },
     }),
     "PUT /api/v1/mdm/apps/55/labels/9": () => ({ status: 200, body: { status: "ok" } }),
@@ -384,10 +435,10 @@ it("leaves an app with a different package alone, and creates ours beside it", a
     "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
     "GET /api/v1/mdm/apps": () => ({
       status: 200,
-      body: { apps: [{ app_id: 3, app_name: "KISOK" }] },
+      body: { apps: [{ app_id: 3, app_name: "KISOK", release_labels: [STABLE_LABEL] }] },
     }),
     // Same display name, DIFFERENT package: a different app entirely.
-    "GET /api/v1/mdm/apps/3": () => ({
+    "GET /api/v1/mdm/apps/3/labels/9": () => ({
       status: 200,
       body: { app_id: 3, app_name: "KISOK", app_type: 2, bundle_identifier: "com.someone.else" },
     }),
@@ -441,19 +492,19 @@ it("walks past the first page — a match on page 2 is an UPDATE, never a duplic
         ? {
             status: 200,
             body: {
-              apps: [{ app_id: 1, app_name: "Other" }],
+              apps: [{ app_id: 1, app_name: "Other", release_labels: [STABLE_LABEL] }],
               metadata: { total_record_count: 2 },
             },
           }
         : {
             status: 200,
             body: {
-              apps: [{ app_id: 55, app_name: "KISOK" }],
+              apps: [{ app_id: 55, app_name: "KISOK", release_labels: [STABLE_LABEL] }],
               metadata: { total_record_count: 2 },
             },
           };
     },
-    "GET /api/v1/mdm/apps/55": () => ({
+    "GET /api/v1/mdm/apps/55/labels/9": () => ({
       status: 200,
       body: {
         app_id: 55,
@@ -461,10 +512,9 @@ it("walks past the first page — a match on page 2 is an UPDATE, never a duplic
         app_type: 2,
         bundle_identifier: "com.kisok.kiosk",
         platform_type: 2,
-        release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
       },
     }),
-    "GET /api/v1/mdm/apps/1": () => ({
+    "GET /api/v1/mdm/apps/1/labels/9": () => ({
       status: 200,
       body: { app_id: 1, app_name: "Other", app_type: 2, bundle_identifier: "com.other" },
     }),
@@ -475,7 +525,9 @@ it("walks past the first page — a match on page 2 is an UPDATE, never a duplic
 
   expect(result).toMatchObject({ ok: true, action: "updated" });
   const listings = calls.filter((c) => c.method === "GET" && /\/apps\?/.test(c.url));
-  const detailReads = calls.filter((c) => c.method === "GET" && /\/apps\/55$/.test(c.url));
+  const detailReads = calls.filter(
+    (c) => c.method === "GET" && /\/apps\/55\/labels\/9$/.test(c.url),
+  );
   expect(listings.length).toBe(2);
   expect(detailReads.length).toBe(1);
   expect(calls.some((c) => c.method === "POST" && c.url.includes("/api/v1/mdm/apps"))).toBe(false);
@@ -486,9 +538,9 @@ it("accepts a 2xx write with an empty body — the update already happened", asy
     "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
     "GET /api/v1/mdm/apps": () => ({
       status: 200,
-      body: { apps: [{ app_id: 55, app_name: "KISOK" }] },
+      body: { apps: [{ app_id: 55, app_name: "KISOK", release_labels: [STABLE_LABEL] }] },
     }),
-    "GET /api/v1/mdm/apps/55": () => ({
+    "GET /api/v1/mdm/apps/55/labels/9": () => ({
       status: 200,
       body: {
         app_id: 55,
@@ -496,7 +548,6 @@ it("accepts a 2xx write with an empty body — the update already happened", asy
         app_type: 2,
         bundle_identifier: "com.kisok.kiosk",
         platform_type: 2,
-        release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
       },
     }),
     "PUT /api/v1/mdm/apps/55/labels/9": () => ({ status: 204, body: undefined }),
@@ -574,7 +625,7 @@ it("enforces the page bound on the paging.next path too, not just the offset pat
     "GET /api/v1/mdm/apps": () => ({
       status: 200,
       body: {
-        apps: [{ app_id: 1, app_name: "Other" }],
+        apps: [{ app_id: 1, app_name: "Other", release_labels: [STABLE_LABEL] }],
         paging: { next: "https://mdm.manageengine.com/api/v1/mdm/apps?limit=50&offset=999" },
       },
     }),
@@ -629,16 +680,16 @@ it("UPDATES an app that exists under a DIFFERENT display name — never creates 
   const { deps: d, calls } = deps({
     "GET /api/v1/mdm/apps": () => ({
       status: 200,
-      body: { apps: [{ app_id: 55, app_name: "KISOK Kiosk" }] },
+      body: { apps: [{ app_id: 55, app_name: "KISOK Kiosk", release_labels: [STABLE_LABEL] }] },
     }),
-    "GET /api/v1/mdm/apps/55": () => ({
+    "GET /api/v1/mdm/apps/55/labels/9": () => ({
       status: 200,
       body: {
         app_id: 55,
         app_name: "KISOK Kiosk",
         app_type: 2,
         bundle_identifier: "com.kisok.kiosk",
-        release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
+        platform_type: 2,
       },
     }),
     "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
@@ -693,7 +744,7 @@ it("fails before any network call when the APK cannot be read", async () => {
 });
 
 describe("nothing is created or updated off something unverified", () => {
-  const LISTING = { apps: [{ app_id: 55, app_name: "KISOK" }] };
+  const LISTING = { apps: [{ app_id: 55, app_name: "KISOK", release_labels: [STABLE_LABEL] }] };
 
   function mutations(calls: { method: string; url: string }[]) {
     return calls.filter(
@@ -742,16 +793,21 @@ describe("nothing is created or updated off something unverified", () => {
         app_name: "KISOK",
         app_type: 2,
         bundle_identifier: "com.kisok.kiosk",
-        release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
+        platform_type: 2,
       },
     });
     const { deps: d, calls } = deps({
       "GET /api/v1/mdm/apps": () => ({
         status: 200,
-        body: { apps: [{ app_id: 55 }, { app_id: 56 }] },
+        body: {
+          apps: [
+            { app_id: 55, release_labels: [STABLE_LABEL] },
+            { app_id: 56, release_labels: [STABLE_LABEL] },
+          ],
+        },
       }),
-      "GET /api/v1/mdm/apps/55": ours(55),
-      "GET /api/v1/mdm/apps/56": ours(56),
+      "GET /api/v1/mdm/apps/55/labels/9": ours(55),
+      "GET /api/v1/mdm/apps/56/labels/9": ours(56),
     });
 
     const result = await publish(INPUTS, d);
@@ -767,13 +823,13 @@ describe("nothing is created or updated off something unverified", () => {
     // JSON.stringify drops the undefined and the PUT goes out without it.
     const { deps: d, calls } = deps({
       "GET /api/v1/mdm/apps": () => ({ status: 200, body: LISTING }),
-      "GET /api/v1/mdm/apps/55": () => ({
+      "GET /api/v1/mdm/apps/55/labels/9": () => ({
         status: 200,
         body: {
           app_id: 55,
           app_type: 2,
           bundle_identifier: "com.kisok.kiosk",
-          release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
+          platform_type: 2,
         },
       }),
     });
@@ -791,14 +847,14 @@ describe("nothing is created or updated off something unverified", () => {
     // app_name the update echoes back, which would rename ours to a stranger's.
     const { deps: d, calls } = deps({
       "GET /api/v1/mdm/apps": () => ({ status: 200, body: LISTING }),
-      "GET /api/v1/mdm/apps/55": () => ({
+      "GET /api/v1/mdm/apps/55/labels/9": () => ({
         status: 200,
         body: {
           app_id: 999,
           app_name: "Totally other",
           app_type: 2,
           bundle_identifier: "com.kisok.kiosk",
-          release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
+          platform_type: 2,
         },
       }),
     });
@@ -812,20 +868,42 @@ describe("nothing is created or updated off something unverified", () => {
   });
 
   it("stops rather than pushing to the wrong channel when a release label is unreadable", async () => {
-    // The unreadable one could be Stable. Dropping it turned "several labels,
-    // refuse to guess" into "one label, use it" — and shipped into Beta.
+    // The unreadable one could be the Stable label, and its id is what
+    // ADDRESSES App Details — so this entry's identity cannot be read at all.
     const { deps: d, calls } = deps({
-      "GET /api/v1/mdm/apps": () => ({ status: 200, body: LISTING }),
-      "GET /api/v1/mdm/apps/55": () => ({
+      "GET /api/v1/mdm/apps": () => ({
         status: 200,
         body: {
-          app_id: 55,
-          app_name: "KISOK",
-          app_type: 2,
-          bundle_identifier: "com.kisok.kiosk",
-          release_labels: [
-            { release_label_id: 9 },
-            { release_label_id: 8, release_label_name: "Beta" },
+          apps: [
+            {
+              app_id: 55,
+              app_name: "KISOK",
+              release_labels: [{ release_label_id: 9 }, BETA_LABEL],
+            },
+          ],
+        },
+      }),
+    });
+
+    const result = await publish(INPUTS, d);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure).toContain("no readable id or type");
+    expect(mutations(calls)).toHaveLength(0);
+  });
+
+  it("stops when an entry has SEVERAL Stable labels rather than guessing a channel", async () => {
+    const { deps: d, calls } = deps({
+      "GET /api/v1/mdm/apps": () => ({
+        status: 200,
+        body: {
+          apps: [
+            {
+              app_id: 55,
+              app_name: "KISOK",
+              release_labels: [STABLE_LABEL, { release_label_id: 10, release_label_type: 1 }],
+            },
           ],
         },
       }),
@@ -839,63 +917,13 @@ describe("nothing is created or updated off something unverified", () => {
     expect(mutations(calls)).toHaveLength(0);
   });
 
-  it("stops when App Details carries no bundle_identifier", async () => {
-    const { deps: d, calls } = deps({
-      "GET /api/v1/mdm/apps": () => ({ status: 200, body: LISTING }),
-      "GET /api/v1/mdm/apps/55": () => ({
-        status: 200,
-        body: { app_id: 55, app_name: "KISOK", app_type: 2 },
-      }),
-    });
-
-    const result = await publish(INPUTS, d);
-
-    expect(result.ok).toBe(false);
-    expect(mutations(calls)).toHaveLength(0);
-  });
-
-  it("stops when an entry claims our package but is not the Enterprise type", async () => {
-    const { deps: d, calls } = deps({
-      "GET /api/v1/mdm/apps": () => ({ status: 200, body: LISTING }),
-      "GET /api/v1/mdm/apps/55": () => ({
-        status: 200,
-        body: { app_id: 55, app_name: "KISOK", app_type: 0, bundle_identifier: "com.kisok.kiosk" },
-      }),
-    });
-
-    const result = await publish(INPUTS, d);
-
-    expect(result.ok).toBe(false);
-    expect(mutations(calls)).toHaveLength(0);
-  });
-
-  it("stops when a listed entry carries no usable app_id", async () => {
+  it("stops when a listed entry has only a Beta label, rather than calling it not-ours", async () => {
+    // Without a Stable label there is no way to READ this entry's identity.
+    // Treating it as somebody else's app would let `absent` create a duplicate.
     const { deps: d, calls } = deps({
       "GET /api/v1/mdm/apps": () => ({
         status: 200,
-        body: { apps: [{ app_id: null, app_name: "KISOK" }] },
-      }),
-    });
-
-    const result = await publish(INPUTS, d);
-
-    expect(result.ok).toBe(false);
-    expect(mutations(calls)).toHaveLength(0);
-  });
-
-  it("names the broken contract when an entry carries no identity field", async () => {
-    // An unidentifiable entry stops the run (above). This asserts the message
-    // also tells the operator WHY on the first real dispatch: a tenant whose
-    // App Details carry no bundle_identifier is a contract failure, not an
-    // absence, and it must not read as "your app is not there".
-    const { deps: d, calls } = deps({
-      "GET /api/v1/mdm/apps": () => ({
-        status: 200,
-        body: { apps: [{ app_id: 1, app_name: "Other" }] },
-      }),
-      "GET /api/v1/mdm/apps/1": () => ({
-        status: 200,
-        body: { app_id: 1, app_name: "Other", app_type: 2 },
+        body: { apps: [{ app_id: 55, app_name: "Mystery", release_labels: [BETA_LABEL] }] },
       }),
     });
 
@@ -903,27 +931,16 @@ describe("nothing is created or updated off something unverified", () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.failure).toMatch(/documented contract this script relies on/i);
-    expect(mutations(calls)).toHaveLength(0);
-  });
-
-  it("stops when an app_id could retarget an authenticated request", async () => {
-    const { deps: d, calls } = deps({
-      "GET /api/v1/mdm/apps": () => ({
-        status: 200,
-        body: { apps: [{ app_id: "1/../../other", app_name: "KISOK" }] },
-      }),
-    });
-
-    const result = await publish(INPUTS, d);
-
-    expect(result.ok).toBe(false);
-    expect(calls.filter((c) => c.url.includes("/apps/"))).toHaveLength(0);
+    expect(result.failure).toContain("Stable type");
     expect(mutations(calls)).toHaveLength(0);
   });
 
   it("stops when the repository is larger than the App Details read bound", async () => {
-    const many = Array.from({ length: 201 }, (_, i) => ({ app_id: i + 1, app_name: `App ${i}` }));
+    const many = Array.from({ length: 201 }, (_, i) => ({
+      app_id: i + 1,
+      app_name: `App ${i}`,
+      release_labels: [STABLE_LABEL],
+    }));
     const { deps: d, calls } = deps({
       "GET /api/v1/mdm/apps": () => ({
         status: 200,
@@ -947,16 +964,16 @@ it("updates without renaming the app the operator named", async () => {
   const { deps: d, calls } = deps({
     "GET /api/v1/mdm/apps": () => ({
       status: 200,
-      body: { apps: [{ app_id: 55, app_name: "KISOK Kiosk" }] },
+      body: { apps: [{ app_id: 55, app_name: "KISOK Kiosk", release_labels: [STABLE_LABEL] }] },
     }),
-    "GET /api/v1/mdm/apps/55": () => ({
+    "GET /api/v1/mdm/apps/55/labels/9": () => ({
       status: 200,
       body: {
         app_id: 55,
         app_name: "KISOK Kiosk",
         app_type: 2,
         bundle_identifier: "com.kisok.kiosk",
-        release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
+        platform_type: 2,
       },
     }),
     "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
@@ -989,4 +1006,76 @@ it("reads the APK on a dry run too, so a wrong path fails before the real dispat
 
   expect(read).toBe(true);
   expect(result.ok).toBe(false);
+});
+
+it("reads App Details from the LABEL-SCOPED route, exactly as documented", async () => {
+  // The Cloud contract is GET /apps/{app_id}/labels/{release_label_id}.
+  // A regression to the unlabeled /apps/{app_id} route would leave this
+  // request unrouted, and fakeFetch throws on an unregistered path.
+  const { deps: d, calls } = deps({
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
+    "GET /api/v1/mdm/apps": () => ({
+      status: 200,
+      body: {
+        apps: [
+          {
+            app_id: 55,
+            app_name: "KISOK",
+            release_labels: [
+              BETA_LABEL,
+              { release_label_id: 12, release_label_type: 1, release_label_name: "Live" },
+            ],
+          },
+        ],
+      },
+    }),
+    "GET /api/v1/mdm/apps/55/labels/12": () => ({
+      status: 200,
+      body: {
+        app_id: 55,
+        app_name: "KISOK",
+        app_type: 2,
+        platform_type: 2,
+        bundle_identifier: "com.kisok.kiosk",
+      },
+    }),
+    "PUT /api/v1/mdm/apps/55/labels/12": () => ({ status: 200, body: { status: "ok" } }),
+  });
+
+  const result = await publish(INPUTS, d);
+
+  expect(result).toMatchObject({ ok: true, action: "updated" });
+  // The label came from the LISTING by type, not from the name "Stable".
+  const detail = calls.find((c) => c.method === "GET" && c.url.includes("/labels/"));
+  expect(new URL(detail!.url).pathname).toBe("/api/v1/mdm/apps/55/labels/12");
+  // and nothing ever asked for the unlabeled route
+  expect(calls.some((c) => new URL(c.url).pathname === "/api/v1/mdm/apps/55")).toBe(false);
+});
+
+it("in dry-run mode with the app PRESENT it reads label-scoped details but never writes", async () => {
+  const { deps: d, calls } = deps({
+    "GET /api/v1/mdm/apps": () => ({
+      status: 200,
+      body: { apps: [{ app_id: 55, app_name: "KISOK", release_labels: [STABLE_LABEL] }] },
+    }),
+    "GET /api/v1/mdm/apps/55/labels/9": () => ({
+      status: 200,
+      body: {
+        app_id: 55,
+        app_name: "KISOK",
+        app_type: 2,
+        platform_type: 2,
+        bundle_identifier: "com.kisok.kiosk",
+      },
+    }),
+  });
+
+  const result = await publish({ ...INPUTS, dryRun: true }, d);
+
+  expect(result.ok).toBe(true);
+  expect(calls.some((c) => new URL(c.url).pathname === "/api/v1/mdm/apps/55/labels/9")).toBe(true);
+  // Nothing was uploaded and nothing was written.
+  expect(calls.some((c) => c.url.includes("/emsapi/"))).toBe(false);
+  expect(calls.filter((c) => c.method === "PUT")).toHaveLength(0);
+  expect(calls.some((c) => c.method === "POST" && c.url.includes("/api/v1/mdm/apps"))).toBe(false);
 });

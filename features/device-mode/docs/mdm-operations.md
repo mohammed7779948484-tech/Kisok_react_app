@@ -82,21 +82,32 @@ Two consequences worth knowing:
   a release cannot rename the app you named in the console. Confirm on the first
   real dispatch that the app's version moves and its name does not.
   **TENANT VALIDATION REQUIRED.**
-- **Two further contracts were proposed and could NOT be verified.** Whether
-  App Details is documented at `GET /apps/{app_id}` or at the label-scoped
-  `GET /apps/{app_id}/labels/{release_label_id}`, and whether
-  `release_label_type` 1 means Stable, are both unresolved: this build
-  environment's egress policy blocks the vendor's documentation outright (403
-  at the gateway), and a search summary of a page is not the page. Neither was
-  changed on a guess. The dry run settles both cheaply — it prints the App
-  Details response it reads. **TENANT VALIDATION REQUIRED.**
-- **`platform_type` is not asserted.** The field is documented, but its integer
-  enum could not be confirmed from an authoritative source (one example shows
-  `2` beside an iOS bundle id, another describes `2` as Android), so the run
-  logs the value it observed instead of testing it. Identity rests on
-  `bundle_identifier` — which on Android IS the package name — plus the
-  documented Enterprise `app_type`. If you can confirm the enum from your
-  tenant, that check can be tightened. **TENANT VALIDATION REQUIRED.**
+- **The ManageEngine Cloud contracts are now settled** and the pipeline is
+  written to them:
+
+  | contract                | value                                                                    |
+  | ----------------------- | ------------------------------------------------------------------------ |
+  | App Details (read)      | `GET /api/v1/mdm/apps/{app_id}/labels/{release_label_id}` — LABEL-SCOPED |
+  | Update                  | `PUT /api/v1/mdm/apps/{app_id}/labels/{release_label_id}`                |
+  | `release_label_type`    | 1 = Stable, 2 = Beta — the SEMANTIC selector                             |
+  | `platform_type`         | 1 = iOS, **2 = Android**, 3 = Windows                                    |
+  | `app_type`              | 2 = Enterprise (in-house)                                                |
+  | File upload             | `POST /emsapi/files`, module `MDM_APP_MGMT`, multipart field `file`      |
+  | Add App required fields | `app_name`, `app_type`, and `app_file` for Enterprise apps               |
+
+  `app_category_id`, `supported_devices`, `release_label_id`,
+  `bundle_identifier` and `description` are OPTIONAL on Add App, so the create
+  body stays minimal — no tenant metadata, no extra variables, no channel
+  created on the app's behalf.
+
+- **The Stable label is chosen by type, never by name.** `release_label_name`
+  is UI text. Renaming "Stable" in the console does not misroute a release, and
+  a channel that merely calls itself Stable is never selected.
+
+- **Identity requires all three** of `bundle_identifier == com.kisok.kiosk`,
+  `app_type == 2` and `platform_type == 2`. An entry whose Stable label cannot
+  be resolved is never written off as "not ours" — without that label id its
+  identity cannot be read at all, so the run stops instead.
 
 ## ManageEngine console setup
 
@@ -189,6 +200,37 @@ A "user presses Update" button inside the Single-App Kiosk has no first-party
 path: nothing but KISOK is reachable on that screen, so it would need a custom
 in-app update-check UI plus a way to trigger the MDM install. That was raised as
 a hard stop and the decision was to use ManageEngine's silent update instead.
+
+### What KISOK DOES do, once, after an update
+
+Drawing the line precisely, because "no updater" has been read too broadly:
+
+|                                      | who          |
+| ------------------------------------ | ------------ |
+| check whether an update exists       | ManageEngine |
+| download it                          | ManageEngine |
+| install it (silently, on the kiosk)  | ManageEngine |
+| tell the customer the tablet changed | **KISOK**    |
+
+After ManageEngine has ALREADY installed a new build, KISOK shows a one-time
+local message — "KISOK has been updated", the version, and any bundled
+release-note bullets, with a Continue button. It is `features/release-notes`,
+and it is informational only: it polls nothing, queries no backend, downloads
+nothing and can trigger no install. It compares the running build's version
+against one local key (`kisok:last_seen_release`) and nothing else.
+
+A FIRST install shows nothing — the tablet was set up, not updated; the current
+release is recorded silently so the next update has something to compare with.
+Tapping Continue is what records the new release, so a release is never marked
+seen by a customer who never saw it.
+
+Release-note bullets are bundled static copy in
+`features/release-notes/model/release-notes.ts`. A release that ships without
+bullets still shows the generic line rather than an empty panel — a forgotten
+note is not a reason to hide that the tablet changed.
+
+**Still deferred:** notifying the owner or the store BEFORE an update lands.
+That needs a channel this app does not have, and is not in this PR.
 
 ## Maintenance / settings inside the kiosk
 

@@ -13,6 +13,7 @@
  *     refresh-token grant          POST {accounts}/oauth/v2/token
  *     list candidates              GET  {mdm}/api/v1/mdm/apps
  *     IDENTIFY by bundle id        GET  {mdm}/api/v1/mdm/apps/{app_id}
+ *                                       /labels/{release_label_id}
  *     upload the APK               POST {mdm}/emsapi/files
  *     wait, only if pending        POST {mdm}/emsapi/fileupload/status
  *     create or update             POST {mdm}/api/v1/mdm/apps
@@ -39,10 +40,17 @@
  * entry that merely shares the name is never updated AND an entry under a
  * different name is never missed.
  *
- * ⚠️ TENANT VALIDATION REQUIRED. These contracts were re-verified against the
- * vendor's current API documentation, but no request has ever been made
- * against a real tenant, so nothing here has been OBSERVED. The first real
- * dispatch is the proof. Nothing guesses silently: an unrecognised response
+ * The App Details read is LABEL-SCOPED on the current Cloud API, so the Stable
+ * release label is resolved from the LISTING first — by the documented
+ * `release_label_type` (1 = Stable, 2 = Beta), never by `release_label_name`,
+ * which is UI text a tenant may rename. Identity then requires all three of
+ * `bundle_identifier`, `app_type` 2 (Enterprise) and `platform_type` 2
+ * (Android).
+ *
+ * ⚠️ TENANT VALIDATION REQUIRED. These contracts are taken from the vendor's
+ * current Cloud API documentation, but no request has ever been made against a
+ * real tenant, so nothing here has been OBSERVED. The first real dispatch is
+ * the proof. Nothing guesses silently: an unrecognised response
  * shape, an entry that cannot be identified, or a repository whose App Details
  * carry no identity field all stop the run instead of mutating anything.
  *
@@ -107,7 +115,22 @@ export type AppMatch =
 /** One release label on the App Details response. */
 export interface ReleaseLabel {
   releaseLabelId: number | string;
-  releaseLabelName: string;
+  releaseLabelType: number;
+  /** Descriptive UI text. Logged, never used to choose a channel. */
+  releaseLabelName: string | undefined;
+}
+
+/**
+ * One App Repository entry reduced to what addresses its Stable label.
+ *
+ * App Details is label-scoped — `GET /apps/{app_id}/labels/{release_label_id}`
+ * — so the label id must be resolved from the LISTING before identity can be
+ * read at all.
+ */
+export interface ListedCandidate {
+  appId: number | string;
+  releaseLabelId: number | string;
+  releaseLabelName: string | undefined;
 }
 
 /** The subset of App Details this pipeline reads. */
@@ -122,14 +145,7 @@ export interface AppDetails {
   respondsToAnotherApp: number | string | undefined;
   bundleIdentifier: string | undefined;
   appType: number | undefined;
-  platformType: unknown;
-  releaseLabels: ReleaseLabel[];
-  /**
-   * How many `release_labels` entries could not be read. A dropped label is
-   * not a label that is not there: it could be the Stable one, and choosing
-   * from the survivors would push the release into the wrong channel.
-   */
-  unreadableLabels: number;
+  platformType: number | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -199,7 +215,17 @@ const DATA_CENTRES: Record<string, { accounts: string; mdm: string }> = {
 const BUNDLE_IDENTIFIER_FIELD = "bundle_identifier";
 
 /** The release label whose version this pipeline updates. */
-const STABLE_RELEASE_LABEL = "Stable";
+/**
+ * Documented `release_label_type` on the App Management API: 1 = Stable,
+ * 2 = Beta. This — NOT `release_label_name` — is the semantic selector.
+ * The name is UI text a tenant may rename at will, so selecting on it could
+ * both miss a renamed Stable label and pick a channel called "Stable" that
+ * is not the stable one.
+ */
+const RELEASE_LABEL_TYPE_STABLE = 1;
+
+/** Documented App Management `platform_type`: 1 = iOS, 2 = Android, 3 = Windows. */
+const PLATFORM_TYPE_ANDROID = 2;
 
 // ---------------------------------------------------------------------------
 // Secret handling
@@ -284,38 +310,115 @@ function readInteger(value: unknown): number | undefined {
  * unrelated app. The run stops and a human decides.
  */
 /**
- * Every listed entry that carries a usable `app_id`.
+ * Select the Stable release label of ONE listed entry.
  *
- * `app_id` is the documented list field, and it is ALL the listing is used
- * for: identity is established from App Details, never from the listing.
+ * The semantic selector is the documented `release_label_type` (1 = Stable,
+ * 2 = Beta), never `release_label_name`. The name is UI text: a tenant may
+ * rename "Stable" to anything, and a channel called "Stable" need not be the
+ * stable one. Selecting on the name could therefore both miss the real Stable
+ * label and ship a release into Beta.
+ *
+ * Fails closed on anything it cannot read, because the label id is what
+ * ADDRESSES App Details — without it this entry's identity cannot be checked
+ * at all, and an unidentifiable entry could be ours.
+ */
+export function selectStableLabel(
+  rawLabels: unknown,
+  appId: number | string,
+): { ok: true; label: ReleaseLabel } | { ok: false; reason: string } {
+  if (!Array.isArray(rawLabels)) {
+    return {
+      ok: false,
+      reason: `app_id ${appId} carried no readable release_labels array`,
+    };
+  }
+
+  const stable: ReleaseLabel[] = [];
+  for (const raw of rawLabels) {
+    const id = isRecord(raw) ? readId(raw.release_label_id) : undefined;
+    const type = isRecord(raw) ? readInteger(raw.release_label_type) : undefined;
+    // A label whose id or type cannot be read could be the Stable one, so it
+    // is not something to skip past — it makes the whole entry unreadable.
+    if (id === undefined || type === undefined) {
+      return {
+        ok: false,
+        reason: `app_id ${appId} carried a release label with no readable id or type`,
+      };
+    }
+    if (type !== RELEASE_LABEL_TYPE_STABLE) continue;
+    const name =
+      isRecord(raw) && typeof raw.release_label_name === "string"
+        ? raw.release_label_name
+        : undefined;
+    stable.push({ releaseLabelId: id, releaseLabelType: type, releaseLabelName: name });
+  }
+
+  if (stable.length === 0) {
+    return {
+      ok: false,
+      reason:
+        `app_id ${appId} has no release label of the documented Stable type ` +
+        `(${RELEASE_LABEL_TYPE_STABLE})`,
+    };
+  }
+  if (stable.length > 1) {
+    return {
+      ok: false,
+      reason:
+        `app_id ${appId} has ${stable.length} release labels of the Stable type ` +
+        `(${RELEASE_LABEL_TYPE_STABLE}) — refusing to guess which one to update`,
+    };
+  }
+  return { ok: true, label: stable[0]! };
+}
+
+/**
+ * Every listed entry reduced to an addressable (app_id, Stable label id) pair.
  *
  * Deliberately NOT filtered by display name. A previous version selected only
  * entries named exactly "KISOK", which meant an app sitting in the repository
  * under any other name — "KISOK Kiosk", a rename, a different case — was never
  * examined at all, so the walk concluded `absent` and CREATED a duplicate
- * enterprise app. The package check could confirm a match but could never find
- * one. Scanning every entry is what makes "absent" mean absent.
+ * enterprise app. Scanning every entry is what makes "absent" mean absent.
+ *
+ * An entry this cannot reduce is counted as `unusable`, never dropped: App
+ * Details is label-scoped, so an entry whose Stable label cannot be resolved
+ * is an entry whose identity cannot be read — and that is indistinguishable
+ * from ours until proven otherwise.
  */
-export function listedAppIds(apps: readonly unknown[]): {
-  ids: (number | string)[];
+export function listedCandidates(apps: readonly unknown[]): {
+  candidates: ListedCandidate[];
   unusable: number;
+  reasons: string[];
 } {
-  const ids: (number | string)[] = [];
+  const candidates: ListedCandidate[] = [];
+  const reasons: string[] = [];
   let unusable = 0;
   for (const app of apps) {
     // An entry that is not even an object is as unreadable as one with no
     // app_id, and must be counted the same way. An earlier version dropped
     // these in the listing walk instead, so they never reached this counter:
     // the walk collected nothing, reported nothing unusable, and `absent`
-    // took the create branch — the exact fail-open the app_id count exists
-    // to prevent, one layer up.
+    // took the create branch.
     const appId = isRecord(app) ? readId(app.app_id) : undefined;
-    if (appId === undefined) unusable += 1;
-    else ids.push(appId);
+    if (appId === undefined) {
+      unusable += 1;
+      reasons.push("an entry carried no usable app_id");
+      continue;
+    }
+    const label = selectStableLabel(isRecord(app) ? app.release_labels : undefined, appId);
+    if (!label.ok) {
+      unusable += 1;
+      reasons.push(label.reason);
+      continue;
+    }
+    candidates.push({
+      appId,
+      releaseLabelId: label.label.releaseLabelId,
+      releaseLabelName: label.label.releaseLabelName,
+    });
   }
-  // An entry we cannot even address is one we cannot rule out. Dropping it
-  // silently would let it hide our app behind an `absent` verdict.
-  return { ids, unusable };
+  return { candidates, unusable, reasons };
 }
 
 /**
@@ -329,23 +432,16 @@ export function isSafePathSegment(value: number | string): boolean {
   return typeof value === "number" ? Number.isInteger(value) : /^[A-Za-z0-9_-]+$/.test(value);
 }
 
-/** Parse the App Details fields this pipeline reads. */
+/**
+ * Parse the label-scoped App Details fields this pipeline reads.
+ *
+ * Release labels are NOT read here: the label id is what addresses this very
+ * response, so it is resolved from the App Repository listing beforehand.
+ */
 export function parseAppDetails(body: unknown, appId: number | string): AppDetails {
   const record = isRecord(body) ? body : {};
   // Some tenants nest the object; accept either shape without inventing one.
   const app = isRecord(record.app) ? record.app : record;
-  const rawLabels = Array.isArray(app.release_labels) ? app.release_labels : [];
-  const releaseLabels: ReleaseLabel[] = [];
-  let unreadableLabels = 0;
-  for (const label of rawLabels) {
-    const id = isRecord(label) ? readId(label.release_label_id) : undefined;
-    const name = isRecord(label) ? label.release_label_name : undefined;
-    if (id === undefined || typeof name !== "string") {
-      unreadableLabels += 1;
-      continue;
-    }
-    releaseLabels.push({ releaseLabelId: id, releaseLabelName: name });
-  }
   const bundle = app[BUNDLE_IDENTIFIER_FIELD];
   // Does this body describe the app we asked for? The request is addressed by
   // path, so a body carrying a different app_id means the response is not the
@@ -359,26 +455,25 @@ export function parseAppDetails(body: unknown, appId: number | string): AppDetai
     appName: typeof app.app_name === "string" ? app.app_name : undefined,
     bundleIdentifier: typeof bundle === "string" ? bundle : undefined,
     appType: readInteger(app.app_type),
-    platformType: app.platform_type,
-    releaseLabels,
-    unreadableLabels,
+    platformType: readInteger(app.platform_type),
   };
 }
 
 /**
  * Is this App Details payload positively OUR application?
  *
- * Two documented assertions, both required:
+ * Three documented assertions, all required:
  *  - `bundle_identifier` equals the package exactly. On Android this IS the
  *    package name, so it is the identity, and it is platform-specific by
  *    construction — no other platform has a `com.kisok.kiosk`.
  *  - `app_type` is 2, the documented Enterprise (in-house) app type.
  *
- * `platform_type` is deliberately NOT asserted against a number: the field is
- * documented but its integer enum could not be confirmed from an authoritative
- * source, and asserting a guessed value would either reject the right app or
- * accept the wrong one. Its observed value is reported instead. See
- * `features/device-mode/docs/mdm-operations.md`.
+ *  - `platform_type` is 2, the documented App Management value for Android.
+ *
+ * All three are required together. `bundle_identifier` alone says what the
+ * package is called; the other two say it is the in-house Android app this
+ * pipeline builds, rather than something else the tenant registered under the
+ * same identifier.
  */
 export type Identification =
   | { ok: true }
@@ -424,51 +519,16 @@ export function identifyApp(details: AppDetails, packageName: string): Identific
         `${String(details.appType)}, not the Enterprise type ${APP_TYPE_ENTERPRISE}`,
     };
   }
-  return { ok: true };
-}
-
-/**
- * Which release label to update.
- *
- * One label — use it. Several — the one named "Stable", the documented
- * example name for the default channel. Several with no "Stable" is not a
- * guess this script gets to make.
- */
-export function selectReleaseLabel(
-  labels: readonly ReleaseLabel[],
-  appId: number | string,
-  unreadableLabels = 0,
-): { ok: true; label: ReleaseLabel } | { ok: false; reason: string } {
-  // A label we could not read could be the Stable one. Dropping it would turn
-  // "several labels, refuse to guess" into "one label, use it" and push the
-  // release into whichever channel happened to parse.
-  if (unreadableLabels > 0) {
+  if (details.platformType !== PLATFORM_TYPE_ANDROID) {
     return {
       ok: false,
+      kind: "unverifiable",
       reason:
-        `App Details for app_id ${appId} carried ${unreadableLabels} release label ` +
-        `entr${unreadableLabels === 1 ? "y" : "ies"} this script could not read, so the ` +
-        "channel to update cannot be determined — refusing to guess",
+        `app_id ${details.appId} claims ${packageName} but carries platform_type ` +
+        `${String(details.platformType)}, not Android (${PLATFORM_TYPE_ANDROID})`,
     };
   }
-  if (labels.length === 0) {
-    return {
-      ok: false,
-      reason: `App Details for app_id ${appId} carried no release_labels to update`,
-    };
-  }
-  if (labels.length === 1) return { ok: true, label: labels[0]! };
-
-  const stable = labels.find((label) => label.releaseLabelName === STABLE_RELEASE_LABEL);
-  if (stable) return { ok: true, label: stable };
-
-  return {
-    ok: false,
-    reason:
-      `app_id ${appId} has ${labels.length} release labels and none is named ` +
-      `"${STABLE_RELEASE_LABEL}" (${labels.map((l) => l.releaseLabelName).join(", ")}) — ` +
-      "refusing to guess which one to update",
-  };
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -821,11 +881,12 @@ async function findApp(
 /**
  * Turn listed candidates into a positively identified app, or refuse.
  *
- * `GET /api/v1/mdm/apps/{app_id}` is the documented App Details endpoint and
- * the only place `bundle_identifier` is specified, so identity is established
- * here rather than from the listing. Every candidate is fetched: a candidate
- * whose details cannot be read is a failure, never a skip, because skipping
- * one would silently take the create branch and duplicate the app.
+ * `GET /api/v1/mdm/apps/{app_id}/labels/{release_label_id}` is the documented
+ * App Details endpoint on the current Cloud API — it is LABEL-SCOPED, which is
+ * why the Stable label is resolved from the listing first. Every candidate is
+ * fetched: a candidate whose details cannot be read is a failure, never a
+ * skip, because skipping one would silently take the create branch and
+ * duplicate the app.
  */
 async function verifyCandidates(
   collected: readonly unknown[],
@@ -834,48 +895,55 @@ async function verifyCandidates(
   token: string,
   deps: PublishDeps,
 ): Promise<AppMatch> {
-  const listed = listedAppIds(collected);
+  const listed = listedCandidates(collected);
 
   if (listed.unusable > 0) {
     return {
       status: "ambiguous",
       reason:
-        `${listed.unusable} App Repository entr${listed.unusable === 1 ? "y" : "ies"} carried no ` +
-        `usable app_id, so ${inputs.packageName} cannot be confirmed present or absent — one of ` +
-        "them could be ours",
+        `${listed.unusable} App Repository entr${listed.unusable === 1 ? "y" : "ies"} could not ` +
+        `be reduced to an addressable (app_id, Stable release_label_id) pair, so ` +
+        `${inputs.packageName} cannot be confirmed present or absent — one of them could be ` +
+        `ours: ${listed.reasons.join("; ")}`,
     };
   }
-  if (listed.ids.length === 0) return { status: "absent" };
+  if (listed.candidates.length === 0) return { status: "absent" };
 
-  if (listed.ids.length > MAX_DETAIL_READS) {
+  if (listed.candidates.length > MAX_DETAIL_READS) {
     return {
       status: "ambiguous",
       reason:
-        `the App Repository holds ${listed.ids.length} entries, more than the ` +
+        `the App Repository holds ${listed.candidates.length} entries, more than the ` +
         `${MAX_DETAIL_READS} this script will read App Details for, so ${inputs.packageName} ` +
         "cannot be confirmed present or absent — failing closed rather than risking a duplicate app",
     };
   }
 
-  const verified: AppDetails[] = [];
+  const verified: { details: AppDetails; candidate: ListedCandidate }[] = [];
   const unverifiable: string[] = [];
 
-  for (const appId of listed.ids) {
-    if (!isSafePathSegment(appId)) {
-      return {
-        status: "ambiguous",
-        reason: `the App Repository listing returned an app_id that is not a plain id: ${JSON.stringify(appId)}`,
-      };
+  for (const candidate of listed.candidates) {
+    // Both ids are spliced into an authenticated URL path, so both are checked.
+    for (const [what, value] of [
+      ["app_id", candidate.appId],
+      ["release_label_id", candidate.releaseLabelId],
+    ] as const) {
+      if (!isSafePathSegment(value)) {
+        return {
+          status: "ambiguous",
+          reason: `the App Repository listing returned a ${what} that is not a plain id: ${JSON.stringify(value)}`,
+        };
+      }
     }
     const body = await request(
       deps,
-      `the App Details read for app_id ${appId}`,
-      `${hosts.mdm}/api/v1/mdm/apps/${appId}`,
+      `the App Details read for app_id ${candidate.appId} label ${candidate.releaseLabelId}`,
+      `${hosts.mdm}/api/v1/mdm/apps/${candidate.appId}/labels/${candidate.releaseLabelId}`,
       { method: "GET", headers: authHeaders(token) },
     );
-    const details = parseAppDetails(body, appId);
+    const details = parseAppDetails(body, candidate.appId);
     const identity = identifyApp(details, inputs.packageName);
-    if (identity.ok) verified.push(details);
+    if (identity.ok) verified.push({ details, candidate });
     // A DIFFERENT package is positively somebody else's app — skipping it is
     // safe. Anything we could not judge is not, and must stop the run.
     else if (identity.kind === "unverifiable") unverifiable.push(identity.reason);
@@ -901,37 +969,28 @@ async function verifyCandidates(
       status: "ambiguous",
       reason:
         `${verified.length} App Repository entries claim ${inputs.packageName} ` +
-        `(app_ids ${verified.map((v) => v.appId).join(", ")}) — refusing to guess which to update`,
+        `(app_ids ${verified.map((v) => v.details.appId).join(", ")}) — refusing to guess which to update`,
     };
   }
 
-  const app = verified[0]!;
+  const { details, candidate } = verified[0]!;
+  if (details.appName === undefined) {
+    return {
+      status: "ambiguous",
+      reason: `app_id ${details.appId} carried no app_name, which the update body requires`,
+    };
+  }
+
   deps.log(
-    `identified ${inputs.packageName} as app_id ${app.appId}; ` +
-      `platform_type as reported: ${JSON.stringify(app.platformType)}`,
+    `identified ${inputs.packageName} as app_id ${details.appId} on Stable release label ` +
+      `${candidate.releaseLabelId}` +
+      (candidate.releaseLabelName === undefined ? "" : ` ("${candidate.releaseLabelName}")`),
   );
-
-  const label = selectReleaseLabel(app.releaseLabels, app.appId, app.unreadableLabels);
-  if (!label.ok) return { status: "ambiguous", reason: label.reason };
-  if (!isSafePathSegment(label.label.releaseLabelId)) {
-    return {
-      status: "ambiguous",
-      reason: `release_label_id is not a plain id: ${JSON.stringify(label.label.releaseLabelId)}`,
-    };
-  }
-  if (app.appName === undefined) {
-    return {
-      status: "ambiguous",
-      reason: `app_id ${app.appId} carried no app_name, which the update body requires`,
-    };
-  }
-
-  deps.log(`using release label "${label.label.releaseLabelName}" (${label.label.releaseLabelId})`);
   return {
     status: "found",
-    appId: app.appId,
-    releaseLabelId: label.label.releaseLabelId,
-    appName: app.appName,
+    appId: details.appId,
+    releaseLabelId: candidate.releaseLabelId,
+    appName: details.appName,
   };
 }
 

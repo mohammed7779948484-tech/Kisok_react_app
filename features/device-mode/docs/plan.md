@@ -15,12 +15,20 @@ Status: `READY`
 | `create-expo-module --local`                                                 | The official local-module scaffold; used verbatim, then trimmed to Android-only                                                                                                                                                                                                            |
 | ManageEngine help (app update management, kiosk profile)                     | Enterprise apps on kiosk devices are installed and **updated silently** by MDM, no user action; ordinary devices prompt the user. See "Update experience"                                                                                                                                  |
 
-**Honest gap.** `www.manageengine.com` is blocked by this environment's egress
-policy, so the ManageEngine REST contracts below could not be re-opened
-first-hand. They are carried over from the superseded `feature/kiosk-runtime`
-branch, which recorded them from the live help pages, and they are cross-checked
-only against search-result summaries here. Every ManageEngine call is therefore
-marked **TENANT VALIDATION REQUIRED**: the first real dispatch is the proof.
+**The ManageEngine Cloud contracts are settled** and the pipeline implements
+them: App Details is read LABEL-SCOPED at
+`GET /api/v1/mdm/apps/{app_id}/labels/{release_label_id}`, the Stable channel
+is selected by `release_label_type == 1` (2 = Beta) rather than by display
+name, Android is `platform_type == 2`, Enterprise is `app_type == 2`, and Add
+App requires only `app_name`, `app_type` and `app_file`. See
+`mdm-operations.md`.
+
+This environment's egress policy blocks `www.manageengine.com`, so those
+contracts were verified outside it and supplied to the implementation rather
+than read here. That changes what is still open: the contracts themselves are
+no longer in question, but **no request has ever been made against the real
+tenant**, so every ManageEngine call remains **TENANT VALIDATION REQUIRED** —
+the first `dry_run` dispatch is the proof.
 
 ## Design decisions
 

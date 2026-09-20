@@ -47,6 +47,32 @@ jobs:
     environment: android-release
     timeout-minutes: 60
     steps:
+      # MAIN ONLY, and checked in the job rather than assumed.
+      #
+      # `workflow_dispatch` is manual, but manual does NOT mean main: the
+      # dispatch UI and API both take a ref, so this workflow can be aimed at
+      # any branch or tag that carries it — including this feature branch,
+      # where the code has not been reviewed or merged. That would build, sign
+      # and PUBLISH unreviewed source to the tenant's App Repository under the
+      # real package identity.
+      #
+      # main = releasable source. workflow_dispatch = the explicit act of
+      # releasing it. A push to main on its own releases nothing.
+      #
+      # This fails the run loudly instead of skipping: a silent green skip on
+      # the wrong ref looks exactly like a successful release.
+      #
+      # Defense in depth, and a HUMAN setting this workflow cannot make for
+      # itself: give the `android-release` environment a deployment branch
+      # policy that allows only `main`.
+      - name: Refuse to release from any ref but main (fail closed)
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::This workflow releases from main only. It was dispatched against '$GITHUB_REF'. Re-run it with the branch set to main; nothing was built, signed or published."
+            exit 1
+          fi
+          echo "ref check passed: $GITHUB_REF"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The job never pushes, so do not leave a token in .git/config.

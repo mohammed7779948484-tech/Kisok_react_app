@@ -48,10 +48,17 @@ const META_DATA_NAME = "android.content.APP_RESTRICTIONS";
 const RESTRICTIONS_RESOURCE = "kiosk_restrictions";
 
 /**
- * ONE restriction. `kiosk_device_role` is the only managed value KISOK reads;
- * `features/device-mode/model/device-mode.schema.ts` treats exactly the string
- * `customer_kiosk` as the Customer Kiosk tablet and everything else — absent,
- * empty, or any other value — as an ordinary device.
+ * ONE restriction. `kiosk_device_role` is the only managed value KISOK reads,
+ * and `features/device-mode/model/device-mode.schema.ts` reads it in three
+ * cases, not two:
+ *
+ *   ABSENT                     -> `standard`      (an ordinary employee tablet)
+ *   exactly "customer_kiosk"   -> `customer-kiosk`
+ *   ANY other present value    -> `unknown`, and Preparation is WITHHELD
+ *
+ * The empty string belongs in that third case, not the first: the native
+ * module maps a present null to "" precisely so an explicitly-cleared value
+ * stays visibly PRESENT to JS rather than looking unset.
  *
  * `choice`, NOT `string`, and that is the important part. A free-text field
  * lets an operator type `customer-kiosk` or `Customer_Kiosk`. The app reads

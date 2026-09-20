@@ -1040,3 +1040,109 @@ own 80% threshold, is also scoped to `35ec2d0`. It is an advisory style metric
 with no correctness claim attached, and writing docstrings to hit a
 third-party tool's arbitrary threshold is not a change this PR should carry.
 Recorded, not actioned.
+
+## Round 10 — the contracts arrive verified, and the flow is rebuilt to them
+
+Round 9 refused to implement three contract changes because this environment
+cannot reach the vendor's documentation. They were then verified OUTSIDE this
+environment and supplied as authoritative. That removes the objection — the
+objection was never that the findings looked wrong, only that nothing here
+could confirm them — so all three are implemented.
+
+### The App resolution flow is now label-scoped
+
+`GET /api/v1/mdm/apps/{app_id}` is gone. The current Cloud contract is
+`GET /api/v1/mdm/apps/{app_id}/labels/{release_label_id}`, which inverts the
+order the pipeline used to run in: the label id ADDRESSES App Details, so it
+must come from the App Repository listing before identity can be read at all.
+
+```
+GET /apps  →  per entry: Stable label by release_label_type === 1
+           →  GET /apps/{app_id}/labels/{stable_label_id}
+           →  bundle_identifier + app_type 2 + platform_type 2
+           →  PUT /apps/{app_id}/labels/{stable_label_id}
+```
+
+The fail-closed rule from rounds 6–8 carries straight over, and one new case
+falls out of it: **an entry whose Stable label cannot be resolved is not "not
+ours".** Without that label id its identity cannot be READ, so it is counted
+unusable and stops the run — exactly like an entry with no `app_id`. Calling it
+someone else's app would let `absent` create a duplicate, which is the failure
+this whole area exists to prevent.
+
+### Stable is chosen by type, never by name
+
+`release_label_type` 1 = Stable, 2 = Beta. `release_label_name` is UI text and
+is now used only in the log line. The previous name-based selection had two
+failure modes, and a test pins each: a tenant renaming "Stable" to "Live" made
+the release unroutable, and a channel that merely called itself Stable would
+have been selected.
+
+### platform_type is asserted
+
+Identity now requires all three of `bundle_identifier == com.kisok.kiosk`,
+`app_type == 2` (Enterprise) and `platform_type == 2` (Android). Round 9
+declined to assert this on conflicting search evidence; with the enum confirmed
+(1 = iOS, 2 = Android, 3 = Windows) it is a real check.
+
+### The create path was NOT changed
+
+Current Cloud Add App requires `app_name`, `app_type` and — for Enterprise —
+`app_file`. Everything else (`app_category_id`, `supported_devices`,
+`release_label_id`, `bundle_identifier`, `description`) is optional, so the
+minimal body already in place is correct. No new variables, no tenant
+metadata, no `POST /labels` to manufacture a channel.
+
+### Every new guard is mutation-tested
+
+Each was reverted one at a time against the suite:
+
+```
+M1 regress to the UNLABELED App Details route  → 11 failed
+M2 select the label by NAME instead of type    →  4 failed
+M3 drop the Android platform assertion         →  2 failed
+M4 allow several Stable labels                 →  2 failed
+M5 skip an entry whose Stable label is unresolvable → 4 failed
+M6 tolerate an unreadable label entry          →  1 failed
+restored                                       → 56 passed
+```
+
+M1 is the one the round turns on: a regression to `/apps/{app_id}` cannot pass.
+
+### The release workflow now refuses any ref but main
+
+`workflow_dispatch` is manual, but manual is not main — the dispatch UI and API
+both take a ref, so the workflow could be aimed at this very feature branch and
+would build, sign and PUBLISH unreviewed source to the tenant under the real
+package identity. The first step now fails the run when `GITHUB_REF` is not
+`refs/heads/main`, loudly rather than as a green skip, because a silent skip on
+the wrong ref looks exactly like a successful release.
+
+`tools/release/release-workflow.test.ts` pins that guard's POSITION (step 0),
+the manual-only trigger, the environment, least privilege, serialized
+concurrency, SHA-pinned actions and the absence of any secret echo. It reads
+the YAML as text on purpose: the repo has no YAML parser of its own (`yaml`
+resolves to a browser ESM build under jest, `js-yaml` is only transitive), and
+buying a dependency to assert nine lines is worse than a regex.
+
+### Two stale comments corrected
+
+`plugins/with-managed-configuration.ts` still said `customer_kiosk` is a kiosk
+and "everything else — absent, empty, or any other value — an ordinary
+device". That is the pre-CR-3 behaviour and it is false: absent → `standard`,
+the exact literal → `customer-kiosk`, anything else present → `unknown` and
+Preparation withheld.
+
+`features/device-mode/model/device-mode.schema.ts` claimed the native module
+"drops null-valued keys". The Kotlin does the opposite — `null -> ""` — and
+deliberately so: a key the DPC delivered as null stays PRESENT to JS and
+derives `unknown`, instead of disappearing and deriving `standard`.
+
+### Round 10 gate
+
+```
+npx jest tools/mdm            → 56 passed
+npx jest tools/release        → 74 passed
+npx jest features/release-notes → 20 passed
+npx jest features/device-mode plugins → 46 passed
+```

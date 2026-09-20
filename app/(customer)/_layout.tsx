@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 
 import { CatalogCartProvider } from "@/features/catalog-cart-integration";
 import { RecoveryGate } from "@/features/checkout";
+import { WhatsNewGate } from "@/features/release-notes";
 
 /**
  * Customer / kiosk experience.
@@ -22,11 +23,17 @@ import { RecoveryGate } from "@/features/checkout";
  * recovery surfaces for the outcomes that need one. Importing
  * `@/features/checkout` here is also the module load that makes checkout's
  * sign-out guard registration live.
+ *
+ * WhatsNewGate is mounted HERE, not at the root: it is a CUSTOMER message, and
+ * this layout renders only under the customer guard — after auth and routing
+ * have settled. Mounting it at the root would put it in front of sign-in, the
+ * unauthorized screen, the device-mismatch screen and Preparation.
  */
 export default function CustomerLayout() {
   return (
     <CatalogCartProvider>
       <RecoveryGate>
+        <WhatsNewGate />
         <Stack screenOptions={{ headerShown: false }} />
       </RecoveryGate>
     </CatalogCartProvider>
