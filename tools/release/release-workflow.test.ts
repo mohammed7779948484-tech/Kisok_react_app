@@ -81,7 +81,7 @@ describe("the Android release workflow", () => {
       source.indexOf("pnpm/action-setup@"),
     );
 
-    expect(source).toContain("NODE_ENV: production");
+    expect(source).not.toMatch(/^ {4}env:\n {6}NODE_ENV: production$/m);
     expect(validation).toContain("vars.EXPO_PUBLIC_SUPABASE_URL");
     expect(validation).toContain("vars.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
     expect(validation).toContain("vars.EXPO_PUBLIC_ENVIRONMENT");
