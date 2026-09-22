@@ -14,13 +14,20 @@
  * ONE variable per run, with every other header and body characteristic held
  * constant:
  *
- *   cloud_file                — /emsapi/files, field `file`, no X-Customer.
+ *   cloud_file                  — /emsapi/files, field `file`, no X-Customer.
  *     OBSERVED to fail (406).
- *   legacy_fileName            — /emsapi/files, field `fileName`, no
+ *   legacy_fileName              — /emsapi/files, field `fileName`, no
  *     X-Customer. OBSERVED to fail (406).
- *   cloud_file_with_customer   — /emsapi/files, field `file`, WITH
+ *   cloud_file_with_customer     — /emsapi/files, field `file`, WITH
  *     X-Customer. Differs from cloud_file by exactly that one header.
  *     OBSERVED to fail (406) — X-Customer does not fix it either.
+ *   ems_fileName_with_customer   — /emsapi/files, field `fileName`, WITH
+ *     X-Customer. The one field/X-Customer combination against
+ *     `/emsapi/files` not yet tried: `legacy_fileName` alone failed,
+ *     `cloud_file_with_customer` alone failed, this crosses them. Differs
+ *     from `legacy_fileName` by exactly the X-Customer header, same as
+ *     `cloud_file_with_customer` differs from `cloud_file`. NOT YET
+ *     OBSERVED live.
  *
  * The remaining two variants target a DIFFERENT endpoint,
  * `POST /api/v1/mdm/files` — documented as the predecessor `/emsapi/files`
@@ -69,11 +76,12 @@
  * working upload shape is proven live.
  *
  * Credentials come from the environment only — MDM_CLIENT_ID,
- * MDM_CLIENT_SECRET, MDM_REFRESH_TOKEN, and (only for the
- * cloud_file_with_customer variant) MDM_CUSTOMER_ID — and are never accepted
- * as flags, never printed, and redacted out of every message this script
- * emits. MDM_CUSTOMER_ID is never hard-coded here or anywhere in this public
- * repository; it is supplied only as a GitHub Actions environment secret.
+ * MDM_CLIENT_SECRET, MDM_REFRESH_TOKEN, and (only for the variants that use
+ * X-Customer: cloud_file_with_customer, ems_fileName_with_customer)
+ * MDM_CUSTOMER_ID — and are never accepted as flags, never printed, and
+ * redacted out of every message this script emits. MDM_CUSTOMER_ID is never
+ * hard-coded here or anywhere in this public repository; it is supplied only
+ * as a GitHub Actions environment secret.
  *
  * Deliberately standalone: it duplicates a few small pieces of
  * `publish-app.ts` (secret redaction, data-centre hosts, the token-exchange
@@ -98,6 +106,7 @@ export const VARIANTS = [
   "cloud_file",
   "legacy_fileName",
   "cloud_file_with_customer",
+  "ems_fileName_with_customer",
   "legacy_api_v1_raw_example",
   "legacy_api_v1_cloud",
 ] as const;
@@ -120,15 +129,23 @@ export type Variant = (typeof VARIANTS)[number];
  * `cloud_file_with_customer` sends the same field as `cloud_file` (`file`)
  * plus an `X-Customer` header — it must differ from `cloud_file` by that one
  * header alone. OBSERVED to fail with 406 too.
+ * `ems_fileName_with_customer` sends the same field as `legacy_fileName`
+ * (`fileName`) plus an `X-Customer` header — the one field/header
+ * combination against `/emsapi/files` not yet tried: `fileName` alone
+ * failed, `file` + X-Customer failed, this crosses them. NOT YET OBSERVED.
  */
 export const VARIANT_FIELD: Partial<Record<Variant, string>> = {
   cloud_file: "file",
   legacy_fileName: "fileName",
   cloud_file_with_customer: "file",
+  ems_fileName_with_customer: "fileName",
 };
 
-/** Only this variant sends an X-Customer header at all. */
-const CUSTOMER_VARIANT: Variant = "cloud_file_with_customer";
+/** Every variant that sends an X-Customer header at all. */
+const CUSTOMER_VARIANTS: ReadonlySet<Variant> = new Set([
+  "cloud_file_with_customer",
+  "ems_fileName_with_customer",
+]);
 
 export const APK_MIME = "application/vnd.android.package-archive";
 
@@ -260,10 +277,12 @@ export function buildUploadForm(variant: Variant, bytes: Uint8Array, fileName: s
 }
 
 /**
- * The upload headers for a given variant. `cloud_file_with_customer` differs
- * from `cloud_file` by exactly one header — `X-Customer` — and nothing else;
- * every other variant never carries it. `Content-Type` is deliberately never
- * set here: it is left to `fetch` to generate the multipart boundary.
+ * The upload headers for a given variant. `cloud_file_with_customer` and
+ * `ems_fileName_with_customer` each differ from their X-Customer-less
+ * counterpart (`cloud_file`, `legacy_fileName`) by exactly that one header
+ * and nothing else; every other variant never carries it. `Content-Type` is
+ * deliberately never set here: it is left to `fetch` to generate the
+ * multipart boundary.
  */
 export function buildUploadHeaders(
   variant: Variant,
@@ -275,11 +294,9 @@ export function buildUploadHeaders(
     Accept: "application/json",
     Module: "MDM_APP_MGMT",
   };
-  if (variant !== CUSTOMER_VARIANT) return headers;
+  if (!CUSTOMER_VARIANTS.has(variant)) return headers;
   if (customerId === undefined || customerId.trim() === "") {
-    throw new Error(
-      `MDM_CUSTOMER_ID is required for the ${CUSTOMER_VARIANT} variant — failing closed`,
-    );
+    throw new Error(`MDM_CUSTOMER_ID is required for the ${variant} variant — failing closed`);
   }
   return { ...headers, "X-Customer": customerId };
 }
@@ -407,7 +424,7 @@ ManageEngine enterprise app.
 
 Required environment (never flags, never printed):
   MDM_CLIENT_ID, MDM_CLIENT_SECRET, MDM_REFRESH_TOKEN
-  MDM_CUSTOMER_ID   (only when --variant is ${CUSTOMER_VARIANT})
+  MDM_CUSTOMER_ID   (only when --variant is one of: ${[...CUSTOMER_VARIANTS].join(", ")})
 
 Optional:
   --data-centre <code>   or MDM_DATA_CENTRE   (default: us)
@@ -467,13 +484,14 @@ export function resolveInputs(
   const dataCentre = flags.get("--data-centre") ?? env.MDM_DATA_CENTRE ?? "us";
 
   // Not required by `required()` above: MDM_CUSTOMER_ID is only mandatory for
-  // one variant, and the other variants must not be made to depend on it.
+  // the variants that use X-Customer, and every other variant must not be
+  // made to depend on it.
   const customerIdRaw = env.MDM_CUSTOMER_ID;
   const customerId =
     customerIdRaw === undefined || customerIdRaw.trim() === "" ? undefined : customerIdRaw;
-  if (variant === CUSTOMER_VARIANT && customerId === undefined) {
+  if (variant !== undefined && CUSTOMER_VARIANTS.has(variant) && customerId === undefined) {
     problems.push(
-      `MDM_CUSTOMER_ID is not set. The ${CUSTOMER_VARIANT} variant requires it and refuses to run without it.`,
+      `MDM_CUSTOMER_ID is not set. The ${variant} variant requires it and refuses to run without it.`,
     );
   }
 
@@ -768,7 +786,7 @@ export async function run(inputs: ProbeInputs, deps: ProbeDeps): Promise<number>
     const bytes = await readApkOrFail(inputs, deps);
     const fileName = inputs.apkPath.split("/").pop() ?? "app-release.apk";
     const fieldName = VARIANT_FIELD[inputs.variant] ?? "(unknown)";
-    const usesCustomerHeader = inputs.variant === CUSTOMER_VARIANT;
+    const usesCustomerHeader = CUSTOMER_VARIANTS.has(inputs.variant);
 
     deps.log("ManageEngine upload diagnostic");
     deps.log(`variant: ${inputs.variant}`);

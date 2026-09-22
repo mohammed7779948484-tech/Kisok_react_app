@@ -1737,3 +1737,69 @@ contradictory documented representations are now correctly separated,
 Cloud tenant, and the multipart-field-name assumption is stated honestly as
 an assumption rather than implied to be proven. `tools/mdm/publish-app.ts`
 remains untouched.
+
+### Round 16 — `ems_fileName_with_customer`: the one untested combination
+
+Added a sixth `probe-upload.ts` variant, `ems_fileName_with_customer`:
+`POST /emsapi/files`, field `fileName` (native FormData, `Content-Type`
+left unset so `fetch` generates the multipart boundary), APK Blob MIME
+`application/vnd.android.package-archive`, `Authorization:
+Zoho-oauthtoken <token>`, `Module: MDM_APP_MGMT`, `Accept: application/json`,
+and `X-Customer: <MDM_CUSTOMER_ID>`. It is the one combination of the two
+variables already isolated separately — field `fileName` and a real
+`X-Customer` — that had not yet been tried together.
+
+It required no new transport code: the variant fits entirely inside the
+existing generic `/emsapi/files` path in `run()`, so the change is a data
+change, not a structural one. `VARIANT_FIELD` gained one entry
+(`fileName`), and the single `CUSTOMER_VARIANT` constant was generalised to
+a `CUSTOMER_VARIANTS: ReadonlySet<Variant>` holding both
+`cloud_file_with_customer` and `ems_fileName_with_customer`, so
+`buildUploadHeaders`, `resolveInputs`, and `run()`'s log line all gate on
+membership instead of equality. `MDM_CUSTOMER_ID` fails closed for either
+customer variant and is not required by any other. One upload attempt, no
+fallback, no app create/update — unchanged from every other variant. The
+customer id is redacted from every log line via the same `redactSecrets`
+path the other variants use.
+
+The workflow's `variant` choice input and its `default` were both updated
+to `ems_fileName_with_customer` — it is now the workflow default, since it
+stays on the tenant's already-confirmed endpoint and data centre rather
+than moving to the still-unproven legacy endpoint.
+
+`tools/mdm/publish-app.ts` and `tools/mdm/publish-app.test.ts` were not
+touched.
+
+### Tests added
+
+15 new cases in `tools/mdm/probe-upload.test.ts`: a `describe` block
+mirroring `cloud_file_with_customer`'s (field exclusivity, exact header
+set with no manual Content-Type, `legacy_fileName` never carries
+`X-Customer`, the two variants differ by exactly the `X-Customer` key, and
+fail-closed with no or blank customer id); three `resolveInputs` cases
+(fails closed absent, fails closed blank, accepts when set); and five
+`run()`-level integration cases through the `fakeFetch` harness (field +
+header + no-Content-Type proof, fail-closed with zero upload calls, id
+never printed, exactly one upload attempt with no create/update call). 2
+updated cases in the workflow-pinning suite (six-variant list and new
+default).
+
+### Round 16 gate
+
+```
+pnpm exec jest tools/mdm --runInBand → 154 passed
+pnpm typecheck        → PASS
+pnpm lint              → PASS
+pnpm format:check      → PASS
+pnpm check:docs        → PASS (94 files)
+pnpm check:ci-scripts  → PASS (5 workflows, 10 checks)
+node -e (js-yaml)      → all 5 workflow files parse
+git diff --check       → clean
+git diff -- tools/mdm/publish-app.ts tools/mdm/publish-app.test.ts → empty
+```
+
+Not claimed: that `ems_fileName_with_customer` works for this tenant — only
+that it is now the untested combination most worth spending a live
+dispatch on, and that every existing variant's behaviour is unchanged
+(154/154 pre-existing plus new tests pass with no modification to prior
+assertions). `tools/mdm/publish-app.ts` remains untouched.

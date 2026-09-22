@@ -12,12 +12,15 @@ name: ManageEngine upload diagnostic
 # X-Customer header added), so that endpoint's working wire shape is not yet
 # known. This workflow isolates exactly ONE variable per run:
 #
-#   cloud_file                — /emsapi/files, field `file`, no X-Customer.
+#   cloud_file                  — /emsapi/files, field `file`, no X-Customer.
 #     OBSERVED to fail (406).
-#   legacy_fileName            — /emsapi/files, field `fileName`, no
+#   legacy_fileName              — /emsapi/files, field `fileName`, no
 #     X-Customer. OBSERVED to fail (406).
-#   cloud_file_with_customer   — /emsapi/files, field `file`, WITH
+#   cloud_file_with_customer     — /emsapi/files, field `file`, WITH
 #     X-Customer. OBSERVED to fail (406) too — X-Customer does not fix it.
+#   ems_fileName_with_customer   — /emsapi/files, field `fileName`, WITH
+#     X-Customer. The one combination of the two variables above not yet
+#     tested together. NOT YET OBSERVED.
 #
 # The remaining two variants target a DIFFERENT endpoint,
 # `POST /api/v1/mdm/files` — documented as the predecessor `/emsapi/files`
@@ -53,15 +56,17 @@ on:
         description: "Which upload representation to send the APK as"
         type: choice
         options:
+          - ems_fileName_with_customer
           - legacy_api_v1_cloud
           - legacy_api_v1_raw_example
           - cloud_file_with_customer
           - legacy_fileName
           - cloud_file
-        # This tenant is ManageEngine Cloud, so the Cloud-specific published
-        # contract for the legacy endpoint is the highest-priority untested
-        # candidate; every /emsapi/files representation has already failed.
-        default: legacy_api_v1_cloud
+        # The one /emsapi/files combination not yet tested: field `fileName`
+        # together with a real X-Customer header. Highest-priority candidate
+        # because it is still the SAME endpoint and SAME data centre this
+        # tenant already targets, unlike the two legacy-endpoint variants.
+        default: ems_fileName_with_customer
       run_id:
         description: >-
           Workflow run ID to download the kisok-release-apk artifact from. The

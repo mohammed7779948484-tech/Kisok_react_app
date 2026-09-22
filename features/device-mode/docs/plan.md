@@ -39,7 +39,13 @@ real `X-Customer` header added. The following hypotheses have now been
 live-tested against `/emsapi/files` and did NOT resolve the 406: manual
 boundary vs native FormData, field `file`, field `fileName`, real
 X-Customer tenant context. Do not repeat the "hand-built multipart was the
-cause" claim, and do not claim `X-Customer` fixes it — both are disproven.
+cause" claim, and do not claim `X-Customer` fixes it — both are disproven,
+but only in the `field: file` combination tested so far
+(`cloud_file_with_customer`). One combination of the two variables was
+still untested — `fileName` together with `X-Customer`
+(`ems_fileName_with_customer`) — and is now the workflow default; the prior
+"stop permuting /emsapi/files" guidance below is superseded for this one
+remaining combination only, not reopened generally.
 The tested `/emsapi/files` representations have all failed on this tenant;
 that endpoint's upload wire contract remains unresolved for this tenant,
 which is not the same as calling the endpoint definitively broken. See
@@ -60,7 +66,9 @@ wrong — so it is now two separately named variants: `legacy_api_v1_raw_example
 `legacy_api_v1_cloud` (the Cloud-specific page for the same endpoint:
 `multipart/form-data`, sent via native FormData with the boundary left to
 `fetch`). Because this tenant IS ManageEngine Cloud, `legacy_api_v1_cloud`
-is tested first and is the workflow default; `legacy_api_v1_raw_example` is
+is the highest-priority untested legacy candidate, behind
+`ems_fileName_with_customer` above which is now the workflow default since
+it stays on the tenant's already-known endpoint; `legacy_api_v1_raw_example` is
 preserved for later since ManageEngine's own documentation is genuinely
 contradictory here. See `mdm-operations.md` for the exact citations,
 headers, and the explicit caveat that `legacy_api_v1_cloud`'s multipart

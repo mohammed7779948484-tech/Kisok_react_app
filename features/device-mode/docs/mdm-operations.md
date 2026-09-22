@@ -148,6 +148,11 @@ diagnostic exists to find out cheaply instead of by spending a full
   - `cloud_file_with_customer` — `/emsapi/files`, field `file`,
     `X-Customer: <tenant id>` added, everything else identical to
     `cloud_file`. OBSERVED to fail (406).
+  - `ems_fileName_with_customer` — `/emsapi/files`, field `fileName`,
+    `X-Customer: <tenant id>` added, everything else identical to
+    `legacy_fileName`. The one combination of field name and `X-Customer`
+    not yet tried together against this endpoint. The workflow's default.
+    NOT YET OBSERVED.
 
   **The legacy endpoint has TWO CONTRADICTORY documented representations,
   not one settled contract.** `POST /api/v1/mdm/files` is documented as the
@@ -167,8 +172,10 @@ diagnostic exists to find out cheaply instead of by spending a full
     the SAME endpoint: `multipart/form-data`,
     `content-disposition: filename=<file name>`, `Accept: application/json`.
     Because this tenant IS ManageEngine Cloud, this is the
-    highest-priority untested legacy candidate, and the workflow's
-    default. Sent via native `FormData` with `Content-Type` left UNSET —
+    highest-priority untested legacy candidate, behind
+    `ems_fileName_with_customer` which stays on the tenant's already-known
+    endpoint and data centre. Sent via native `FormData` with `Content-Type`
+    left UNSET —
     `fetch` generates `multipart/form-data; boundary=...` itself, which is
     how the documented `Content-Type: multipart/form-data` requirement is
     satisfied without a hand-set header omitting the boundary and
@@ -219,10 +226,11 @@ unresolved, and that is now being tested against a second endpoint.
 The upload, app creation and app update all remain **TENANT VALIDATION
 REQUIRED**: NOT YET OBSERVED to succeed against a real tenant. Do not treat
 any of them as proven until a real dispatch — diagnostic or release — shows
-it working live. In particular: do not claim `X-Customer` fixes the 406 (it
-does not — see attempt 4), and do not claim either
-`legacy_api_v1_raw_example` or `legacy_api_v1_cloud` works until a live
-dispatch of that specific variant proves it.
+it working live. In particular: do not claim `X-Customer` alone fixes the
+406 (it does not, with field `file` — see attempt 4), and do not claim
+`ems_fileName_with_customer`, `legacy_api_v1_raw_example` or
+`legacy_api_v1_cloud` works until a live dispatch of that specific variant
+proves it.
 
 Two consequences worth knowing:
 

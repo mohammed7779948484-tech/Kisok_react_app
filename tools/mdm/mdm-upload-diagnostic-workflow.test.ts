@@ -36,13 +36,13 @@ describe("the ManageEngine upload diagnostic workflow", () => {
     expect(triggers).toEqual(["workflow_dispatch"]);
   });
 
-  it("offers exactly the five variants under test, defaulting to the most informative untested one", () => {
+  it("offers exactly the six variants under test, defaulting to the most informative untested one", () => {
     const block = triggerBlock();
 
     expect(block).toMatch(
-      /options:\s*\n\s*- legacy_api_v1_cloud\s*\n\s*- legacy_api_v1_raw_example\s*\n\s*- cloud_file_with_customer\s*\n\s*- legacy_fileName\s*\n\s*- cloud_file/,
+      /options:\s*\n\s*- ems_fileName_with_customer\s*\n\s*- legacy_api_v1_cloud\s*\n\s*- legacy_api_v1_raw_example\s*\n\s*- cloud_file_with_customer\s*\n\s*- legacy_fileName\s*\n\s*- cloud_file/,
     );
-    expect(block).toContain("default: legacy_api_v1_cloud");
+    expect(block).toContain("default: ems_fileName_with_customer");
   });
 
   it("names the legacy endpoint the four /emsapi/files attempts have all failed to reach", () => {
