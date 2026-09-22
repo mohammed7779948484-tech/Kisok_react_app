@@ -69,6 +69,33 @@ answers about a different app than the one addressed, an app with no
 is always the same — an entry that cannot be judged could be ours, and treating
 it as absent is what creates a duplicate enterprise app.
 
+Status against a real tenant, precisely: a real release attempt OBSERVED the
+OAuth token exchange, the App Repository listing, and repository-absence
+detection all SUCCEED. That attempt's APK upload FAILED with HTTP 406 —
+its multipart body was hand-built (a manual boundary and `Content-Type`), and
+`POST /emsapi/files` rejected it. The upload now goes through Node's native
+`FormData`/`Blob`:
+
+- The multipart field key is exactly `file`, its value the APK bytes as a
+  `Blob` typed `application/vnd.android.package-archive`.
+- `Content-Type` is never set by hand — `fetch` generates
+  `multipart/form-data; boundary=...` and the matching framing itself. A
+  manually built boundary is what produced the 406 and must not return.
+- Headers are `Authorization: Zoho-oauthtoken <token>`, `Accept:
+application/json` and `Module: MDM_APP_MGMT`. No `X-Customer` header.
+- The upload response's `fileID` is a JSON STRING; the status endpoint's
+  `fileIDs` are STRINGS too — neither is ever run through `Number(...)` or
+  `parseInt(...)`, because ManageEngine ids can exceed
+  `Number.MAX_SAFE_INTEGER` and either call rounds a large id before it can be
+  used. Add/Update App's `app_file`, by contrast, is documented as a JSON
+  `long` — an unquoted integer literal, not a string — so it is emitted
+  through a small validated serialiser that inserts the exact decimal digits
+  rather than a JS number.
+
+This FormData path, and app creation and update, remain **TENANT VALIDATION
+REQUIRED**: NOT YET OBSERVED against a real tenant. Do not treat the upload as
+proven until the next real release workflow reaches the live tenant.
+
 Two consequences worth knowing:
 
 - **The order is verify, then upload.** An App Repository state the script

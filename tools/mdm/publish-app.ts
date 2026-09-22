@@ -48,11 +48,21 @@
  * (Android).
  *
  * ⚠️ TENANT VALIDATION REQUIRED. These contracts are taken from the vendor's
- * current Cloud API documentation, but no request has ever been made against a
- * real tenant, so nothing here has been OBSERVED. The first real dispatch is
- * the proof. Nothing guesses silently: an unrecognised response
- * shape, an entry that cannot be identified, or a repository whose App Details
- * carry no identity field all stop the run instead of mutating anything.
+ * current Cloud API documentation. Status, against a real tenant:
+ *
+ *   OBSERVED         — OAuth token exchange, App Repository listing, and
+ *                       repository-absence detection (all SUCCEEDED).
+ *   OBSERVED, FAILED  — the APK upload, when it hand-built the multipart body
+ *                       itself: `POST /emsapi/files` answered HTTP 406.
+ *   NOT YET OBSERVED — the APK upload now built with Node's native
+ *                       `FormData`/`Blob` (the fix for the 406), and both app
+ *                       creation and app update. The next real dispatch is
+ *                       the proof for these; nothing above claims otherwise.
+ *
+ * Nothing guesses silently: an unrecognised response shape, an entry that
+ * cannot be identified, a repository whose App Details carry no identity
+ * field, or an id this script cannot represent without precision loss all
+ * stop the run instead of mutating anything.
  *
  * No repository or npm imports: node builtins only, so it runs under Node's
  * native TypeScript type-stripping with plain `node`.
@@ -279,17 +289,66 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * ManageEngine's own documented long ids — `fileID` (and the status API's
+ * `file_id`), `app_id`, `release_label_id` — can exceed
+ * `Number.MAX_SAFE_INTEGER`. A plain `JSON.parse` already loses precision the
+ * moment such a value is tokenised into a JS number, before any code here
+ * runs, so these fields are recovered from the ORIGINAL source text via
+ * Node's `JSON.parse` reviver `context.source` rather than trusted as parsed
+ * numbers.
+ */
+const LOSSLESS_ID_FIELDS = new Set(["fileID", "file_id", "app_id", "release_label_id"]);
+
+/** A bare, non-negative decimal integer — no sign, no leading zero, no exponent. */
+function isDecimalId(value: string): boolean {
+  return /^(0|[1-9]\d*)$/.test(value);
+}
+
+/** The third argument Node's `JSON.parse` reviver receives. Not yet in `lib.d.ts`. */
+type JsonReviverContext = { source?: string };
+
+/**
+ * Parse a response body, recovering `LOSSLESS_ID_FIELDS` exactly.
+ *
+ * A safe integer is canonicalised to its decimal string so every id this
+ * script touches is a plain decimal string from this point on. An unsafe
+ * integer is recovered from `context.source` ONLY when that source is itself
+ * a plain decimal integer; anything else (no source, scientific notation, a
+ * fractional part) is left as the already-rounded JS number, which
+ * `readId` below then refuses rather than use.
+ */
 function tryParseJson(text: string): unknown {
   try {
-    return JSON.parse(text);
+    const parseWithSource = JSON.parse as unknown as (
+      input: string,
+      reviver: (key: string, value: unknown, context?: JsonReviverContext) => unknown,
+    ) => unknown;
+
+    return parseWithSource(text, (key, value, context) => {
+      if (!LOSSLESS_ID_FIELDS.has(key)) return value;
+      if (typeof value === "string") return value;
+      if (typeof value === "number") {
+        const source = context?.source;
+        if (typeof source === "string" && isDecimalId(source)) return source;
+        if (Number.isSafeInteger(value) && value >= 0) return String(value);
+      }
+      return value;
+    });
   } catch {
     return undefined;
   }
 }
 
+/**
+ * Accept an id ONLY when it can be represented without precision loss: a
+ * plain decimal string, or a JS number that is itself a safe non-negative
+ * integer. Never `Number(...)`/`parseInt(...)` — both silently round a value
+ * above `Number.MAX_SAFE_INTEGER` before it can be rejected.
+ */
 function readId(value: unknown): number | string | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value !== "") return value;
+  if (typeof value === "string" && isDecimalId(value)) return value;
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return value;
   return undefined;
 }
 
@@ -986,6 +1045,53 @@ async function verifyCandidates(
 }
 
 /**
+ * Validate a ManageEngine id and return it as a bare JSON integer literal.
+ * `app_file` is documented as a `long` on Add/Update App — an unquoted JSON
+ * number, not a string — so the id must land on the wire unquoted. Never
+ * `Number(...)`/`parseInt(...)`: both round an id above
+ * `Number.MAX_SAFE_INTEGER` before it could be serialised.
+ */
+function decimalIdLiteral(value: number | string, fieldName: string): string {
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      fail(`${fieldName} is not a safe non-negative integer`);
+    }
+    return String(value);
+  }
+  if (!isDecimalId(value)) {
+    fail(`${fieldName} is not a plain decimal id`);
+  }
+  return value;
+}
+
+/**
+ * The two ManageEngine mutation bodies, built explicitly rather than through
+ * `JSON.stringify` — that would round-trip `app_file` through a JS number and
+ * reintroduce the precision loss `decimalIdLiteral` exists to prevent.
+ * `JSON.stringify` is used only for the genuine string field, `app_name`.
+ */
+function buildCreateAppBody(appName: string, fileId: number | string): string {
+  return (
+    "{" +
+    `"app_name":${JSON.stringify(appName)},` +
+    `"app_type":${APP_TYPE_ENTERPRISE},` +
+    `"app_file":${decimalIdLiteral(fileId, "app_file")}` +
+    "}"
+  );
+}
+
+function buildUpdateAppBody(appName: string, fileId: number | string): string {
+  return (
+    "{" +
+    `"app_name":${JSON.stringify(appName)},` +
+    `"app_type":${APP_TYPE_ENTERPRISE},` +
+    `"app_file":${decimalIdLiteral(fileId, "app_file")},` +
+    `"force_update_in_label":true` +
+    "}"
+  );
+}
+
+/**
  * Run the pipeline. Returns a result rather than throwing, so the CLI owns
  * the exit code and the redaction of whatever is printed.
  */
@@ -1042,17 +1148,12 @@ export async function publish(inputs: PublishInputs, deps: PublishDeps): Promise
         {
           method: "PUT",
           headers: { ...authHeaders(token), "Content-Type": "application/json" },
-          body: JSON.stringify({
-            // The TENANT's own name, read back from App Details — not ours.
-            // `app_name` is documented-mandatory on this endpoint, so it must
-            // be sent; sending `inputs.appName` would quietly rename the app
-            // in the console on every release, because any package match is
-            // now updated regardless of what the operator called it.
-            app_name: match.appName,
-            app_type: APP_TYPE_ENTERPRISE,
-            app_file: fileId,
-            force_update_in_label: true,
-          }),
+          // The TENANT's own name, read back from App Details — not ours.
+          // `app_name` is documented-mandatory on this endpoint, so it must be
+          // sent; sending `inputs.appName` would quietly rename the app in the
+          // console on every release, because any package match is now
+          // updated regardless of what the operator called it.
+          body: buildUpdateAppBody(match.appName, fileId),
         },
         { allowEmptyBody: true },
       );
@@ -1068,11 +1169,7 @@ export async function publish(inputs: PublishInputs, deps: PublishDeps): Promise
     const created = (await request(deps, "the app creation", `${hosts.mdm}/api/v1/mdm/apps`, {
       method: "POST",
       headers: { ...authHeaders(token), "Content-Type": "application/json" },
-      body: JSON.stringify({
-        app_name: inputs.appName,
-        app_type: APP_TYPE_ENTERPRISE,
-        app_file: fileId,
-      }),
+      body: buildCreateAppBody(inputs.appName, fileId),
     })) as Record<string, unknown>;
 
     const appId = readId(created.app_id);

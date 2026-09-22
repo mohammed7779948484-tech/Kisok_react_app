@@ -1146,3 +1146,123 @@ npx jest tools/release        → 74 passed
 npx jest features/release-notes → 20 passed
 npx jest features/device-mode plugins → 46 passed
 ```
+
+## Round 11 — the first real release attempt, and the upload contract it broke
+
+A real release was attempted against the real US Cloud tenant. This is the
+first entry in this log that can say OBSERVED rather than TENANT VALIDATION
+REQUIRED for any ManageEngine call:
+
+```
+OAuth refresh-token exchange        → OBSERVED, SUCCEEDED
+App Repository listing              → OBSERVED, SUCCEEDED
+repository-absence detection        → OBSERVED, SUCCEEDED
+POST /emsapi/files (hand-built      → OBSERVED, FAILED
+  multipart body)                     HTTP 406 {"errorCode":"406",
+                                       "errorMsg":"Not Acceptable"}
+```
+
+The upload was rejected because the request body was assembled by hand — a
+manual `MULTIPART_BOUNDARY`, a hand-written `buildMultipartBody(...)`, and a
+manually set `Content-Type: multipart/form-data; boundary=...` header. That is
+gone. `uploadApk` now builds the request with Node's native `FormData` and
+`Blob`:
+
+```
+const form = new FormData();
+form.append("file", new Blob([bytes], { type: "application/vnd.android.package-archive" }), fileName);
+await request(..., { method: "POST", headers: { ...authHeaders(token), Module: "MDM_APP_MGMT" }, body: form });
+```
+
+`Content-Type` is never set by this script for that call — `fetch` generates
+`multipart/form-data; boundary=...` and the matching framing itself, which is
+exactly the class of bug a hand-rolled boundary can reintroduce. The multipart
+field name is exactly `file`, matching the documented contract; there is no
+`fileName` field and no `X-Customer` header.
+
+This fix has NOT itself been dispatched against a real tenant yet — it is
+NOT YET OBSERVED. Neither has app creation or app update. Only the four calls
+listed above carry OBSERVED status; everything downstream of the upload is
+still TENANT VALIDATION REQUIRED.
+
+### Large ManageEngine ids can exceed Number.MAX_SAFE_INTEGER
+
+The vendor's own current documentation shows ids (`fileID`, `app_id`,
+`release_label_id`) as large as `9007199254741080` — above
+`Number.MAX_SAFE_INTEGER` (`9007199254740991`). A plain `JSON.parse` already
+rounds such a value the moment it is tokenised, before any code here runs, and
+`Number(...)`/`parseInt(...)` on a string id would do the same. Both are now
+refused by construction:
+
+- `tryParseJson` recovers `fileID`, `file_id`, `app_id` and `release_label_id`
+  from the ORIGINAL response text, via the `context.source` a Node `JSON.parse`
+  reviver receives (confirmed present on this environment's Node `v22.22.2` —
+  see the `node -e` check below; Node 24, which the release workflow runs,
+  carries the same support). A safe integer is
+  canonicalised to its decimal string; an unsafe one is accepted ONLY when its
+  exact source text is a plain decimal integer, and refused otherwise.
+- `readId` now accepts only a plain decimal string or a JS number that is
+  itself a safe non-negative integer — never a rounded unsafe number.
+- `app_file` is documented as a `long` on Add/Update App — an unquoted JSON
+  integer, not a string — so it can never be produced by
+  `JSON.stringify({..., app_file: fileId})`, which would either round the id
+  (a JS number) or wrongly quote it (a JS string). The two mutation bodies are
+  now built by a small explicit serialiser, `decimalIdLiteral`, that validates
+  the id and inserts its exact digits unquoted.
+- The file-status endpoint is UNCHANGED: `fileIDs` are still sent as decimal
+  strings (`JSON.stringify({ fileIDs: [String(fileId)] })`), because that is
+  what the status API documents.
+
+```
+node -e '
+let exact;
+JSON.parse(
+  "{\"app_id\":9007199254741080}",
+  (key, value, context) => { if (key === "app_id") exact = context?.source; return value; },
+);
+console.log(process.version, exact);
+if (exact !== "9007199254741080") process.exit(1);
+'
+→ v22.22.2 9007199254741080   (exit 0 — this environment's Node already
+  supports reviver source access; nothing here depends on Node 24 alone)
+```
+
+### Regression tests added
+
+`tools/mdm/publish-app.test.ts` — 8 new cases, none touching the network:
+
+```
+uploads the APK as native FormData with exactly one 'file' field
+sends the documented upload headers, with no manual Content-Type / X-Customer
+sends the CREATE body with exactly app_name, app_type, app_file
+serialises a large fileID in the CREATE body as an unquoted JSON long
+serialises a large fileID in the UPDATE body the same way
+recovers an UNQUOTED app_id above MAX_SAFE_INTEGER exactly, from raw response text
+fails closed when a returned id above MAX_SAFE_INTEGER has no recoverable decimal source
+polls file status with the fileID as a STRING, never renumbered
+```
+
+The sixth of those needed a small harness change: `fakeFetch` can now answer a
+route with `rawText` instead of `body`, because a JS numeric literal above
+`Number.MAX_SAFE_INTEGER` is already rounded by the time it could be
+`JSON.stringify`'d from a test fixture object — the raw-text route sends the
+server's exact wire bytes instead.
+
+### Round 11 gate
+
+```
+npx jest tools/mdm/publish-app.test.ts --runInBand → 64 passed
+pnpm typecheck   → PASS
+pnpm lint        → PASS
+pnpm format:check → PASS
+```
+
+Not claimed: that the ManageEngine upload, create, or update now WORK against
+the real tenant. Only that the 406-causing defect (a hand-built multipart
+body) is fixed, ids are now handled losslessly end to end, and the wire
+contract is pinned by tests. The next real release workflow dispatch against
+the live tenant is still the proof.
+
+```
+
+```

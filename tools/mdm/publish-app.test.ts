@@ -280,7 +280,9 @@ describe("identity — established from label-scoped App Details", () => {
 
 type Call = { url: string; method: string; body?: unknown; headers: Record<string, string> };
 
-function fakeFetch(routes: Record<string, () => { status: number; body: unknown }>) {
+type FakeRoute = { status: number; body?: unknown; rawText?: string };
+
+function fakeFetch(routes: Record<string, () => FakeRoute>) {
   const calls: Call[] = [];
   const fetchLike: FetchLike = async (url, init) => {
     calls.push({
@@ -302,11 +304,15 @@ function fakeFetch(routes: Record<string, () => { status: number; body: unknown 
       return routeMethod === method && pathname === routePath;
     });
     if (!key) throw new Error(`unexpected ${method} request: ${url}`);
-    const { status, body } = routes[key]!();
+    const { status, body, rawText } = routes[key]!();
     return {
       ok: status >= 200 && status < 300,
       status,
-      text: async () => (body === undefined ? "" : JSON.stringify(body)),
+      // `rawText`, when given, is sent verbatim — the only way to put a
+      // numeric literal above Number.MAX_SAFE_INTEGER on the wire, since a JS
+      // source literal that large is already rounded before JSON.stringify
+      // ever sees it.
+      text: async () => rawText ?? (body === undefined ? "" : JSON.stringify(body)),
     };
   };
   return { fetchLike, calls };
@@ -321,7 +327,7 @@ const TOKEN_ROUTE = {
   }),
 };
 
-function deps(routes: Record<string, () => { status: number; body: unknown }>) {
+function deps(routes: Record<string, () => FakeRoute>) {
   const { fetchLike, calls } = fakeFetch({ ...TOKEN_ROUTE, ...routes });
   return {
     calls,
@@ -1078,4 +1084,197 @@ it("in dry-run mode with the app PRESENT it reads label-scoped details but never
   expect(calls.some((c) => c.url.includes("/emsapi/"))).toBe(false);
   expect(calls.filter((c) => c.method === "PUT")).toHaveLength(0);
   expect(calls.some((c) => c.method === "POST" && c.url.includes("/api/v1/mdm/apps"))).toBe(false);
+});
+
+// ---------------------------------------------------------------------------
+// The hardened wire contract: native FormData upload, and lossless ids.
+// ---------------------------------------------------------------------------
+
+const CREATE_ROUTE = "POST /api/v1/mdm/apps";
+
+it("uploads the APK as native FormData with exactly one 'file' field, never a hand-built body", async () => {
+  const { deps: d, calls } = deps({
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: 42, fileStatus: 2 } }),
+    "GET /api/v1/mdm/apps": () => ({ status: 200, body: { apps: [] } }),
+    [CREATE_ROUTE]: () => ({ status: 200, body: { app_id: 101 } }),
+  });
+
+  const result = await publish(INPUTS, d);
+
+  expect(result.ok).toBe(true);
+  const upload = calls.find((c) => c.method === "POST" && c.url.endsWith("/emsapi/files"))!;
+  expect(upload.body).toBeInstanceOf(FormData);
+  const form = upload.body as FormData;
+
+  const fieldNames: string[] = [];
+  form.forEach((_value, key) => fieldNames.push(key));
+  expect(fieldNames).toEqual(["file"]);
+  expect(form.has("fileName")).toBe(false);
+
+  const value = form.get("file");
+  expect(value).toBeInstanceOf(Blob);
+  const file = value as File;
+  expect(file.type).toBe("application/vnd.android.package-archive");
+  expect(file.name).toBe("app-release.apk");
+  expect(new Uint8Array(await file.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+});
+
+it("sends the documented upload headers, with no manual Content-Type and no X-Customer", async () => {
+  const { deps: d, calls } = deps({
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: 42, fileStatus: 2 } }),
+    "GET /api/v1/mdm/apps": () => ({ status: 200, body: { apps: [] } }),
+    [CREATE_ROUTE]: () => ({ status: 200, body: { app_id: 101 } }),
+  });
+
+  await publish(INPUTS, d);
+
+  const upload = calls.find((c) => c.method === "POST" && c.url.endsWith("/emsapi/files"))!;
+  expect(upload.headers.Authorization).toBe("Zoho-oauthtoken 1000.accesstokenfixture.value");
+  expect(upload.headers.Accept).toBe("application/json");
+  expect(upload.headers.Module).toBe("MDM_APP_MGMT");
+
+  const lowerKeys = Object.keys(upload.headers).map((k) => k.toLowerCase());
+  expect(lowerKeys).not.toContain("content-type");
+  expect(lowerKeys).not.toContain("x-customer");
+});
+
+it("sends the CREATE body with exactly app_name, app_type, app_file — no extra fields", async () => {
+  const { deps: d, calls } = deps({
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: 42, fileStatus: 2 } }),
+    "GET /api/v1/mdm/apps": () => ({ status: 200, body: { apps: [] } }),
+    [CREATE_ROUTE]: () => ({ status: 200, body: { app_id: 101 } }),
+  });
+
+  await publish(INPUTS, d);
+
+  const create = calls.find((c) => c.method === "POST" && c.url.endsWith("/api/v1/mdm/apps"))!;
+  expect(create.body).toBe('{"app_name":"KISOK","app_type":2,"app_file":42}');
+});
+
+it("serialises a large fileID in the CREATE body as an unquoted JSON long, never a string", async () => {
+  // ManageEngine's own upload response already carries fileID as a JSON
+  // STRING, so this needs no raw-text fixture — the regression is purely
+  // about how app_file is re-serialised on the way OUT.
+  const { deps: d, calls } = deps({
+    "POST /emsapi/files": () => ({
+      status: 200,
+      body: { fileID: "9007199254741056", fileStatus: 2 },
+    }),
+    "GET /api/v1/mdm/apps": () => ({ status: 200, body: { apps: [] } }),
+    [CREATE_ROUTE]: () => ({ status: 200, body: { app_id: 101 } }),
+  });
+
+  const result = await publish(INPUTS, d);
+
+  expect(result.ok).toBe(true);
+  const create = calls.find((c) => c.method === "POST" && c.url.endsWith("/api/v1/mdm/apps"))!;
+  expect(create.body).toContain('"app_file":9007199254741056');
+  expect(create.body).not.toContain('"app_file":"9007199254741056"');
+});
+
+it("serialises a large fileID in the UPDATE body the same way, alongside force_update_in_label", async () => {
+  const { deps: d, calls } = deps({
+    "GET /api/v1/mdm/apps": () => ({
+      status: 200,
+      body: { apps: [{ app_id: 55, app_name: "KISOK", release_labels: [STABLE_LABEL] }] },
+    }),
+    "GET /api/v1/mdm/apps/55/labels/9": () => ({
+      status: 200,
+      body: {
+        app_id: 55,
+        app_name: "KISOK",
+        app_type: 2,
+        bundle_identifier: "com.kisok.kiosk",
+        platform_type: 2,
+      },
+    }),
+    "POST /emsapi/files": () => ({
+      status: 200,
+      body: { fileID: "9007199254741056", fileStatus: 2 },
+    }),
+    "PUT /api/v1/mdm/apps/55/labels/9": () => ({ status: 200, body: { status: "ok" } }),
+  });
+
+  const result = await publish(INPUTS, d);
+
+  expect(result.ok).toBe(true);
+  const put = calls.find((c) => c.method === "PUT")!;
+  expect(put.body).toContain('"app_file":9007199254741056');
+  expect(put.body).not.toContain('"app_file":"9007199254741056"');
+  expect(put.body).toContain('"force_update_in_label":true');
+});
+
+it("recovers an UNQUOTED app_id above Number.MAX_SAFE_INTEGER exactly, from the raw response text", async () => {
+  // A JS numeric literal this large is already rounded by the time it could
+  // be JSON.stringify'd from a test fixture object, so this is the one case
+  // that needs the raw-text route: it is the server's wire bytes, not a JS
+  // value that passed through a JS number first.
+  const { deps: d } = deps({
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: 42, fileStatus: 2 } }),
+    "GET /api/v1/mdm/apps": () => ({ status: 200, body: { apps: [] } }),
+    [CREATE_ROUTE]: () => ({ status: 200, rawText: '{"app_id":9007199254741080}' }),
+  });
+
+  const result = await publish(INPUTS, d);
+
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  // The rounded double (9007199254741080 as a Number) must never appear in
+  // place of the exact source digits.
+  expect(result.detail).toContain("app_id 9007199254741080");
+});
+
+it("fails closed rather than mutate when a returned id above MAX_SAFE_INTEGER has no recoverable decimal source", async () => {
+  // A fractional literal is valid JSON but not a plain decimal integer, so
+  // the source-recovery guard refuses it — this stands in for "the runtime
+  // handed back an already-rounded unsafe number with no way to prove what it
+  // should have been", which must never be used to construct a request.
+  const { deps: d, calls } = deps({
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: 42, fileStatus: 2 } }),
+    "GET /api/v1/mdm/apps": () => ({ status: 200, body: { apps: [] } }),
+    [CREATE_ROUTE]: () => ({ status: 200, rawText: '{"app_id":9007199254741080.0}' }),
+  });
+
+  const result = await publish(INPUTS, d);
+
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.failure).toContain("app_id");
+  expect(result.failure).toContain("failing closed");
+  // Nothing was retried or mutated further off the unusable id.
+  expect(calls.filter((c) => c.method === "PUT")).toHaveLength(0);
+});
+
+it("polls file status with the fileID as a STRING, never renumbered", async () => {
+  let statusCalls = 0;
+  const { deps: d, calls } = deps({
+    "POST /emsapi/files": () => ({
+      status: 200,
+      body: { fileID: "9007199254741056", fileStatus: 1 },
+    }),
+    "POST /emsapi/fileupload/status": () => {
+      statusCalls += 1;
+      return {
+        status: 200,
+        body: {
+          response: [
+            {
+              file_id: "9007199254741056",
+              file_availability_status: statusCalls < 2 ? 1 : 2,
+            },
+          ],
+        },
+      };
+    },
+    "GET /api/v1/mdm/apps": () => ({ status: 200, body: { apps: [] } }),
+    [CREATE_ROUTE]: () => ({ status: 200, body: { app_id: 101 } }),
+  });
+
+  const result = await publish(INPUTS, d);
+
+  expect(result.ok).toBe(true);
+  const status = calls.find(
+    (c) => c.method === "POST" && c.url.endsWith("/emsapi/fileupload/status"),
+  )!;
+  expect(status.body).toBe('{"fileIDs":["9007199254741056"]}');
 });

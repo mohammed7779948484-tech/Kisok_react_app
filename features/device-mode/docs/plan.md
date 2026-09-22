@@ -26,9 +26,13 @@ App requires only `app_name`, `app_type` and `app_file`. See
 This environment's egress policy blocks `www.manageengine.com`, so those
 contracts were verified outside it and supplied to the implementation rather
 than read here. That changes what is still open: the contracts themselves are
-no longer in question, but **no request has ever been made against the real
-tenant**, so every ManageEngine call remains **TENANT VALIDATION REQUIRED** —
-the first `dry_run` dispatch is the proof.
+no longer in question, and a real release attempt has since OBSERVED the OAuth
+token exchange, the App Repository listing, and repository-absence detection
+all SUCCEED. That same attempt's APK upload — a hand-built multipart body —
+was OBSERVED to FAIL with HTTP 406; the upload now goes through Node's native
+`FormData`/`Blob` instead (see `mdm-operations.md`). That fix, and both app
+creation and app update, remain **TENANT VALIDATION REQUIRED**: NOT YET
+OBSERVED against a real tenant. The next real dispatch is the proof.
 
 ## Design decisions
 
