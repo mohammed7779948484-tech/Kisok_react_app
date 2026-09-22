@@ -28,11 +28,18 @@ contracts were verified outside it and supplied to the implementation rather
 than read here. That changes what is still open: the contracts themselves are
 no longer in question, and a real release attempt has since OBSERVED the OAuth
 token exchange, the App Repository listing, and repository-absence detection
-all SUCCEED. That same attempt's APK upload — a hand-built multipart body —
-was OBSERVED to FAIL with HTTP 406; the upload now goes through Node's native
-`FormData`/`Blob` instead (see `mdm-operations.md`). That fix, and both app
-creation and app update, remain **TENANT VALIDATION REQUIRED**: NOT YET
-OBSERVED against a real tenant. The next real dispatch is the proof.
+all SUCCEED. **Two** separate live upload attempts have since both FAILED with
+the same HTTP 406 on `POST /emsapi/files`: a hand-built multipart body, and
+then Node's native `FormData`/`Blob` sending the field as `file`. The second
+attempt disproves the working theory that a hand-built multipart body was the
+cause — do not repeat that claim; see `mdm-operations.md` for what is and is
+not held constant across both failures. A small temporary diagnostic
+(`.github/workflows/mdm-upload-diagnostic.yml`, `tools/mdm/probe-upload.ts`)
+now isolates the remaining candidate — the multipart field name — one
+representation per dispatch, against an already-verified APK artifact rather
+than a fresh ~16-minute build. The upload, app creation and app update all
+remain **TENANT VALIDATION REQUIRED**: NOT YET OBSERVED to succeed against a
+real tenant. The next real dispatch — diagnostic or release — is the proof.
 
 ## Design decisions
 

@@ -71,30 +71,54 @@ it as absent is what creates a duplicate enterprise app.
 
 Status against a real tenant, precisely: a real release attempt OBSERVED the
 OAuth token exchange, the App Repository listing, and repository-absence
-detection all SUCCEED. That attempt's APK upload FAILED with HTTP 406 —
-its multipart body was hand-built (a manual boundary and `Content-Type`), and
-`POST /emsapi/files` rejected it. The upload now goes through Node's native
-`FormData`/`Blob`:
+detection all SUCCEED. Then TWO separate live upload attempts have both
+FAILED with the same `HTTP 406 {"errorCode":"406","errorMsg":"Not
+Acceptable"}` on `POST /emsapi/files`:
 
-- The multipart field key is exactly `file`, its value the APK bytes as a
-  `Blob` typed `application/vnd.android.package-archive`.
-- `Content-Type` is never set by hand — `fetch` generates
-  `multipart/form-data; boundary=...` and the matching framing itself. A
-  manually built boundary is what produced the 406 and must not return.
-- Headers are `Authorization: Zoho-oauthtoken <token>`, `Accept:
-application/json` and `Module: MDM_APP_MGMT`. No `X-Customer` header.
-- The upload response's `fileID` is a JSON STRING; the status endpoint's
-  `fileIDs` are STRINGS too — neither is ever run through `Number(...)` or
-  `parseInt(...)`, because ManageEngine ids can exceed
-  `Number.MAX_SAFE_INTEGER` and either call rounds a large id before it can be
-  used. Add/Update App's `app_file`, by contrast, is documented as a JSON
-  `long` — an unquoted integer literal, not a string — so it is emitted
-  through a small validated serialiser that inserts the exact decimal digits
-  rather than a JS number.
+1. A hand-built multipart body (a manual boundary and `Content-Type`) → 406.
+2. Node's native `FormData`/`Blob`, field name `file`, no manual
+   `Content-Type`, no `X-Customer` → 406, identical error.
 
-This FormData path, and app creation and update, remain **TENANT VALIDATION
-REQUIRED**: NOT YET OBSERVED against a real tenant. Do not treat the upload as
-proven until the next real release workflow reaches the live tenant.
+**Do not claim the hand-built multipart body was the cause.** That was the
+working theory after attempt 1, and it is now disproven: attempt 2 removed
+every characteristic of a hand-rolled request — the boundary, the
+`Content-Type` header, all of it — and the tenant rejected it exactly the
+same way. Something else about the request is what the tenant is rejecting,
+and it is not yet known what.
+
+What is held constant across both failures, and therefore not (yet) a
+suspect on their own: the endpoint (`/emsapi/files`), host
+(`mdm.manageengine.com`), `Module: MDM_APP_MGMT`, `Accept: application/json`,
+no `X-Customer` header, the OAuth token, and the tenant.
+
+The production publisher (`tools/mdm/publish-app.ts`) still sends attempt
+2's shape — native `FormData`, field `file` — because it is not yet known
+what would work better, and there is no evidence to change it to. A separate,
+temporary diagnostic exists to find out cheaply instead of by spending a full
+~16-minute release run per guess:
+
+- `.github/workflows/mdm-upload-diagnostic.yml` (manual dispatch) downloads
+  an already-verified production APK artifact rather than rebuilding one, and
+  sends it to `/emsapi/files` under exactly one representation per run.
+- `tools/mdm/probe-upload.ts` is the standalone script it runs. It isolates
+  ONE variable at a time — currently the multipart field name, `file`
+  (`cloud_file`, matching the current publisher and the Cloud-specific docs)
+  vs `fileName` (`legacy_fileName`, matching a contradictory ManageEngine
+  example). It authenticates, optionally confirms repository read access, and
+  performs exactly one upload — it NEVER calls app creation or update, even
+  on a successful upload, so a stray probe cannot mutate the App Repository.
+- `X-Customer` is deliberately NOT being tried yet: this tenant is a standard
+  non-MSP Cloud tenant, and guessing a customer id would mix two variables in
+  one probe.
+
+Everything below in this section — App Details, Stable label selection, the
+create/update bodies, the lossless id handling — is unaffected by the 406 and
+remains correct; only the upload's wire shape is in question.
+
+The upload, app creation and app update all remain **TENANT VALIDATION
+REQUIRED**: NOT YET OBSERVED to succeed against a real tenant. Do not treat
+any of them as proven until a real dispatch — diagnostic or release — shows
+it working live.
 
 Two consequences worth knowing:
 

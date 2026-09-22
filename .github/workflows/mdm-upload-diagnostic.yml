@@ -1,0 +1,140 @@
+name: ManageEngine upload diagnostic
+
+# MANUAL, ISOLATED PROBE — not the release pipeline. It builds nothing, signs
+# nothing, and never creates or updates the ManageEngine enterprise app; its
+# only job is to answer one question — which multipart field name the live
+# tenant's `POST /emsapi/files` accepts — using an already-verified
+# production APK artifact, so each attempt costs seconds instead of the
+# ~16 minutes a full Android build-and-release run takes.
+#
+# Two real-tenant attempts have already both failed with HTTP 406 on that
+# endpoint (a hand-built multipart body, then Node's native FormData sending
+# the field as `file`), so the working wire shape is not yet known. This
+# workflow isolates exactly ONE variable per run — the field name — with
+# every other header and body characteristic held constant.
+#
+# One run = one HTTP upload representation. Do not dispatch it to try
+# several variants "just to see" in one go: a run that happens to succeed
+# leaves a temporary file behind in the tenant's App Repository, and running
+# more than one variant per dispatch would make it unclear which one the
+# tenant actually accepted.
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: "Which multipart field name to send the APK under"
+        type: choice
+        options:
+          - legacy_fileName
+          - cloud_file
+        # cloud_file (field `file`) is the production publisher's own shape
+        # and has already failed live, so it adds little as a first probe.
+        default: legacy_fileName
+      run_id:
+        description: "Workflow run ID to download the verified kisok-release-apk artifact from"
+        type: string
+        default: "35535503611"
+
+# Least privilege: read the repository, and read this run's own Actions
+# artifacts (required for actions/download-artifact to fetch a DIFFERENT
+# run's artifact within this same repository). Nothing broader.
+permissions:
+  contents: read
+  actions: read
+
+# SERIALIZED: two probes racing each other against the same tenant would
+# make it unclear which response belongs to which variant.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Probe the ManageEngine upload contract
+    runs-on: ubuntu-latest
+    # The ManageEngine credentials live in this environment (see
+    # mdm-operations.md) — read-only here, exactly as the release workflow
+    # uses them, and nothing else from it.
+    environment: android-release
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # FAIL CLOSED immediately, before spending the artifact download or any
+      # network call. Only NAMES are ever printed.
+      - name: Check every required secret is present (fail closed)
+        env:
+          MDM_CLIENT_ID: ${{ secrets.MDM_CLIENT_ID }}
+          MDM_CLIENT_SECRET: ${{ secrets.MDM_CLIENT_SECRET }}
+          MDM_REFRESH_TOKEN: ${{ secrets.MDM_REFRESH_TOKEN }}
+        run: |
+          missing=0
+          for name in MDM_CLIENT_ID MDM_CLIENT_SECRET MDM_REFRESH_TOKEN; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not set. This diagnostic refuses to run without all three."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      # A previously verified production build, NOT rebuilt here. Its
+      # package identity, version, production Supabase config and signing
+      # certificate were already independently confirmed when run
+      # ${{ inputs.run_id }} produced it — see features/device-mode/docs/worklog.md.
+      - name: Download the verified production APK artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: kisok-release-apk
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.run_id }}
+          path: ${{ runner.temp }}/mdm-probe-apk
+
+      # Locate the APK robustly rather than assuming a fixed path: v7 of
+      # download-artifact extracts a single named artifact directly into
+      # `path`, but this does not assume that shape blindly.
+      - name: Locate the downloaded APK
+        id: locate
+        run: |
+          apk="$(find "${{ runner.temp }}/mdm-probe-apk" -iname '*.apk' -type f | head -n1)"
+          if [ -z "$apk" ]; then
+            echo "::error::No .apk file found under ${{ runner.temp }}/mdm-probe-apk after downloading run ${{ inputs.run_id }}'s kisok-release-apk artifact."
+            find "${{ runner.temp }}/mdm-probe-apk"
+            exit 1
+          fi
+          if [ ! -s "$apk" ]; then
+            echo "::error::$apk is empty."
+            exit 1
+          fi
+          size="$(stat -c%s "$apk" 2>/dev/null || stat -f%z "$apk")"
+          echo "apk_path=$apk" >> "$GITHUB_OUTPUT"
+          echo "located APK: $apk ($size bytes) from run ${{ inputs.run_id }}, artifact kisok-release-apk"
+
+      # Cheap, best-effort confirmation only — never rebuilds Android. A
+      # missing aapt2 on the runner image does not fail the probe.
+      - name: Report package identity via aapt2, if available
+        continue-on-error: true
+        run: |
+          aapt2="$(find "$ANDROID_HOME/build-tools" -name aapt2 -type f 2>/dev/null | sort -V | tail -n1)"
+          if [ -z "$aapt2" ]; then
+            echo "aapt2 not found on this runner image — skipping (not required for the probe)"
+            exit 0
+          fi
+          "$aapt2" dump badging "${{ steps.locate.outputs.apk_path }}" \
+            | grep -E "^package:|versionCode|versionName" || true
+
+      - name: Probe the ManageEngine upload contract
+        env:
+          MDM_CLIENT_ID: ${{ secrets.MDM_CLIENT_ID }}
+          MDM_CLIENT_SECRET: ${{ secrets.MDM_CLIENT_SECRET }}
+          MDM_REFRESH_TOKEN: ${{ secrets.MDM_REFRESH_TOKEN }}
+          MDM_DATA_CENTRE: ${{ vars.MDM_DATA_CENTRE || 'us' }}
+        run: |
+          node tools/mdm/probe-upload.ts \
+            --apk "${{ steps.locate.outputs.apk_path }}" \
+            --variant "${{ inputs.variant }}"

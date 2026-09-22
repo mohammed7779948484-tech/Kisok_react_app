@@ -1258,11 +1258,124 @@ pnpm format:check → PASS
 ```
 
 Not claimed: that the ManageEngine upload, create, or update now WORK against
-the real tenant. Only that the 406-causing defect (a hand-built multipart
-body) is fixed, ids are now handled losslessly end to end, and the wire
-contract is pinned by tests. The next real release workflow dispatch against
-the live tenant is still the proof.
+the real tenant. Only that a hand-built multipart body is gone, ids are now
+handled losslessly end to end, and the wire contract is pinned by tests. The
+next real release workflow dispatch against the live tenant is still the
+proof.
+
+⚠️ **Correction (Round 12): the sentence above originally claimed the
+hand-built multipart body WAS the 406-causing defect. That is disproven —
+see Round 12.** Native FormData was a reasonable next thing to try, not a
+confirmed fix, and it should have been recorded that way.
+
+## Round 12 — a second live 406 disproves the working theory, and a diagnostic probe
+
+The Round 11 fix (native `FormData`, field `file`) was dispatched against the
+real tenant for the first time: Android release run #5
+(`35677325769`, `main@440e1dadd2066c2fca75a6c0ae49ca93b53972b3`). Everything
+up to and including the signed, verified APK succeeded — production Supabase
+config, Node 24, Java 17, prebuild, the Gradle release build, signing,
+package identity, version, the certificate pin, the embedded JS bundle, all
+OBSERVED SUCCEEDED. `POST /emsapi/files` answered:
 
 ```
+HTTP 406
+{"errorCode":"406","errorMsg":"Not Acceptable"}
+```
+
+The SAME error as attempt 1. That disproves the theory Round 11 recorded:
+attempt 2 removed every characteristic of a hand-rolled multipart request —
+the manual boundary, the manual `Content-Type` — and the tenant rejected it
+identically. Something else about the request is what the tenant is
+rejecting; it is not yet known what. What is held constant across both
+failures, and therefore not a standalone suspect: the endpoint
+(`/emsapi/files`), host (`mdm.manageengine.com`), `Module: MDM_APP_MGMT`,
+`Accept: application/json`, no `X-Customer`, the OAuth token, the tenant.
+
+Neither attempt has reached `fileID`, `/emsapi/fileupload/status`,
+`POST /api/v1/mdm/apps`, or app create/update. The Round 11 64-bit id
+hardening is untouched by this finding and stays as-is — nothing here
+implicates it.
+
+### The diagnostic problem: ~16 minutes per guess is too slow
+
+A full release run rebuilds and signs Android before it ever reaches the
+upload, so testing the next candidate wire shape the same way costs a full
+build cycle per attempt. `tools/mdm/publish-app.ts` was deliberately NOT
+touched this round — there is no live evidence yet for what to change it to,
+and guessing again inside the production publisher would just be a third
+untested attempt wearing the same build cost.
+
+Instead: `.github/workflows/mdm-upload-diagnostic.yml` (manual dispatch) plus
+a new standalone script, `tools/mdm/probe-upload.ts`. The workflow downloads
+an already-verified production APK artifact with
+`actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131` (pinned
+v7.0.0, matching this repo's existing SHA-pinning convention) rather than
+rebuilding one, locates the `.apk` with `find` rather than assuming a fixed
+path, and runs the probe. One dispatch = one upload representation, chosen by
+a `variant` input:
+
+- `cloud_file` — field `file`, matching the current publisher and the
+  Cloud-specific docs. Already OBSERVED to fail (this is what shipped in
+  run #5), so it is not the useful first thing to try again.
+- `legacy_fileName` — field `fileName`, matching a contradictory ManageEngine
+  example. NOT YET OBSERVED. **Default**, and the recommended first dispatch.
+
+`probe-upload.ts` is deliberately standalone — it duplicates a few small
+pieces of `publish-app.ts` (secret redaction, data-centre hosts, the
+token-exchange body) rather than importing from it, so this temporary probe
+can never change the production publisher's behaviour by accident, and
+`publish-app.ts` stays untouched until a variant is proven live. It:
+
+- authenticates and optionally confirms repository read access
+  (`repository read: HTTP <status>`, nothing else printed from that call),
+- sends exactly one multipart representation to `/emsapi/files`,
+- reports status, content-type, and — ONLY on a non-2xx response — the
+  (capped) response body; a 2xx body is never dumped raw, because it would
+  contain the real `fileID`,
+- on success, reports the `fileID` REDACTED (`9007...1056`, never the whole
+  value), `fileStatus`, and stops,
+- NEVER calls `POST /api/v1/mdm/apps` or the `/labels/` update endpoint,
+  whatever the upload result — pinned by a test that scans the script's own
+  source for either call.
+
+`X-Customer` is deliberately NOT tried yet — this is a standard non-MSP Cloud
+tenant, and mixing it with the field-name change in one probe would leave
+two variables changed at once if a run happened to succeed.
+
+### Tests added
+
+`tools/mdm/probe-upload.test.ts` (19 cases) and
+`tools/mdm/mdm-upload-diagnostic-workflow.test.ts` (9 cases, workflow text
+assertions in the same style as `tools/release/release-workflow.test.ts`).
+One test caught a real bug before it shipped: an early draft dumped the raw
+2xx response body unconditionally, which would have printed the unredacted
+`fileID` on a successful probe — fixed to dump the raw body only on failure.
 
 ```
+npx jest tools/mdm --runInBand → 3 suites, 92 passed
+pnpm typecheck    → PASS
+pnpm lint         → PASS
+pnpm format:check → PASS
+pnpm check:ci-scripts → PASS (5 workflows, 10 checks)
+node -e (js-yaml) → all 5 workflow files parse
+```
+
+`git diff --stat -- tools/mdm/publish-app.ts` → empty. The production
+publisher is untouched by this round.
+
+### Round 12 gate
+
+```
+npx jest tools/mdm --runInBand → 92 passed
+pnpm typecheck    → PASS
+pnpm lint         → PASS
+pnpm format:check → PASS
+pnpm check:ci-scripts → PASS
+```
+
+Not claimed: that `legacy_fileName`, or any variant, is correct. Only that
+two representations have now failed identically, that a hand-built multipart
+body is disproven as the sole cause, and that a cheap, isolated, audited way
+to test the next candidate now exists. The recommended next step is one
+dispatch of `mdm-upload-diagnostic.yml` with `variant: legacy_fileName`.
