@@ -148,32 +148,53 @@ diagnostic exists to find out cheaply instead of by spending a full
   - `cloud_file_with_customer` — `/emsapi/files`, field `file`,
     `X-Customer: <tenant id>` added, everything else identical to
     `cloud_file`. OBSERVED to fail (406).
-  - `legacy_api_v1_files` — a DIFFERENT endpoint entirely:
-    `POST /api/v1/mdm/files`, which current Cloud API documentation
-    describes as the deprecated predecessor `/emsapi/files` replaced (search
-    result summary of
-    `https://www.manageengine.com/mobile-device-management/api/files/`,
-    "Files" page — direct fetch of that page is blocked from this
-    environment's egress policy, so the implementation follows the search
-    result's quoted Python example verbatim rather than guessing). Its
-    documented contract is a RAW POST of the file bytes — no multipart, no
-    boundary — with headers `Authorization: Zoho-oauthtoken <token>`,
+
+  **The legacy endpoint has TWO CONTRADICTORY documented representations,
+  not one settled contract.** `POST /api/v1/mdm/files` is documented as the
+  predecessor `/emsapi/files` replaced, and ManageEngine currently publishes
+  two different request shapes for it. Each is its own named variant,
+  deliberately, rather than one ambiguous "legacy" variant that would hide
+  which contract is under test:
+  - `legacy_api_v1_raw_example` — Representation A, a general
+    (non-Cloud-specific) API example: a RAW POST of the file bytes — no
+    multipart, no boundary — with `Authorization: Zoho-oauthtoken <token>`,
     `content-type: application/json` (exactly as documented, unusual as
-    that is for a binary body) and
-    `content-disposition: filename=<file name>`. No `Module` header and no
-    `X-Customer` appear in that documented example, so this variant sends
-    neither and does not require `MDM_CUSTOMER_ID`. The response is
-    documented to carry `file_id`, `content_type`, `file_name`,
-    `expiry_time`, `content_length` in one shot — no separate status-poll
-    step is documented, unlike `/emsapi/files`'s `fileStatus`/
-    `/emsapi/fileupload/status`. `file_id` can exceed
-    `Number.MAX_SAFE_INTEGER`, so it is parsed with the same lossless
-    source-recovery strategy `tools/mdm/publish-app.ts` uses (duplicated
-    locally, not imported). Goal: determine whether this older Cloud upload
-    endpoint remains functional for this tenant while `/emsapi/files`
-    consistently returns 406. NOT YET OBSERVED — if it succeeds, that
-    justifies a separate, later decision about the production publisher; it
-    is not pre-committed here.
+    that is for a binary body — followed rather than "corrected") and
+    `content-disposition: filename=<file name>`. No `Accept`, no `Module`,
+    no `X-Customer` in that documented example, so this variant sends none
+    of them and does not require `MDM_CUSTOMER_ID`. NOT YET OBSERVED.
+  - `legacy_api_v1_cloud` — Representation B, the Cloud-specific page for
+    the SAME endpoint: `multipart/form-data`,
+    `content-disposition: filename=<file name>`, `Accept: application/json`.
+    Because this tenant IS ManageEngine Cloud, this is the
+    highest-priority untested legacy candidate, and the workflow's
+    default. Sent via native `FormData` with `Content-Type` left UNSET —
+    `fetch` generates `multipart/form-data; boundary=...` itself, which is
+    how the documented `Content-Type: multipart/form-data` requirement is
+    satisfied without a hand-set header omitting the boundary and
+    producing an invalid request. **The multipart field name is `file`,
+    used as the conservative, already-documented ManageEngine Cloud
+    upload field — the Cloud-specific legacy page confirms the body is
+    multipart but does NOT itself establish a field name; this is a
+    diagnostic assumption, not a proven contract, and only a live
+    dispatch settles it.** No `Module`, no `X-Customer`; does not require
+    `MDM_CUSTOMER_ID`. NOT YET OBSERVED.
+
+  Both share: no fallback between them or to any other variant (one
+  dispatch = one representation); the response is documented to carry
+  `file_id`, `content_type`, `file_name`, `expiry_time`, `content_length` in
+  one shot, no separate status-poll step unlike `/emsapi/files`'s
+  `fileStatus`/`/emsapi/fileupload/status`; `file_id` can exceed
+  `Number.MAX_SAFE_INTEGER`, so both parse it with the same lossless
+  source-recovery strategy `tools/mdm/publish-app.ts` uses (duplicated
+  locally, not imported, and shared between the two variants so it cannot
+  drift). Goal: determine whether either representation of this older Cloud
+  upload endpoint remains functional for this tenant while `/emsapi/files`
+  consistently returns 406, starting with the Cloud-specific one. Do not
+  say either representation is correct, and do not say the legacy endpoint
+  works, until a live dispatch proves it — if one succeeds, that justifies
+  a separate, later decision about the production publisher; neither is
+  pre-committed here.
 
   Each variant authenticates, optionally confirms repository read access,
   and performs exactly one upload — none of them EVER calls app creation or
@@ -199,8 +220,9 @@ The upload, app creation and app update all remain **TENANT VALIDATION
 REQUIRED**: NOT YET OBSERVED to succeed against a real tenant. Do not treat
 any of them as proven until a real dispatch — diagnostic or release — shows
 it working live. In particular: do not claim `X-Customer` fixes the 406 (it
-does not — see attempt 4) and do not claim `legacy_api_v1_files` works until
-a live dispatch of it proves it.
+does not — see attempt 4), and do not claim either
+`legacy_api_v1_raw_example` or `legacy_api_v1_cloud` works until a live
+dispatch of that specific variant proves it.
 
 Two consequences worth knowing:
 

@@ -1618,3 +1618,122 @@ that the implementation matches the cited official example as closely as
 the search tooling available in this environment could confirm — a full
 page fetch remains blocked here, so live behaviour is still the only proof
 that matters. `tools/mdm/publish-app.ts` is untouched.
+
+⚠️ **Correction (Round 15): `legacy_api_v1_files` treated `/api/v1/mdm/files`
+as one settled contract. It is not — see Round 15.** ManageEngine publishes
+two contradictory representations for that endpoint, and this round's own
+naming hid which one was under test.
+
+## Round 15 — the legacy endpoint has two contradictory contracts, split apart
+
+No web access was used this round — explicit instruction. The correction
+came from two independently verified contracts supplied directly for this
+task, not from research performed here:
+
+- **Representation A** (already implemented in Round 14, unchanged): a
+  general API example — raw POST of the file bytes, `Authorization`,
+  `content-type: application/json`, `content-disposition: filename=<name>`.
+  No `Accept`, no `Module`, no `X-Customer`.
+- **Representation B** (new): a Cloud-specific page for the SAME
+  `POST /api/v1/mdm/files` endpoint — `multipart/form-data`,
+  `content-disposition: filename=<name>`, `Accept: application/json`. No
+  `Module`, no `X-Customer` documented either.
+
+Round 14's `legacy_api_v1_files` implemented only Representation A and
+named it as though the endpoint had one settled contract. That framing was
+wrong the moment Representation B was verified, and is corrected here
+rather than left standing: **do not say either representation is correct,
+and do not say the legacy endpoint works, until a live dispatch proves
+it** — neither claim was made before, and neither is made now.
+
+### The rename, and why
+
+`legacy_api_v1_files` no longer exists as a variant name — it hid which
+contradictory contract a given dispatch actually tested. Split into:
+
+- `legacy_api_v1_raw_example` — exactly Round 14's wire shape, preserved
+  byte-for-byte (proven by the existing 14 tests passing unmodified once
+  only the variant string literal changed). Kept, not deleted: ManageEngine's
+  own documentation is genuinely contradictory, so this remains a candidate.
+- `legacy_api_v1_cloud` — new. Because this tenant IS ManageEngine Cloud,
+  this representation is tested FIRST and is now the workflow default.
+
+### Implementing Representation B without corrupting the boundary
+
+The Cloud-specific page's `Content-Type: multipart/form-data` requirement is
+real, but a hand-set literal Content-Type header on a FormData body omits
+the boundary parameter fetch would otherwise generate — producing an
+invalid multipart request. `buildLegacyCloudUploadForm`/
+`buildLegacyCloudUploadHeaders` solve this the same way the existing
+`/emsapi/files` variants already do: build a native `FormData`, and leave
+`Content-Type` UNSET so `fetch` supplies
+`multipart/form-data; boundary=...` itself. That is how the documented
+requirement is satisfied safely. Proven by a test asserting no
+`content-type` key (any case) appears in the sent headers at all.
+
+**The multipart field name is `file`.** The Cloud-specific page confirms
+the body is multipart but does not itself name a field in what was
+supplied for this task. Per explicit instruction, `file` is used as the
+conservative, already-documented ManageEngine Cloud upload field (the same
+one `cloud_file` already uses against `/emsapi/files`) — stated in code
+comments, the module doc, the workflow comment, and here as a diagnostic
+assumption, never as a proven contract. Only a live dispatch settles it.
+
+### Structural isolation, not shared plumbing
+
+Per instruction, `legacy_api_v1_cloud` does NOT reuse
+`legacy_api_v1_raw_example`'s header/body builders — each has its own
+(`buildLegacyRawUploadHeaders` vs `buildLegacyCloudUploadForm`/
+`buildLegacyCloudUploadHeaders`), and each runs through its own top-level
+function (`runLegacyApiV1RawExample` vs `runLegacyApiV1Cloud`), so the two
+representations can never drift into each other by accident. The one piece
+they DO share on purpose — `reportLegacyUploadResult`, extracted this round
+— is response handling: reading the body, reporting status, and applying
+the lossless `file_id` strategy. That logic is correctness-critical and
+identical in contract for both variants (same response shape, same
+precision-loss risk), so sharing it is what PREVENTS the two
+implementations from diverging on id safety, rather than a blurring of the
+request-side isolation the task called for. A dedicated test proves the two
+variants differ in body type (`Blob` vs `FormData`) and `content-type`
+presence while hitting the identical endpoint path.
+
+Existing `/emsapi/files` variants (`cloud_file`, `legacy_fileName`,
+`cloud_file_with_customer`) are untouched — their code path in `run()` is
+gated behind the two new early-return branches and never reached by either
+legacy variant, and all their existing tests pass unmodified.
+
+### Tests added
+
+20 new/renamed cases in `tools/mdm/probe-upload.test.ts` (Representation A's
+existing 14 tests renamed to the new variant string with unchanged
+assertions; Representation B gets its own parallel suite: endpoint, exact
+header set including the no-Content-Type proof, FormData field/MIME/
+filename, no X-Customer, no MDM_CUSTOMER_ID requirement, the documented
+failure/success shapes, large and small `file_id` handling, the fail-closed
+path, secret redaction, and the create/update guarantee); plus a
+cross-variant suite proving same endpoint + different transport + exactly
+one upload attempt per run + the retired name no longer resolves. 4 new
+cases in the workflow-pinning suite (five-variant list and default, the
+retired name absent from the workflow file).
+
+### Round 15 gate
+
+```
+npx jest tools/mdm --runInBand → 142 passed
+pnpm typecheck        → PASS
+pnpm lint             → PASS
+pnpm format:check     → PASS
+pnpm check:docs       → PASS (94 files)
+pnpm check:ci-scripts → PASS (5 workflows, 10 checks)
+node -e (js-yaml)     → all 5 workflow files parse
+git diff --check      → clean
+git diff -- tools/mdm/publish-app.ts tools/mdm/publish-app.test.ts → empty
+```
+
+Not claimed: that `legacy_api_v1_cloud`, `legacy_api_v1_raw_example`, or
+`/api/v1/mdm/files` generally, works for this tenant. Only that the two
+contradictory documented representations are now correctly separated,
+`legacy_api_v1_cloud` is the higher-priority untested candidate for this
+Cloud tenant, and the multipart-field-name assumption is stated honestly as
+an assumption rather than implied to be proven. `tools/mdm/publish-app.ts`
+remains untouched.

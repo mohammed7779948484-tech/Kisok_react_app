@@ -18,11 +18,28 @@ name: ManageEngine upload diagnostic
 #     X-Customer. OBSERVED to fail (406).
 #   cloud_file_with_customer   — /emsapi/files, field `file`, WITH
 #     X-Customer. OBSERVED to fail (406) too — X-Customer does not fix it.
-#   legacy_api_v1_files        — a DIFFERENT endpoint and transport:
-#     `POST /api/v1/mdm/files`, the documented predecessor `/emsapi/files`
-#     replaced. Raw bytes, not multipart — see tools/mdm/probe-upload.ts and
-#     features/device-mode/docs/mdm-operations.md for the exact documented
-#     contract and citation. NOT YET OBSERVED.
+#
+# The remaining two variants target a DIFFERENT endpoint,
+# `POST /api/v1/mdm/files` — documented as the predecessor `/emsapi/files`
+# replaced. ManageEngine currently publishes TWO CONTRADICTORY request
+# representations for that same endpoint, so each is its own named variant
+# rather than one ambiguous "legacy" name that would hide which contract is
+# under test:
+#
+#   legacy_api_v1_raw_example — a general API example: raw file bytes, no
+#     multipart, Content-Type: application/json, Content-Disposition:
+#     filename=<name>. NOT YET OBSERVED.
+#   legacy_api_v1_cloud        — the Cloud-specific page for the SAME
+#     endpoint: multipart/form-data (via native FormData, letting fetch
+#     generate the boundary), Content-Disposition: filename=<name>,
+#     Accept: application/json. This tenant IS ManageEngine Cloud, so this
+#     is the highest-priority untested legacy candidate. NOT YET OBSERVED.
+#
+# See tools/mdm/probe-upload.ts and features/device-mode/docs/mdm-operations.md
+# for the exact documented contracts and what is and is not established by
+# them (in particular: the multipart field name `file` for
+# legacy_api_v1_cloud is a conservative assumption, not proven by the
+# Cloud-specific page).
 #
 # One run = one HTTP upload representation. Do not dispatch it to try
 # several variants "just to see" in one go: a run that happens to succeed
@@ -36,13 +53,15 @@ on:
         description: "Which upload representation to send the APK as"
         type: choice
         options:
-          - legacy_api_v1_files
+          - legacy_api_v1_cloud
+          - legacy_api_v1_raw_example
           - cloud_file_with_customer
           - legacy_fileName
           - cloud_file
-        # All three /emsapi/files representations have already failed live;
-        # the legacy endpoint is the most informative untested candidate.
-        default: legacy_api_v1_files
+        # This tenant is ManageEngine Cloud, so the Cloud-specific published
+        # contract for the legacy endpoint is the highest-priority untested
+        # candidate; every /emsapi/files representation has already failed.
+        default: legacy_api_v1_cloud
       run_id:
         description: >-
           Workflow run ID to download the kisok-release-apk artifact from. The

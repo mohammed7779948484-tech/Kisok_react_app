@@ -497,19 +497,23 @@ it("the probe script's own source never references the create/update endpoints",
 });
 
 // ---------------------------------------------------------------------------
-// legacy_api_v1_files — a different endpoint AND transport, kept isolated
-// from the /emsapi/files multipart variants above (see runLegacyApiV1Files).
+// legacy_api_v1_raw_example and legacy_api_v1_cloud — the SAME endpoint
+// (/api/v1/mdm/files), TWO CONTRADICTORY documented representations,
+// deliberately named apart rather than folded into one ambiguous "legacy"
+// variant. Both kept isolated from the /emsapi/files multipart variants
+// above, and from each other's transport builders.
 // ---------------------------------------------------------------------------
 
-const LEGACY_INPUTS: ProbeInputs = { ...INPUTS, variant: "legacy_api_v1_files" };
+const RAW_LEGACY_INPUTS: ProbeInputs = { ...INPUTS, variant: "legacy_api_v1_raw_example" };
+const CLOUD_LEGACY_INPUTS: ProbeInputs = { ...INPUTS, variant: "legacy_api_v1_cloud" };
 
-describe("legacy_api_v1_files targets a different endpoint with a raw-bytes body", () => {
+describe("legacy_api_v1_raw_example — Representation A: raw bytes, application/json", () => {
   it("posts to /api/v1/mdm/files, never /emsapi/files", async () => {
     const { deps: d, calls } = deps({
       "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
     });
 
-    await run(LEGACY_INPUTS, d);
+    await run(RAW_LEGACY_INPUTS, d);
 
     expect(calls.some((c) => c.url.includes("/api/v1/mdm/files"))).toBe(true);
     expect(calls.some((c) => c.url.includes("/emsapi/files"))).toBe(false);
@@ -520,16 +524,16 @@ describe("legacy_api_v1_files targets a different endpoint with a raw-bytes body
       "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
     });
 
-    await run(LEGACY_INPUTS, d);
+    await run(RAW_LEGACY_INPUTS, d);
 
     const upload = calls.find((c) => c.url.includes("/api/v1/mdm/files"))!;
     expect(upload.headers.Authorization).toBe("Zoho-oauthtoken 1000.fixture.token");
-    // The docs' own example, unusual as it is for a raw binary body —
-    // followed exactly rather than "corrected" to octet-stream.
+    // The general example's own contract, unusual as it is for a raw binary
+    // body — followed exactly rather than "corrected" to octet-stream.
     expect(upload.headers["content-type"]).toBe("application/json");
     expect(upload.headers["content-disposition"]).toBe("filename=app-release.apk");
-    // Nothing else: no Module, no Accept, no X-Customer — none appear in
-    // the documented example.
+    // Nothing else: no Accept, no Module, no X-Customer — none appear in
+    // that documented example.
     expect(Object.keys(upload.headers).sort()).toEqual(
       ["Authorization", "content-disposition", "content-type"].sort(),
     );
@@ -540,7 +544,7 @@ describe("legacy_api_v1_files targets a different endpoint with a raw-bytes body
       "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
     });
 
-    await run(LEGACY_INPUTS, d);
+    await run(RAW_LEGACY_INPUTS, d);
 
     const upload = calls.find((c) => c.url.includes("/api/v1/mdm/files"))!;
     expect(upload.body).not.toBeInstanceOf(FormData);
@@ -555,7 +559,7 @@ describe("legacy_api_v1_files targets a different endpoint with a raw-bytes body
       "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
     });
 
-    await run({ ...LEGACY_INPUTS, customerId: "999888777" }, d);
+    await run({ ...RAW_LEGACY_INPUTS, customerId: "999888777" }, d);
 
     const upload = calls.find((c) => c.url.includes("/api/v1/mdm/files"))!;
     expect(upload.headers["X-Customer"]).toBeUndefined();
@@ -563,11 +567,10 @@ describe("legacy_api_v1_files targets a different endpoint with a raw-bytes body
   });
 
   it("does not require MDM_CUSTOMER_ID — resolveInputs accepts it unset", () => {
-    const result = resolveInputs(["--apk", "/tmp/x.apk", "--variant", "legacy_api_v1_files"], {
-      MDM_CLIENT_ID: "a",
-      MDM_CLIENT_SECRET: "b",
-      MDM_REFRESH_TOKEN: "c",
-    });
+    const result = resolveInputs(
+      ["--apk", "/tmp/x.apk", "--variant", "legacy_api_v1_raw_example"],
+      { MDM_CLIENT_ID: "a", MDM_CLIENT_SECRET: "b", MDM_REFRESH_TOKEN: "c" },
+    );
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -582,7 +585,7 @@ describe("legacy_api_v1_files targets a different endpoint with a raw-bytes body
       }),
     });
 
-    const code = await run(LEGACY_INPUTS, d);
+    const code = await run(RAW_LEGACY_INPUTS, d);
 
     expect(code).toBe(1);
     const output = lines.join("\n");
@@ -600,7 +603,7 @@ describe("legacy_api_v1_files targets a different endpoint with a raw-bytes body
       }),
     });
 
-    const code = await run(LEGACY_INPUTS, d);
+    const code = await run(RAW_LEGACY_INPUTS, d);
 
     expect(code).toBe(1);
     const output = lines.join("\n");
@@ -621,7 +624,7 @@ describe("legacy_api_v1_files targets a different endpoint with a raw-bytes body
       }),
     });
 
-    const code = await run(LEGACY_INPUTS, d);
+    const code = await run(RAW_LEGACY_INPUTS, d);
 
     expect(code).toBe(0);
     const output = lines.join("\n");
@@ -640,7 +643,7 @@ describe("legacy_api_v1_files targets a different endpoint with a raw-bytes body
       }),
     });
 
-    const code = await run(LEGACY_INPUTS, d);
+    const code = await run(RAW_LEGACY_INPUTS, d);
 
     expect(code).toBe(0);
     const output = lines.join("\n");
@@ -660,7 +663,7 @@ describe("legacy_api_v1_files targets a different endpoint with a raw-bytes body
       }),
     });
 
-    const code = await run(LEGACY_INPUTS, d);
+    const code = await run(RAW_LEGACY_INPUTS, d);
 
     expect(code).toBe(1);
     const output = lines.join("\n");
@@ -673,7 +676,7 @@ describe("legacy_api_v1_files targets a different endpoint with a raw-bytes body
       "POST /api/v1/mdm/files": () => ({ status: 200, body: { file_id: 42 } }),
     });
 
-    const code = await run(LEGACY_INPUTS, d);
+    const code = await run(RAW_LEGACY_INPUTS, d);
 
     expect(code).toBe(0);
     expect(lines.join("\n")).toContain("upload accepted: yes");
@@ -684,7 +687,7 @@ describe("legacy_api_v1_files targets a different endpoint with a raw-bytes body
       "POST /api/v1/mdm/files": () => ({ status: 200, body: { file_id: 42 } }),
     });
 
-    await run(LEGACY_INPUTS, d);
+    await run(RAW_LEGACY_INPUTS, d);
 
     expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/api/v1/mdm/apps"))).toBe(
       false,
@@ -701,7 +704,7 @@ describe("legacy_api_v1_files targets a different endpoint with a raw-bytes body
       }),
     });
 
-    await run(LEGACY_INPUTS, d);
+    await run(RAW_LEGACY_INPUTS, d);
 
     const output = lines.join("\n");
     expect(output).not.toContain("refresh-token");
@@ -715,9 +718,223 @@ describe("legacy_api_v1_files targets a different endpoint with a raw-bytes body
       "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
     });
 
-    await run(LEGACY_INPUTS, d);
+    await run(RAW_LEGACY_INPUTS, d);
 
     expect(lines.join("\n")).toContain("repository read: HTTP 200");
+  });
+});
+
+describe("legacy_api_v1_cloud — Representation B: native FormData multipart", () => {
+  it("posts to /api/v1/mdm/files, never /emsapi/files", async () => {
+    const { deps: d, calls } = deps({
+      "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
+    });
+
+    await run(CLOUD_LEGACY_INPUTS, d);
+
+    expect(calls.some((c) => c.url.includes("/api/v1/mdm/files"))).toBe(true);
+    expect(calls.some((c) => c.url.includes("/emsapi/files"))).toBe(false);
+  });
+
+  it("sends exactly the documented headers, no more, no less — and no manual Content-Type", async () => {
+    const { deps: d, calls } = deps({
+      "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
+    });
+
+    await run(CLOUD_LEGACY_INPUTS, d);
+
+    const upload = calls.find((c) => c.url.includes("/api/v1/mdm/files"))!;
+    expect(upload.headers.Authorization).toBe("Zoho-oauthtoken 1000.fixture.token");
+    expect(upload.headers.Accept).toBe("application/json");
+    expect(upload.headers["content-disposition"]).toBe("filename=app-release.apk");
+    // The Cloud page's "Content-Type: multipart/form-data" requirement is
+    // satisfied by fetch generating multipart/form-data; boundary=... itself
+    // — a hand-set Content-Type header here would omit that boundary and
+    // produce an invalid request, so none is set.
+    expect(Object.keys(upload.headers).sort()).toEqual(
+      ["Accept", "Authorization", "content-disposition"].sort(),
+    );
+    const lowerKeys = Object.keys(upload.headers).map((k) => k.toLowerCase());
+    expect(lowerKeys).not.toContain("content-type");
+    // No Module, no X-Customer — neither is documented for this endpoint.
+    expect(upload.headers.Module).toBeUndefined();
+    expect(upload.headers["X-Customer"]).toBeUndefined();
+  });
+
+  it("sends the APK as native FormData under field 'file' — the conservative assumption", async () => {
+    const { deps: d, calls } = deps({
+      "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
+    });
+
+    await run(CLOUD_LEGACY_INPUTS, d);
+
+    const upload = calls.find((c) => c.url.includes("/api/v1/mdm/files"))!;
+    expect(upload.body).toBeInstanceOf(FormData);
+    const form = upload.body as FormData;
+    const names: string[] = [];
+    form.forEach((_value, key) => names.push(key));
+    expect(names).toEqual(["file"]);
+    const value = form.get("file") as File;
+    expect(value).toBeInstanceOf(Blob);
+    expect(value.type).toBe("application/vnd.android.package-archive");
+    expect(value.name).toBe("app-release.apk");
+    expect(new Uint8Array(await value.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("never sends X-Customer, even if a customer id happens to be set", async () => {
+    const { deps: d, calls } = deps({
+      "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
+    });
+
+    await run({ ...CLOUD_LEGACY_INPUTS, customerId: "999888777" }, d);
+
+    const upload = calls.find((c) => c.url.includes("/api/v1/mdm/files"))!;
+    expect(upload.headers["X-Customer"]).toBeUndefined();
+    expect(upload.headers["x-customer"]).toBeUndefined();
+  });
+
+  it("does not require MDM_CUSTOMER_ID — resolveInputs accepts it unset", () => {
+    const result = resolveInputs(["--apk", "/tmp/x.apk", "--variant", "legacy_api_v1_cloud"], {
+      MDM_CLIENT_ID: "a",
+      MDM_CLIENT_SECRET: "b",
+      MDM_REFRESH_TOKEN: "c",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.inputs.customerId).toBeUndefined();
+  });
+
+  it("reports the documented 406-shaped failure the same way as the other variants", async () => {
+    const { deps: d, lines } = deps({
+      "POST /api/v1/mdm/files": () => ({
+        status: 406,
+        body: { errorCode: "406", errorMsg: "Not Acceptable" },
+      }),
+    });
+
+    const code = await run(CLOUD_LEGACY_INPUTS, d);
+
+    expect(code).toBe(1);
+    const output = lines.join("\n");
+    expect(output).toContain("HTTP status: 406");
+    expect(output).toContain("upload accepted: no");
+  });
+
+  it("on success, preserves a large file_id exactly and shows only a redacted form", async () => {
+    const { deps: d, lines } = deps({
+      "POST /api/v1/mdm/files": () => ({
+        status: 200,
+        rawText: '{"file_id":9007199254741076}',
+      }),
+    });
+
+    const code = await run(CLOUD_LEGACY_INPUTS, d);
+
+    expect(code).toBe(0);
+    const output = lines.join("\n");
+    expect(output).toContain("file_id (redacted): 9007...1076");
+    expect(output).not.toContain("9007199254741076");
+    expect(output).toContain("upload accepted: yes");
+  });
+
+  it("fails closed rather than report success when file_id cannot be confirmed exact", async () => {
+    const { deps: d, lines } = deps({
+      "POST /api/v1/mdm/files": () => ({
+        status: 200,
+        rawText: '{"file_id":9007199254741076.0}',
+      }),
+    });
+
+    const code = await run(CLOUD_LEGACY_INPUTS, d);
+
+    expect(code).toBe(1);
+    expect(lines.join("\n")).toContain("cannot be confirmed exact");
+  });
+
+  it("never calls app creation or update, on success or failure", async () => {
+    const { deps: d, calls } = deps({
+      "POST /api/v1/mdm/files": () => ({ status: 200, body: { file_id: 42 } }),
+    });
+
+    await run(CLOUD_LEGACY_INPUTS, d);
+
+    expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/api/v1/mdm/apps"))).toBe(
+      false,
+    );
+    expect(calls.some((c) => c.method === "PUT")).toBe(false);
+    expect(calls.some((c) => c.url.includes("/labels/"))).toBe(false);
+  });
+
+  it("never prints a credential or the exchanged access token", async () => {
+    const { deps: d, lines } = deps({
+      "POST /api/v1/mdm/files": () => ({
+        status: 500,
+        body: { message: "token 1000.fixture.token rejected for refresh-token" },
+      }),
+    });
+
+    await run(CLOUD_LEGACY_INPUTS, d);
+
+    const output = lines.join("\n");
+    expect(output).not.toContain("refresh-token");
+    expect(output).not.toContain("1000.fixture.token");
+    expect(output).toContain("***REDACTED***");
+  });
+
+  it("still performs the optional repository read", async () => {
+    const { deps: d, lines } = deps({
+      "GET /api/v1/mdm/apps": () => ({ status: 200 }),
+      "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
+    });
+
+    await run(CLOUD_LEGACY_INPUTS, d);
+
+    expect(lines.join("\n")).toContain("repository read: HTTP 200");
+  });
+});
+
+describe("the two legacy variants share an endpoint but never a transport", () => {
+  it("both target /api/v1/mdm/files, but with different bodies and headers", async () => {
+    const { deps: rawDeps, calls: rawCalls } = deps({
+      "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
+    });
+    const { deps: cloudDeps, calls: cloudCalls } = deps({
+      "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
+    });
+
+    await run(RAW_LEGACY_INPUTS, rawDeps);
+    await run(CLOUD_LEGACY_INPUTS, cloudDeps);
+
+    const rawUpload = rawCalls.find((c) => c.url.includes("/api/v1/mdm/files"))!;
+    const cloudUpload = cloudCalls.find((c) => c.url.includes("/api/v1/mdm/files"))!;
+    expect(new URL(rawUpload.url).pathname).toBe(new URL(cloudUpload.url).pathname);
+    expect(rawUpload.body).toBeInstanceOf(Blob);
+    expect(rawUpload.body).not.toBeInstanceOf(FormData);
+    expect(cloudUpload.body).toBeInstanceOf(FormData);
+    expect(rawUpload.headers["content-type"]).toBe("application/json");
+    expect(cloudUpload.headers["content-type"]).toBeUndefined();
+  });
+
+  it("makes exactly ONE upload attempt per run — no fallback between representations", async () => {
+    const { deps: d, calls } = deps({
+      "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
+    });
+
+    await run(RAW_LEGACY_INPUTS, d);
+
+    const uploads = calls.filter((c) => c.url.includes("/api/v1/mdm/files"));
+    expect(uploads).toHaveLength(1);
+  });
+
+  it("the ambiguous name legacy_api_v1_files no longer exists as a variant", () => {
+    expect((VARIANT_FIELD as Record<string, unknown>).legacy_api_v1_files).toBeUndefined();
+    const result = resolveInputs(["--apk", "/tmp/x.apk", "--variant", "legacy_api_v1_files"], {
+      MDM_CLIENT_ID: "a",
+      MDM_CLIENT_SECRET: "b",
+      MDM_REFRESH_TOKEN: "c",
+    });
+    expect(result.ok).toBe(false);
   });
 });
 

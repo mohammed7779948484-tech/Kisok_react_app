@@ -2,7 +2,8 @@
  * probe-upload.ts — DIAGNOSTIC ONLY. Sends exactly one representation of a
  * verified APK to a ManageEngine upload endpoint and stops.
  *
- *     node tools/mdm/probe-upload.ts --apk <path> --variant cloud_file|legacy_fileName|cloud_file_with_customer|legacy_api_v1_files
+ *     node tools/mdm/probe-upload.ts --apk <path> --variant <name>
+ *     (see VARIANTS below for every name this accepts)
  *
  * This exists because FOUR real-tenant attempts against `POST /emsapi/files`
  * have now all failed with HTTP 406 — a hand-built multipart body, native
@@ -20,21 +21,46 @@
  *   cloud_file_with_customer   — /emsapi/files, field `file`, WITH
  *     X-Customer. Differs from cloud_file by exactly that one header.
  *     OBSERVED to fail (406) — X-Customer does not fix it either.
- *   legacy_api_v1_files        — a DIFFERENT endpoint and transport:
- *     `POST /api/v1/mdm/files`, documented (still, as of this writing) as
- *     the deprecated predecessor `/emsapi/files` replaced. Per the official
- *     Cloud API docs' own Python example
- *     (https://www.manageengine.com/mobile-device-management/api/files/,
- *     "Files" page), the request is a RAW POST of the file bytes — no
- *     multipart, no boundary — with headers `Authorization`,
- *     `content-type: application/json` (exactly as documented, unusual as
- *     that pairing is for a binary body — followed here rather than
- *     guessed), and `content-disposition: filename=<name>`. No `Module`
- *     header and no `X-Customer` appear anywhere in that documented example,
- *     so neither is sent, and MDM_CUSTOMER_ID is not required for this
- *     variant. The response is documented to carry `file_id`, `content_type`,
- *     `file_name`, `expiry_time`, `content_length` — no separate status-poll
- *     step is documented, unlike `/emsapi/files`. NOT YET OBSERVED live.
+ *
+ * The remaining two variants target a DIFFERENT endpoint,
+ * `POST /api/v1/mdm/files` — documented as the predecessor `/emsapi/files`
+ * replaced. ManageEngine currently publishes TWO CONTRADICTORY request
+ * representations for that same endpoint, independently verified and
+ * supplied for this diagnostic rather than invented, so each is its own
+ * named variant instead of one ambiguous "legacy" variant that would hide
+ * which contract is under test:
+ *
+ *   legacy_api_v1_raw_example  — Representation A, a general (non-Cloud-
+ *     specific) API example: a RAW POST of the file bytes — no multipart,
+ *     no boundary — with `Authorization`, `content-type: application/json`
+ *     (exactly as documented, unusual as that pairing is for a binary body
+ *     — followed here rather than "corrected"), and
+ *     `content-disposition: filename=<name>`. No `Accept`, no `Module`, no
+ *     `X-Customer` in that documented example. NOT YET OBSERVED live.
+ *   legacy_api_v1_cloud        — Representation B, the Cloud-specific page
+ *     for the SAME endpoint: `multipart/form-data`,
+ *     `content-disposition: filename=<name>`, `Accept: application/json`.
+ *     Because this tenant IS ManageEngine Cloud, this representation is the
+ *     highest-priority untested legacy candidate. Sent via native
+ *     `FormData`, `Content-Type` left UNSET so `fetch` generates
+ *     `multipart/form-data; boundary=...` itself — that is how the
+ *     documented `Content-Type: multipart/form-data` requirement is
+ *     satisfied without corrupting the boundary a hand-set header would
+ *     omit. The Cloud-specific page confirms the body is multipart but does
+ *     NOT establish a field name in what was supplied for this diagnostic:
+ *     `file` is used as the conservative, already-documented ManageEngine
+ *     Cloud upload field (the same one `cloud_file` uses against
+ *     `/emsapi/files`), NOT because the Cloud-specific legacy page itself
+ *     names it — a live dispatch is what proves or disproves that
+ *     assumption. No `Module`, no `X-Customer` in the documented contract.
+ *     NOT YET OBSERVED live.
+ *
+ * Both `/api/v1/mdm/files` variants can carry `file_id` above
+ * `Number.MAX_SAFE_INTEGER`, so both use the same lossless-id parsing (see
+ * `parseLegacyResponse`/`readLosslessId`). Neither requires
+ * `MDM_CUSTOMER_ID`. There is no fallback between them, or between either
+ * and the `/emsapi/files` variants: one dispatch tests exactly one
+ * representation.
  *
  * It NEVER calls `POST /api/v1/mdm/apps` or
  * `PUT /api/v1/mdm/apps/{app_id}/labels/{release_label_id}` — a successful
@@ -51,10 +77,10 @@
  *
  * Deliberately standalone: it duplicates a few small pieces of
  * `publish-app.ts` (secret redaction, data-centre hosts, the token-exchange
- * body, and — for `legacy_api_v1_files`'s `file_id` — the same lossless-id
- * strategy publish-app.ts uses) rather than importing from it, so this
- * temporary probe can never change the production publisher's behaviour by
- * accident.
+ * body, and — for the two `/api/v1/mdm/files` variants' `file_id` — the same
+ * lossless-id strategy publish-app.ts uses) rather than importing from it, so
+ * this temporary probe can never change the production publisher's
+ * behaviour by accident.
  *
  * No repository or npm imports: node builtins only, so it runs under Node's
  * native TypeScript type-stripping with plain `node`.
@@ -72,16 +98,20 @@ export const VARIANTS = [
   "cloud_file",
   "legacy_fileName",
   "cloud_file_with_customer",
-  "legacy_api_v1_files",
+  "legacy_api_v1_raw_example",
+  "legacy_api_v1_cloud",
 ] as const;
 export type Variant = (typeof VARIANTS)[number];
 
 /**
- * The multipart field name for each `/emsapi/files` variant.
- * `legacy_api_v1_files` deliberately has NO entry: it targets a different
- * endpoint with a raw-bytes body, not multipart, so forcing it through this
- * map (and `buildUploadForm`) would be inaccurate. `buildUploadForm` throws
- * if ever called with it, rather than silently picking a wrong field.
+ * The multipart field name for each `/emsapi/files` variant ONLY.
+ * `legacy_api_v1_raw_example` and `legacy_api_v1_cloud` deliberately have NO
+ * entry here: they target a different endpoint (`/api/v1/mdm/files`) with
+ * their own transport builders (`buildLegacyRawUploadHeaders`,
+ * `buildLegacyCloudUploadForm`/`buildLegacyCloudUploadHeaders`), so forcing
+ * them through this map (and `buildUploadForm`) would be inaccurate.
+ * `buildUploadForm` throws if ever called with either, rather than silently
+ * picking a wrong field.
  *
  * `cloud_file` matches the current Cloud-specific documentation and the
  * production publisher (field `file`) — already OBSERVED to fail with 406.
@@ -255,11 +285,15 @@ export function buildUploadHeaders(
 }
 
 /**
- * `legacy_api_v1_files`'s exact documented header shape — the official Cloud
- * API docs' own Python example, followed verbatim rather than guessed. No
- * `Module`, no `Accept`, no `X-Customer`: none appear in that example.
+ * `legacy_api_v1_raw_example`'s exact documented header shape —
+ * Representation A, a general (non-Cloud-specific) API example, followed
+ * verbatim rather than guessed. No `Accept`, no `Module`, no `X-Customer`:
+ * none appear in that documented example.
  */
-export function buildLegacyUploadHeaders(token: string, fileName: string): Record<string, string> {
+export function buildLegacyRawUploadHeaders(
+  token: string,
+  fileName: string,
+): Record<string, string> {
   return {
     Authorization: `Zoho-oauthtoken ${token}`,
     "content-type": "application/json",
@@ -268,7 +302,45 @@ export function buildLegacyUploadHeaders(token: string, fileName: string): Recor
 }
 
 /**
- * `legacy_api_v1_files`'s response can carry `file_id` above
+ * `legacy_api_v1_cloud`'s FormData — Representation B's multipart body. The
+ * Cloud-specific page confirms `multipart/form-data` but does NOT establish
+ * a field name in what was supplied for this diagnostic: `file` is used as
+ * the conservative, already-documented ManageEngine Cloud upload field (the
+ * same one `cloud_file` uses against `/emsapi/files`), NOT because the
+ * Cloud-specific legacy page itself names it. Never claim this field name
+ * was proven by that page — only that it is the most conservative
+ * documented choice available.
+ */
+export function buildLegacyCloudUploadForm(bytes: Uint8Array, fileName: string): FormData {
+  const form = new FormData();
+  form.append("file", new Blob([new Uint8Array(bytes)], { type: APK_MIME }), fileName);
+  return form;
+}
+
+/**
+ * `legacy_api_v1_cloud`'s headers — Representation B. The Cloud-specific
+ * docs list `Content-Type: multipart/form-data` as a requirement, but a
+ * hand-set literal value would omit the boundary parameter FormData needs
+ * and produce an invalid multipart request. `fetch` generates the correct
+ * `multipart/form-data; boundary=...` value itself whenever `Content-Type`
+ * is left UNSET on a FormData body — that is how the documented requirement
+ * is satisfied here, safely, without hand-rolling a boundary. `Accept` and
+ * `Content-Disposition` are sent as documented; no `Module`, no
+ * `X-Customer` — neither is documented for this endpoint.
+ */
+export function buildLegacyCloudUploadHeaders(
+  token: string,
+  fileName: string,
+): Record<string, string> {
+  return {
+    Authorization: `Zoho-oauthtoken ${token}`,
+    Accept: "application/json",
+    "content-disposition": `filename=${fileName}`,
+  };
+}
+
+/**
+ * Both `/api/v1/mdm/files` variants' responses can carry `file_id` above
  * `Number.MAX_SAFE_INTEGER` (the same class of id documented elsewhere in
  * this repository — see `tools/mdm/publish-app.ts`). This is the same
  * lossless-recovery strategy, duplicated here rather than imported, so this
@@ -329,9 +401,9 @@ export type ResolveResult = { ok: true; inputs: ProbeInputs } | { ok: false; pro
 const USAGE = `
 Usage: node tools/mdm/probe-upload.ts --apk <path> --variant <${VARIANTS.join("|")}> [--data-centre <code>]
 
-DIAGNOSTIC ONLY. Sends exactly one representation of the given APK to
-POST /emsapi/files and stops — it never creates or updates the ManageEngine
-enterprise app.
+DIAGNOSTIC ONLY. Sends exactly one representation of the given APK to one
+ManageEngine upload endpoint and stops — it never creates or updates the
+ManageEngine enterprise app.
 
 Required environment (never flags, never printed):
   MDM_CLIENT_ID, MDM_CLIENT_SECRET, MDM_REFRESH_TOKEN
@@ -492,14 +564,70 @@ async function reportRepositoryRead(
 }
 
 /**
- * `legacy_api_v1_files` — a different endpoint AND a different transport
- * (raw bytes, not multipart) from every other variant, so it is kept fully
- * separate rather than folded into `run()`'s multipart path below. This
- * function never touches `buildUploadForm`/`buildUploadHeaders`, and the
- * multipart path below is untouched by this variant's existence — each
- * variable is isolated in code, not just on the wire.
+ * Shared by both `/api/v1/mdm/files` variants: reads the response, reports
+ * it, and applies the same lossless `file_id` handling to both — the two
+ * variants differ in how the REQUEST is built (see each `run...` function
+ * and its dedicated header/body builders), never in how the response is
+ * read or in what counts as a safe id.
  */
-async function runLegacyApiV1Files(inputs: ProbeInputs, deps: ProbeDeps): Promise<number> {
+async function reportLegacyUploadResult(
+  response: ProbeFetchResponse,
+  secrets: readonly string[],
+  deps: ProbeDeps,
+): Promise<number> {
+  const bodyText = await response.text();
+  const contentType = response.headers.get("content-type") ?? "(none)";
+
+  deps.log("upload response:");
+  deps.log(
+    `HTTP status: ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`,
+  );
+  deps.log(`content-type: ${contentType}`);
+
+  if (!response.ok) {
+    // A failure body carries no id worth redacting — safe to show in full.
+    deps.log("body:");
+    deps.log(redactSecrets(capBody(bodyText), secrets));
+    deps.log("");
+    deps.log("upload accepted: no");
+    return 1;
+  }
+
+  const parsed = parseLegacyResponse(bodyText);
+  const rawFileId = isRecord(parsed) ? parsed.file_id : undefined;
+  const fileId = readLosslessId(rawFileId);
+
+  if (rawFileId !== undefined && fileId === undefined) {
+    // A file_id was present but its exact value could not be confirmed —
+    // never report success off an id that might be silently rounded.
+    deps.log("file_id present: yes, but its value cannot be confirmed exact — failing closed");
+    deps.log("upload accepted: no");
+    return 1;
+  }
+
+  // A 2xx body carries the real file_id, so it is never dumped raw — only
+  // the redacted id below.
+  deps.log(`file_id present: ${fileId !== undefined ? "yes" : "no"}`);
+  if (fileId !== undefined) deps.log(`file_id (redacted): ${redactId(fileId)}`);
+  deps.log(`upload accepted: ${fileId !== undefined ? "yes" : "no"}`);
+  deps.log("");
+  deps.log(
+    "STOPPING HERE by design — this diagnostic never calls app creation or update, " +
+      "even on a successful upload.",
+  );
+  return fileId !== undefined ? 0 : 1;
+}
+
+/**
+ * `legacy_api_v1_raw_example` — Representation A: a different endpoint AND a
+ * different transport (raw bytes, not multipart) from every `/emsapi/files`
+ * variant, so it is kept fully separate rather than folded into `run()`'s
+ * multipart path below. This function never touches
+ * `buildUploadForm`/`buildUploadHeaders`, and that multipart path is
+ * untouched by this variant's existence — each variable is isolated in
+ * code, not just on the wire.
+ */
+async function runLegacyApiV1RawExample(inputs: ProbeInputs, deps: ProbeDeps): Promise<number> {
   const secrets = [inputs.clientId, inputs.clientSecret, inputs.refreshToken].filter(
     (value) => value.trim() !== "",
   );
@@ -515,6 +643,8 @@ async function runLegacyApiV1Files(inputs: ProbeInputs, deps: ProbeDeps): Promis
     deps.log("transport: raw bytes (no multipart, no boundary)");
     deps.log("content-type: application/json");
     deps.log(`content-disposition: filename=${fileName}`);
+    deps.log("accept: (not sent — not in the documented example)");
+    deps.log("module: no");
     deps.log("X-Customer: no");
     deps.log(`APK filename: ${fileName}`);
     deps.log(`APK size: ${bytes.byteLength}`);
@@ -526,7 +656,7 @@ async function runLegacyApiV1Files(inputs: ProbeInputs, deps: ProbeDeps): Promis
     await reportRepositoryRead(hosts, token, secrets, deps);
     deps.log("");
 
-    const headers = buildLegacyUploadHeaders(token, fileName);
+    const headers = buildLegacyRawUploadHeaders(token, fileName);
 
     // A typeless Blob, not FormData: the wire bytes are identical to the
     // documented raw POST body — this only works around Uint8Array not
@@ -546,47 +676,68 @@ async function runLegacyApiV1Files(inputs: ProbeInputs, deps: ProbeDeps): Promis
       return 1;
     }
 
-    const bodyText = await response.text();
-    const contentType = response.headers.get("content-type") ?? "(none)";
+    return reportLegacyUploadResult(response, secrets, deps);
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : String(caught);
+    deps.log(`error: ${redactSecrets(message, secrets)}`);
+    return 1;
+  }
+}
 
-    deps.log("upload response:");
-    deps.log(
-      `HTTP status: ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`,
-    );
-    deps.log(`content-type: ${contentType}`);
+/**
+ * `legacy_api_v1_cloud` — Representation B: the same `/api/v1/mdm/files`
+ * endpoint as the raw-example variant above, but a DIFFERENT, independently
+ * built transport (native FormData) — never sharing the raw variant's
+ * header/body builders, so the two representations can never accidentally
+ * drift into each other.
+ */
+async function runLegacyApiV1Cloud(inputs: ProbeInputs, deps: ProbeDeps): Promise<number> {
+  const secrets = [inputs.clientId, inputs.clientSecret, inputs.refreshToken].filter(
+    (value) => value.trim() !== "",
+  );
+  try {
+    const hosts = resolveDataCentre(inputs.dataCentre);
+    const bytes = await readApkOrFail(inputs, deps);
+    const fileName = inputs.apkPath.split("/").pop() ?? "app-release.apk";
 
-    if (!response.ok) {
-      // A failure body carries no id worth redacting — safe to show in full.
-      deps.log("body:");
-      deps.log(redactSecrets(capBody(bodyText), secrets));
-      deps.log("");
-      deps.log("upload accepted: no");
-      return 1;
-    }
-
-    const parsed = parseLegacyResponse(bodyText);
-    const rawFileId = isRecord(parsed) ? parsed.file_id : undefined;
-    const fileId = readLosslessId(rawFileId);
-
-    if (rawFileId !== undefined && fileId === undefined) {
-      // A file_id was present but its exact value could not be confirmed —
-      // never report success off an id that might be silently rounded.
-      deps.log("file_id present: yes, but its value cannot be confirmed exact — failing closed");
-      deps.log("upload accepted: no");
-      return 1;
-    }
-
-    // A 2xx body carries the real file_id, so it is never dumped raw — only
-    // the redacted id below.
-    deps.log(`file_id present: ${fileId !== undefined ? "yes" : "no"}`);
-    if (fileId !== undefined) deps.log(`file_id (redacted): ${redactId(fileId)}`);
-    deps.log(`upload accepted: ${fileId !== undefined ? "yes" : "no"}`);
+    deps.log("ManageEngine upload diagnostic");
+    deps.log(`variant: ${inputs.variant}`);
+    deps.log(`host: ${new URL(hosts.mdm).host}`);
+    deps.log("endpoint: /api/v1/mdm/files");
+    deps.log("transport: native FormData (fetch-generated multipart boundary)");
+    deps.log("multipart field: file (conservative assumption, not proven by the Cloud page)");
+    deps.log("manual Content-Type: no — fetch supplies multipart/form-data; boundary=...");
+    deps.log(`content-disposition: filename=${fileName}`);
+    deps.log("accept: application/json");
+    deps.log("module: no");
+    deps.log("X-Customer: no");
+    deps.log(`APK filename: ${fileName}`);
+    deps.log(`APK size: ${bytes.byteLength}`);
     deps.log("");
-    deps.log(
-      "STOPPING HERE by design — this diagnostic never calls app creation or update, " +
-        "even on a successful upload.",
-    );
-    return fileId !== undefined ? 0 : 1;
+
+    const token = await exchangeToken(inputs, hosts, deps);
+    secrets.push(token);
+
+    await reportRepositoryRead(hosts, token, secrets, deps);
+    deps.log("");
+
+    const form = buildLegacyCloudUploadForm(bytes, fileName);
+    const headers = buildLegacyCloudUploadHeaders(token, fileName);
+
+    let response: ProbeFetchResponse;
+    try {
+      response = await deps.fetch(`${hosts.mdm}/api/v1/mdm/files`, {
+        method: "POST",
+        headers,
+        body: form,
+      });
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      deps.log(`upload request could not be sent: ${redactSecrets(message, secrets)}`);
+      return 1;
+    }
+
+    return reportLegacyUploadResult(response, secrets, deps);
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : String(caught);
     deps.log(`error: ${redactSecrets(message, secrets)}`);
@@ -599,10 +750,12 @@ async function runLegacyApiV1Files(inputs: ProbeInputs, deps: ProbeDeps): Promis
  * it and every message is redacted before it can reach the log.
  */
 export async function run(inputs: ProbeInputs, deps: ProbeDeps): Promise<number> {
-  // A different endpoint and transport entirely — see runLegacyApiV1Files.
-  // Everything below this point is unchanged from before that variant
-  // existed, and this variant never reaches it.
-  if (inputs.variant === "legacy_api_v1_files") return runLegacyApiV1Files(inputs, deps);
+  // Both target a different endpoint than every /emsapi/files variant, and
+  // differ from EACH OTHER in transport — see runLegacyApiV1RawExample and
+  // runLegacyApiV1Cloud. Everything below this point is unchanged from
+  // before either variant existed, and neither variant ever reaches it.
+  if (inputs.variant === "legacy_api_v1_raw_example") return runLegacyApiV1RawExample(inputs, deps);
+  if (inputs.variant === "legacy_api_v1_cloud") return runLegacyApiV1Cloud(inputs, deps);
 
   const secrets = [
     inputs.clientId,

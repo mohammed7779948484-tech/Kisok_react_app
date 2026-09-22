@@ -51,16 +51,28 @@ resolving) the remaining hypotheses.
 Per the explicit instruction not to keep permuting `/emsapi/files` further,
 that branch is exhausted enough for now. A small temporary diagnostic
 (`.github/workflows/mdm-upload-diagnostic.yml`, `tools/mdm/probe-upload.ts`)
-now tests a DIFFERENT endpoint entirely: `legacy_api_v1_files` sends
-`POST /api/v1/mdm/files` — documented as `/emsapi/files`'s deprecated
-predecessor — as a raw POST of the file bytes (no multipart), per the
-official Cloud API docs' own example (see `mdm-operations.md` for the exact
-citation and headers). The goal is only to determine whether that older
+now tests a DIFFERENT endpoint entirely: `POST /api/v1/mdm/files`,
+documented as `/emsapi/files`'s deprecated predecessor. ManageEngine
+currently publishes TWO CONTRADICTORY request representations for that
+endpoint — an earlier round treated it as one settled contract, which was
+wrong — so it is now two separately named variants: `legacy_api_v1_raw_example`
+(a general API example: raw POST of the file bytes, no multipart) and
+`legacy_api_v1_cloud` (the Cloud-specific page for the same endpoint:
+`multipart/form-data`, sent via native FormData with the boundary left to
+`fetch`). Because this tenant IS ManageEngine Cloud, `legacy_api_v1_cloud`
+is tested first and is the workflow default; `legacy_api_v1_raw_example` is
+preserved for later since ManageEngine's own documentation is genuinely
+contradictory here. See `mdm-operations.md` for the exact citations,
+headers, and the explicit caveat that `legacy_api_v1_cloud`'s multipart
+field name (`file`) is a conservative diagnostic assumption, not proven by
+the Cloud-specific page. Neither representation is claimed to work, and the
+legacy endpoint is not claimed to work, until a live dispatch proves it. The
+goal is only to determine whether either representation of that older
 endpoint remains functional for this tenant; a live success there would
 justify a separate, later production decision, not made here. The customer
 id used by `cloud_file_with_customer` is never committed; it is a GitHub
-Actions environment secret (`MDM_CUSTOMER_ID`), not required by
-`legacy_api_v1_files` since nothing in its documented contract calls for it.
+Actions environment secret (`MDM_CUSTOMER_ID`), required by neither legacy
+variant since nothing in either documented contract calls for it.
 The upload, app creation and app update all remain **TENANT VALIDATION
 REQUIRED**: NOT YET OBSERVED to succeed against a real tenant. The next real
 dispatch — diagnostic or release — is the proof.

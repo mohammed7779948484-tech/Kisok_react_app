@@ -36,18 +36,24 @@ describe("the ManageEngine upload diagnostic workflow", () => {
     expect(triggers).toEqual(["workflow_dispatch"]);
   });
 
-  it("offers exactly the four variants under test, defaulting to the most informative untested one", () => {
+  it("offers exactly the five variants under test, defaulting to the most informative untested one", () => {
     const block = triggerBlock();
 
     expect(block).toMatch(
-      /options:\s*\n\s*- legacy_api_v1_files\s*\n\s*- cloud_file_with_customer\s*\n\s*- legacy_fileName\s*\n\s*- cloud_file/,
+      /options:\s*\n\s*- legacy_api_v1_cloud\s*\n\s*- legacy_api_v1_raw_example\s*\n\s*- cloud_file_with_customer\s*\n\s*- legacy_fileName\s*\n\s*- cloud_file/,
     );
-    expect(block).toContain("default: legacy_api_v1_files");
+    expect(block).toContain("default: legacy_api_v1_cloud");
   });
 
   it("names the legacy endpoint the four /emsapi/files attempts have all failed to reach", () => {
     expect(source).toContain("/api/v1/mdm/files");
-    expect(source).toContain("legacy_api_v1_files");
+    expect(source).toContain("legacy_api_v1_raw_example");
+    expect(source).toContain("legacy_api_v1_cloud");
+  });
+
+  it("the ambiguous name legacy_api_v1_files no longer exists in the workflow", () => {
+    // It hid which contradictory documented contract was under test.
+    expect(source).not.toMatch(/\blegacy_api_v1_files\b/);
   });
 
   it("takes a run_id input, so it never rebuilds Android to get an APK", () => {
