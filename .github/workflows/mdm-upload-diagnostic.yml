@@ -2,16 +2,23 @@ name: ManageEngine upload diagnostic
 
 # MANUAL, ISOLATED PROBE — not the release pipeline. It builds nothing, signs
 # nothing, and never creates or updates the ManageEngine enterprise app; its
-# only job is to answer one question — which multipart field name the live
-# tenant's `POST /emsapi/files` accepts — using an already-verified
-# production APK artifact, so each attempt costs seconds instead of the
-# ~16 minutes a full Android build-and-release run takes.
+# only job is to test ONE candidate wire shape for the live tenant's
+# `POST /emsapi/files` at a time, using an already-verified production APK
+# artifact, so each attempt costs seconds instead of the ~16 minutes a full
+# Android build-and-release run takes.
 #
-# Two real-tenant attempts have already both failed with HTTP 406 on that
-# endpoint (a hand-built multipart body, then Node's native FormData sending
-# the field as `file`), so the working wire shape is not yet known. This
-# workflow isolates exactly ONE variable per run — the field name — with
-# every other header and body characteristic held constant.
+# THREE real-tenant attempts have already failed with HTTP 406 on that
+# endpoint (a hand-built multipart body, then native FormData with field
+# `file`, then native FormData with field `fileName`), so the working wire
+# shape is not yet known. This workflow isolates exactly ONE variable per
+# run — with every other header and body characteristic held constant:
+#
+#   cloud_file                — field `file`, no X-Customer. OBSERVED to fail.
+#   legacy_fileName            — field `fileName`, no X-Customer. OBSERVED to fail.
+#   cloud_file_with_customer   — field `file`, WITH X-Customer. NOT YET OBSERVED —
+#     differs from cloud_file by that one header alone. See
+#     tools/mdm/probe-upload.ts and features/device-mode/docs/mdm-operations.md
+#     for why a real tenant/customer id is now suspected.
 #
 # One run = one HTTP upload representation. Do not dispatch it to try
 # several variants "just to see" in one go: a run that happens to succeed
@@ -22,16 +29,23 @@ on:
   workflow_dispatch:
     inputs:
       variant:
-        description: "Which multipart field name to send the APK under"
+        description: "Which upload representation to send the APK as"
         type: choice
         options:
+          - cloud_file_with_customer
           - legacy_fileName
           - cloud_file
-        # cloud_file (field `file`) is the production publisher's own shape
-        # and has already failed live, so it adds little as a first probe.
-        default: legacy_fileName
+        # The two field-name-only variants have both already failed live;
+        # the customer-id hypothesis is the most informative untested one.
+        default: cloud_file_with_customer
       run_id:
-        description: "Workflow run ID to download the verified kisok-release-apk artifact from"
+        description: >-
+          Workflow run ID to download the kisok-release-apk artifact from. The
+          DEFAULT run (35535503611) is the one this repository's docs
+          document as independently verified (package, version, signing,
+          production config). Overriding this input still runs the probe, but
+          an overridden run carries NO such recorded verification — that is a
+          property of the specific run, not of this workflow.
         type: string
         default: "35535503611"
 
@@ -83,11 +97,14 @@ jobs:
         with:
           node-version: 24
 
-      # A previously verified production build, NOT rebuilt here. Its
-      # package identity, version, production Supabase config and signing
-      # certificate were already independently confirmed when run
-      # ${{ inputs.run_id }} produced it — see features/device-mode/docs/worklog.md.
-      - name: Download the verified production APK artifact
+      # NOT rebuilt here — downloaded from a prior release run instead. Only
+      # the DEFAULT run_id (35535503611) is the one this repository's docs
+      # (features/device-mode/docs/worklog.md) record as independently
+      # confirmed: package identity, version, production Supabase config and
+      # signing certificate. That verification belongs to that specific run,
+      # not to this workflow — an overridden run_id downloads whatever
+      # kisok-release-apk artifact that run produced, unverified by this repo.
+      - name: Download the production APK artifact
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: kisok-release-apk
@@ -97,16 +114,24 @@ jobs:
 
       # Locate the APK robustly rather than assuming a fixed path: v7 of
       # download-artifact extracts a single named artifact directly into
-      # `path`, but this does not assume that shape blindly.
+      # `path`, but this does not assume that shape blindly. Fails closed on
+      # anything but EXACTLY one .apk — never silently picks the first of
+      # several, which could probe the wrong build without anyone noticing.
       - name: Locate the downloaded APK
         id: locate
         run: |
-          apk="$(find "${{ runner.temp }}/mdm-probe-apk" -iname '*.apk' -type f | head -n1)"
-          if [ -z "$apk" ]; then
+          mapfile -t apks < <(find "${{ runner.temp }}/mdm-probe-apk" -iname '*.apk' -type f)
+          if [ "${#apks[@]}" -eq 0 ]; then
             echo "::error::No .apk file found under ${{ runner.temp }}/mdm-probe-apk after downloading run ${{ inputs.run_id }}'s kisok-release-apk artifact."
             find "${{ runner.temp }}/mdm-probe-apk"
             exit 1
           fi
+          if [ "${#apks[@]}" -gt 1 ]; then
+            echo "::error::Found ${#apks[@]} .apk files under ${{ runner.temp }}/mdm-probe-apk after downloading run ${{ inputs.run_id }}'s kisok-release-apk artifact — refusing to guess which one to probe:"
+            printf '  %s\n' "${apks[@]}"
+            exit 1
+          fi
+          apk="${apks[0]}"
           if [ ! -s "$apk" ]; then
             echo "::error::$apk is empty."
             exit 1
@@ -128,11 +153,17 @@ jobs:
           "$aapt2" dump badging "${{ steps.locate.outputs.apk_path }}" \
             | grep -E "^package:|versionCode|versionName" || true
 
+      # MDM_CUSTOMER_ID is a GitHub Actions environment SECRET (never a
+      # variable, never hard-coded here): it is only required by the probe
+      # script itself, and only for the cloud_file_with_customer variant —
+      # this step passes it unconditionally so the script can decide, rather
+      # than duplicating that per-variant logic here.
       - name: Probe the ManageEngine upload contract
         env:
           MDM_CLIENT_ID: ${{ secrets.MDM_CLIENT_ID }}
           MDM_CLIENT_SECRET: ${{ secrets.MDM_CLIENT_SECRET }}
           MDM_REFRESH_TOKEN: ${{ secrets.MDM_REFRESH_TOKEN }}
+          MDM_CUSTOMER_ID: ${{ secrets.MDM_CUSTOMER_ID }}
           MDM_DATA_CENTRE: ${{ vars.MDM_DATA_CENTRE || 'us' }}
         run: |
           node tools/mdm/probe-upload.ts \

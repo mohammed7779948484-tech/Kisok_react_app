@@ -1379,3 +1379,113 @@ two representations have now failed identically, that a hand-built multipart
 body is disproven as the sole cause, and that a cheap, isolated, audited way
 to test the next candidate now exists. The recommended next step is one
 dispatch of `mdm-upload-diagnostic.yml` with `variant: legacy_fileName`.
+
+## Round 13 — a third live 406, and a real tenant/customer id
+
+The recommended Round 12 dispatch happened: `legacy_fileName` (field
+`fileName`) against `main@440e1da`, workflow run `35681125575`. Everything
+up to the upload OBSERVED SUCCEEDED again — checkout, secrets present,
+Node 24, artifact download, digest, APK location, package/version, OAuth
+token exchange, `GET /api/v1/mdm/apps` (HTTP 200). `POST /emsapi/files`
+answered the same `HTTP 406 {"errorCode":"406","errorMsg":"Not
+Acceptable"}` as both earlier attempts. Three representations now share
+this outcome: hand-built multipart, native FormData/`file`, native
+FormData/`fileName` — none varying `X-Customer`, `Module`, `Accept`, or the
+endpoint. See `mdm-operations.md` for the corrected reasoning about what
+holding those characteristics constant does and does not prove.
+
+Two things independently narrow the remaining hypotheses:
+
+- The granted OAuth scope was confirmed: `MDMOnDemand.MDMDeviceMgmt.READ`,
+  `.CREATE`, `.UPDATE`, `MDMOnDemand.MDMInventory.READ`. Scope is no longer
+  a leading suspect.
+- The identical APK was uploaded successfully through the ManageEngine web
+  console (App Repository → Add App → Android Enterprise App → Self Hosted
+  Apps), reading back `com.kisok.kiosk` / `KISOK` / `1.0.0` correctly. That
+  flow is session/cookie/CSRF-based (`upload.zoho.com/webupload`) and is
+  NOT being adopted for this OAuth publisher or its diagnostic — it is
+  evidence only, for two things: the tenant accepts this exact APK, and the
+  tenant has a real customer/tenant id. Another official ManageEngine
+  `/emsapi/files` example shows an `X-Customer` header the current
+  Cloud-specific docs omit. Nothing from that browser session — cookies,
+  CSRF tokens, session ids, the NetLog itself — was committed or logged;
+  only the fact that a customer id exists informs this round.
+
+### New probe variant: `cloud_file_with_customer`
+
+Isolates that one hypothesis. `tools/mdm/probe-upload.ts` gained a third
+`Variant`, sharing `cloud_file`'s field (`file`) and adding exactly one
+header, `X-Customer`, built by a new pure `buildUploadHeaders(variant,
+token, customerId)` — tested directly to differ from `cloud_file`'s headers
+by that one key and nothing else (`headers[k] === base[k]` for every other
+key). The real customer id is never hard-coded: it is read only from
+`process.env.MDM_CUSTOMER_ID`, supplied as a GitHub Actions environment
+SECRET (not a variable) in `android-release`, and added to the same
+redaction set as the three OAuth credentials. `resolveInputs` fails closed
+— before any network call — when `cloud_file_with_customer` is selected and
+`MDM_CUSTOMER_ID` is unset or blank; the other two variants are unaffected
+and do not require it. The diagnostic's printed header line now reads
+`X-Customer: yes (redacted)` or `X-Customer: no`, never the value.
+
+`tools/mdm/publish-app.ts` and `publish-app.test.ts` are untouched —
+confirmed by an empty `git diff` against both for this entire round.
+
+### Small hardening fixes, from review of the Round 12 workflow
+
+- **APK cardinality.** `find … | head -n1` silently picked the first match.
+  Replaced with `mapfile -t apks < …`, which fails closed on 0 files (as
+  before) AND now on more than 1, printing the offending paths rather than
+  guessing.
+- **`run_id` verification wording.** The download step's comment previously
+  implied whichever `run_id` a dispatch selects carries the same recorded
+  verification as the documented default. Corrected: only run `35535503611`
+  is recorded as verified in this repo's docs; an overridden run_id still
+  runs, unverified by this repository.
+- **Repository-read body.** `reportRepositoryRead` read only `.status` and
+  never consumed the response body, leaving the connection unreleased.
+  Fixed to `await response.text()` (discarded) before logging the status —
+  still logs only `repository read: HTTP <status>`, never the body.
+- **Doc logic error.** `mdm-operations.md` previously said characteristics
+  held constant across the failed attempts were "therefore not (yet) a
+  suspect" — backwards: an unvaried characteristic is NOT ruled out by that
+  fact, only unproven either way. Corrected in both `mdm-operations.md` and
+  `plan.md`, along with the stale "contracts themselves are no longer in
+  question" line — the Add/Update/App-Details/status contracts remain
+  implemented as documented, but the LIVE `/emsapi/files` upload wire
+  contract is the separate, still-open question.
+
+### Tests added
+
+24 new cases across `tools/mdm/probe-upload.test.ts` (13) and
+`tools/mdm/mdm-upload-diagnostic-workflow.test.ts` (3), plus the existing
+suites re-run green. Notably: `buildUploadHeaders` is proven to differ
+between `cloud_file` and `cloud_file_with_customer` by exactly the
+`X-Customer` key (a same-keys-else diff, not just "it has one more key");
+`run()` is proven to send `X-Customer` only for `cloud_file_with_customer`
+even when a customer id happens to be available for another variant; and a
+workflow-source test proves `MDM_CUSTOMER_ID` is assigned only from
+`${{ secrets.MDM_CUSTOMER_ID }}` on every line that names it, never a
+literal, never `vars.*`.
+
+### Round 13 gate
+
+```
+npx jest tools/mdm --runInBand → 108 passed
+pnpm typecheck        → PASS
+pnpm lint             → PASS
+pnpm format:check     → PASS
+pnpm check:docs       → PASS (94 files)
+pnpm check:ci-scripts → PASS (5 workflows, 10 checks)
+node -e (js-yaml)     → all 5 workflow files parse
+git diff --check      → clean
+git diff -- tools/mdm/publish-app.ts tools/mdm/publish-app.test.ts → empty
+```
+
+Not claimed: that `X-Customer` fixes the 406. Only that it is now the most
+informative untested candidate, isolated cleanly, and ready for one live
+dispatch: `mdm-upload-diagnostic.yml`, `variant: cloud_file_with_customer`,
+`run_id: 35535503611`, once the `MDM_CUSTOMER_ID` environment secret is
+created. The `GET /api/v1/mdm/apps` repository read already OBSERVED
+SUCCEEDED on this same OAuth token in every attempt so far, so a 406 here
+would mean the customer-id hypothesis is disproven too, not that auth or
+repository access broke.

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   buildUploadForm,
+  buildUploadHeaders,
   capBody,
   redactId,
   redactSecrets,
@@ -17,6 +18,7 @@ const INPUTS: ProbeInputs = {
   clientId: "client-id",
   clientSecret: "client-secret",
   refreshToken: "refresh-token",
+  customerId: undefined,
   apkPath: "/tmp/app-release.apk",
   dataCentre: "us",
   variant: "cloud_file",
@@ -95,6 +97,62 @@ describe("the one variable this probe isolates: the multipart field name", () =>
   });
 });
 
+describe("cloud_file_with_customer isolates exactly one variable: X-Customer", () => {
+  it("sends the APK under 'file', same as cloud_file — never 'fileName'", () => {
+    const form = buildUploadForm(
+      "cloud_file_with_customer",
+      new Uint8Array([1, 2, 3]),
+      "app-release.apk",
+    );
+
+    expect(VARIANT_FIELD.cloud_file_with_customer).toBe("file");
+    const names: string[] = [];
+    form.forEach((_value, key) => names.push(key));
+    expect(names).toEqual(["file"]);
+    expect(form.has("fileName")).toBe(false);
+  });
+
+  it("adds X-Customer with exactly the provided id, alongside the same base headers", () => {
+    const headers = buildUploadHeaders("cloud_file_with_customer", "tok-123", "999888777");
+
+    expect(headers["X-Customer"]).toBe("999888777");
+    expect(headers.Authorization).toBe("Zoho-oauthtoken tok-123");
+    expect(headers.Accept).toBe("application/json");
+    expect(headers.Module).toBe("MDM_APP_MGMT");
+    // Never a manually set Content-Type — fetch must generate the boundary.
+    expect(Object.keys(headers).map((k) => k.toLowerCase())).not.toContain("content-type");
+  });
+
+  it("cloud_file never carries X-Customer, even when a customer id is available", () => {
+    const headers = buildUploadHeaders("cloud_file", "tok-123", "999888777");
+
+    expect(headers["X-Customer"]).toBeUndefined();
+  });
+
+  it("differs from cloud_file's headers by exactly the X-Customer key — nothing else", () => {
+    const base = buildUploadHeaders("cloud_file", "tok-123", undefined);
+    const withCustomer = buildUploadHeaders("cloud_file_with_customer", "tok-123", "999888777");
+
+    const addedKeys = Object.keys(withCustomer).filter((key) => !(key in base));
+    expect(addedKeys).toEqual(["X-Customer"]);
+    // Every OTHER header is byte-identical between the two variants.
+    for (const key of Object.keys(base)) {
+      expect(withCustomer[key]).toBe(base[key]);
+    }
+    // The two variants also send the same body shape — the multipart field.
+    expect(VARIANT_FIELD.cloud_file_with_customer).toBe(VARIANT_FIELD.cloud_file);
+  });
+
+  it("fails closed rather than send a request with no customer id", () => {
+    expect(() => buildUploadHeaders("cloud_file_with_customer", "tok-123", undefined)).toThrow(
+      /MDM_CUSTOMER_ID/,
+    );
+    expect(() => buildUploadHeaders("cloud_file_with_customer", "tok-123", "   ")).toThrow(
+      /MDM_CUSTOMER_ID/,
+    );
+  });
+});
+
 describe("resolveInputs", () => {
   it("names every missing required value at once", () => {
     const result = resolveInputs([], {});
@@ -143,19 +201,69 @@ describe("resolveInputs", () => {
 
     expect(result.ok).toBe(false);
   });
+
+  it("fails closed for cloud_file_with_customer when MDM_CUSTOMER_ID is absent", () => {
+    const result = resolveInputs(["--apk", "/tmp/x.apk", "--variant", "cloud_file_with_customer"], {
+      MDM_CLIENT_ID: "a",
+      MDM_CLIENT_SECRET: "b",
+      MDM_REFRESH_TOKEN: "c",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.problems.join("\n")).toContain("MDM_CUSTOMER_ID");
+  });
+
+  it("fails closed for cloud_file_with_customer when MDM_CUSTOMER_ID is blank", () => {
+    const result = resolveInputs(["--apk", "/tmp/x.apk", "--variant", "cloud_file_with_customer"], {
+      MDM_CLIENT_ID: "a",
+      MDM_CLIENT_SECRET: "b",
+      MDM_REFRESH_TOKEN: "c",
+      MDM_CUSTOMER_ID: "   ",
+    });
+
+    expect(result.ok).toBe(false);
+  });
+
+  it("accepts cloud_file_with_customer when MDM_CUSTOMER_ID is set", () => {
+    const result = resolveInputs(["--apk", "/tmp/x.apk", "--variant", "cloud_file_with_customer"], {
+      MDM_CLIENT_ID: "a",
+      MDM_CLIENT_SECRET: "b",
+      MDM_REFRESH_TOKEN: "c",
+      MDM_CUSTOMER_ID: "999888777",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.inputs.customerId).toBe("999888777");
+  });
+
+  it("does NOT require MDM_CUSTOMER_ID for cloud_file or legacy_fileName", () => {
+    for (const variant of ["cloud_file", "legacy_fileName"] as const) {
+      const result = resolveInputs(["--apk", "/tmp/x.apk", "--variant", variant], {
+        MDM_CLIENT_ID: "a",
+        MDM_CLIENT_SECRET: "b",
+        MDM_REFRESH_TOKEN: "c",
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.inputs.customerId).toBeUndefined();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
 // run(), driven through an injected fetch — no network, no credentials.
 // ---------------------------------------------------------------------------
 
-type Call = { url: string; method: string };
+type Call = { url: string; method: string; headers: Record<string, string> };
 
 function fakeFetch(routes: Record<string, () => { status: number; body?: unknown }>) {
   const calls: Call[] = [];
   const fetchLike: FetchLike = async (url, init) => {
     const method = init?.method ?? "GET";
-    calls.push({ url, method });
+    calls.push({ url, method, headers: (init?.headers ?? {}) as Record<string, string> });
     const pathname = new URL(url).pathname;
     const key = Object.keys(routes).find((route) => {
       const [routeMethod, routePath] = route.split(" ");
@@ -254,6 +362,68 @@ it("sends the field name matching the requested variant, and only that one", asy
 
   const upload = calls.find((c) => c.method === "POST" && c.url.endsWith("/emsapi/files"));
   expect(upload).toBeDefined();
+});
+
+it("cloud_file_with_customer sends X-Customer with the exact configured id, and only that variant", async () => {
+  const { deps: d, calls } = deps({
+    "GET /api/v1/mdm/apps": () => ({ status: 200 }),
+    "POST /emsapi/files": () => ({ status: 406, body: { errorCode: "406" } }),
+  });
+
+  await run({ ...INPUTS, variant: "cloud_file_with_customer", customerId: "999888777" }, d);
+
+  const upload = calls.find((c) => c.method === "POST" && c.url.endsWith("/emsapi/files"));
+  expect(upload?.headers["X-Customer"]).toBe("999888777");
+});
+
+it("cloud_file never sends X-Customer, even when run() is handed a customer id", async () => {
+  const { deps: d, calls } = deps({
+    "GET /api/v1/mdm/apps": () => ({ status: 200 }),
+    "POST /emsapi/files": () => ({ status: 406, body: { errorCode: "406" } }),
+  });
+
+  await run({ ...INPUTS, variant: "cloud_file", customerId: "999888777" }, d);
+
+  const upload = calls.find((c) => c.method === "POST" && c.url.endsWith("/emsapi/files"));
+  expect(upload?.headers["X-Customer"]).toBeUndefined();
+});
+
+it("fails closed and sends NO upload request when cloud_file_with_customer has no customer id", async () => {
+  const {
+    deps: d,
+    calls,
+    lines,
+  } = deps({
+    "GET /api/v1/mdm/apps": () => ({ status: 200 }),
+    "POST /emsapi/files": () => ({ status: 200, body: { fileID: "1", fileStatus: 2 } }),
+  });
+
+  const code = await run(
+    { ...INPUTS, variant: "cloud_file_with_customer", customerId: undefined },
+    d,
+  );
+
+  expect(code).toBe(1);
+  expect(lines.join("\n")).toContain("MDM_CUSTOMER_ID");
+  expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/emsapi/files"))).toBe(false);
+});
+
+it("never prints the customer id, on any path — success, failure, or error", async () => {
+  const CUSTOMER_ID = "999888777";
+  const { deps: d, lines } = deps({
+    "GET /api/v1/mdm/apps": () => ({ status: 200 }),
+    "POST /emsapi/files": () => ({
+      status: 500,
+      body: { message: `rejected for customer ${CUSTOMER_ID}` },
+    }),
+  });
+
+  await run({ ...INPUTS, variant: "cloud_file_with_customer", customerId: CUSTOMER_ID }, d);
+
+  const output = lines.join("\n");
+  expect(output).not.toContain(CUSTOMER_ID);
+  expect(output).toContain("X-Customer: yes (redacted)");
+  expect(output).toContain("***REDACTED***");
 });
 
 it("never prints a credential or the exchanged access token, on any path", async () => {

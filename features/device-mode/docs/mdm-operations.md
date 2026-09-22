@@ -71,54 +71,91 @@ it as absent is what creates a duplicate enterprise app.
 
 Status against a real tenant, precisely: a real release attempt OBSERVED the
 OAuth token exchange, the App Repository listing, and repository-absence
-detection all SUCCEED. Then TWO separate live upload attempts have both
+detection all SUCCEED. Then THREE separate live upload attempts have all
 FAILED with the same `HTTP 406 {"errorCode":"406","errorMsg":"Not
 Acceptable"}` on `POST /emsapi/files`:
 
 1. A hand-built multipart body (a manual boundary and `Content-Type`) → 406.
-2. Node's native `FormData`/`Blob`, field name `file`, no manual
-   `Content-Type`, no `X-Customer` → 406, identical error.
+2. Node's native `FormData`/`Blob`, field name `file`, no `X-Customer` → 406,
+   identical error.
+3. Node's native `FormData`/`Blob`, field name `fileName`, no `X-Customer` →
+   406, identical error again.
 
 **Do not claim the hand-built multipart body was the cause.** That was the
-working theory after attempt 1, and it is now disproven: attempt 2 removed
-every characteristic of a hand-rolled request — the boundary, the
-`Content-Type` header, all of it — and the tenant rejected it exactly the
-same way. Something else about the request is what the tenant is rejecting,
-and it is not yet known what.
+working theory after attempt 1, and it is now disproven twice over: attempts
+2 and 3 removed every characteristic of a hand-rolled request — the
+boundary, the `Content-Type` header, all of it — and varied the field name
+between them, and the tenant rejected both exactly the same way. Something
+else about the request is what the tenant is rejecting, and it is not yet
+known what.
 
-What is held constant across both failures, and therefore not (yet) a
-suspect on their own: the endpoint (`/emsapi/files`), host
-(`mdm.manageengine.com`), `Module: MDM_APP_MGMT`, `Accept: application/json`,
-no `X-Customer` header, the OAuth token, and the tenant.
+What is held constant across all three failures — the endpoint
+(`/emsapi/files`), host (`mdm.manageengine.com`), `Module: MDM_APP_MGMT`,
+`Accept: application/json`, no `X-Customer` header, and the tenant — is NOT
+thereby ruled out. These characteristics simply were not varied by any
+experiment run so far, so nothing here proves them innocent; each remains a
+candidate until an attempt actually isolates it.
+
+Two things narrow that list, though, from evidence outside the upload calls
+themselves:
+
+- **The OAuth scope is confirmed sufficient**, not merely held constant: the
+  granted scope includes `MDMOnDemand.MDMDeviceMgmt.READ`, `.CREATE`,
+  `.UPDATE` and `MDMOnDemand.MDMInventory.READ`. Scope is no longer the
+  leading hypothesis for the 406.
+- **The APK itself is accepted by this exact tenant**: the identical
+  artifact was uploaded successfully through the ManageEngine web console
+  (App Repository → Add App → Android Enterprise App → Self Hosted Apps),
+  which correctly read back `com.kisok.kiosk` / `KISOK` / `1.0.0`. That
+  upload used the browser's own session-based flow
+  (`upload.zoho.com/webupload`, cookies, CSRF) — appropriate for a browser,
+  not for this OAuth-authenticated GitHub Actions publisher, and it is NOT
+  being adopted here. What it DID establish: the tenant has a real
+  customer/tenant id, and the current Cloud docs' omission of `X-Customer`
+  on `/emsapi/files` may be the gap — another official ManageEngine example
+  for the same endpoint shows that header. That is the next candidate to
+  isolate, not a confirmed fix.
 
 The production publisher (`tools/mdm/publish-app.ts`) still sends attempt
-2's shape — native `FormData`, field `file` — because it is not yet known
-what would work better, and there is no evidence to change it to. A separate,
-temporary diagnostic exists to find out cheaply instead of by spending a full
-~16-minute release run per guess:
+2's shape — native `FormData`, field `file`, no `X-Customer` — because none
+of the three failures has yet been turned into a live success to change it
+to. A separate, temporary diagnostic exists to find out cheaply instead of
+by spending a full ~16-minute release run per guess:
 
 - `.github/workflows/mdm-upload-diagnostic.yml` (manual dispatch) downloads
   an already-verified production APK artifact rather than rebuilding one, and
   sends it to `/emsapi/files` under exactly one representation per run.
 - `tools/mdm/probe-upload.ts` is the standalone script it runs. It isolates
-  ONE variable at a time — currently the multipart field name, `file`
-  (`cloud_file`, matching the current publisher and the Cloud-specific docs)
-  vs `fileName` (`legacy_fileName`, matching a contradictory ManageEngine
-  example). It authenticates, optionally confirms repository read access, and
-  performs exactly one upload — it NEVER calls app creation or update, even
-  on a successful upload, so a stray probe cannot mutate the App Repository.
-- `X-Customer` is deliberately NOT being tried yet: this tenant is a standard
-  non-MSP Cloud tenant, and guessing a customer id would mix two variables in
-  one probe.
+  ONE variable at a time:
+  - `cloud_file` — field `file`, no `X-Customer`. OBSERVED to fail (406).
+  - `legacy_fileName` — field `fileName`, no `X-Customer`. OBSERVED to fail
+    (406).
+  - `cloud_file_with_customer` — field `file`, `X-Customer: <tenant id>`
+    added, everything else identical to `cloud_file`. NOT YET OBSERVED —
+    this isolates the customer-id hypothesis on its own.
+
+  It authenticates, optionally confirms repository read access, and performs
+  exactly one upload — it NEVER calls app creation or update, even on a
+  successful upload, so a stray probe cannot mutate the App Repository.
+
+- The real customer/tenant id is never committed to this public repository.
+  It is supplied only as the GitHub Actions environment secret
+  `MDM_CUSTOMER_ID` (in `android-release`, alongside the three OAuth
+  credentials) and is redacted out of every diagnostic log line the same way
+  those credentials are.
 
 Everything below in this section — App Details, Stable label selection, the
-create/update bodies, the lossless id handling — is unaffected by the 406 and
-remains correct; only the upload's wire shape is in question.
+create/update bodies, the lossless id handling — is DOCUMENTED and
+IMPLEMENTED against the vendor's published contract and unaffected by the
+406; but none of it has been exercised live either, because no upload has
+yet succeeded to reach them. Only the `/emsapi/files` upload wire shape has
+active competing hypotheses right now.
 
 The upload, app creation and app update all remain **TENANT VALIDATION
 REQUIRED**: NOT YET OBSERVED to succeed against a real tenant. Do not treat
 any of them as proven until a real dispatch — diagnostic or release — shows
-it working live.
+it working live. In particular: do not claim `X-Customer` fixes the 406
+until a live `cloud_file_with_customer` dispatch proves it.
 
 Two consequences worth knowing:
 

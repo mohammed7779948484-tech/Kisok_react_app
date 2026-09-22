@@ -2,15 +2,25 @@
  * probe-upload.ts — DIAGNOSTIC ONLY. Sends exactly one representation of a
  * verified APK to ManageEngine's `POST /emsapi/files` and stops.
  *
- *     node tools/mdm/probe-upload.ts --apk <path> --variant cloud_file|legacy_fileName
+ *     node tools/mdm/probe-upload.ts --apk <path> --variant cloud_file|legacy_fileName|cloud_file_with_customer
  *
- * This exists because two real-tenant attempts have now both failed with
- * HTTP 406 on `/emsapi/files` — a hand-built multipart body, and Node's
- * native `FormData`/`Blob` sending the field as `file` — so the working wire
- * shape is not yet known, and a full Android build-and-release run costs
- * ~16 minutes per attempt. This script isolates ONE variable per run: the
- * multipart field name (`file` vs `fileName`), with every other header and
- * body characteristic held constant.
+ * This exists because THREE real-tenant attempts have now all failed with
+ * HTTP 406 on `/emsapi/files` — a hand-built multipart body, native
+ * `FormData`/`Blob` with field `file`, and native `FormData`/`Blob` with
+ * field `fileName` — so the working wire shape is not yet known, and a full
+ * Android build-and-release run costs ~16 minutes per attempt. This script
+ * isolates ONE variable per run, with every other header and body
+ * characteristic held constant:
+ *
+ *   cloud_file                — field `file`, no X-Customer. OBSERVED to fail.
+ *   legacy_fileName            — field `fileName`, no X-Customer. OBSERVED to fail.
+ *   cloud_file_with_customer   — field `file`, WITH X-Customer. NOT YET OBSERVED.
+ *     Isolates the customer-id hypothesis: it differs from `cloud_file` by
+ *     exactly one header and nothing else. A successful manual web-console
+ *     upload (a different, cookie/CSRF-based flow this script does NOT use)
+ *     surfaced that this tenant has a real customer id, and another official
+ *     ManageEngine example for this same endpoint shows an X-Customer header
+ *     the current Cloud-specific docs omit.
  *
  * It NEVER calls `POST /api/v1/mdm/apps` or
  * `PUT /api/v1/mdm/apps/{app_id}/labels/{release_label_id}` — a successful
@@ -19,8 +29,11 @@
  * working upload shape is proven live.
  *
  * Credentials come from the environment only — MDM_CLIENT_ID,
- * MDM_CLIENT_SECRET, MDM_REFRESH_TOKEN — and are never accepted as flags,
- * never printed, and redacted out of every message this script emits.
+ * MDM_CLIENT_SECRET, MDM_REFRESH_TOKEN, and (only for the
+ * cloud_file_with_customer variant) MDM_CUSTOMER_ID — and are never accepted
+ * as flags, never printed, and redacted out of every message this script
+ * emits. MDM_CUSTOMER_ID is never hard-coded here or anywhere in this public
+ * repository; it is supplied only as a GitHub Actions environment secret.
  *
  * Deliberately standalone: it duplicates a few small pieces of
  * `publish-app.ts` (secret redaction, data-centre hosts, the token-exchange
@@ -38,20 +51,27 @@ import process from "node:process";
 // Types
 // ---------------------------------------------------------------------------
 
-/** The one variable this probe isolates: which multipart field name to use. */
-export const VARIANTS = ["cloud_file", "legacy_fileName"] as const;
+/** The one variable this probe isolates: which upload representation to use. */
+export const VARIANTS = ["cloud_file", "legacy_fileName", "cloud_file_with_customer"] as const;
 export type Variant = (typeof VARIANTS)[number];
 
 /**
  * `cloud_file` matches the current Cloud-specific documentation and the
  * production publisher (field `file`) — already OBSERVED to fail with 406.
  * `legacy_fileName` matches a contradictory ManageEngine example (field
- * `fileName`) and is NOT yet tested live.
+ * `fileName`) — also OBSERVED to fail with 406.
+ * `cloud_file_with_customer` sends the same field as `cloud_file` (`file`)
+ * plus an `X-Customer` header — it must differ from `cloud_file` by that one
+ * header alone. NOT YET tested live.
  */
 export const VARIANT_FIELD: Record<Variant, string> = {
   cloud_file: "file",
   legacy_fileName: "fileName",
+  cloud_file_with_customer: "file",
 };
+
+/** Only this variant sends an X-Customer header at all. */
+const CUSTOMER_VARIANT: Variant = "cloud_file_with_customer";
 
 export const APK_MIME = "application/vnd.android.package-archive";
 
@@ -59,6 +79,8 @@ export interface ProbeInputs {
   clientId: string;
   clientSecret: string;
   refreshToken: string;
+  /** Required only when variant is cloud_file_with_customer. */
+  customerId: string | undefined;
   apkPath: string;
   dataCentre: string;
   variant: Variant;
@@ -180,6 +202,31 @@ export function buildUploadForm(variant: Variant, bytes: Uint8Array, fileName: s
   return form;
 }
 
+/**
+ * The upload headers for a given variant. `cloud_file_with_customer` differs
+ * from `cloud_file` by exactly one header — `X-Customer` — and nothing else;
+ * every other variant never carries it. `Content-Type` is deliberately never
+ * set here: it is left to `fetch` to generate the multipart boundary.
+ */
+export function buildUploadHeaders(
+  variant: Variant,
+  token: string,
+  customerId: string | undefined,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    Authorization: `Zoho-oauthtoken ${token}`,
+    Accept: "application/json",
+    Module: "MDM_APP_MGMT",
+  };
+  if (variant !== CUSTOMER_VARIANT) return headers;
+  if (customerId === undefined || customerId.trim() === "") {
+    throw new Error(
+      `MDM_CUSTOMER_ID is required for the ${CUSTOMER_VARIANT} variant — failing closed`,
+    );
+  }
+  return { ...headers, "X-Customer": customerId };
+}
+
 // ---------------------------------------------------------------------------
 // Input resolution
 // ---------------------------------------------------------------------------
@@ -187,7 +234,7 @@ export function buildUploadForm(variant: Variant, bytes: Uint8Array, fileName: s
 export type ResolveResult = { ok: true; inputs: ProbeInputs } | { ok: false; problems: string[] };
 
 const USAGE = `
-Usage: node tools/mdm/probe-upload.ts --apk <path> --variant <cloud_file|legacy_fileName> [--data-centre <code>]
+Usage: node tools/mdm/probe-upload.ts --apk <path> --variant <${VARIANTS.join("|")}> [--data-centre <code>]
 
 DIAGNOSTIC ONLY. Sends exactly one representation of the given APK to
 POST /emsapi/files and stops — it never creates or updates the ManageEngine
@@ -195,6 +242,7 @@ enterprise app.
 
 Required environment (never flags, never printed):
   MDM_CLIENT_ID, MDM_CLIENT_SECRET, MDM_REFRESH_TOKEN
+  MDM_CUSTOMER_ID   (only when --variant is ${CUSTOMER_VARIANT})
 
 Optional:
   --data-centre <code>   or MDM_DATA_CENTRE   (default: us)
@@ -253,10 +301,29 @@ export function resolveInputs(
 
   const dataCentre = flags.get("--data-centre") ?? env.MDM_DATA_CENTRE ?? "us";
 
+  // Not required by `required()` above: MDM_CUSTOMER_ID is only mandatory for
+  // one variant, and the other variants must not be made to depend on it.
+  const customerIdRaw = env.MDM_CUSTOMER_ID;
+  const customerId =
+    customerIdRaw === undefined || customerIdRaw.trim() === "" ? undefined : customerIdRaw;
+  if (variant === CUSTOMER_VARIANT && customerId === undefined) {
+    problems.push(
+      `MDM_CUSTOMER_ID is not set. The ${CUSTOMER_VARIANT} variant requires it and refuses to run without it.`,
+    );
+  }
+
   if (problems.length > 0) return { ok: false, problems };
   return {
     ok: true,
-    inputs: { clientId, clientSecret, refreshToken, apkPath, dataCentre, variant: variant! },
+    inputs: {
+      clientId,
+      clientSecret,
+      refreshToken,
+      customerId,
+      apkPath,
+      dataCentre,
+      variant: variant!,
+    },
   };
 }
 
@@ -321,6 +388,9 @@ async function reportRepositoryRead(
       method: "GET",
       headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: "application/json" },
     });
+    // Consumed, never dumped: an unread body leaves the connection open. Only
+    // the status is diagnostic output — the repository contents are not.
+    await response.text();
     deps.log(`repository read: HTTP ${response.status}`);
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : String(caught);
@@ -333,14 +403,18 @@ async function reportRepositoryRead(
  * it and every message is redacted before it can reach the log.
  */
 export async function run(inputs: ProbeInputs, deps: ProbeDeps): Promise<number> {
-  const secrets = [inputs.clientId, inputs.clientSecret, inputs.refreshToken].filter(
-    (value) => value.trim() !== "",
-  );
+  const secrets = [
+    inputs.clientId,
+    inputs.clientSecret,
+    inputs.refreshToken,
+    inputs.customerId ?? "",
+  ].filter((value) => value.trim() !== "");
   try {
     const hosts = resolveDataCentre(inputs.dataCentre);
     const bytes = await readApkOrFail(inputs, deps);
     const fileName = inputs.apkPath.split("/").pop() ?? "app-release.apk";
     const fieldName = VARIANT_FIELD[inputs.variant];
+    const usesCustomerHeader = inputs.variant === CUSTOMER_VARIANT;
 
     deps.log("ManageEngine upload diagnostic");
     deps.log(`variant: ${inputs.variant}`);
@@ -350,7 +424,8 @@ export async function run(inputs: ProbeInputs, deps: ProbeDeps): Promise<number>
     deps.log("accept: application/json");
     deps.log(`multipart field: ${fieldName}`);
     deps.log("manual Content-Type: no");
-    deps.log("X-Customer: no");
+    // Never the value — only whether this run attaches it at all.
+    deps.log(`X-Customer: ${usesCustomerHeader ? "yes (redacted)" : "no"}`);
     deps.log(`APK filename: ${fileName}`);
     deps.log(`APK size: ${bytes.byteLength}`);
     deps.log("");
@@ -362,16 +437,16 @@ export async function run(inputs: ProbeInputs, deps: ProbeDeps): Promise<number>
     deps.log("");
 
     const form = buildUploadForm(inputs.variant, bytes, fileName);
+    // Built before the network attempt, and OUTSIDE the fetch try/catch, so a
+    // missing MDM_CUSTOMER_ID fails closed via the outer handler rather than
+    // being mislabeled as a network failure — no request is ever sent.
+    const headers = buildUploadHeaders(inputs.variant, token, inputs.customerId);
 
     let response: ProbeFetchResponse;
     try {
       response = await deps.fetch(`${hosts.mdm}/emsapi/files`, {
         method: "POST",
-        headers: {
-          Authorization: `Zoho-oauthtoken ${token}`,
-          Accept: "application/json",
-          Module: "MDM_APP_MGMT",
-        },
+        headers,
         body: form,
       });
     } catch (caught) {

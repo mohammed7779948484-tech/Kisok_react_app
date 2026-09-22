@@ -36,11 +36,13 @@ describe("the ManageEngine upload diagnostic workflow", () => {
     expect(triggers).toEqual(["workflow_dispatch"]);
   });
 
-  it("offers exactly the two variants under test, defaulting to the untested one", () => {
+  it("offers exactly the three variants under test, defaulting to the most informative untested one", () => {
     const block = triggerBlock();
 
-    expect(block).toMatch(/options:\s*\n\s*- legacy_fileName\s*\n\s*- cloud_file/);
-    expect(block).toContain("default: legacy_fileName");
+    expect(block).toMatch(
+      /options:\s*\n\s*- cloud_file_with_customer\s*\n\s*- legacy_fileName\s*\n\s*- cloud_file/,
+    );
+    expect(block).toContain("default: cloud_file_with_customer");
   });
 
   it("takes a run_id input, so it never rebuilds Android to get an APK", () => {
@@ -79,5 +81,33 @@ describe("the ManageEngine upload diagnostic workflow", () => {
   it("invokes the probe script, never the production publisher", () => {
     expect(source).toContain("tools/mdm/probe-upload.ts");
     expect(source).not.toContain("tools/mdm/publish-app.ts");
+  });
+
+  it("reads the customer id from a SECRET, never a variable, and never hard-codes it", () => {
+    const customerIdLines = source.split("\n").filter((line) => line.includes("MDM_CUSTOMER_ID"));
+
+    expect(customerIdLines.length).toBeGreaterThan(0);
+    expect(source).toContain("MDM_CUSTOMER_ID: ${{ secrets.MDM_CUSTOMER_ID }}");
+    expect(source).not.toContain("vars.MDM_CUSTOMER_ID");
+    // Every line naming it either assigns from secrets or is prose (a
+    // comment) — none assigns a bare literal value.
+    for (const line of customerIdLines) {
+      const isSecretAssignment = line.includes("${{ secrets.MDM_CUSTOMER_ID }}");
+      const isComment = /^\s*#/.test(line);
+      expect(isSecretAssignment || isComment).toBe(true);
+    }
+  });
+
+  it("locates the APK by cardinality, never by picking the first of several", () => {
+    expect(source).not.toMatch(/find .* -iname '\*\.apk'.*\|\s*head/);
+    expect(source).toContain("mapfile -t apks");
+    expect(source).toMatch(/apks\[@\]\}"\s*-gt 1/);
+  });
+
+  it("distinguishes the verified default run_id from an overridden one", () => {
+    // The stale claim this replaces: that whatever run_id is selected carries
+    // the same recorded verification as the documented default run.
+    expect(source).toContain("NO such recorded verification");
+    expect(source).toContain('default: "35535503611"');
   });
 });

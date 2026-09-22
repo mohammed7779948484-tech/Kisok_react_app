@@ -25,21 +25,34 @@ App requires only `app_name`, `app_type` and `app_file`. See
 
 This environment's egress policy blocks `www.manageengine.com`, so those
 contracts were verified outside it and supplied to the implementation rather
-than read here. That changes what is still open: the contracts themselves are
-no longer in question, and a real release attempt has since OBSERVED the OAuth
-token exchange, the App Repository listing, and repository-absence detection
-all SUCCEED. **Two** separate live upload attempts have since both FAILED with
-the same HTTP 406 on `POST /emsapi/files`: a hand-built multipart body, and
-then Node's native `FormData`/`Blob` sending the field as `file`. The second
-attempt disproves the working theory that a hand-built multipart body was the
-cause — do not repeat that claim; see `mdm-operations.md` for what is and is
-not held constant across both failures. A small temporary diagnostic
+than read here. That changes what is still open, but not to "settled": the
+App Details, Add/Update App and file-status CONTRACTS are documented and
+implemented as above and remain unaffected by what follows — but the LIVE
+`/emsapi/files` UPLOAD wire contract is a separate, still-unresolved
+question, now proven wrong three times over (see below). A real release
+attempt has since OBSERVED the OAuth token exchange, the App Repository
+listing, and repository-absence detection all SUCCEED. **Three** separate
+live upload attempts have since all FAILED with the same HTTP 406 on
+`POST /emsapi/files`: a hand-built multipart body, native `FormData`/`Blob`
+with field `file`, and native `FormData`/`Blob` with field `fileName`. The
+second and third attempts disprove the working theory that a hand-built
+multipart body was the cause — do not repeat that claim. Two things narrow
+the remaining hypotheses: the granted OAuth scope is confirmed to include
+READ/CREATE/UPDATE (no longer suspected), and the identical APK uploaded
+successfully through the ManageEngine web console, which both proves the
+tenant accepts this APK and surfaces a real tenant/customer id — the basis
+for the next candidate, `X-Customer`. See `mdm-operations.md` for the full
+account, including what is and is not ruled out by holding a characteristic
+constant across failed attempts. A small temporary diagnostic
 (`.github/workflows/mdm-upload-diagnostic.yml`, `tools/mdm/probe-upload.ts`)
-now isolates the remaining candidate — the multipart field name — one
+now isolates that candidate — `cloud_file_with_customer` sends `X-Customer`
+and nothing else different from the already-failed `cloud_file` — one
 representation per dispatch, against an already-verified APK artifact rather
-than a fresh ~16-minute build. The upload, app creation and app update all
-remain **TENANT VALIDATION REQUIRED**: NOT YET OBSERVED to succeed against a
-real tenant. The next real dispatch — diagnostic or release — is the proof.
+than a fresh ~16-minute build. The customer id itself is never committed;
+it is a GitHub Actions environment secret (`MDM_CUSTOMER_ID`). The upload,
+app creation and app update all remain **TENANT VALIDATION REQUIRED**: NOT
+YET OBSERVED to succeed against a real tenant. The next real dispatch —
+diagnostic or release — is the proof.
 
 ## Design decisions
 
