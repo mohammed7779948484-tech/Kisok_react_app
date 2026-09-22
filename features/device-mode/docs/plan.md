@@ -28,31 +28,42 @@ contracts were verified outside it and supplied to the implementation rather
 than read here. That changes what is still open, but not to "settled": the
 App Details, Add/Update App and file-status CONTRACTS are documented and
 implemented as above and remain unaffected by what follows — but the LIVE
-`/emsapi/files` UPLOAD wire contract is a separate, still-unresolved
-question, now proven wrong three times over (see below). A real release
-attempt has since OBSERVED the OAuth token exchange, the App Repository
-listing, and repository-absence detection all SUCCEED. **Three** separate
-live upload attempts have since all FAILED with the same HTTP 406 on
-`POST /emsapi/files`: a hand-built multipart body, native `FormData`/`Blob`
-with field `file`, and native `FormData`/`Blob` with field `fileName`. The
-second and third attempts disprove the working theory that a hand-built
-multipart body was the cause — do not repeat that claim. Two things narrow
-the remaining hypotheses: the granted OAuth scope is confirmed to include
-READ/CREATE/UPDATE (no longer suspected), and the identical APK uploaded
-successfully through the ManageEngine web console, which both proves the
-tenant accepts this APK and surfaces a real tenant/customer id — the basis
-for the next candidate, `X-Customer`. See `mdm-operations.md` for the full
-account, including what is and is not ruled out by holding a characteristic
-constant across failed attempts. A small temporary diagnostic
+upload WIRE CONTRACT (which endpoint, which transport, which headers) is a
+separate, still-unresolved question. A real release attempt has since
+OBSERVED the OAuth token exchange, the App Repository listing, and
+repository-absence detection all SUCCEED. **Four** separate live upload
+attempts against `POST /emsapi/files` have since all FAILED with the same
+HTTP 406: a hand-built multipart body, native `FormData`/`Blob` with field
+`file`, native `FormData`/`Blob` with field `fileName`, and the same with a
+real `X-Customer` header added. The following hypotheses have now been
+live-tested against `/emsapi/files` and did NOT resolve the 406: manual
+boundary vs native FormData, field `file`, field `fileName`, real
+X-Customer tenant context. Do not repeat the "hand-built multipart was the
+cause" claim, and do not claim `X-Customer` fixes it — both are disproven.
+The tested `/emsapi/files` representations have all failed on this tenant;
+that endpoint's upload wire contract remains unresolved for this tenant,
+which is not the same as calling the endpoint definitively broken. See
+`mdm-operations.md` for the full account, including what is and is not
+ruled out by holding a characteristic constant across failed attempts, and
+for the OAuth-scope and web-console evidence that narrowed (without
+resolving) the remaining hypotheses.
+
+Per the explicit instruction not to keep permuting `/emsapi/files` further,
+that branch is exhausted enough for now. A small temporary diagnostic
 (`.github/workflows/mdm-upload-diagnostic.yml`, `tools/mdm/probe-upload.ts`)
-now isolates that candidate — `cloud_file_with_customer` sends `X-Customer`
-and nothing else different from the already-failed `cloud_file` — one
-representation per dispatch, against an already-verified APK artifact rather
-than a fresh ~16-minute build. The customer id itself is never committed;
-it is a GitHub Actions environment secret (`MDM_CUSTOMER_ID`). The upload,
-app creation and app update all remain **TENANT VALIDATION REQUIRED**: NOT
-YET OBSERVED to succeed against a real tenant. The next real dispatch —
-diagnostic or release — is the proof.
+now tests a DIFFERENT endpoint entirely: `legacy_api_v1_files` sends
+`POST /api/v1/mdm/files` — documented as `/emsapi/files`'s deprecated
+predecessor — as a raw POST of the file bytes (no multipart), per the
+official Cloud API docs' own example (see `mdm-operations.md` for the exact
+citation and headers). The goal is only to determine whether that older
+endpoint remains functional for this tenant; a live success there would
+justify a separate, later production decision, not made here. The customer
+id used by `cloud_file_with_customer` is never committed; it is a GitHub
+Actions environment secret (`MDM_CUSTOMER_ID`), not required by
+`legacy_api_v1_files` since nothing in its documented contract calls for it.
+The upload, app creation and app update all remain **TENANT VALIDATION
+REQUIRED**: NOT YET OBSERVED to succeed against a real tenant. The next real
+dispatch — diagnostic or release — is the proof.
 
 ## Design decisions
 

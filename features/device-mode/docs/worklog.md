@@ -1489,3 +1489,132 @@ created. The `GET /api/v1/mdm/apps` repository read already OBSERVED
 SUCCEEDED on this same OAuth token in every attempt so far, so a 406 here
 would mean the customer-id hypothesis is disproven too, not that auth or
 repository access broke.
+
+## Round 14 — a fourth /emsapi/files failure, and a different endpoint
+
+The recommended Round 13 dispatch happened: `cloud_file_with_customer`
+against `main@005cd2a`, workflow run `35686694952`. Everything up to the
+upload OBSERVED SUCCEEDED again — artifact download (65557265 bytes),
+package/version, `MDM_CUSTOMER_ID` present, `X-Customer` actually sent,
+OAuth token exchange, `GET /api/v1/mdm/apps` (HTTP 200). `POST /emsapi/files`
+— native FormData, field `file`, real `X-Customer` — answered the same
+`HTTP 406 {"errorCode":"406","errorMsg":"Not Acceptable"}` as all three
+earlier attempts.
+
+Four representations of `/emsapi/files` have now failed identically:
+
+```
+1. hand-built multipart,       field=file,     no X-Customer  → 406
+2. native FormData,            field=file,     no X-Customer  → 406
+3. native FormData,            field=fileName, no X-Customer  → 406
+4. native FormData,            field=file,     real X-Customer → 406
+```
+
+**`X-Customer` is disproven as the fix**, the same way the hand-built
+multipart theory was disproven in Round 12. Per explicit instruction, this
+branch of diagnosis — permuting `/emsapi/files` itself — is exhausted
+enough for now. See `mdm-operations.md` for the corrected framing: the
+tested `/emsapi/files` representations have all failed on this tenant; that
+is not the same claim as the endpoint being definitively broken.
+
+### New target: the legacy `/api/v1/mdm/files` endpoint
+
+Per instruction NOT to invent a request shape from memory: research came
+first. `WebSearch` (direct `WebFetch` of `www.manageengine.com` is blocked
+by this environment's egress policy, unchanged from every earlier round)
+returned search-result summaries and a quoted verbatim Python example from
+the official page
+`https://www.manageengine.com/mobile-device-management/api/files/`
+("Files | Mobile Device Manager Plus | API Documentation"). That search
+also independently confirmed `/api/v1/mdm/files` is documented as the
+**deprecated** predecessor `/emsapi/files` replaced — consistent with why
+`/emsapi/files` was adopted originally, and now the reason to try the older
+one while the newer one keeps failing. The user interrupted further
+searching once this was sufficient to implement from; no additional pages
+were fetched beyond what is quoted below.
+
+The quoted official example (headers and call shape only; token redacted
+here as it was in the source):
+
+```python
+headers = {
+    'Authorization': "Zoho-oauthtoken 1000.41d9...c2d1.8fcc...125f",
+    'content-type': "application/json",
+    'content-disposition': f"filename={file_name}"
+}
+conn.request("POST", "/api/v1/mdm/files", payload, headers)
+```
+
+with `payload = file.read()` — the raw file bytes, not a multipart body.
+Documented response fields: `file_id`, `content_type`, `file_name`,
+`expiry_time`, `content_length`. No `Module` header and no `X-Customer`
+appear anywhere in that example, so `legacy_api_v1_files` sends neither and
+does not require `MDM_CUSTOMER_ID`. No status-poll step is documented for
+this endpoint, unlike `/emsapi/files`'s `fileStatus`/
+`/emsapi/fileupload/status`, so none is implemented.
+
+That `content-type: application/json` on a binary body is unusual, and it
+would have been tempting to "correct" it to
+`application/vnd.android.package-archive` or `application/octet-stream`.
+Followed the documented example verbatim instead, per the instruction not
+to invent a shape from memory — that is exactly the kind of detail a live
+dispatch needs to test as documented, not as it "should" read.
+
+### Implementation: a fourth variant, kept structurally separate
+
+`legacy_api_v1_files` targets a different endpoint AND a different
+transport (raw bytes, not multipart) from every `/emsapi/files` variant, so
+it was NOT forced through the existing `buildUploadForm`/
+`buildUploadHeaders` multipart helpers — `VARIANT_FIELD` has no entry for
+it (`Partial<Record<Variant, string>>`, and `buildUploadForm` now throws if
+ever called with it), and a new, fully self-contained
+`runLegacyApiV1Files()` function handles its request/response independently
+of `run()`'s existing multipart path, which is otherwise untouched. A
+`git diff` confined to that new function, its two small pure helpers
+(`buildLegacyUploadHeaders`, `readLosslessId`) and the `VARIANTS`/
+`VARIANT_FIELD` additions is the evidence the three existing variants'
+behaviour is unchanged — and all 32 of their existing tests pass unmodified.
+
+`file_id` can exceed `Number.MAX_SAFE_INTEGER` in this endpoint's documented
+response shape too. Rather than import `publish-app.ts`'s lossless-id
+machinery (which would couple this temporary probe to production), the same
+strategy — Node's `JSON.parse` reviver `context.source` recovery, canonicalise
+safe integers to decimal strings, refuse an unsafe number with no recoverable
+source — is duplicated locally as `parseLegacyResponse`/`readLosslessId`.
+Proven directly: a raw-text fixture with an unquoted `file_id` above
+`MAX_SAFE_INTEGER` round-trips exactly; a fractional literal (a valid JSON
+number that is not a plain decimal integer) is refused, reported as
+"cannot be confirmed exact", and treated as `upload accepted: no` rather
+than trusted.
+
+### Tests added
+
+18 new cases in `tools/mdm/probe-upload.test.ts` (endpoint targeting, exact
+header shape, raw-bytes body with no FormData, no X-Customer, resolveInputs
+not requiring `MDM_CUSTOMER_ID`, the documented failure/success shapes,
+large and small `file_id` handling, the fail-closed path, secret redaction,
+and the create/update guarantee), plus 2 in the workflow-pinning suite
+(variant list and default, the new endpoint named in the workflow). The
+existing 32 `probe-upload` cases and 11 workflow cases pass unmodified.
+
+### Round 14 gate
+
+```
+npx jest tools/mdm --runInBand → 127 passed
+pnpm typecheck        → PASS
+pnpm lint             → PASS
+pnpm format:check     → PASS
+pnpm check:docs       → PASS (94 files)
+pnpm check:ci-scripts → PASS (5 workflows, 10 checks)
+node -e (js-yaml)     → all 5 workflow files parse
+git diff --check      → clean
+git diff -- tools/mdm/publish-app.ts tools/mdm/publish-app.test.ts → empty
+```
+
+Not claimed: that `legacy_api_v1_files`, or `/api/v1/mdm/files` generally,
+works for this tenant. Only that it is a documented, differently-shaped
+candidate worth one cheap live dispatch before any production decision, and
+that the implementation matches the cited official example as closely as
+the search tooling available in this environment could confirm — a full
+page fetch remains blocked here, so live behaviour is still the only proof
+that matters. `tools/mdm/publish-app.ts` is untouched.

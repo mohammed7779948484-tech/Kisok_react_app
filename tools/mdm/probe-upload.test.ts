@@ -4,6 +4,7 @@ import {
   buildUploadForm,
   buildUploadHeaders,
   capBody,
+  readLosslessId,
   redactId,
   redactSecrets,
   resolveDataCentre,
@@ -257,20 +258,32 @@ describe("resolveInputs", () => {
 // run(), driven through an injected fetch — no network, no credentials.
 // ---------------------------------------------------------------------------
 
-type Call = { url: string; method: string; headers: Record<string, string> };
+type Call = {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body: unknown;
+};
 
-function fakeFetch(routes: Record<string, () => { status: number; body?: unknown }>) {
+type FakeRoute = { status: number; body?: unknown; rawText?: string };
+
+function fakeFetch(routes: Record<string, () => FakeRoute>) {
   const calls: Call[] = [];
   const fetchLike: FetchLike = async (url, init) => {
     const method = init?.method ?? "GET";
-    calls.push({ url, method, headers: (init?.headers ?? {}) as Record<string, string> });
+    calls.push({
+      url,
+      method,
+      headers: (init?.headers ?? {}) as Record<string, string>,
+      body: init?.body,
+    });
     const pathname = new URL(url).pathname;
     const key = Object.keys(routes).find((route) => {
       const [routeMethod, routePath] = route.split(" ");
       return routeMethod === method && pathname === routePath;
     });
     if (!key) throw new Error(`unexpected ${method} request: ${url}`);
-    const { status, body } = routes[key]!();
+    const { status, body, rawText } = routes[key]!();
     return {
       ok: status >= 200 && status < 300,
       status,
@@ -278,7 +291,11 @@ function fakeFetch(routes: Record<string, () => { status: number; body?: unknown
       headers: {
         get: (name: string) => (name.toLowerCase() === "content-type" ? "application/json" : null),
       },
-      text: async () => (body === undefined ? "" : JSON.stringify(body)),
+      // `rawText`, when given, is sent verbatim — the only way to put a
+      // numeric literal above Number.MAX_SAFE_INTEGER on the wire, since a JS
+      // source literal that large is already rounded before JSON.stringify
+      // ever sees it.
+      text: async () => rawText ?? (body === undefined ? "" : JSON.stringify(body)),
     };
   };
   return { fetchLike, calls };
@@ -288,7 +305,7 @@ const TOKEN_ROUTE = {
   "POST /oauth/v2/token": () => ({ status: 200, body: { access_token: "1000.fixture.token" } }),
 };
 
-function deps(routes: Record<string, () => { status: number; body?: unknown }>) {
+function deps(routes: Record<string, () => FakeRoute>) {
   const { fetchLike, calls } = fakeFetch({ ...TOKEN_ROUTE, ...routes });
   const lines: string[] = [];
   return {
@@ -477,4 +494,251 @@ it("the probe script's own source never references the create/update endpoints",
   for (const ref of appsReferences) {
     expect(ref).not.toMatch(/^\/api\/v1\/mdm\/apps\/\d/);
   }
+});
+
+// ---------------------------------------------------------------------------
+// legacy_api_v1_files — a different endpoint AND transport, kept isolated
+// from the /emsapi/files multipart variants above (see runLegacyApiV1Files).
+// ---------------------------------------------------------------------------
+
+const LEGACY_INPUTS: ProbeInputs = { ...INPUTS, variant: "legacy_api_v1_files" };
+
+describe("legacy_api_v1_files targets a different endpoint with a raw-bytes body", () => {
+  it("posts to /api/v1/mdm/files, never /emsapi/files", async () => {
+    const { deps: d, calls } = deps({
+      "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
+    });
+
+    await run(LEGACY_INPUTS, d);
+
+    expect(calls.some((c) => c.url.includes("/api/v1/mdm/files"))).toBe(true);
+    expect(calls.some((c) => c.url.includes("/emsapi/files"))).toBe(false);
+  });
+
+  it("sends exactly the documented headers, no more, no less", async () => {
+    const { deps: d, calls } = deps({
+      "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
+    });
+
+    await run(LEGACY_INPUTS, d);
+
+    const upload = calls.find((c) => c.url.includes("/api/v1/mdm/files"))!;
+    expect(upload.headers.Authorization).toBe("Zoho-oauthtoken 1000.fixture.token");
+    // The docs' own example, unusual as it is for a raw binary body —
+    // followed exactly rather than "corrected" to octet-stream.
+    expect(upload.headers["content-type"]).toBe("application/json");
+    expect(upload.headers["content-disposition"]).toBe("filename=app-release.apk");
+    // Nothing else: no Module, no Accept, no X-Customer — none appear in
+    // the documented example.
+    expect(Object.keys(upload.headers).sort()).toEqual(
+      ["Authorization", "content-disposition", "content-type"].sort(),
+    );
+  });
+
+  it("sends the raw APK bytes as the body — no FormData, no multipart boundary", async () => {
+    const { deps: d, calls } = deps({
+      "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
+    });
+
+    await run(LEGACY_INPUTS, d);
+
+    const upload = calls.find((c) => c.url.includes("/api/v1/mdm/files"))!;
+    expect(upload.body).not.toBeInstanceOf(FormData);
+    expect(upload.body).toBeInstanceOf(Blob);
+    const sent = await (upload.body as Blob).arrayBuffer();
+    // deps().readApk always returns [1, 2, 3] for these tests.
+    expect(new Uint8Array(sent)).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("never sends X-Customer, even if a customer id happens to be set", async () => {
+    const { deps: d, calls } = deps({
+      "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
+    });
+
+    await run({ ...LEGACY_INPUTS, customerId: "999888777" }, d);
+
+    const upload = calls.find((c) => c.url.includes("/api/v1/mdm/files"))!;
+    expect(upload.headers["X-Customer"]).toBeUndefined();
+    expect(upload.headers["x-customer"]).toBeUndefined();
+  });
+
+  it("does not require MDM_CUSTOMER_ID — resolveInputs accepts it unset", () => {
+    const result = resolveInputs(["--apk", "/tmp/x.apk", "--variant", "legacy_api_v1_files"], {
+      MDM_CLIENT_ID: "a",
+      MDM_CLIENT_SECRET: "b",
+      MDM_REFRESH_TOKEN: "c",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.inputs.customerId).toBeUndefined();
+  });
+
+  it("reports the documented 406-shaped failure the same way as the other variants", async () => {
+    const { deps: d, lines } = deps({
+      "POST /api/v1/mdm/files": () => ({
+        status: 406,
+        body: { errorCode: "406", errorMsg: "Not Acceptable" },
+      }),
+    });
+
+    const code = await run(LEGACY_INPUTS, d);
+
+    expect(code).toBe(1);
+    const output = lines.join("\n");
+    expect(output).toContain("HTTP status: 406");
+    expect(output).toContain("upload accepted: no");
+    expect(output).toContain('"errorCode":"406"');
+  });
+
+  it("caps and redacts the failure body, same policy as every other variant", async () => {
+    const huge = "x".repeat(3000);
+    const { deps: d, lines } = deps({
+      "POST /api/v1/mdm/files": () => ({
+        status: 500,
+        body: { message: `rejected refresh-token ${huge}` },
+      }),
+    });
+
+    const code = await run(LEGACY_INPUTS, d);
+
+    expect(code).toBe(1);
+    const output = lines.join("\n");
+    expect(output).not.toContain("refresh-token");
+    expect(output).toContain("***REDACTED***");
+    expect(output).toContain("truncated");
+  });
+
+  it("on success, preserves a large file_id exactly and shows only a redacted form", async () => {
+    // A JS numeric literal this large is already rounded by the time it
+    // could be JSON.stringify'd from a test fixture object, so this needs
+    // the raw-text route: it is the server's exact wire bytes.
+    const { deps: d, lines } = deps({
+      "POST /api/v1/mdm/files": () => ({
+        status: 200,
+        rawText:
+          '{"file_id":9007199254741076,"content_type":"application/vnd.android.package-archive"}',
+      }),
+    });
+
+    const code = await run(LEGACY_INPUTS, d);
+
+    expect(code).toBe(0);
+    const output = lines.join("\n");
+    expect(output).toContain("file_id present: yes");
+    expect(output).toContain("file_id (redacted): 9007...1076");
+    expect(output).not.toContain("9007199254741076");
+    expect(output).toContain("upload accepted: yes");
+    expect(output).toContain("STOPPING HERE");
+  });
+
+  it("preserves a file_id given as a JSON string exactly, unredacted digits never shown", async () => {
+    const { deps: d, lines } = deps({
+      "POST /api/v1/mdm/files": () => ({
+        status: 200,
+        body: { file_id: "9007199254741076" },
+      }),
+    });
+
+    const code = await run(LEGACY_INPUTS, d);
+
+    expect(code).toBe(0);
+    const output = lines.join("\n");
+    expect(output).toContain("file_id (redacted): 9007...1076");
+    expect(output).not.toContain("9007199254741076");
+  });
+
+  it("fails closed rather than report success when file_id cannot be confirmed exact", async () => {
+    // A fractional literal is valid JSON but not a plain decimal integer, so
+    // the source-recovery guard refuses it: this stands in for "the runtime
+    // handed back an already-rounded unsafe number with no way to prove what
+    // it should have been", which must never be reported as an accepted id.
+    const { deps: d, lines } = deps({
+      "POST /api/v1/mdm/files": () => ({
+        status: 200,
+        rawText: '{"file_id":9007199254741076.0}',
+      }),
+    });
+
+    const code = await run(LEGACY_INPUTS, d);
+
+    expect(code).toBe(1);
+    const output = lines.join("\n");
+    expect(output).toContain("upload accepted: no");
+    expect(output).toContain("cannot be confirmed exact");
+  });
+
+  it("small file_ids still round-trip normally", async () => {
+    const { deps: d, lines } = deps({
+      "POST /api/v1/mdm/files": () => ({ status: 200, body: { file_id: 42 } }),
+    });
+
+    const code = await run(LEGACY_INPUTS, d);
+
+    expect(code).toBe(0);
+    expect(lines.join("\n")).toContain("upload accepted: yes");
+  });
+
+  it("never calls app creation or update, on success or failure", async () => {
+    const { deps: d, calls } = deps({
+      "POST /api/v1/mdm/files": () => ({ status: 200, body: { file_id: 42 } }),
+    });
+
+    await run(LEGACY_INPUTS, d);
+
+    expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/api/v1/mdm/apps"))).toBe(
+      false,
+    );
+    expect(calls.some((c) => c.method === "PUT")).toBe(false);
+    expect(calls.some((c) => c.url.includes("/labels/"))).toBe(false);
+  });
+
+  it("never prints a credential or the exchanged access token", async () => {
+    const { deps: d, lines } = deps({
+      "POST /api/v1/mdm/files": () => ({
+        status: 500,
+        body: { message: "token 1000.fixture.token rejected for refresh-token" },
+      }),
+    });
+
+    await run(LEGACY_INPUTS, d);
+
+    const output = lines.join("\n");
+    expect(output).not.toContain("refresh-token");
+    expect(output).not.toContain("1000.fixture.token");
+    expect(output).toContain("***REDACTED***");
+  });
+
+  it("still performs the optional repository read", async () => {
+    const { deps: d, lines } = deps({
+      "GET /api/v1/mdm/apps": () => ({ status: 200 }),
+      "POST /api/v1/mdm/files": () => ({ status: 406, body: { error: "nope" } }),
+    });
+
+    await run(LEGACY_INPUTS, d);
+
+    expect(lines.join("\n")).toContain("repository read: HTTP 200");
+  });
+});
+
+describe("readLosslessId", () => {
+  it("accepts a plain decimal string", () => {
+    expect(readLosslessId("9007199254741076")).toBe("9007199254741076");
+  });
+
+  it("accepts a safe non-negative integer, canonicalised to a string", () => {
+    expect(readLosslessId(42)).toBe("42");
+  });
+
+  it("refuses a non-decimal string", () => {
+    expect(readLosslessId("abc")).toBeUndefined();
+    expect(readLosslessId("-5")).toBeUndefined();
+    expect(readLosslessId("07")).toBeUndefined();
+  });
+
+  it("refuses undefined and other non-id shapes", () => {
+    expect(readLosslessId(undefined)).toBeUndefined();
+    expect(readLosslessId(null)).toBeUndefined();
+    expect(readLosslessId({})).toBeUndefined();
+  });
 });

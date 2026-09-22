@@ -36,13 +36,18 @@ describe("the ManageEngine upload diagnostic workflow", () => {
     expect(triggers).toEqual(["workflow_dispatch"]);
   });
 
-  it("offers exactly the three variants under test, defaulting to the most informative untested one", () => {
+  it("offers exactly the four variants under test, defaulting to the most informative untested one", () => {
     const block = triggerBlock();
 
     expect(block).toMatch(
-      /options:\s*\n\s*- cloud_file_with_customer\s*\n\s*- legacy_fileName\s*\n\s*- cloud_file/,
+      /options:\s*\n\s*- legacy_api_v1_files\s*\n\s*- cloud_file_with_customer\s*\n\s*- legacy_fileName\s*\n\s*- cloud_file/,
     );
-    expect(block).toContain("default: cloud_file_with_customer");
+    expect(block).toContain("default: legacy_api_v1_files");
+  });
+
+  it("names the legacy endpoint the four /emsapi/files attempts have all failed to reach", () => {
+    expect(source).toContain("/api/v1/mdm/files");
+    expect(source).toContain("legacy_api_v1_files");
   });
 
   it("takes a run_id input, so it never rebuilds Android to get an APK", () => {

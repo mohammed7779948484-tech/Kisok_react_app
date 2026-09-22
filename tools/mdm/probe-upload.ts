@@ -1,26 +1,40 @@
 /**
  * probe-upload.ts — DIAGNOSTIC ONLY. Sends exactly one representation of a
- * verified APK to ManageEngine's `POST /emsapi/files` and stops.
+ * verified APK to a ManageEngine upload endpoint and stops.
  *
- *     node tools/mdm/probe-upload.ts --apk <path> --variant cloud_file|legacy_fileName|cloud_file_with_customer
+ *     node tools/mdm/probe-upload.ts --apk <path> --variant cloud_file|legacy_fileName|cloud_file_with_customer|legacy_api_v1_files
  *
- * This exists because THREE real-tenant attempts have now all failed with
- * HTTP 406 on `/emsapi/files` — a hand-built multipart body, native
- * `FormData`/`Blob` with field `file`, and native `FormData`/`Blob` with
- * field `fileName` — so the working wire shape is not yet known, and a full
- * Android build-and-release run costs ~16 minutes per attempt. This script
- * isolates ONE variable per run, with every other header and body
- * characteristic held constant:
+ * This exists because FOUR real-tenant attempts against `POST /emsapi/files`
+ * have now all failed with HTTP 406 — a hand-built multipart body, native
+ * `FormData`/`Blob` with field `file`, native `FormData`/`Blob` with field
+ * `fileName`, and the same with a real `X-Customer` header added — so the
+ * working wire shape for that endpoint is not yet known, and a full Android
+ * build-and-release run costs ~16 minutes per attempt. This script isolates
+ * ONE variable per run, with every other header and body characteristic held
+ * constant:
  *
- *   cloud_file                — field `file`, no X-Customer. OBSERVED to fail.
- *   legacy_fileName            — field `fileName`, no X-Customer. OBSERVED to fail.
- *   cloud_file_with_customer   — field `file`, WITH X-Customer. NOT YET OBSERVED.
- *     Isolates the customer-id hypothesis: it differs from `cloud_file` by
- *     exactly one header and nothing else. A successful manual web-console
- *     upload (a different, cookie/CSRF-based flow this script does NOT use)
- *     surfaced that this tenant has a real customer id, and another official
- *     ManageEngine example for this same endpoint shows an X-Customer header
- *     the current Cloud-specific docs omit.
+ *   cloud_file                — /emsapi/files, field `file`, no X-Customer.
+ *     OBSERVED to fail (406).
+ *   legacy_fileName            — /emsapi/files, field `fileName`, no
+ *     X-Customer. OBSERVED to fail (406).
+ *   cloud_file_with_customer   — /emsapi/files, field `file`, WITH
+ *     X-Customer. Differs from cloud_file by exactly that one header.
+ *     OBSERVED to fail (406) — X-Customer does not fix it either.
+ *   legacy_api_v1_files        — a DIFFERENT endpoint and transport:
+ *     `POST /api/v1/mdm/files`, documented (still, as of this writing) as
+ *     the deprecated predecessor `/emsapi/files` replaced. Per the official
+ *     Cloud API docs' own Python example
+ *     (https://www.manageengine.com/mobile-device-management/api/files/,
+ *     "Files" page), the request is a RAW POST of the file bytes — no
+ *     multipart, no boundary — with headers `Authorization`,
+ *     `content-type: application/json` (exactly as documented, unusual as
+ *     that pairing is for a binary body — followed here rather than
+ *     guessed), and `content-disposition: filename=<name>`. No `Module`
+ *     header and no `X-Customer` appear anywhere in that documented example,
+ *     so neither is sent, and MDM_CUSTOMER_ID is not required for this
+ *     variant. The response is documented to carry `file_id`, `content_type`,
+ *     `file_name`, `expiry_time`, `content_length` — no separate status-poll
+ *     step is documented, unlike `/emsapi/files`. NOT YET OBSERVED live.
  *
  * It NEVER calls `POST /api/v1/mdm/apps` or
  * `PUT /api/v1/mdm/apps/{app_id}/labels/{release_label_id}` — a successful
@@ -37,8 +51,10 @@
  *
  * Deliberately standalone: it duplicates a few small pieces of
  * `publish-app.ts` (secret redaction, data-centre hosts, the token-exchange
- * body) rather than importing from it, so this temporary probe can never
- * change the production publisher's behaviour by accident.
+ * body, and — for `legacy_api_v1_files`'s `file_id` — the same lossless-id
+ * strategy publish-app.ts uses) rather than importing from it, so this
+ * temporary probe can never change the production publisher's behaviour by
+ * accident.
  *
  * No repository or npm imports: node builtins only, so it runs under Node's
  * native TypeScript type-stripping with plain `node`.
@@ -52,19 +68,30 @@ import process from "node:process";
 // ---------------------------------------------------------------------------
 
 /** The one variable this probe isolates: which upload representation to use. */
-export const VARIANTS = ["cloud_file", "legacy_fileName", "cloud_file_with_customer"] as const;
+export const VARIANTS = [
+  "cloud_file",
+  "legacy_fileName",
+  "cloud_file_with_customer",
+  "legacy_api_v1_files",
+] as const;
 export type Variant = (typeof VARIANTS)[number];
 
 /**
+ * The multipart field name for each `/emsapi/files` variant.
+ * `legacy_api_v1_files` deliberately has NO entry: it targets a different
+ * endpoint with a raw-bytes body, not multipart, so forcing it through this
+ * map (and `buildUploadForm`) would be inaccurate. `buildUploadForm` throws
+ * if ever called with it, rather than silently picking a wrong field.
+ *
  * `cloud_file` matches the current Cloud-specific documentation and the
  * production publisher (field `file`) — already OBSERVED to fail with 406.
  * `legacy_fileName` matches a contradictory ManageEngine example (field
  * `fileName`) — also OBSERVED to fail with 406.
  * `cloud_file_with_customer` sends the same field as `cloud_file` (`file`)
  * plus an `X-Customer` header — it must differ from `cloud_file` by that one
- * header alone. NOT YET tested live.
+ * header alone. OBSERVED to fail with 406 too.
  */
-export const VARIANT_FIELD: Record<Variant, string> = {
+export const VARIANT_FIELD: Partial<Record<Variant, string>> = {
   cloud_file: "file",
   legacy_fileName: "fileName",
   cloud_file_with_customer: "file",
@@ -193,12 +220,12 @@ export function redactId(id: string): string {
  * request, which would no longer isolate a single variable.
  */
 export function buildUploadForm(variant: Variant, bytes: Uint8Array, fileName: string): FormData {
+  const field = VARIANT_FIELD[variant];
+  if (field === undefined) {
+    throw new Error(`${variant} has no multipart field mapping — it is not a multipart variant`);
+  }
   const form = new FormData();
-  form.append(
-    VARIANT_FIELD[variant],
-    new Blob([new Uint8Array(bytes)], { type: APK_MIME }),
-    fileName,
-  );
+  form.append(field, new Blob([new Uint8Array(bytes)], { type: APK_MIME }), fileName);
   return form;
 }
 
@@ -225,6 +252,72 @@ export function buildUploadHeaders(
     );
   }
   return { ...headers, "X-Customer": customerId };
+}
+
+/**
+ * `legacy_api_v1_files`'s exact documented header shape — the official Cloud
+ * API docs' own Python example, followed verbatim rather than guessed. No
+ * `Module`, no `Accept`, no `X-Customer`: none appear in that example.
+ */
+export function buildLegacyUploadHeaders(token: string, fileName: string): Record<string, string> {
+  return {
+    Authorization: `Zoho-oauthtoken ${token}`,
+    "content-type": "application/json",
+    "content-disposition": `filename=${fileName}`,
+  };
+}
+
+/**
+ * `legacy_api_v1_files`'s response can carry `file_id` above
+ * `Number.MAX_SAFE_INTEGER` (the same class of id documented elsewhere in
+ * this repository — see `tools/mdm/publish-app.ts`). This is the same
+ * lossless-recovery strategy, duplicated here rather than imported, so this
+ * temporary probe stays standalone: a safe integer is canonicalised to its
+ * decimal string; an unsafe one is recovered from Node's `JSON.parse`
+ * reviver `context.source` ONLY when that source is itself a plain decimal
+ * integer, and left as the already-rounded number otherwise — which
+ * `readLosslessId` below then refuses rather than use.
+ */
+const LOSSLESS_ID_FIELDS = new Set(["file_id"]);
+
+function isDecimalId(value: string): boolean {
+  return /^(0|[1-9]\d*)$/.test(value);
+}
+
+type JsonReviverContext = { source?: string };
+
+function parseLegacyResponse(text: string): unknown {
+  try {
+    const parseWithSource = JSON.parse as unknown as (
+      input: string,
+      reviver: (key: string, value: unknown, context?: JsonReviverContext) => unknown,
+    ) => unknown;
+
+    return parseWithSource(text, (key, value, context) => {
+      if (!LOSSLESS_ID_FIELDS.has(key)) return value;
+      if (typeof value === "string") return value;
+      if (typeof value === "number") {
+        const source = context?.source;
+        if (typeof source === "string" && isDecimalId(source)) return source;
+        if (Number.isSafeInteger(value) && value >= 0) return String(value);
+      }
+      return value;
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Accept `file_id` ONLY when it can be represented without precision loss: a
+ * plain decimal string, or a JS number that is itself a safe non-negative
+ * integer. Never `Number(...)`/`parseInt(...)` — both silently round a value
+ * above `Number.MAX_SAFE_INTEGER` before it could be rejected.
+ */
+export function readLosslessId(value: unknown): string | undefined {
+  if (typeof value === "string" && isDecimalId(value)) return value;
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return String(value);
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -399,10 +492,118 @@ async function reportRepositoryRead(
 }
 
 /**
+ * `legacy_api_v1_files` — a different endpoint AND a different transport
+ * (raw bytes, not multipart) from every other variant, so it is kept fully
+ * separate rather than folded into `run()`'s multipart path below. This
+ * function never touches `buildUploadForm`/`buildUploadHeaders`, and the
+ * multipart path below is untouched by this variant's existence — each
+ * variable is isolated in code, not just on the wire.
+ */
+async function runLegacyApiV1Files(inputs: ProbeInputs, deps: ProbeDeps): Promise<number> {
+  const secrets = [inputs.clientId, inputs.clientSecret, inputs.refreshToken].filter(
+    (value) => value.trim() !== "",
+  );
+  try {
+    const hosts = resolveDataCentre(inputs.dataCentre);
+    const bytes = await readApkOrFail(inputs, deps);
+    const fileName = inputs.apkPath.split("/").pop() ?? "app-release.apk";
+
+    deps.log("ManageEngine upload diagnostic");
+    deps.log(`variant: ${inputs.variant}`);
+    deps.log(`host: ${new URL(hosts.mdm).host}`);
+    deps.log("endpoint: /api/v1/mdm/files");
+    deps.log("transport: raw bytes (no multipart, no boundary)");
+    deps.log("content-type: application/json");
+    deps.log(`content-disposition: filename=${fileName}`);
+    deps.log("X-Customer: no");
+    deps.log(`APK filename: ${fileName}`);
+    deps.log(`APK size: ${bytes.byteLength}`);
+    deps.log("");
+
+    const token = await exchangeToken(inputs, hosts, deps);
+    secrets.push(token);
+
+    await reportRepositoryRead(hosts, token, secrets, deps);
+    deps.log("");
+
+    const headers = buildLegacyUploadHeaders(token, fileName);
+
+    // A typeless Blob, not FormData: the wire bytes are identical to the
+    // documented raw POST body — this only works around Uint8Array not
+    // structurally matching this project's BodyInit type.
+    const rawBody = new Blob([new Uint8Array(bytes)]);
+
+    let response: ProbeFetchResponse;
+    try {
+      response = await deps.fetch(`${hosts.mdm}/api/v1/mdm/files`, {
+        method: "POST",
+        headers,
+        body: rawBody,
+      });
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      deps.log(`upload request could not be sent: ${redactSecrets(message, secrets)}`);
+      return 1;
+    }
+
+    const bodyText = await response.text();
+    const contentType = response.headers.get("content-type") ?? "(none)";
+
+    deps.log("upload response:");
+    deps.log(
+      `HTTP status: ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`,
+    );
+    deps.log(`content-type: ${contentType}`);
+
+    if (!response.ok) {
+      // A failure body carries no id worth redacting — safe to show in full.
+      deps.log("body:");
+      deps.log(redactSecrets(capBody(bodyText), secrets));
+      deps.log("");
+      deps.log("upload accepted: no");
+      return 1;
+    }
+
+    const parsed = parseLegacyResponse(bodyText);
+    const rawFileId = isRecord(parsed) ? parsed.file_id : undefined;
+    const fileId = readLosslessId(rawFileId);
+
+    if (rawFileId !== undefined && fileId === undefined) {
+      // A file_id was present but its exact value could not be confirmed —
+      // never report success off an id that might be silently rounded.
+      deps.log("file_id present: yes, but its value cannot be confirmed exact — failing closed");
+      deps.log("upload accepted: no");
+      return 1;
+    }
+
+    // A 2xx body carries the real file_id, so it is never dumped raw — only
+    // the redacted id below.
+    deps.log(`file_id present: ${fileId !== undefined ? "yes" : "no"}`);
+    if (fileId !== undefined) deps.log(`file_id (redacted): ${redactId(fileId)}`);
+    deps.log(`upload accepted: ${fileId !== undefined ? "yes" : "no"}`);
+    deps.log("");
+    deps.log(
+      "STOPPING HERE by design — this diagnostic never calls app creation or update, " +
+        "even on a successful upload.",
+    );
+    return fileId !== undefined ? 0 : 1;
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : String(caught);
+    deps.log(`error: ${redactSecrets(message, secrets)}`);
+    return 1;
+  }
+}
+
+/**
  * Run the probe. Returns an exit code rather than throwing, so the CLI owns
  * it and every message is redacted before it can reach the log.
  */
 export async function run(inputs: ProbeInputs, deps: ProbeDeps): Promise<number> {
+  // A different endpoint and transport entirely — see runLegacyApiV1Files.
+  // Everything below this point is unchanged from before that variant
+  // existed, and this variant never reaches it.
+  if (inputs.variant === "legacy_api_v1_files") return runLegacyApiV1Files(inputs, deps);
+
   const secrets = [
     inputs.clientId,
     inputs.clientSecret,
@@ -413,7 +614,7 @@ export async function run(inputs: ProbeInputs, deps: ProbeDeps): Promise<number>
     const hosts = resolveDataCentre(inputs.dataCentre);
     const bytes = await readApkOrFail(inputs, deps);
     const fileName = inputs.apkPath.split("/").pop() ?? "app-release.apk";
-    const fieldName = VARIANT_FIELD[inputs.variant];
+    const fieldName = VARIANT_FIELD[inputs.variant] ?? "(unknown)";
     const usesCustomerHeader = inputs.variant === CUSTOMER_VARIANT;
 
     deps.log("ManageEngine upload diagnostic");

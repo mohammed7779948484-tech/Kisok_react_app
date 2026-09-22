@@ -2,23 +2,27 @@ name: ManageEngine upload diagnostic
 
 # MANUAL, ISOLATED PROBE — not the release pipeline. It builds nothing, signs
 # nothing, and never creates or updates the ManageEngine enterprise app; its
-# only job is to test ONE candidate wire shape for the live tenant's
-# `POST /emsapi/files` at a time, using an already-verified production APK
-# artifact, so each attempt costs seconds instead of the ~16 minutes a full
-# Android build-and-release run takes.
+# only job is to test ONE candidate upload representation at a time, using an
+# already-verified production APK artifact, so each attempt costs seconds
+# instead of the ~16 minutes a full Android build-and-release run takes.
 #
-# THREE real-tenant attempts have already failed with HTTP 406 on that
-# endpoint (a hand-built multipart body, then native FormData with field
-# `file`, then native FormData with field `fileName`), so the working wire
-# shape is not yet known. This workflow isolates exactly ONE variable per
-# run — with every other header and body characteristic held constant:
+# FOUR real-tenant attempts against `POST /emsapi/files` have all failed with
+# HTTP 406 (a hand-built multipart body, native FormData with field `file`,
+# native FormData with field `fileName`, and the same with a real
+# X-Customer header added), so that endpoint's working wire shape is not yet
+# known. This workflow isolates exactly ONE variable per run:
 #
-#   cloud_file                — field `file`, no X-Customer. OBSERVED to fail.
-#   legacy_fileName            — field `fileName`, no X-Customer. OBSERVED to fail.
-#   cloud_file_with_customer   — field `file`, WITH X-Customer. NOT YET OBSERVED —
-#     differs from cloud_file by that one header alone. See
-#     tools/mdm/probe-upload.ts and features/device-mode/docs/mdm-operations.md
-#     for why a real tenant/customer id is now suspected.
+#   cloud_file                — /emsapi/files, field `file`, no X-Customer.
+#     OBSERVED to fail (406).
+#   legacy_fileName            — /emsapi/files, field `fileName`, no
+#     X-Customer. OBSERVED to fail (406).
+#   cloud_file_with_customer   — /emsapi/files, field `file`, WITH
+#     X-Customer. OBSERVED to fail (406) too — X-Customer does not fix it.
+#   legacy_api_v1_files        — a DIFFERENT endpoint and transport:
+#     `POST /api/v1/mdm/files`, the documented predecessor `/emsapi/files`
+#     replaced. Raw bytes, not multipart — see tools/mdm/probe-upload.ts and
+#     features/device-mode/docs/mdm-operations.md for the exact documented
+#     contract and citation. NOT YET OBSERVED.
 #
 # One run = one HTTP upload representation. Do not dispatch it to try
 # several variants "just to see" in one go: a run that happens to succeed
@@ -32,12 +36,13 @@ on:
         description: "Which upload representation to send the APK as"
         type: choice
         options:
+          - legacy_api_v1_files
           - cloud_file_with_customer
           - legacy_fileName
           - cloud_file
-        # The two field-name-only variants have both already failed live;
-        # the customer-id hypothesis is the most informative untested one.
-        default: cloud_file_with_customer
+        # All three /emsapi/files representations have already failed live;
+        # the legacy endpoint is the most informative untested candidate.
+        default: legacy_api_v1_files
       run_id:
         description: >-
           Workflow run ID to download the kisok-release-apk artifact from. The
