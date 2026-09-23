@@ -1122,8 +1122,9 @@ describe("ProductDetailScreen — Add to cart (catalog-cart-integration seam)", 
     // the sheet shows the fresh line — the AC-04-composed caption (each
     // option value exactly once) and the updated total in the title.
     expect(screen.getByText("Color, Size · Rouge · Lárge")).toBeOnTheScreen();
-    expect(screen.getAllByRole("heading", { name: "Your Cart · 1" })[0]).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Continue Shopping" })).toBeOnTheScreen();
+    expect(screen.getByText("Added to cart")).toBeOnTheScreen();
+    expect(screen.getByText("Cart · 1 item")).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Keep Shopping" })).toBeOnTheScreen();
 
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
   });

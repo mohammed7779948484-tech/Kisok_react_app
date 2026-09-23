@@ -97,7 +97,7 @@ export function CategoriesScreen() {
           data={families}
           renderItem={renderFamily}
           keyExtractor={keyExtractor}
-          contentContainerStyle={{ paddingTop: 24, paddingBottom: 144 }}
+          contentContainerStyle={{ paddingTop: 24, paddingBottom: 24 }}
           testID="categories-list"
         />
       </View>

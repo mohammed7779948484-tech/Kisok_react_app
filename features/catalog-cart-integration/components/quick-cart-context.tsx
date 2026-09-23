@@ -19,7 +19,7 @@ export type QuickCartContextValue = {
   /** Whether the Quick Cart sheet is currently open. */
   open: boolean;
   /** Open the Quick Cart (e.g. after a successful Add to cart, or from the persistent affordance). */
-  openQuickCart: () => void;
+  openQuickCart: (addedLineId?: string) => void;
   /** Close the Quick Cart. */
   closeQuickCart: () => void;
 };

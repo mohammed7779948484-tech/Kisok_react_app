@@ -88,6 +88,7 @@ jest.mock("lucide-react-native", () => {
   // factory free of `require()` (tests lint with --max-warnings=0).
   const makeIcon = (name: string) => Object.assign(() => null, { displayName: name });
   return {
+    PackageCheck: makeIcon("PackageCheck"),
     Minus: makeIcon("Minus"),
     Plus: makeIcon("Plus"),
     Trash2: makeIcon("Trash2"),
@@ -532,6 +533,8 @@ describe("boundary scans (AC-11)", () => {
     // exactly the shape this pin enforces.
     const sanctioned = new Set([
       "expo-router",
+      "react-native",
+      "@/components/feedback",
       "@/features/catalog-cart-integration",
       "@/features/checkout",
     ]);
@@ -705,13 +708,14 @@ describe("convergence: the public surface composes end-to-end (AC-07 through the
     // First press: one unit, and the sheet the press opens shows it.
     await user.press(addButton);
     await settleDurableWrites();
-    expect(await screen.findByRole("heading", { name: "Your Cart · 1" })).toBeOnTheScreen();
+    expect(await screen.findByText("Added to cart")).toBeOnTheScreen();
+    expect(screen.getByText("Cart · 1 item")).toBeOnTheScreen();
     expect(getCartSnapshot().totalQuantity).toBe(1);
 
-    // Back to browsing — Continue Shopping closes the sheet.
-    await user.press(screen.getByRole("button", { name: "Continue Shopping" }));
+    // Back to browsing — Keep Shopping closes the sheet.
+    await user.press(screen.getByRole("button", { name: "Keep Shopping" }));
     await waitFor(() =>
-      expect(screen.queryByRole("heading", { name: "Your Cart · 1" })).toBeNull(),
+      expect(screen.queryByRole("heading", { name: "Added to cart" })).toBeNull(),
     );
 
     // …and the SAME selection pressed again: the merge the whole seam exists
@@ -726,7 +730,8 @@ describe("convergence: the public surface composes end-to-end (AC-07 through the
     expect(snapshot.lines[0]?.variantId).toBe(FIRST_VARIANT_ID);
 
     // The reopened sheet's title reflects the merged total…
-    expect(await screen.findByRole("heading", { name: "Your Cart · 2" })).toBeOnTheScreen();
+    expect(await screen.findByText("Added to cart")).toBeOnTheScreen();
+    expect(screen.getByText("Cart · 2 items")).toBeOnTheScreen();
     // …and so does the persistent affordance's accessible name — the count
     // from the single cart model (no mirrored state), announced with the
     // badge it carries.

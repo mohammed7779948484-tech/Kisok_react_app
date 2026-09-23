@@ -73,11 +73,10 @@ export function CatalogGrid<ItemT>({
   );
 
   // Stable identity so FlashList's content container is not re-styled on
-  // every render. The bottom clearance keeps the final card clear of the
-  // session-wide cart control, its badge, offset, and normal safe inset.
+  // every render. Browsing chrome reserves its own space outside the grid.
   // Note: FlashList v2 no longer takes `estimatedItemSize` — it measures rows
   // itself, so there is nothing to hoist for that.
-  const contentContainerStyle = useMemo(() => ({ paddingBottom: 144 }), []);
+  const contentContainerStyle = useMemo(() => ({ paddingBottom: 24 }), []);
 
   return (
     <View className={cn("flex-1", className)}>

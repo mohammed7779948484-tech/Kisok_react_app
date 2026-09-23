@@ -170,8 +170,7 @@ export function ProductDetailScreen({ productId }: ProductDetailScreenProps) {
 
   return (
     <Screen>
-      {/* pb-36 clears the persistent cart button in the bottom right corner */}
-      <ScrollView contentContainerClassName="gap-6 px-5 pb-36 pt-6 md:px-8">
+      <ScrollView contentContainerClassName="gap-6 px-5 pb-6 pt-6 md:px-8">
         {/* Back navigation button */}
         <Button
           variant="ghost"

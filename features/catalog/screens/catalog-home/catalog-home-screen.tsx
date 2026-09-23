@@ -88,7 +88,7 @@ export function CatalogHomeScreen() {
 
   return (
     <CatalogShell currentDestination="home" settings={view.settings}>
-      <ScrollView contentContainerClassName="gap-10 px-5 pb-36 pt-6 md:px-8">
+      <ScrollView contentContainerClassName="gap-10 px-5 pb-6 pt-6 md:px-8">
         {/* Page-level accessible heading representing Store / Catalog */}
         <View className="sr-only">
           <Text variant="h1" accessibilityRole="header">
