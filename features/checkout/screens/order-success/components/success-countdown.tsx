@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppState, View, type AppStateStatus } from "react-native";
 
-import { Progress, Text } from "@/components/ui";
+import { Progress } from "@/components/ui/progress";
+import { Text } from "@/components/ui/text";
 
 /**
  * The Order Success inactivity countdown (T11, plan D10 — deadline-based).
@@ -158,22 +159,16 @@ export function SuccessCountdown({ seconds, onExpire, reArmRef }: SuccessCountdo
     // wrapper, so its gestures are unaffected.
     <View
       testID="success-countdown"
-      className="gap-3 rounded-xl bg-secondary/50 p-4"
+      className="gap-2"
       onStartShouldSetResponder={() => true}
       onResponderGrant={() => {
         restart();
       }}
     >
-      <View className="flex-row items-center justify-between gap-3">
-        <Text variant="label" tone="muted">
-          Ready for the next customer
-        </Text>
-        <Text variant="label" className="tabular-nums">
-          {remaining}s
-        </Text>
-      </View>
-      <Progress value={percent} accessibilityLabel={label} indicatorClassName="bg-accent" />
-      <Text variant="caption">{label}</Text>
+      <Text variant="caption" tone="muted" className="text-center tabular-nums">
+        {label}
+      </Text>
+      <Progress value={percent} accessibilityLabel={label} indicatorClassName="bg-primary/50" />
     </View>
   );
 }

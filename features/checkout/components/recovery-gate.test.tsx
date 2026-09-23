@@ -72,6 +72,10 @@ jest.mock("lucide-react-native", () => {
   // factory free of `require()` (tests lint with --max-warnings=0).
   const makeIcon = (name: string) => Object.assign(() => null, { displayName: name });
   return {
+    ShieldAlert: makeIcon("ShieldAlert"),
+    ShieldQuestion: makeIcon("ShieldQuestion"),
+    AlertTriangle: makeIcon("AlertTriangle"),
+    CircleX: makeIcon("CircleX"),
     Minus: makeIcon("Minus"),
     Plus: makeIcon("Plus"),
     Trash2: makeIcon("Trash2"),
@@ -424,10 +428,11 @@ describe("RecoveryGate", () => {
     // The definite no-order outcome replaces the checking state: the honest
     // warning plus the conflict rows joined to the restored cart's lines —
     // requested/available as words AND numbers, never colour alone.
-    await screen.findByText("Some items aren't available in the requested quantities");
+    await screen.findByText("Some quantities are no longer available");
     expect(screen.getByText("Cappuccino")).toBeOnTheScreen();
     expect(screen.getByText("Hot · Large · Oat Milk")).toBeOnTheScreen();
-    expect(screen.getByText("Requested 2 · Available 1")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Requested 2")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Available 1")).toBeOnTheScreen();
 
     // The one way forward: back to the (preserved, unlocked) cart.
     await user.press(await screen.findByRole("button", { name: "Return to Cart" }));
@@ -492,7 +497,7 @@ describe("RecoveryGate", () => {
 
     // The store's failure payload rendered verbatim — the AppError boundary
     // already produced a safe, specific message.
-    await screen.findByText("Your order didn't go through");
+    await screen.findByText("Order not sent");
     expect(
       screen.getByText("Something went wrong on our side. Please try again."),
     ).toBeOnTheScreen();
@@ -516,7 +521,7 @@ describe("RecoveryGate", () => {
     await screen.findByText("We couldn't finish clearing this tablet for the next customer");
     expect(
       screen.getByText(
-        "This tablet isn't ready for the next person yet. Please let store staff know.",
+        "Your order is safe. This tablet isn't ready for the next person yet. Please let store staff know.",
       ),
     ).toBeOnTheScreen();
     expect(screen.queryByText(CHILDREN_TEXT)).toBeNull();
@@ -755,7 +760,7 @@ describe("RecoveryGate", () => {
       const user = userEvent.setup();
       mockAuthHolder.current = installMockAuth();
       await renderGate();
-      await screen.findByText("Your order didn't go through");
+      await screen.findByText("Order not sent");
       await user.press(await screen.findByRole("button", { name: "Return to Cart" }));
       expect(mockRouterReplace).toHaveBeenCalledWith("/cart");
       expect(screen.getByText(CHILDREN_TEXT)).toBeOnTheScreen();
@@ -791,10 +796,11 @@ describe("RecoveryGate", () => {
       // The durable definite verdict restores as the SAME conflict panel the
       // unresolved family renders: honest title, rows joined to the restored
       // cart, requested/available in words AND numbers.
-      await screen.findByText("Some items aren't available in the requested quantities");
+      await screen.findByText("Some quantities are no longer available");
       expect(screen.getByText("Cappuccino")).toBeOnTheScreen();
       expect(screen.getByText("Hot · Large · Oat Milk")).toBeOnTheScreen();
-      expect(screen.getByText("Requested 2 · Available 1")).toBeOnTheScreen();
+      expect(screen.getByLabelText("Requested 2")).toBeOnTheScreen();
+      expect(screen.getByLabelText("Available 1")).toBeOnTheScreen();
       expect(screen.queryByText(CHILDREN_TEXT)).toBeNull();
       // NO auto-replay: a terminal verdict is durable — a restart must never
       // resubmit it.
@@ -820,7 +826,7 @@ describe("RecoveryGate", () => {
 
       // The durable failure verdict restores as the SAME failure panel: the
       // stored userMessage verbatim plus Return to Cart.
-      await screen.findByText("Your order didn't go through");
+      await screen.findByText("Order not sent");
       expect(
         screen.getByText("Something went wrong on our side. Please try again."),
       ).toBeOnTheScreen();

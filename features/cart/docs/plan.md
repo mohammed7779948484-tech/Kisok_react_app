@@ -1,5 +1,8 @@
 # Cart — implementation plan
 
+Phase 3 supersedes the historical preview/review presentation below. Current
+scope, READY plan and verification constraints: [phase-3.md](./phase-3.md).
+
 **HOW the brief gets built.** Written with the `kisok-feature-plan` skill
 after research, and before generating anything beyond this workspace.
 

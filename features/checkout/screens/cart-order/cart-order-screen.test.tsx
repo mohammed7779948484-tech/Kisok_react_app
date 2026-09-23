@@ -28,9 +28,16 @@ import {
 import { submitOrder } from "../../api/submit-order";
 import type { CreateOrderResponse } from "../../model/create-order-response.schema";
 import { checkoutAttemptSchema } from "../../model/checkout-attempt.schema";
+import { normalizeCartLines } from "../../model/normalized-request";
 import { useAttemptStore } from "../../state/attempt-store";
 
-import { OrderReviewScreen } from "./order-review-screen";
+import { CartOrderScreen } from "./cart-order-screen";
+
+const mockFocus = { current: true };
+jest.mock("@react-navigation/native", () => ({
+  ...jest.requireActual("@react-navigation/native"),
+  useIsFocused: () => mockFocus.current,
+}));
 
 /**
  * lucide-react-native resolves (via the `react-native` condition) to an
@@ -49,6 +56,14 @@ jest.mock("lucide-react-native", () => {
   // factory free of `require()` (tests lint with --max-warnings=0).
   const makeIcon = (name: string) => Object.assign(() => null, { displayName: name });
   return {
+    ArrowLeft: makeIcon("ArrowLeft"),
+    CircleAlert: makeIcon("CircleAlert"),
+    CircleCheck: makeIcon("CircleCheck"),
+    Info: makeIcon("Info"),
+    TriangleAlert: makeIcon("TriangleAlert"),
+    AlertTriangle: makeIcon("AlertTriangle"),
+    CircleX: makeIcon("CircleX"),
+    ShieldQuestion: makeIcon("ShieldQuestion"),
     Minus: makeIcon("Minus"),
     Plus: makeIcon("Plus"),
     Trash2: makeIcon("Trash2"),
@@ -69,7 +84,7 @@ jest.mock("lucide-react-native", () => {
  */
 const mockRouterPush = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockRouterPush }),
+  useRouter: () => ({ push: mockRouterPush, replace: mockRouterPush }),
 }));
 
 /**
@@ -343,7 +358,7 @@ const mockAuthHolder: { current: ReturnType<typeof installMockAuth> | null } = {
 function AuthedReviewScreen() {
   const { status, profile } = useAuth();
   if (status !== "ready" || profile === null) return null;
-  return <OrderReviewScreen />;
+  return <CartOrderScreen />;
 }
 
 /** The client renderWithProviders built, held for afterEach cleanup (see below). */
@@ -385,8 +400,9 @@ async function recoverAttemptStore() {
  * Button and Text are driven unmocked; only lucide's icon renderer and
  * expo-router's `useRouter` are stubbed (documented above).
  */
-describe("OrderReviewScreen", () => {
+describe("CartOrderScreen", () => {
   beforeEach(async () => {
+    mockFocus.current = true;
     // Store mutations and the persistence paths log by design; keep the suite
     // silent, per the repo convention.
     setLogSink(() => {});
@@ -410,6 +426,7 @@ describe("OrderReviewScreen", () => {
     // durable key AND the full memory envelope (record, phase, recordLoaded,
     // outcome payloads) — which the sign-out cleanup drives in production.
     await useAttemptStore.getState().clearForSignOut();
+    await useAttemptStore.getState().recover(TEST_PROFILE.id);
   });
   afterEach(() => {
     resetLogging();
@@ -440,7 +457,7 @@ describe("OrderReviewScreen", () => {
 
     // The review heading and each line's snapshot through the shared
     // read-only OrderLineRow.
-    await screen.findByText("Review Your Order");
+    await screen.findByText("Your Cart");
     expect(screen.getByText("Cappuccino")).toBeOnTheScreen();
     expect(screen.getByText("Hot · Large · Oat Milk")).toBeOnTheScreen();
     expect(screen.getByText("Sparkling Water")).toBeOnTheScreen();
@@ -449,11 +466,11 @@ describe("OrderReviewScreen", () => {
     expect(screen.getByLabelText("Quantity: 1")).toBeOnTheScreen();
     // The summary derived through the cart view's selectors — never a mirror:
     // 2 + 1 = 3 total quantity across 2 distinct lines.
-    expect(screen.getByText("3 items · 2 lines")).toBeOnTheScreen();
+    expect(screen.getByText("3 items")).toBeOnTheScreen();
     // Both footer actions by role+name. Hydrated + populated + unlocked →
     // Confirm Order is ENABLED (AC-03's no-unsafe-submit rule's happy case;
     // the press itself is T09's, deliberately inert here).
-    expect(screen.getByRole("button", { name: "Back to Cart" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Continue Shopping" })).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Confirm Order" })).not.toBeDisabled();
     // `persisted` renders NO alert — the exact inverse of the warning tests
     // below (the full-cart R-T08-03 pattern).
@@ -521,16 +538,16 @@ describe("OrderReviewScreen", () => {
     // The review's empty state: nothing to submit, so the escape is the way
     // forward — no dead end on a kiosk.
     await screen.findByText("Your cart is empty");
-    expect(screen.getByText("There's nothing to review or submit yet.")).toBeOnTheScreen();
+    expect(screen.getByText("Items you add while browsing will appear here.")).toBeOnTheScreen();
     // The empty presentation has no footer: with nothing to confirm, the
     // confirm affordance does not exist here at all (AC-03).
     expect(screen.queryByRole("button", { name: "Confirm Order" })).toBeNull();
-    const escape = screen.getByRole("button", { name: "Back to Cart" });
+    const escape = screen.getByRole("button", { name: "Browse Products" });
     expect(escape).not.toBeDisabled();
 
     await user.press(escape);
     expect(mockRouterPush).toHaveBeenCalledTimes(1);
-    expect(mockRouterPush).toHaveBeenCalledWith("/cart");
+    expect(mockRouterPush).toHaveBeenCalledWith("/");
   });
 
   it("surfaces the memory-only persistence warning alongside the lines (AC-03)", async () => {
@@ -567,7 +584,7 @@ describe("OrderReviewScreen", () => {
     // live: 2 + 2 = 4 across 2 lines), and is not conflated with the
     // clear-failure status.
     expect(screen.getByText("Cappuccino")).toBeOnTheScreen();
-    expect(screen.getByText("4 items · 2 lines")).toBeOnTheScreen();
+    expect(screen.getByText("4 items")).toBeOnTheScreen();
     expect(screen.queryByText("Couldn't clear the saved cart")).toBeNull();
   });
 
@@ -612,19 +629,19 @@ describe("OrderReviewScreen", () => {
     expect(screen.queryByText("Saved in memory only")).toBeNull();
   });
 
-  it("Back to Cart in the footer pushes /cart — explicit navigation, valid from any entry (AC-02)", async () => {
+  it("Continue Shopping returns to browsing", async () => {
     await seedDurableEnvelope([waterLine]);
     mockAuthHolder.current = installMockAuth();
     const user = userEvent.setup();
     await renderScreen();
 
-    await screen.findByRole("button", { name: "Back to Cart" });
-    await user.press(screen.getByRole("button", { name: "Back to Cart" }));
+    await screen.findByRole("button", { name: "Continue Shopping" });
+    await user.press(screen.getByRole("button", { name: "Continue Shopping" }));
     expect(mockRouterPush).toHaveBeenCalledTimes(1);
-    expect(mockRouterPush).toHaveBeenCalledWith("/cart");
+    expect(mockRouterPush).toHaveBeenCalledWith("/");
   });
 
-  it("disables Confirm Order while the cart is locked — Back to Cart stays enabled (the lock blocks submission, not movement)", async () => {
+  it("disables confirmation and browsing while the cart is locked", async () => {
     await seedDurableEnvelope([cappuccinoLine, waterLine]);
     mockAuthHolder.current = installMockAuth();
     // Restore for the signed-in profile through the public seam, then the
@@ -637,10 +654,10 @@ describe("OrderReviewScreen", () => {
     expect(screen.getByRole("button", { name: "Confirm Order" })).toBeDisabled();
     // The lock blocks cart mutation and submission, never movement: the
     // escape stays enabled (the full-cart locked-escape convention).
-    expect(screen.getByRole("button", { name: "Back to Cart" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Continue Shopping" })).toBeDisabled();
     // The read-only review itself is unaffected by the lock: rows + summary.
     expect(screen.getByText("Cappuccino")).toBeOnTheScreen();
-    expect(screen.getByText("3 items · 2 lines")).toBeOnTheScreen();
+    expect(screen.getByText("3 items")).toBeOnTheScreen();
   });
 
   it("renders the same review content at the compact portrait frame (480×900)", async () => {
@@ -650,7 +667,7 @@ describe("OrderReviewScreen", () => {
 
     await screen.findByText("Sparkling Water");
     expect(screen.getByLabelText("Quantity: 1")).toBeOnTheScreen();
-    expect(screen.getByText("1 item · 1 line")).toBeOnTheScreen();
+    expect(screen.getByText("1 item")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Confirm Order" })).toBeOnTheScreen();
   });
 
@@ -668,6 +685,64 @@ describe("OrderReviewScreen", () => {
       // api mock drops any previous test's implementations.
       mockUuidCounter.current = 0;
       mockSubmitOrder.mockReset();
+    });
+
+    it("blocks editing and further confirmation while the durable attempt write is pending", async () => {
+      await seedDurableEnvelope([cappuccinoLine]);
+      mockAuthHolder.current = installMockAuth();
+      await renderScreen();
+      let releaseWrite!: () => void;
+      const writeGate = new Promise<void>((resolve) => {
+        releaseWrite = resolve;
+      });
+      const realWrite = storage.write;
+      const writeSpy = jest.spyOn(storage, "write").mockImplementation(async (key, value) => {
+        if (key === ATTEMPT_KEY) await writeGate;
+        return realWrite(key, value);
+      });
+      mockSubmitOrder.mockResolvedValue(CONFLICT_RESPONSE);
+      const user = userEvent.setup();
+      try {
+        await user.press(screen.getByRole("button", { name: "Confirm Order" }));
+        expect(screen.getByLabelText("Submitting your order…")).toBeOnTheScreen();
+        expect(screen.queryByRole("button", { name: "Increase quantity" })).toBeNull();
+        expect(screen.queryByRole("button", { name: "Clear Cart" })).toBeNull();
+        expect(screen.queryByRole("button", { name: "Confirm Order" })).toBeNull();
+        expect(getCartSnapshot().totalQuantity).toBe(2);
+        expect(mockSubmitOrder).not.toHaveBeenCalled();
+        await act(async () => {
+          releaseWrite();
+        });
+        await waitFor(() => expect(mockSubmitOrder).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(useAttemptStore.getState().phase).toBe("stock-conflict"));
+      } finally {
+        releaseWrite();
+        writeSpy.mockRestore();
+      }
+    });
+
+    it("does not navigate from a covered cart controller when another screen confirms", async () => {
+      await seedDurableEnvelope([waterLine]);
+      mockAuthHolder.current = installMockAuth();
+      await hydrateCart(TEST_PROFILE.id);
+      mockFocus.current = false;
+      await renderScreen();
+      await act(async () => {
+        const prepared = await useAttemptStore.getState().prepareAttempt({
+          ownerId: TEST_PROFILE.id,
+          lines: [waterLine],
+          normalized: normalizeCartLines([waterLine]),
+        });
+        expect(prepared.ok).toBe(true);
+        await useAttemptStore.getState().resolveSuccess({
+          orderId: SUCCESS_RESPONSE.order_id,
+          displayNumber: SUCCESS_RESPONSE.display_number,
+          createdAt: SUCCESS_RESPONSE.created_at,
+        });
+      });
+      expect(useAttemptStore.getState().phase).toBe("confirmed");
+      expect(mockRouterPush).not.toHaveBeenCalled();
+      expect(backPressSubscriptions).toHaveLength(0);
     });
 
     it("submits through the real flow: one api call with the exact normalized request, the durable record written before the network resolves, confirmed phase, cleared cart, one success push (AC-04/AC-06/AC-07)", async () => {
@@ -762,8 +837,8 @@ describe("OrderReviewScreen", () => {
       // the second press below is a no-op at every layer (the overlay's touch
       // interception, the disabled affordance, the handler's phase guard).
       expect(screen.getByLabelText("Submitting your order…")).toBeOnTheScreen();
-      expect(confirm).toBeDisabled();
-      await user.press(confirm);
+      expect(screen.queryByRole("button", { name: "Confirm Order" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Increase quantity" })).toBeNull();
       expect(mockSubmitOrder).toHaveBeenCalledTimes(1);
 
       // Settle the flight so no dangling mutation state leaks past this test.
@@ -786,22 +861,23 @@ describe("OrderReviewScreen", () => {
       // The panel (AC-08): the honest warning, the conflict rows joined to
       // the cart's display data, and requested/available as words AND
       // numbers — never colour alone.
-      await screen.findByText("Some items aren't available in the requested quantities");
+      await screen.findByText("Some quantities are no longer available");
       expect(
         screen.getByText(
-          "No order was submitted, and your cart wasn't changed. Return to your cart to adjust the quantities.",
+          "No order was submitted and your cart was not changed. Edit your cart to adjust the selections below.",
         ),
       ).toBeOnTheScreen();
       expect(screen.getByText("Cappuccino")).toBeOnTheScreen();
       expect(screen.getByText("Hot · Large · Oat Milk")).toBeOnTheScreen();
-      expect(screen.getByText("Requested 2 · Available 1")).toBeOnTheScreen();
+      expect(screen.getByLabelText("Requested 2")).toBeOnTheScreen();
+      expect(screen.getByLabelText("Available 1")).toBeOnTheScreen();
       // The cart is preserved without silent mutation and the interaction
       // lock is released — the store owns both at resolve time.
       expect(getCartSnapshot().lines).toHaveLength(2);
       expect(getCartSnapshot().locked).toBe(false);
       // The only way forward is the explicit return; the confirm affordance
       // is gone in this phase, and nothing auto-retried the RPC.
-      expect(screen.getByRole("button", { name: "Return to Cart" })).toBeOnTheScreen();
+      expect(screen.getByRole("button", { name: "Edit Cart" })).toBeOnTheScreen();
       expect(screen.queryByRole("button", { name: "Confirm Order" })).toBeNull();
       expect(mockSubmitOrder).toHaveBeenCalledTimes(1);
     });
@@ -827,10 +903,10 @@ describe("OrderReviewScreen", () => {
       // The unknown panel — deliberately NOT the failure panel (AC-09): a
       // warning, not a destructive presentation, with copy that says what
       // "check again" actually does.
-      await screen.findByText("We couldn't confirm whether your order went through");
+      await screen.findByText("Order status not confirmed");
       expect(
         screen.getByText(
-          "It may already exist — we'll check safely without submitting a duplicate.",
+          "Check again to find out safely. We'll use the same request, so this won't create a second order.",
         ),
       ).toBeOnTheScreen();
       // The cart stays locked: editing is unsafe while the outcome is unknown.
@@ -878,7 +954,7 @@ describe("OrderReviewScreen", () => {
       // allows (server failures are retryable) and the way back.
       await screen.findByText("Something went wrong on our side. Please try again.");
       expect(screen.getByRole("button", { name: "Try Again" })).toBeOnTheScreen();
-      expect(screen.getByRole("button", { name: "Back to Cart" })).not.toBeDisabled();
+      expect(screen.getByRole("button", { name: "Edit Cart" })).not.toBeDisabled();
       // A definite failure released the interaction lock.
       expect(getCartSnapshot().locked).toBe(false);
 
@@ -914,7 +990,7 @@ describe("OrderReviewScreen", () => {
       // Retrying the same payload fails identically — the kind is honest
       // about that, and the affordance is absent, not merely disabled.
       expect(screen.queryByRole("button", { name: "Try Again" })).toBeNull();
-      expect(screen.getByRole("button", { name: "Back to Cart" })).toBeOnTheScreen();
+      expect(screen.getByRole("button", { name: "Edit Cart" })).toBeOnTheScreen();
       expect(mockSubmitOrder).toHaveBeenCalledTimes(1);
     });
 
@@ -1002,14 +1078,14 @@ describe("OrderReviewScreen", () => {
       // count: the press reaches normalization, which refuses the
       // over-capacity cart (T02: at most 100 distinct variants).
       const confirm = await screen.findByRole("button", { name: "Confirm Order" });
-      expect(confirm).not.toBeDisabled();
+      expect(confirm).toBeDisabled();
       await user.press(confirm);
 
       // The catch's local warning renders with the review — never a crash,
       // never an outcome phase owning the screen.
-      await screen.findByText("We couldn't prepare your order");
+      await screen.findByText("A few selections need to come out");
       expect(
-        screen.getByText("Please try again. If it keeps happening, please let store staff know."),
+        screen.getByText(/Remove at least 1 different option before confirming/),
       ).toBeOnTheScreen();
       // Hard-stopped before anything left the device: no submit, no minted
       // durable attempt — the machine never left idle.
@@ -1018,19 +1094,19 @@ describe("OrderReviewScreen", () => {
       expect(useAttemptStore.getState().phase).toBe("idle");
     });
 
-    it("resets a stale stock-conflict outcome when the review is re-entered — the panel does not survive a fresh mount", async () => {
+    it("requires explicit Edit Cart acknowledgement, then confirms on the same screen without navigation", async () => {
       await seedDurableEnvelope([cappuccinoLine, waterLine]);
       await recoverAttemptStore();
       mockAuthHolder.current = installMockAuth();
       mockSubmitOrder.mockResolvedValue(CONFLICT_RESPONSE);
       const user = userEvent.setup();
-      const firstMount = await renderScreen();
+      await renderScreen();
 
       await user.press(await screen.findByRole("button", { name: "Confirm Order" }));
-      await screen.findByText("Some items aren't available in the requested quantities");
+      await screen.findByText("Some quantities are no longer available");
       // The customer's exit: the panel's own way back to the (preserved) cart.
-      await user.press(screen.getByRole("button", { name: "Return to Cart" }));
-      expect(mockRouterPush).toHaveBeenCalledWith("/cart");
+      await user.press(screen.getByRole("button", { name: "Edit Cart" }));
+      expect(mockRouterPush).not.toHaveBeenCalled();
       // RNTL v14's `unmount` is an ASYNC act (the use-cart suite's precedent):
       // it must be awaited. Left un-awaited, the second renderScreen() below
       // opens its act while the unmount's is still draining — React's
@@ -1038,19 +1114,15 @@ describe("OrderReviewScreen", () => {
       // effects then flush through the orphaned act queue outside any act
       // window ("not configured to support act"). Awaiting settles the first
       // tree completely before the second one mounts.
-      await firstMount.unmount();
 
       // Re-entry — a fresh Review push from the corrected cart: the
       // mount-time reset (enterReview) clears the STALE outcome phase, so
       // the panel cannot greet the corrected cart. The reset is mount-time
       // ONLY by design: while this screen stays mounted, a resolved panel
       // persists instead of flickering away.
-      await renderScreen();
       await screen.findByRole("button", { name: "Confirm Order" });
       expect(useAttemptStore.getState().phase).toBe("idle");
-      expect(
-        screen.queryByText("Some items aren't available in the requested quantities"),
-      ).toBeNull();
+      expect(screen.queryByText("Some quantities are no longer available")).toBeNull();
     });
   });
 
@@ -1085,7 +1157,7 @@ describe("OrderReviewScreen", () => {
       const view = await renderScreen();
 
       await user.press(await screen.findByRole("button", { name: "Confirm Order" }));
-      await screen.findByText("We couldn't confirm whether your order went through");
+      await screen.findByText("Order status not confirmed");
       // The unknown hold (the T09 pins): the cart is locked and the panel's
       // action is the only way through — exactly the state a back pop must
       // not strand the customer off of.
@@ -1157,7 +1229,8 @@ describe("OrderReviewScreen", () => {
       // The conflict phase: the store unlocked the cart and the panel's
       // Return to Cart is the way forward — standard back semantics again.
       await user.press(screen.getByRole("button", { name: "Confirm Order" }));
-      await screen.findByText("Some items aren't available in the requested quantities");
+      await screen.findByText("Some quantities are no longer available");
+      await user.press(screen.getByRole("button", { name: "Edit Cart" }));
       expect(backPressSubscriptions).toHaveLength(0);
 
       // The failed panel, through the suite's re-entry pattern (the mount

@@ -185,3 +185,8 @@ variant="warning"` for memoryOnly; `EmptyState` for empty; quantity
   directly.
 - Baseline `pnpm verify` PASS on the clean tree (this session; `db:verify`
   SKIPs in this sandbox — PostgreSQL unavailable — and CI provides it).
+
+# Phase 3 amendment
+
+The current customer journey is defined in [phase-3.md](./phase-3.md).
+It supersedes the historical editable Quick Cart and separate Review Order step.

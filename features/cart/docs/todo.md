@@ -368,3 +368,10 @@ EXTERNAL actor advanced protected PR #9's branch (`feature/kiosk-runtime`:
 23a4222 → 1f446ed, later 70a0a01) while this assignment worked. Nothing was
 reverted and no command of this assignment wrote to it — the observation
 only.
+
+# Phase 3 checkpoint
+
+Implementation and targeted checks complete for bounded preview, customer line
+identity, in-flow cart chrome and editable direct-confirm workspace. Final source
+review/check/commit evidence: [phase-3-worklog.md](./phase-3-worklog.md).
+Historical task gates below are not Phase 3 verification claims.
