@@ -33,6 +33,13 @@ const CASES = [
   { message: "fix(ci): make the android e2e job boot the app", valid: true },
   { message: "chore(deps): bump expo", valid: true },
   { message: "feat: a scope is optional", valid: true },
+  // `merge` is the one type-enum addition over config-conventional's default:
+  // a deliberate, reviewed, history-preserving two-parent merge commit IS the
+  // integration, not a change describable as build/chore/feat/fix/etc, and it
+  // cannot be rewritten to another type once made (no rebase/squash of a
+  // preserved merge). An arbitrary made-up type must still be rejected.
+  { message: "merge: integrate redesign into develop", valid: true },
+  { message: "bogus: not a real type", valid: false },
   // A subject may start with a proper noun. config-conventional's default
   // rejects sentence-case, which made "Android ..." or "Supabase ..." fail and
   // pushed people toward --no-verify.

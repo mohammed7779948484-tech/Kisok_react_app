@@ -52,6 +52,37 @@ module.exports = {
      */
     "subject-case": [2, "never", ["upper-case"]],
 
+    /**
+     * config-conventional's default type-enum has no room for a deliberate,
+     * reviewed, history-preserving two-parent merge (e.g. integrating a long-
+     * lived branch into develop) — the commit that IS the integration, not a
+     * change described by build/chore/feat/fix/etc. CI lints every real commit
+     * in a PR's range (`commitlint --from base --to head`), so a legitimate
+     * merge commit already in history would otherwise permanently fail that
+     * check with no fix available that does not rewrite it — which this
+     * project's workflow explicitly forbids (no rebase/squash/force-push of a
+     * preserved merge). `merge` is added, not substituted, so every other type
+     * still means what config-conventional says it means.
+     */
+    "type-enum": [
+      2,
+      "always",
+      [
+        "build",
+        "chore",
+        "ci",
+        "docs",
+        "feat",
+        "fix",
+        "merge",
+        "perf",
+        "refactor",
+        "revert",
+        "style",
+        "test",
+      ],
+    ],
+
     // The body carries reasoning, commands and URLs; hard-wrapping those to a
     // column makes them unusable.
     "body-max-line-length": [0],
