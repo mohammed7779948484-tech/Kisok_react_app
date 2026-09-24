@@ -147,6 +147,7 @@ export function BoardSection({
     <View className={cn("gap-3 border-t-4 border-border pt-3", scrollable && "flex-1", className)}>
       {title !== undefined ? (
         <View
+          testID={status !== undefined ? `board-section-header-${status}` : undefined}
           className={cn(
             "min-h-touch flex-row items-center justify-between gap-3 px-4 py-3",
             sectionStyle?.headerClassName ?? "bg-secondary",

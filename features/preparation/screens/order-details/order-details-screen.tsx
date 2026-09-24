@@ -446,7 +446,7 @@ function OrderSummaryCard({
         <CardContent className="gap-3 p-4">
           <View className="flex-row items-center gap-2">
             <Icon as={Clock3} size={18} className="text-muted-foreground" />
-            <View className="gap-0.5">
+            <View testID="order-created-at" className="gap-0.5">
               <Text variant="caption">Created</Text>
               <Text variant="label">{formatCreatedAt(order.created_at, timezone)}</Text>
             </View>

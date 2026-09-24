@@ -10,6 +10,7 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/core/testing";
 
 import { fetchStoreDayHistory, type StoreDayHistoryInput } from "../../api/fetch-store-day-history";
@@ -211,6 +212,19 @@ afterEach(() => {
   routerPush.mockClear();
 });
 
+/**
+ * A history group's header carries the group label and its count as two
+ * separately-styled `Text` nodes (the redesign's badge treatment — see
+ * `store-day-history-screen.tsx`'s `HistoryGroup`), not one combined string,
+ * so a plain `getByText("Completed (1)")` can no longer find it. `within`
+ * the group's own testID keeps the label and count assertions scoped to it.
+ */
+function expectGroupHeading(status: "completed" | "cancelled", label: string, count: number) {
+  const header = screen.getByTestId(`history-group-header-${status}`);
+  expect(within(header).getByText(label)).toBeOnTheScreen();
+  expect(within(header).getByText(String(count))).toBeOnTheScreen();
+}
+
 describe("StoreDayHistoryScreen read states", () => {
   it("renders a loading skeleton while the settings read is in flight", async () => {
     await renderHistory({ settingsPending: true });
@@ -219,7 +233,7 @@ describe("StoreDayHistoryScreen read states", () => {
     expect(screen.getByLabelText("Loading content")).toBeOnTheScreen();
     // No window without settings, so no read and no day content.
     expect(historyMock).not.toHaveBeenCalled();
-    expect(screen.queryByText(/Completed \(/)).toBeNull();
+    expect(screen.queryByTestId("history-group-header-completed")).toBeNull();
   });
 
   it("renders an error state with retry when the read fails, and retry re-attempts it", async () => {
@@ -299,8 +313,8 @@ describe("StoreDayHistoryScreen read states", () => {
 
     expect(await screen.findByText("No completed or cancelled orders yet")).toBeOnTheScreen();
     // The day-level empty state REPLACES the groups — no empty group headers.
-    expect(screen.queryByText(/Completed \(/)).toBeNull();
-    expect(screen.queryByText(/Cancelled \(/)).toBeNull();
+    expect(screen.queryByTestId("history-group-header-completed")).toBeNull();
+    expect(screen.queryByTestId("history-group-header-cancelled")).toBeNull();
     // The empty state is still grounded in the day it describes: the date
     // header renders above it (shape-pinned; the exact string is pinned by the
     // fake-timer day-boundary test).
@@ -370,8 +384,8 @@ describe("StoreDayHistoryScreen groups (AC-08)", () => {
 
       // One count per group; exactly the two in-day rows survive the model's
       // client-side day filter.
-      expect(screen.getByText("Completed (1)")).toBeOnTheScreen();
-      expect(screen.getByText("Cancelled (1)")).toBeOnTheScreen();
+      expectGroupHeading("completed", "Completed", 1);
+      expectGroupHeading("cancelled", "Cancelled", 1);
       expect(screen.getByText("B3K9Z1")).toBeOnTheScreen();
       expect(screen.getByText("C7F2M8")).toBeOnTheScreen();
       expect(screen.queryByText("A1E5Y7")).toBeNull();
@@ -429,7 +443,8 @@ describe("StoreDayHistoryScreen groups (AC-08)", () => {
     });
 
     // …and the group re-sorts by terminal instant through the model's helper.
-    expect(await screen.findByText("Completed (2)")).toBeOnTheScreen();
+    await screen.findByTestId("history-group-header-completed");
+    expectGroupHeading("completed", "Completed", 2);
     const treeOrder = screen
       .getAllByText(/^(OLDCMP1|NEWCMP2)$/)
       .map((element) => element.props.children);
@@ -450,8 +465,9 @@ describe("StoreDayHistoryScreen groups (AC-08)", () => {
 
     // A group can be legitimately empty while its sibling is not — words, not
     // a blank panel (the board section's own convention).
-    expect(await screen.findByText("Completed (1)")).toBeOnTheScreen();
-    expect(screen.getByText("Cancelled (0)")).toBeOnTheScreen();
+    await screen.findByTestId("history-group-header-completed");
+    expectGroupHeading("completed", "Completed", 1);
+    expectGroupHeading("cancelled", "Cancelled", 0);
     expect(screen.getByText("No orders")).toBeOnTheScreen();
   });
 });

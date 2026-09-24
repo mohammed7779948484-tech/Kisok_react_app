@@ -139,6 +139,7 @@ function HistoryGroup({
   return (
     <View className="flex-1 gap-3 rounded-lg bg-muted/70 p-2">
       <View
+        testID={`history-group-header-${status}`}
         className={`min-h-touch flex-row items-center justify-between gap-3 rounded-md px-4 py-3 ${
           isCancelled ? "bg-destructive" : "bg-secondary"
         }`}
