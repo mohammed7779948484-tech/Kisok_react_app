@@ -39,7 +39,10 @@ export function ConfirmDialog({
           {description ? <AlertDialogDescription>{description}</AlertDialogDescription> : null}
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy} onPress={() => onOpenChange(false)}>
+          {/* AlertDialogCancel already calls the root's onOpenChange(false)
+              internally (@rn-primitives/alert-dialog's Cancel) — an explicit
+              onPress here would fire it a second time for the same press. */}
+          <AlertDialogCancel disabled={busy}>
             <Text>{cancelLabel}</Text>
           </AlertDialogCancel>
           <Button
@@ -47,7 +50,7 @@ export function ConfirmDialog({
             disabled={busy}
             onPress={onConfirm}
           >
-            <Text>{busy ? "Working..." : confirmLabel}</Text>
+            <Text>{busy ? "Working…" : confirmLabel}</Text>
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
