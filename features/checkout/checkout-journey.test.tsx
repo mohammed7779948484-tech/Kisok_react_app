@@ -15,14 +15,19 @@ import {
   userEvent,
   waitFor,
 } from "@/core/testing";
-import { FullCartScreen, getCartSnapshot, hydrateCart, type CartLine } from "@/features/cart";
+import { getCartSnapshot, hydrateCart, type CartLine } from "@/features/cart";
 
 import { submitOrder } from "./api/submit-order";
-import { OrderReviewScreen, OrderSuccessScreen, RecoveryGate } from "./index";
+import { CartOrderScreen, OrderSuccessScreen, RecoveryGate } from "./index";
 import { checkoutAttemptSchema, type CheckoutAttempt } from "./model/checkout-attempt.schema";
 import type { CreateOrderResponse } from "./model/create-order-response.schema";
 import { deriveRequestFingerprint } from "./model/normalized-request";
 import { useAttemptStore } from "./state/attempt-store";
+
+jest.mock("@react-navigation/native", () => ({
+  ...jest.requireActual("@react-navigation/native"),
+  useIsFocused: () => true,
+}));
 
 /**
  * T15 — the customer journey integration suite (AC-16): the whole flow —
@@ -77,6 +82,12 @@ jest.mock("lucide-react-native", () => {
   // factory free of `require()` (tests lint with --max-warnings=0).
   const makeIcon = (name: string) => Object.assign(() => null, { displayName: name });
   return {
+    ArrowLeft: makeIcon("ArrowLeft"),
+    Check: makeIcon("Check"),
+    ShieldAlert: makeIcon("ShieldAlert"),
+    ShieldQuestion: makeIcon("ShieldQuestion"),
+    AlertTriangle: makeIcon("AlertTriangle"),
+    CircleX: makeIcon("CircleX"),
     Minus: makeIcon("Minus"),
     Plus: makeIcon("Plus"),
     Trash2: makeIcon("Trash2"),
@@ -304,17 +315,11 @@ const mockAuthHolder: { current: ReturnType<typeof installMockAuth> | null } = {
  * (the full-cart suite's AuthedCartScreen pattern): the root layout's guard
  * means the (customer) group only mounts once auth has resolved a profile.
  */
-function AuthedCartScreen() {
-  const { status, profile } = useAuth();
-  if (status !== "ready" || profile === null) return null;
-  return <FullCartScreen />;
-}
-
 /** The same gate for the review screen (the review suite's wrapper). */
 function AuthedReviewScreen() {
   const { status, profile } = useAuth();
   if (status !== "ready" || profile === null) return null;
-  return <OrderReviewScreen />;
+  return <CartOrderScreen />;
 }
 
 /** The children the gate composes over — the routed customer Stack's stand-in (the T12 pattern). */
@@ -423,7 +428,7 @@ describe("checkout journey (T15 / AC-16)", () => {
     queryClients.length = 0;
   });
 
-  it("drives the whole journey at the tablet frame: sign-in → durable cart → Review Order → review → confirm → success → countdown reset, plus the compact-frame variant (AC-16)", async () => {
+  it("drives cart → direct confirm → success → countdown reset, plus compact and portrait frames", async () => {
     // ---- 1. The customer's session: mock auth + a previous browsing
     // session's durable cart (2 lines, one with options), and the layout
     // gate's recover() having found nothing — the T09 suite's stand-in for
@@ -436,35 +441,16 @@ describe("checkout journey (T15 / AC-16)", () => {
 
     const user = userEvent.setup();
 
-    // ---- 2. The Full Cart screen (the cart feature's public surface, exactly
-    // what the /cart route renders): its own runtime hydration restores the
-    // durable envelope, and the checkout entry seam (AC-01) is the enabled
-    // Review Order CTA.
-    const cartView = await renderJourney(<AuthedCartScreen />);
-    await screen.findByText("Cappuccino");
-    expect(screen.getByText("Hot · Large · Oat Milk")).toBeOnTheScreen();
-    expect(screen.getByText("Sparkling Water")).toBeOnTheScreen();
-    expect(screen.getByText("3 items · 2 lines")).toBeOnTheScreen();
-    const reviewOrder = screen.getByRole("button", { name: "Review Order" });
-    expect(reviewOrder).not.toBeDisabled();
-
-    await user.press(reviewOrder);
-    // The navigation intent the router would act on: the checkout route.
-    expect(mockRouterPush).toHaveBeenCalledTimes(1);
-    expect(mockRouterPush).toHaveBeenCalledWith("/checkout");
-    await cartView.unmount();
-
-    // ---- 3. The Checkout Review screen (what /checkout renders): the final
-    // read-only review of the same single cart model, then the real
-    // submission flow through the store's machine.
+    // Full Cart is the editable final review; no second route repeats it.
     const reviewView = await renderJourney(<AuthedReviewScreen />);
-    await screen.findByText("Review Your Order");
+    await screen.findByText("Your Cart");
     expect(screen.getByText("Cappuccino")).toBeOnTheScreen();
     expect(screen.getByText("Hot · Large · Oat Milk")).toBeOnTheScreen();
     expect(screen.getByText("Sparkling Water")).toBeOnTheScreen();
     expect(screen.getByLabelText("Quantity: 2")).toBeOnTheScreen();
     expect(screen.getByLabelText("Quantity: 1")).toBeOnTheScreen();
-    expect(screen.getByText("3 items · 2 lines")).toBeOnTheScreen();
+    expect(screen.getByText("3 items")).toBeOnTheScreen();
+    expect(mockRouterPush).not.toHaveBeenCalled();
 
     // The flight stays open until THIS test resolves it, so the mid-flight
     // invariants (the announced submitting state, the durable record written
@@ -517,8 +503,9 @@ describe("checkout journey (T15 / AC-16)", () => {
     expect(useAttemptStore.getState().phase).toBe("confirmed");
     const cartKey = await storage.read(KEY, (raw) => raw);
     expect(cartKey.status).toBe("miss");
-    expect(mockRouterPush).toHaveBeenCalledTimes(2);
-    expect(mockRouterPush).toHaveBeenLastCalledWith("/checkout-success");
+    expect(mockRouterReplace).toHaveBeenCalledTimes(1);
+    expect(mockRouterReplace).toHaveBeenLastCalledWith("/checkout-success");
+    mockRouterReplace.mockClear();
     await reviewView.unmount();
 
     // ---- 4. The Order Success screen (what /checkout-success renders): the
@@ -531,7 +518,7 @@ describe("checkout journey (T15 / AC-16)", () => {
     jest.useFakeTimers();
     const successView = await renderJourney(<OrderSuccessScreen />, { withAuth: false });
     await screen.findByText("Order Confirmed");
-    expect(screen.getByText("Your order has been sent to the store")).toBeOnTheScreen();
+    expect(screen.getByText("Show this number to staff if asked.")).toBeOnTheScreen();
     expect(screen.getByLabelText("Order number KX7QR9")).toBeOnTheScreen();
     expect(screen.getByText("Cappuccino")).toBeOnTheScreen();
     expect(screen.getByText("Hot · Large · Oat Milk")).toBeOnTheScreen();
@@ -539,7 +526,7 @@ describe("checkout journey (T15 / AC-16)", () => {
     expect(screen.getByText("500 ml Bottle")).toBeOnTheScreen();
     expect(screen.getByLabelText("Quantity: 2")).toBeOnTheScreen();
     expect(screen.getByLabelText("Quantity: 1")).toBeOnTheScreen();
-    expect(screen.getByText("3 items · 2 lines")).toBeOnTheScreen();
+    expect(screen.getByText("3 items · 2 selections")).toBeOnTheScreen();
     // The CONFIGURED settings value drives the window (D6), and the countdown
     // is announced with the remaining time (AC-16's accessible states).
     expect(screen.getByLabelText("Order resets in 10 seconds")).toBeOnTheScreen();
@@ -569,9 +556,9 @@ describe("checkout journey (T15 / AC-16)", () => {
     const compactView = await renderJourney(<AuthedReviewScreen />, { frame: COMPACT });
     await screen.findByText("Sparkling Water");
     expect(screen.getByLabelText("Quantity: 1")).toBeOnTheScreen();
-    expect(screen.getByText("1 item · 1 line")).toBeOnTheScreen();
+    expect(screen.getByText("1 item")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Confirm Order" })).not.toBeDisabled();
-    expect(screen.getByRole("button", { name: "Back to Cart" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Continue Shopping" })).not.toBeDisabled();
     await compactView.unmount();
 
     // ---- 6. The tablet-PORTRAIT variant (AC-16's third bucket, F-T15-02:
@@ -582,7 +569,7 @@ describe("checkout journey (T15 / AC-16)", () => {
     const portraitView = await renderJourney(<AuthedReviewScreen />, { frame: PORTRAIT });
     await screen.findByText("Cappuccino");
     expect(screen.getByLabelText("Quantity: 2")).toBeOnTheScreen();
-    expect(screen.getByText("3 items · 2 lines")).toBeOnTheScreen();
+    expect(screen.getByText("3 items")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Confirm Order" })).not.toBeDisabled();
     await portraitView.unmount();
   });

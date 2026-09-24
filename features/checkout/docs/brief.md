@@ -183,3 +183,9 @@ BEHAVIOUR only, existing screens, research findings.
 - Research Evidence Packets (session research, distilled in `plan.md`):
   supabase-contract-researcher (15 findings), flutter-behavior-researcher
   (25 findings), ui-researcher (14 findings).
+
+# Phase 3 amendment
+
+The current journey and acceptance criteria are in
+[phase-3.md](../../cart/docs/phase-3.md): Full Cart confirms directly, and
+confirmed order truth renders immediately without waiting for reset settings.

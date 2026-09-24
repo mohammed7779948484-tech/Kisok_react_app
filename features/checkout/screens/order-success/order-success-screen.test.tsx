@@ -1,4 +1,4 @@
-import { AppState, type AppStateStatus, BackHandler } from "react-native";
+import { AppState, type AppStateStatus, BackHandler, Dimensions } from "react-native";
 
 import { resetLogging, setLogSink } from "@/core/logging";
 import { storage, storageKey } from "@/core/storage";
@@ -56,6 +56,11 @@ jest.mock("lucide-react-native", () => {
   // factory free of `require()` (tests lint with --max-warnings=0).
   const makeIcon = (name: string) => Object.assign(() => null, { displayName: name });
   return {
+    Check: makeIcon("Check"),
+    CircleAlert: makeIcon("CircleAlert"),
+    CircleCheck: makeIcon("CircleCheck"),
+    Info: makeIcon("Info"),
+    TriangleAlert: makeIcon("TriangleAlert"),
     Minus: makeIcon("Minus"),
     Plus: makeIcon("Plus"),
     Trash2: makeIcon("Trash2"),
@@ -364,10 +369,10 @@ describe("OrderSuccessScreen", () => {
 
     // The strong confirmed state.
     await screen.findByText("Order Confirmed");
-    expect(screen.getByText("Your order has been sent to the store")).toBeOnTheScreen();
+    expect(screen.getByText("Show this number to staff if asked.")).toBeOnTheScreen();
     // The display number, LARGE and mono (read aloud across a counter), with
     // an accessible name that says what the code is.
-    expect(screen.getByText("Order number")).toBeOnTheScreen();
+    expect(screen.getByText("#KX7QR9")).toBeOnTheScreen();
     expect(screen.getByLabelText("Order number KX7QR9")).toBeOnTheScreen();
     // The immutable submitted snapshots through T08's read-only row: names,
     // variant/options captions, and each quantity by its label convention.
@@ -378,7 +383,7 @@ describe("OrderSuccessScreen", () => {
     expect(screen.getByLabelText("Quantity: 2")).toBeOnTheScreen();
     expect(screen.getByLabelText("Quantity: 1")).toBeOnTheScreen();
     // The summary DERIVED from the record's snapshots — 2 + 1 across 2 lines.
-    expect(screen.getByText("3 items · 2 lines")).toBeOnTheScreen();
+    expect(screen.getByText("3 items · 2 selections")).toBeOnTheScreen();
     // The countdown (default settings: 25s) and the gated reset affordance.
     expect(screen.getByLabelText("Order resets in 25 seconds")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Next Customer" })).not.toBeDisabled();
@@ -386,17 +391,16 @@ describe("OrderSuccessScreen", () => {
     expect(screen.queryByText(/\$|price|total/i)).toBeNull();
   });
 
-  it("renders the settings-pending skeleton without crashing — no success content guesses while the shared query is in flight", async () => {
+  it("shows confirmed truth immediately while settings are pending, using the safe reset fallback", async () => {
     mockSettingsResult.current = { isPending: true, isError: false };
     await seedConfirmedAttempt("done");
     await renderScreen();
 
-    // The record is in memory, but the countdown needs a number the shared
-    // query has not resolved yet: the whole presentation waits honestly.
-    expect(screen.getByLabelText("Loading content")).toBeOnTheScreen();
-    expect(screen.queryByText("Order Confirmed")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Next Customer" })).toBeNull();
-    expect(screen.queryByLabelText(/Order resets in/)).toBeNull();
+    expect(screen.queryByLabelText("Loading content")).toBeNull();
+    expect(screen.getByText("Order Confirmed")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Order number KX7QR9")).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Next Customer" })).not.toBeDisabled();
+    expect(screen.getByLabelText("Order resets in 25 seconds")).toBeOnTheScreen();
   });
 
   it("honors the configured customer_success_reset_seconds for the countdown window (AC-14)", async () => {
@@ -409,6 +413,38 @@ describe("OrderSuccessScreen", () => {
     await renderScreen();
 
     expect(await screen.findByLabelText("Order resets in 10 seconds")).toBeOnTheScreen();
+  });
+
+  it("keeps the active deadline across late settings and tablet rotation", async () => {
+    const original = { window: Dimensions.get("window"), screen: Dimensions.get("screen") };
+    const landscape = { width: 1280, height: 800, scale: 1, fontScale: 1 };
+    const portrait = { width: 800, height: 1180, scale: 1, fontScale: 1 };
+    Dimensions.set({ window: landscape, screen: landscape });
+    mockSettingsResult.current = { isPending: true, isError: false };
+    await seedConfirmedAttempt("done");
+    const view = await renderScreen();
+    try {
+      await advanceClock(10_000);
+      expect(screen.getByLabelText("Order resets in 15 seconds")).toBeOnTheScreen();
+      mockSettingsResult.current = {
+        isPending: false,
+        isError: false,
+        data: { customerSuccessResetSeconds: 60 },
+      };
+      await act(async () => {
+        Dimensions.set({ window: portrait, screen: portrait });
+        await view.rerender(<OrderSuccessScreen />);
+      });
+      expect(screen.getByLabelText("Order resets in 15 seconds")).toBeOnTheScreen();
+      expect(screen.getByLabelText("Order number KX7QR9")).toBeOnTheScreen();
+      await advanceClock(15_000);
+      await flushAsyncWork(() => mockRouterReplace.mock.calls.length > 0);
+      expect(mockRouterReplace).toHaveBeenCalledWith("/");
+    } finally {
+      await act(async () => {
+        Dimensions.set(original);
+      });
+    }
   });
 
   it("falls back to 25 seconds when the setting is absent, and when the settings read failed (AC-14)", async () => {
@@ -607,7 +643,7 @@ describe("OrderSuccessScreen", () => {
 
     // The confirmed content is still shown (the order IS confirmed)…
     await screen.findByText("Order Confirmed");
-    expect(screen.getByText("KX7QR9")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Order number KX7QR9")).toBeOnTheScreen();
     // …but the destructive honesty replaces the reset affordances entirely:
     // no Next Customer, no countdown offering an auto-reset.
     expect(
@@ -676,7 +712,7 @@ describe("OrderSuccessScreen", () => {
     await screen.findByText("This order can't be shown here.");
     expect(
       screen.getByText(
-        "If you just placed an order, it's safe — don't submit it again. Let store staff know if you need help.",
+        "If you just placed an order, don't submit it again. Let store staff know if you need help checking it.",
       ),
     ).toBeOnTheScreen();
     // NEVER the success content and never the cart.
@@ -755,7 +791,7 @@ describe("OrderSuccessScreen", () => {
       await seedConfirmedAttempt("done");
       await renderScreen();
 
-      expect(await screen.findByLabelText("Loading content")).toBeOnTheScreen();
+      expect(await screen.findByLabelText("Order number KX7QR9")).toBeOnTheScreen();
       expect(backPressSubscriptions).toHaveLength(1);
     });
 

@@ -8,6 +8,7 @@ import { Button, Icon, Text } from "@/components/ui";
 import { cn } from "@/core/utils";
 
 import type { CartLine } from "../model/cart-line.schema";
+import { customerLineIdentity } from "../model/customer-line-identity";
 import { QuantityStepper } from "./quantity-stepper";
 
 /**
@@ -16,8 +17,7 @@ import { QuantityStepper } from "./quantity-stepper";
  * confirms removal. It owns no state except the confirm dialog's open flag,
  * reads no store, never navigates, and never touches Supabase or the catalog:
  * the snapshot is all a line needs to render itself (AC-03). Keeping the row
- * dumb is what lets the quick sheet and the Full Cart screen (T08/T09) wire
- * their own callbacks around the same presentation.
+ * dumb keeps editing owned by the Full Cart workspace.
  *
  * Confirmed-remove contract (AC-04, plan decision 6): the remove control never
  * removes directly. Pressing it opens the shared `ConfirmDialog` configured
@@ -58,53 +58,65 @@ export function CartItemRow({
   pending = false,
   className,
 }: CartItemRowProps) {
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  // Recycling must never transfer a destructive dialog to another selection.
+  const [confirmLineId, setConfirmLineId] = useState<string | null>(null);
   const controlsDisabled = locked || pending;
-  // Derived from the snapshot only, in display order: the variant label plus
-  // each selected option value label, dot-separated. With no options the
-  // caption is the bare variantLabel.
-  const caption = [
-    line.variantLabel,
-    ...line.optionSelections.map((selection) => selection.optionValueLabel),
-  ].join(" · ");
+  // Snapshot-only identity shared with previews and confirmed orders.
+  const { title, caption } = customerLineIdentity(line);
 
   return (
-    <View className={cn("flex-row items-center gap-3", className)}>
-      <AppImage
-        uri={line.imageUri}
-        alt={line.productDisplayName}
-        className="h-20 w-20 rounded-lg"
-      />
-      <View className="flex-1 gap-1">
-        <Text variant="h3">{line.productDisplayName}</Text>
-        <Text variant="caption">{caption}</Text>
-      </View>
-      <View className="items-end gap-2">
-        <QuantityStepper
-          value={line.quantity}
-          onValueChange={onSetQuantity}
-          disabled={controlsDisabled}
+    <View className={cn("flex-row items-start gap-4 border-b border-border/70 py-5", className)}>
+      <View
+        className="w-20 overflow-hidden rounded-lg bg-muted/25 p-2 md:w-24"
+        style={{ aspectRatio: 3 / 4 }}
+      >
+        <AppImage
+          uri={line.imageUri}
+          alt={line.productDisplayName}
+          contentFit="contain"
+          className="h-full w-full"
         />
+      </View>
+      <View className="min-w-0 flex-1 gap-2 pt-1">
+        <Text variant="h3">{title}</Text>
+        {caption ? (
+          <Text variant="caption" tone="muted">
+            {caption}
+          </Text>
+        ) : null}
+        <View className="mt-2 self-start">
+          <Text variant="label" tone="muted" className="mb-2">
+            Quantity
+          </Text>
+          <QuantityStepper
+            value={line.quantity}
+            onValueChange={onSetQuantity}
+            disabled={controlsDisabled}
+          />
+        </View>
+      </View>
+      <View className="items-end">
         <Button
-          variant="outline"
+          variant="ghost"
           size="icon"
+          className="border border-transparent"
           accessibilityLabel={`Remove ${line.productDisplayName}`}
           disabled={controlsDisabled}
-          onPress={() => setConfirmOpen(true)}
+          onPress={() => setConfirmLineId(line.lineId)}
         >
-          <Icon as={Trash2} />
+          <Icon as={Trash2} className="text-destructive" />
         </Button>
       </View>
       <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
+        open={confirmLineId === line.lineId && !controlsDisabled}
+        onOpenChange={(open) => setConfirmLineId(open ? line.lineId : null)}
         title={`Remove ${line.productDisplayName}?`}
         description={`${line.productDisplayName} will be taken out of the cart.`}
         confirmLabel="Remove"
         destructive
         onConfirm={() => {
-          setConfirmOpen(false);
-          onRemove();
+          setConfirmLineId(null);
+          if (!controlsDisabled) onRemove();
         }}
       />
     </View>

@@ -49,20 +49,42 @@ jest.mock("../../api/fetch-catalog", () => ({
 const mockRouterPush = jest.fn();
 const mockRouterReplace = jest.fn();
 const mockRouterBack = jest.fn();
+const mockCanGoBack = jest.fn().mockReturnValue(true);
 /** The params the mocked `useLocalSearchParams` hands the route under test. */
 const mockLocalSearchParams: { brandId?: string } = {};
 
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace, back: mockRouterBack }),
+  useRouter: () => ({
+    push: mockRouterPush,
+    replace: mockRouterReplace,
+    back: mockRouterBack,
+    canGoBack: mockCanGoBack,
+  }),
   useLocalSearchParams: () => mockLocalSearchParams,
 }));
 
 // AppImage's fallback icon renders a lucide icon; stub it so card and header
 // fallback paths render without the SVG machinery.
-jest.mock("lucide-react-native", () => ({
-  __esModule: true,
-  ImageOff: () => null,
-}));
+jest.mock("lucide-react-native", () => {
+  const createMockIcon = (name: string) => {
+    const MockIcon = () => null;
+    MockIcon.displayName = name;
+    return MockIcon;
+  };
+  return new Proxy(
+    { __esModule: true },
+    {
+      get: (target: any, prop: string | symbol) => {
+        if (prop in target) return target[prop];
+        if (typeof prop === "string") {
+          target[prop] = createMockIcon(prop);
+          return target[prop];
+        }
+        return undefined;
+      },
+    },
+  );
+});
 
 jest.useFakeTimers();
 
@@ -90,7 +112,7 @@ const STALE_BRAND_ID = "65656565-6565-4656-8656-656565656565";
  */
 const BRAND_NOT_FOUND_TITLE = "Brand not found";
 const BRAND_NOT_FOUND_DESCRIPTION =
-  "This brand isn't in the current catalog. It may have been removed since you started browsing. Go back to see the brands this store has now.";
+  "This brand isn't in the current catalog. It may have been removed since you started browsing.";
 
 /** Ids for the brands the multi-brand fixture appends past the base 2. */
 const extraBrandIds = {
@@ -326,8 +348,12 @@ describe("BrandDetailScreen", () => {
 
     // Only this brand's products render, in the scalable grid.
     expect(screen.getByTestId("brand-products-grid")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Café Crème, Available" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Élite Serving Tray, Available" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+    ).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Élite Serving Tray, by Maison Élite, Available" }),
+    ).toBeOnTheScreen();
 
     // The obvious way back to the discovery surface that opened this detail.
     expect(screen.getByRole("button", { name: "Go back" })).toBeOnTheScreen();
@@ -357,9 +383,9 @@ describe("BrandDetailScreen", () => {
     // This brand's products, in backend display order.
     const productCards = screen.getAllByRole("button", { name: /^Atelier/ });
     expect(productCards.map((card) => card.props.accessibilityLabel)).toEqual([
-      "Atelier Mug, Available",
-      "Atelier Bowl, Out of stock",
-      "Atelier Vase, Available",
+      "Atelier Mug, by Atelier Céramique, Available",
+      "Atelier Bowl, by Atelier Céramique, Currently unavailable",
+      "Atelier Vase, by Atelier Céramique, Available",
     ]);
     expect(screen.getByText("3 products")).toBeOnTheScreen();
 
@@ -377,13 +403,21 @@ describe("BrandDetailScreen", () => {
     await renderWithProviders(<BrandDetailScreen brandId={extraBrandIds.atelier} />);
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Atelier Mug, Available" })).toBeOnTheScreen(),
+      expect(
+        screen.getByRole("button", { name: "Atelier Mug, by Atelier Céramique, Available" }),
+      ).toBeOnTheScreen(),
     );
 
     // An available product and an unavailable one: every product stays
     // inspectable from its brand.
-    await user.press(screen.getByRole("button", { name: "Atelier Mug, Available" }));
-    await user.press(screen.getByRole("button", { name: "Atelier Bowl, Out of stock" }));
+    await user.press(
+      screen.getByRole("button", { name: "Atelier Mug, by Atelier Céramique, Available" }),
+    );
+    await user.press(
+      screen.getByRole("button", {
+        name: "Atelier Bowl, by Atelier Céramique, Currently unavailable",
+      }),
+    );
 
     expect(mockRouterPush).toHaveBeenCalledTimes(2);
     expect(mockRouterPush).toHaveBeenNthCalledWith(1, {
@@ -410,7 +444,11 @@ describe("BrandDetailScreen", () => {
     // The identity image falls back to the shared slot instead of collapsing.
     expect(screen.getByRole("image", { name: "KISOK Basics" })).toBeOnTheScreen();
     expect(screen.getByText("1 product")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Pocket Notebook, Out of stock" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", {
+        name: "Pocket Notebook, by KISOK Basics, Currently unavailable",
+      }),
+    ).toBeOnTheScreen();
   });
 
   it("shows a safe local not-found state for a stale brand id", async () => {
@@ -431,14 +469,13 @@ describe("BrandDetailScreen", () => {
 
     // No brand identity, no grid, no product cards.
     expect(screen.queryByTestId("brand-products-grid")).toBeNull();
-    expect(screen.queryByRole("header")).toBeNull();
+    expect(screen.queryByRole("header", { name: "Maison Élite" })).toBeNull();
 
     // The way back to the discovery surface that opened this detail.
-    await user.press(screen.getByRole("button", { name: "Go back" }));
+    await user.press(screen.getByRole("button", { name: "Back to brands" }));
 
-    expect(mockRouterBack).toHaveBeenCalledTimes(1);
+    expect(mockRouterReplace).toHaveBeenCalledWith("/brands");
     expect(mockRouterPush).not.toHaveBeenCalled();
-    expect(mockRouterReplace).not.toHaveBeenCalled();
   });
 
   it("reads the brandId route param and passes it to the screen", async () => {
@@ -454,7 +491,9 @@ describe("BrandDetailScreen", () => {
       expect(screen.getByRole("header", { name: "Atelier Céramique" })).toBeOnTheScreen(),
     );
     expect(screen.getByText("3 products")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Atelier Mug, Available" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Atelier Mug, by Atelier Céramique, Available" }),
+    ).toBeOnTheScreen();
     expect(screen.queryByRole("button", { name: /Café Crème/ })).toBeNull();
 
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
@@ -547,7 +586,9 @@ describe("BrandDetailScreen", () => {
 
     // The populated detail stays on screen…
     expect(screen.getByRole("header", { name: "Atelier Céramique" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Atelier Mug, Available" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Atelier Mug, by Atelier Céramique, Available" }),
+    ).toBeOnTheScreen();
     // …and the full-screen error state does not replace it.
     expect(screen.queryByText("Something went wrong")).toBeNull();
     expect(screen.queryByText("We couldn't load the catalog. Please try again.")).toBeNull();

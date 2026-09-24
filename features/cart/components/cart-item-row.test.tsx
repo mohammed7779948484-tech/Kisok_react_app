@@ -63,7 +63,7 @@ const waterLine: CartLine = {
 
 /**
  * Behaviour and accessibility, not styling: the row is the per-line surface
- * shared by the quick sheet and the Full Cart screen, so the contract that
+ * used by the editable Full Cart screen, so the contract that
  * matters is what the line snapshot renders (AC-03), what its controls report
  * (AC-04), and what assistive technology perceives (AC-12).
  *
@@ -80,7 +80,7 @@ describe("CartItemRow", () => {
     // AppImage renders the uri with the product name as its alt/label.
     expect(screen.getByLabelText("Cappuccino")).toBeOnTheScreen();
     expect(screen.getByText("Cappuccino")).toBeOnTheScreen();
-    // The caption is derived from the snapshot: variantLabel · option labels.
+    // Persisted snapshots retain ordered option values, not option type labels.
     expect(screen.getByText("Hot · Large · Oat Milk")).toBeOnTheScreen();
   });
 

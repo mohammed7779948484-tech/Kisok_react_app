@@ -40,6 +40,8 @@ export type CatalogGridProps<ItemT> = {
   keyExtractor: (item: ItemT, index: number) => string;
   /** Reports a row press upward with the pressed item. */
   onItemPress: (item: ItemT) => void;
+  listHeaderComponent?: React.ReactElement;
+  listEmptyComponent?: React.ReactElement;
   testID?: string;
   className?: string;
 };
@@ -49,6 +51,8 @@ export function CatalogGrid<ItemT>({
   renderItem,
   keyExtractor,
   onItemPress,
+  listHeaderComponent,
+  listEmptyComponent,
   testID,
   className,
 }: CatalogGridProps<ItemT>) {
@@ -62,15 +66,14 @@ export function CatalogGrid<ItemT>({
   );
 
   const renderRow = useCallback(
-    (info: { item: ItemT; index: number }) => (
-      <View className="p-1.5">{renderItem({ item: info.item, onPress: handleItemPress })}</View>
+    ({ item }: { item: ItemT; index: number }) => (
+      <View className="p-2">{renderItem({ item, onPress: handleItemPress })}</View>
     ),
     [renderItem, handleItemPress],
   );
 
   // Stable identity so FlashList's content container is not re-styled on
-  // every render. 24 matches the p-6 scale for breathing room under the last
-  // row; NativeWind classes cannot reach FlashList's content container.
+  // every render. Browsing chrome reserves its own space outside the grid.
   // Note: FlashList v2 no longer takes `estimatedItemSize` — it measures rows
   // itself, so there is nothing to hoist for that.
   const contentContainerStyle = useMemo(() => ({ paddingBottom: 24 }), []);
@@ -83,6 +86,8 @@ export function CatalogGrid<ItemT>({
         numColumns={columns}
         renderItem={renderRow}
         keyExtractor={keyExtractor}
+        ListHeaderComponent={listHeaderComponent}
+        ListEmptyComponent={listEmptyComponent}
         contentContainerStyle={contentContainerStyle}
         testID={testID}
       />

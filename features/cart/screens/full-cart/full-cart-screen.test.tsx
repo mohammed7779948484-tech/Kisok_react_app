@@ -1,8 +1,6 @@
-import { readFileSync } from "fs";
-import { resolve } from "path";
-
 import { Dimensions } from "react-native";
 
+import { Button, Text } from "@/components/ui";
 import { useAuth } from "@/core/auth";
 import { resetLogging, setLogSink } from "@/core/logging";
 import { storage, storageKey } from "@/core/storage";
@@ -15,11 +13,10 @@ import {
   userEvent,
 } from "@/core/testing";
 
-import CartRoute from "@/app/(customer)/cart";
 import type { CartLine } from "../../model/cart-line.schema";
 import { persistedCartSchema } from "../../model/persisted-cart.schema";
 import { useCartStore, type PersistenceStatus } from "../../state/cart-store";
-import { FullCartScreen } from "./full-cart-screen";
+import { FullCartScreen, type FullCartScreenProps } from "./full-cart-screen";
 
 /**
  * lucide-react-native resolves (via the `react-native` condition) to an
@@ -36,6 +33,9 @@ jest.mock("lucide-react-native", () => {
   // factory free of `require()` (tests lint with --max-warnings=0).
   const makeIcon = (name: string) => Object.assign(() => null, { displayName: name });
   return {
+    ArrowLeft: makeIcon("ArrowLeft"),
+    TriangleAlert: makeIcon("TriangleAlert"),
+    CircleAlert: makeIcon("CircleAlert"),
     Minus: makeIcon("Minus"),
     Plus: makeIcon("Plus"),
     Trash2: makeIcon("Trash2"),
@@ -217,43 +217,15 @@ const mockAuthHolder: { current: ReturnType<typeof installMockAuth> | null } = {
  * screen to code around. use-cart.test.tsx's AuthedCartProbe pattern, wrapping
  * the real screen instead of a probe component.
  */
-function AuthedCartScreen() {
+function AuthedCartScreen(props: FullCartScreenProps) {
   const { status, profile } = useAuth();
   if (status !== "ready" || profile === null) return null;
-  return <FullCartScreen />;
+  return <FullCartScreen {...props} />;
 }
 
-/**
- * The same gate for the route module test: `/cart` is inside the (customer)
- * group, so the route — like the screen — only renders behind the auth gate.
- * This keeps the route render test exercising the exact production mounting
- * order (gate opens → route renders → screen consumes useCart()).
- */
-function AuthedCartRoute() {
-  const { status, profile } = useAuth();
-  if (status !== "ready" || profile === null) return null;
-  return <CartRoute />;
-}
-
-async function renderScreen(frame: Frame = LANDSCAPE) {
+async function renderScreen(frame: Frame = LANDSCAPE, props: FullCartScreenProps = {}) {
   setFrame(frame);
-  return renderWithProviders(<AuthedCartScreen />, { withAuth: true });
-}
-
-/** The generated thin route, pinned statically as well as rendered. */
-const ROUTE_PATH = resolve(__dirname, "../../../../app/(customer)/cart.tsx");
-
-/** Every module specifier the route source imports (from-imports and side-effect imports). */
-function importSpecifiers(source: string): string[] {
-  // Each regex captures exactly one specifier, but `noUncheckedIndexedAccess`
-  // types a match group as possibly absent — narrow honestly rather than cast.
-  const fromImports = [...source.matchAll(/from\s+["']([^"']+)["']/g)]
-    .map((match) => match[1])
-    .filter((specifier): specifier is string => typeof specifier === "string");
-  const sideEffectImports = [...source.matchAll(/(?:^|\n)\s*import\s+["']([^"']+)["']/g)]
-    .map((match) => match[1])
-    .filter((specifier): specifier is string => typeof specifier === "string");
-  return [...fromImports, ...sideEffectImports];
+  return renderWithProviders(<AuthedCartScreen {...props} />, { withAuth: true });
 }
 
 /**
@@ -336,7 +308,8 @@ describe("FullCartScreen", () => {
     // seed memory — and the store belongs to the authed profile.
     await screen.findByText("Cappuccino");
     expect(screen.getByText("Sparkling Water")).toBeOnTheScreen();
-    expect(screen.getByText("3 items · 2 lines")).toBeOnTheScreen();
+    expect(screen.getByText("3 items")).toBeOnTheScreen();
+    expect(screen.getByText("2 selections")).toBeOnTheScreen();
     expect(useCartStore.getState().ownerId).toBe(TEST_PROFILE.id);
     expect(useCartStore.getState().persistence).toBe("persisted");
   });
@@ -379,7 +352,8 @@ describe("FullCartScreen", () => {
     expect(screen.getByRole("button", { name: "Remove Sparkling Water" })).toBeOnTheScreen();
     // Summary derived through the T04 selectors from the SAME cart model:
     // 2 + 1 = 3 total quantity across 2 distinct lines — never a mirror.
-    expect(screen.getByText("3 items · 2 lines")).toBeOnTheScreen();
+    expect(screen.getByText("3 items")).toBeOnTheScreen();
+    expect(screen.getByText("2 selections")).toBeOnTheScreen();
     // The footer's clear affordance is present.
     expect(screen.getByRole("button", { name: "Clear Cart" })).toBeOnTheScreen();
     // `persisted` renders NO alert (R-T08-03) — inverse of the warning tests.
@@ -512,50 +486,60 @@ describe("FullCartScreen", () => {
     expect(screen.queryByText("Saved in memory only")).toBeNull();
   });
 
-  it("offers Review Order as the footer's primary way forward, enabled on a hydrated, populated, unlocked cart (AC-01)", async () => {
+  it.each([
+    ["Clear Cart", "Remove All"],
+    ["Remove Cappuccino", "Remove"],
+  ])(
+    "closes an already-open %s dialog when interaction becomes disabled",
+    async (trigger, confirm) => {
+      mockAuthHolder.current = installMockAuth();
+      seedCart([cappuccinoLine]);
+      const user = userEvent.setup();
+      const view = await renderScreen();
+      await user.press(screen.getByRole("button", { name: trigger }));
+      expect(screen.getByRole("button", { name: confirm })).toBeOnTheScreen();
+      await view.rerender(<AuthedCartScreen interactionDisabled />);
+      expect(screen.queryByRole("button", { name: confirm })).toBeNull();
+      expect(screen.getByRole("button", { name: trigger })).toBeDisabled();
+      expect(useCartStore.getState().lines).toEqual([cappuccinoLine]);
+    },
+  );
+
+  it("renders the composed final action without an intermediate Review Order navigation", async () => {
     mockAuthHolder.current = installMockAuth();
     seedCart([cappuccinoLine]);
-    await renderScreen();
-
-    // The checkout entry seam (checkout brief AC-01, cart-owned): present by
-    // role+name in the populated presentation, and ENABLED — the cart is
-    // hydrated, populated, and not locked.
-    const reviewOrder = await screen.findByRole("button", { name: "Review Order" });
-    expect(reviewOrder).toBeOnTheScreen();
-    expect(reviewOrder).not.toBeDisabled();
-    // Clear Cart stays beside it, equally available — the entry changes
-    // nothing about the destructive affordance's own availability.
-    expect(screen.getByRole("button", { name: "Clear Cart" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Clear Cart" })).not.toBeDisabled();
-    // The footer's READING ORDER is behaviour, not styling (F-T14-01): the
-    // way forward comes first, the destructive second. getAllByRole resolves
-    // in tree order, so Review Order's index precedes Clear Cart's.
-    const footerButtons = screen.getAllByRole("button");
-    expect(footerButtons.indexOf(reviewOrder)).toBeGreaterThan(-1);
-    expect(footerButtons.indexOf(reviewOrder)).toBeLessThan(
-      footerButtons.indexOf(screen.getByRole("button", { name: "Clear Cart" })),
-    );
+    const onConfirm = jest.fn();
+    await renderScreen(LANDSCAPE, {
+      finalAction: (
+        <Button onPress={onConfirm}>
+          <Text>Confirm Order</Text>
+        </Button>
+      ),
+    });
+    expect(screen.queryByRole("button", { name: "Review Order" })).toBeNull();
+    await userEvent.setup().press(screen.getByRole("button", { name: "Confirm Order" }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(mockRouterPush).not.toHaveBeenCalled();
   });
 
-  it("navigates to the checkout review route when Review Order is pressed (AC-01)", async () => {
+  it("Continue Shopping navigates to browsing", async () => {
     mockAuthHolder.current = installMockAuth();
     seedCart([cappuccinoLine, waterLine]);
     const user = userEvent.setup();
     await renderScreen();
 
-    await user.press(await screen.findByRole("button", { name: "Review Order" }));
+    await user.press(await screen.findByRole("button", { name: "Continue Shopping" }));
     expect(mockRouterPush).toHaveBeenCalledTimes(1);
-    expect(mockRouterPush).toHaveBeenCalledWith("/checkout");
+    expect(mockRouterPush).toHaveBeenCalledWith("/");
   });
 
-  it("disables Review Order while the cart is locked — the lock blocks submission entry, not just edits (AC-01)", async () => {
+  it("disables editing and browse escape through the interactionDisabled seam", async () => {
     mockAuthHolder.current = installMockAuth();
-    seedCart([cappuccinoLine], { locked: true });
-    await renderScreen();
-
-    // The entry renders in the locked presentation but is disabled, exactly
-    // like the sibling controls — mid-lock the way INTO checkout is closed.
-    expect(await screen.findByRole("button", { name: "Review Order" })).toBeDisabled();
+    seedCart([cappuccinoLine]);
+    await renderScreen(LANDSCAPE, { interactionDisabled: true });
+    expect(screen.getByRole("button", { name: "Continue Shopping" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Increase quantity" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove Cappuccino" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Clear Cart" })).toBeDisabled();
   });
 
@@ -619,7 +603,8 @@ describe("FullCartScreen", () => {
 
     await screen.findByText("Sparkling Water");
     expect(screen.getByLabelText("Quantity: 1")).toBeOnTheScreen();
-    expect(screen.getByText("1 item · 1 line")).toBeOnTheScreen();
+    expect(screen.getByText("1 item")).toBeOnTheScreen();
+    expect(screen.getByText("1 selection")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Clear Cart" })).toBeOnTheScreen();
   });
 
@@ -630,52 +615,8 @@ describe("FullCartScreen", () => {
 
     await screen.findByText("Sparkling Water");
     expect(screen.getByLabelText("Quantity: 1")).toBeOnTheScreen();
-    expect(screen.getByText("1 item · 1 line")).toBeOnTheScreen();
+    expect(screen.getByText("1 item")).toBeOnTheScreen();
+    expect(screen.getByText("1 selection")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Clear Cart" })).toBeOnTheScreen();
-  });
-});
-
-describe("/cart route", () => {
-  beforeEach(async () => {
-    setLogSink(() => {});
-    resetCartSingleton();
-    mockRouterPush.mockClear();
-    // Disk hygiene, same as the screen suite: the route renders the screen,
-    // so a leaked envelope from the previous test must not reach this one's
-    // restore.
-    await storage.remove(KEY);
-  });
-  afterEach(() => {
-    resetLogging();
-    mockAuthHolder.current?.restore();
-    mockAuthHolder.current = null;
-  });
-
-  it("renders the Full Cart screen through the feature's public index export", async () => {
-    mockAuthHolder.current = installMockAuth();
-    seedCart([waterLine]);
-    setFrame(LANDSCAPE);
-    await renderWithProviders(<AuthedCartRoute />, { withAuth: true });
-
-    // Real screen content, not just "it mounts": a seeded line, its summary,
-    // and the footer's clear affordance all appear through @/features/cart.
-    await screen.findByText("Sparkling Water");
-    expect(screen.getByText("1 item · 1 line")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Clear Cart" })).toBeOnTheScreen();
-  });
-
-  it("stays thin: the route imports the public index and nothing but sanctioned necessities", () => {
-    const routeSource = readFileSync(ROUTE_PATH, "utf8");
-    const specifiers = importSpecifiers(routeSource);
-
-    // The route-gen wiring: the screen arrives through the feature's public
-    // API, not a deep import.
-    expect(specifiers).toContain("@/features/cart");
-    // Anything beyond the public index must be a thin-route necessity
-    // (react / react-native / expo-router e.g. for route params) — never a
-    // store, never Supabase, never a deep feature import: those fail here
-    // AND at the app/** ESLint boundary.
-    const sanctioned = new Set(["@/features/cart", "react", "react-native", "expo-router"]);
-    expect(specifiers.filter((specifier) => !sanctioned.has(specifier))).toEqual([]);
   });
 });

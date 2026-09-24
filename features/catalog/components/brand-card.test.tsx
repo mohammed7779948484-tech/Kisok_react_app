@@ -7,10 +7,27 @@ import { createCatalogView, type CatalogBrandView } from "../model/catalog-view"
 
 import { BrandCard } from "./brand-card";
 
-jest.mock("lucide-react-native", () => ({
-  __esModule: true,
-  ImageOff: () => null,
-}));
+jest.mock("lucide-react-native", () => {
+  const createMockIcon = (name: string) => {
+    const MockIcon = () => null;
+    MockIcon.displayName = name;
+    return MockIcon;
+  };
+
+  return new Proxy(
+    { __esModule: true },
+    {
+      get: (target: any, prop: string | symbol) => {
+        if (prop in target) return target[prop];
+        if (typeof prop === "string") {
+          target[prop] = createMockIcon(prop);
+          return target[prop];
+        }
+        return undefined;
+      },
+    },
+  );
+});
 
 const catalogView = createCatalogView(createCatalogSnapshotFixture());
 

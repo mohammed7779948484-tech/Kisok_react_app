@@ -73,10 +73,16 @@ export function QuantityStepper({
   };
 
   return (
-    <View className={cn("flex-row items-center gap-2", className)}>
+    <View
+      className={cn(
+        "flex-row items-center overflow-hidden rounded-lg border border-border bg-secondary/50",
+        className,
+      )}
+    >
       <Button
-        variant="outline"
+        variant="ghost"
         size="icon"
+        className="rounded-none"
         accessibilityLabel="Decrease quantity"
         disabled={disabled || safeValue <= min}
         onPress={decrement}
@@ -84,15 +90,17 @@ export function QuantityStepper({
         <Icon as={Minus} />
       </Button>
       <Text
-        variant="body"
+        variant="label"
+        className="w-12 text-center tabular-nums"
         accessibilityLabel={`Quantity: ${safeValue}`}
         accessibilityLiveRegion="polite"
       >
         {safeValue}
       </Text>
       <Button
-        variant="outline"
+        variant="ghost"
         size="icon"
+        className="rounded-none"
         accessibilityLabel="Increase quantity"
         disabled={disabled || safeValue >= max}
         onPress={increment}

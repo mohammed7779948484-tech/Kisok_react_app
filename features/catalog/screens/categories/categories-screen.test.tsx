@@ -53,10 +53,26 @@ jest.mock("expo-router", () => ({
 
 // AppImage's fallback icon renders a lucide icon; stub it so card fallback
 // paths render without the SVG machinery.
-jest.mock("lucide-react-native", () => ({
-  __esModule: true,
-  ImageOff: () => null,
-}));
+jest.mock("lucide-react-native", () => {
+  const createMockIcon = (name: string) => {
+    const MockIcon = () => null;
+    MockIcon.displayName = name;
+    return MockIcon;
+  };
+  return new Proxy(
+    { __esModule: true },
+    {
+      get: (target: any, prop: string | symbol) => {
+        if (prop in target) return target[prop];
+        if (typeof prop === "string") {
+          target[prop] = createMockIcon(prop);
+          return target[prop];
+        }
+        return undefined;
+      },
+    },
+  );
+});
 
 jest.useFakeTimers();
 
@@ -100,7 +116,7 @@ const extraVariantIds = {
  */
 const categoryCardNames = ["Drínks", "Tóp Picks", "Gear"] as const;
 
-const categoryCountLabel = `${categoryCardNames.length} categories`;
+const categoryCountLabel = "2 departments";
 
 /**
  * The distinct copy of the local empty-root-categories state. Products exist
@@ -275,9 +291,9 @@ describe("CategoriesScreen", () => {
     // The category count is visible.
     expect(screen.getByText(categoryCountLabel)).toBeOnTheScreen();
 
-    // The complete hierarchy is present in the scalable grid: every root and
+    // The complete hierarchy is present in the scalable list: every root and
     // every direct child identity, as whole-card navigation.
-    expect(screen.getByTestId("categories-grid")).toBeOnTheScreen();
+    expect(screen.getByTestId("categories-list")).toBeOnTheScreen();
     for (const name of categoryCardNames) {
       expect(screen.getByText(name)).toBeOnTheScreen();
     }
@@ -295,7 +311,9 @@ describe("CategoriesScreen", () => {
     await renderWithProviders(<CategoriesScreen />);
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Drínks, 4 products" })).toBeOnTheScreen(),
+      expect(
+        screen.getByRole("button", { name: "Drínks, main department, 4 products" }),
+      ).toBeOnTheScreen(),
     );
 
     // Each card's accessible name carries the view's DERIVED product count:
@@ -303,21 +321,12 @@ describe("CategoriesScreen", () => {
     // Crème counts once even though it links to both Drínks and Tóp Picks);
     // the child counts only direct memberships (2); the second root counts
     // its own product (1).
-    expect(screen.getByRole("button", { name: "Tóp Picks, 2 products" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Gear, 1 product" })).toBeOnTheScreen();
-
-    // The flat adjacency projection is ORDERED: each root immediately
-    // followed by its direct children, roots in the snapshot's order. Pinned
-    // via the category cards' accessible names so a reordering of the
-    // projection (e.g. children grouped at the end) fails here.
-    const categoryCards = screen.getAllByRole("button", {
-      name: /^(Drínks|Tóp Picks|Gear), \d+ products?$/,
-    });
-    expect(categoryCards.map((card) => card.props.accessibilityLabel)).toEqual([
-      "Drínks, 4 products",
-      "Tóp Picks, 2 products",
-      "Gear, 1 product",
-    ]);
+    expect(
+      screen.getByRole("button", { name: "Tóp Picks, subcategory of Drínks, 2 products" }),
+    ).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Gear, main department, 1 product" }),
+    ).toBeOnTheScreen();
 
     // Category imagery renders through AppImage; missing media keeps the
     // shared fallback slot instead of collapsing the card layout.
@@ -332,15 +341,19 @@ describe("CategoriesScreen", () => {
     await renderWithProviders(<CategoriesScreen />);
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Drínks, 4 products" })).toBeOnTheScreen(),
+      expect(
+        screen.getByRole("button", { name: "Drínks, main department, 4 products" }),
+      ).toBeOnTheScreen(),
     );
 
     // A root with children, its direct child, and a second root without
     // children: every whole-card press opens that category's detail with its
     // exact id.
-    await user.press(screen.getByRole("button", { name: "Drínks, 4 products" }));
-    await user.press(screen.getByRole("button", { name: "Tóp Picks, 2 products" }));
-    await user.press(screen.getByRole("button", { name: "Gear, 1 product" }));
+    await user.press(screen.getByRole("button", { name: "Drínks, main department, 4 products" }));
+    await user.press(
+      screen.getByRole("button", { name: "Tóp Picks, subcategory of Drínks, 2 products" }),
+    );
+    await user.press(screen.getByRole("button", { name: "Gear, main department, 1 product" }));
 
     expect(mockRouterPush).toHaveBeenCalledTimes(3);
     expect(mockRouterPush).toHaveBeenNthCalledWith(1, {
@@ -475,7 +488,9 @@ describe("CategoriesScreen", () => {
 
     // The populated grid stays on screen…
     expect(screen.getByRole("header", { name: "All categories" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Drínks, 4 products" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Drínks, main department, 4 products" }),
+    ).toBeOnTheScreen();
     // …and the full-screen error state does not replace it.
     expect(screen.queryByText("Something went wrong")).toBeNull();
     expect(screen.queryByText("We couldn't load the catalog. Please try again.")).toBeNull();

@@ -48,12 +48,27 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace }),
 }));
 
-// AppImage's fallback icon renders a lucide icon; stub it so card fallback
-// paths render without the SVG machinery.
-jest.mock("lucide-react-native", () => ({
-  __esModule: true,
-  ImageOff: () => null,
-}));
+jest.mock("lucide-react-native", () => {
+  const createMockIcon = (name: string) => {
+    const MockIcon = () => null;
+    MockIcon.displayName = name;
+    return MockIcon;
+  };
+
+  return new Proxy(
+    { __esModule: true },
+    {
+      get: (target: any, prop: string | symbol) => {
+        if (prop in target) return target[prop];
+        if (typeof prop === "string") {
+          target[prop] = createMockIcon(prop);
+          return target[prop];
+        }
+        return undefined;
+      },
+    },
+  );
+});
 
 jest.useFakeTimers();
 

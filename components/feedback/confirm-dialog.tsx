@@ -1,21 +1,15 @@
-import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 
-/**
- * Confirmation for an action that loses data or cannot be undone
- * (remove a cart line, reset the kiosk, cancel an order).
- *
- * `destructive` must be true whenever the action removes something — the colour
- * is the only warning a customer gets before committing.
- */
 export function ConfirmDialog({
   open,
   onOpenChange,
@@ -38,25 +32,25 @@ export function ConfirmDialog({
   onConfirm: () => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          {description ? <DialogDescription>{description}</DialogDescription> : null}
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" disabled={busy} onPress={() => onOpenChange(false)}>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          {description ? <AlertDialogDescription>{description}</AlertDialogDescription> : null}
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy} onPress={() => onOpenChange(false)}>
             <Text>{cancelLabel}</Text>
-          </Button>
+          </AlertDialogCancel>
           <Button
             variant={destructive ? "destructive" : "primary"}
             disabled={busy}
             onPress={onConfirm}
           >
-            <Text>{busy ? "Working…" : confirmLabel}</Text>
+            <Text>{busy ? "Working..." : confirmLabel}</Text>
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

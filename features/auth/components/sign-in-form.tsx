@@ -53,7 +53,7 @@ export function SignInForm() {
   }
 
   return (
-    <View className="w-full max-w-md gap-4">
+    <View className="w-full gap-5">
       <Input
         label="Email"
         value={email}
@@ -82,11 +82,12 @@ export function SignInForm() {
         />
         <Button
           variant="ghost"
-          size="compact"
+          size="default"
           onPress={() => setRevealPassword((value) => !value)}
           accessibilityLabel={revealPassword ? "Hide password" : "Show password"}
+          className="self-start px-0"
         >
-          <Icon as={revealPassword ? EyeOff : Eye} size={18} className="text-muted-foreground" />
+          <Icon as={revealPassword ? EyeOff : Eye} size={20} className="text-muted-foreground" />
           <Text>{revealPassword ? "Hide password" : "Show password"}</Text>
         </Button>
       </View>

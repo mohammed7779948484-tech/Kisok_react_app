@@ -4,6 +4,15 @@ import { renderWithProviders, screen, userEvent } from "@/core/testing";
 
 import { CatalogNavigation, type CatalogDestination } from "./catalog-navigation";
 
+jest.mock("lucide-react-native", () => ({
+  __esModule: true,
+  House: () => null,
+  LayoutGrid: () => null,
+  Package: () => null,
+  Search: () => null,
+  Tags: () => null,
+}));
+
 function renderNavigation(
   current: CatalogDestination,
   onNavigate: (destination: CatalogDestination) => void,

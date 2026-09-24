@@ -425,3 +425,10 @@ R5-T04 `95e7071`, R5-T05 `af4fe8f`.
 - [ ] Pushed to origin/feature/checkout; PR #13 HEAD == local HEAD; CI green on that exact SHA
 
 Round 5 gate: **IN PROGRESS**
+
+# Phase 3 checkpoint
+
+Direct-confirm orchestration, state-owned outcomes/recovery and immediate order
+confirmation are implemented with targeted safety tests. Final source review and
+Git evidence: [phase-3-worklog.md](../../cart/docs/phase-3-worklog.md).
+Full repository/runtime gates below are not claimed for this constrained redesign.
