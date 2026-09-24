@@ -4,6 +4,8 @@ import { renderWithProviders, screen } from "@/core/testing";
 
 import { AvailabilityBadge } from "./availability-badge";
 
+jest.mock("lucide-react-native", () => ({}));
+
 describe("AvailabilityBadge", () => {
   it("announces available products in words, not colour alone", async () => {
     await renderWithProviders(
@@ -23,8 +25,8 @@ describe("AvailabilityBadge", () => {
       </View>,
     );
 
-    expect(screen.getByText("Out of stock")).toBeOnTheScreen();
-    expect(screen.getByRole("text", { name: "Out of stock" })).toBeOnTheScreen();
+    expect(screen.getByText("Currently unavailable")).toBeOnTheScreen();
+    expect(screen.getByRole("text", { name: "Currently unavailable" })).toBeOnTheScreen();
   });
 
   it("renders exactly one text node so the full state is one announcement", async () => {

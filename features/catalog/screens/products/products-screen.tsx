@@ -1,82 +1,38 @@
-import { useCallback } from "react";
-import { View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
-import { Text } from "@/components/ui";
+import { Button, Text, ToggleGroup, ToggleGroupItem } from "@/components/ui";
 
 import { CatalogGrid, type CatalogGridRowInfo } from "../../components/catalog-grid";
-import { CatalogNavigation, type CatalogDestination } from "../../components/catalog-navigation";
+import { CatalogShell } from "../../components/catalog-shell";
 import { ProductCard } from "../../components/product-card";
 import type { CatalogProductView } from "../../model/catalog-view";
 import { productCountLabel } from "../../model/labels";
 import { useCatalog } from "../../queries/use-catalog";
 
-/**
- * Stable by construction (module scope): a fresh inline keyExtractor would
- * give the grid a new prop identity on every render.
- */
 const productKeyExtractor = (product: CatalogProductView) => product.id;
 
-/**
- * All Products (AC-03): the complete `view.products` collection in the T03
- * virtualized responsive grid.
- *
- * This is the scalable Catalog surface — `CatalogView.products` is deliberately
- * unbounded, unlike the Home sections, so the products themselves render
- * through `CatalogGrid` (FlashList) and never a ScrollView. The heading,
- * count and root navigation sit above the grid and stay mounted while it
- * scrolls, so root destinations remain reachable without scrolling back.
- *
- * The screen consumes the feature's own `useCatalog` hook — never Supabase
- * directly — and renders one real state per the brief's capability-aware state
- * requirements: cold loading, error with retry only while no snapshot exists
- * (a failed background refetch keeps the populated grid on screen — TanStack
- * retains `data`, and the shared QueryClient refetches on focus/reconnect for
- * long-lived kiosk sessions), whole-catalog empty (an empty products array
- * means the whole catalog is empty — the same semantic as Home), or the
- * populated grid. The error object is passed through so `ErrorState` decides
- * whether retry is worth offering.
- *
- * Root destinations use REPLACE semantics so re-selecting one never stacks
- * duplicate history (plan Design decision 5); product cards are PUSHED to
- * `/product-detail` so this list stays mounted behind the detail and preserves
- * its scroll position. Unavailable products are never filtered out — they stay
- * discoverable with their textual availability (plan Design decision 10).
- */
 export function ProductsScreen() {
   const router = useRouter();
   const catalog = useCatalog();
 
-  const handleRootNavigate = useCallback(
-    (destination: CatalogDestination) => {
-      switch (destination) {
-        case "home":
-          router.replace("/");
-          break;
-        case "products":
-          router.replace("/products");
-          break;
-        case "brands":
-          router.replace("/brands");
-          break;
-        case "categories":
-          router.replace("/categories");
-          break;
-        case "search":
-          router.replace("/search");
-          break;
-        default: {
-          // Compile-time exhaustiveness: if CatalogDestination gains a member,
-          // this assignment fails the build instead of silently no-oping here.
-          const exhaustive: never = destination;
-          return exhaustive;
-        }
+  // Local-only discovery filter: "all" | "available"
+  const [availabilityFilter, setAvailabilityFilter] = useState<string>("all");
+  // Local-only brand filter: brandId or "all"
+  const [selectedBrandId, setSelectedBrandId] = useState<string>("all");
+
+  // Gate F: Reconcile selectedBrandId if selected brand is removed from catalog
+  useEffect(() => {
+    if (selectedBrandId !== "all" && catalog.data?.brands) {
+      const exists = catalog.data.brands.some((b) => b.id === selectedBrandId);
+      if (!exists) {
+        setSelectedBrandId("all");
       }
-    },
-    [router],
-  );
+    }
+  }, [catalog.data?.brands, selectedBrandId]);
 
   const handleProductPress = useCallback(
     (product: CatalogProductView) => {
@@ -85,15 +41,31 @@ export function ProductsScreen() {
     [router],
   );
 
-  // CatalogGrid memoizes its row renderer against these props — keep the
-  // identities stable (useCallback / module scope) so a re-render of this
-  // screen does not defeat the virtualizer's row memoization.
   const renderProductCard = useCallback(
     ({ item, onPress }: CatalogGridRowInfo<CatalogProductView>) => (
       <ProductCard product={item} onPress={onPress} />
     ),
     [],
   );
+
+  // Stale brand recovery: if selectedBrandId !== "all" and not in current brands, fall back to "all"
+  const brands = catalog.data?.brands ?? [];
+  const isBrandValid = selectedBrandId === "all" || brands.some((b) => b.id === selectedBrandId);
+  const effectiveBrandId = isBrandValid ? selectedBrandId : "all";
+
+  // Local filtering (preserves source backend order)
+  const filteredProducts = useMemo(() => {
+    const products = catalog.data?.products ?? [];
+    return products.filter((product) => {
+      if (availabilityFilter === "available" && !product.isAvailable) {
+        return false;
+      }
+      if (effectiveBrandId !== "all" && product.brand?.id !== effectiveBrandId) {
+        return false;
+      }
+      return true;
+    });
+  }, [catalog.data?.products, availabilityFilter, effectiveBrandId]);
 
   if (catalog.isPending) {
     return (
@@ -103,9 +75,6 @@ export function ProductsScreen() {
     );
   }
 
-  // Full-screen error only when NO snapshot exists: on a failed background
-  // refetch TanStack keeps `data` and the populated grid stays on screen
-  // through the blip (see the state rules in the component doc comment).
   if (catalog.isError && !catalog.data) {
     return (
       <Screen>
@@ -128,29 +97,114 @@ export function ProductsScreen() {
     );
   }
 
-  const products = view.products;
+  const hasActiveFilters = availabilityFilter !== "all" || effectiveBrandId !== "all";
+
+  const handleResetFilters = () => {
+    setAvailabilityFilter("all");
+    setSelectedBrandId("all");
+  };
+
+  const filterHeader = (
+    <View className="gap-3 pb-4 pt-2">
+      {/* Quick local discovery filters */}
+      <View className="flex-row flex-wrap items-center justify-between gap-3">
+        <View className="flex-row flex-wrap items-center gap-2">
+          <Text variant="caption" tone="muted" className="font-semibold">
+            Status:
+          </Text>
+          <ToggleGroup
+            type="single"
+            layout="content"
+            value={availabilityFilter}
+            onValueChange={(val) => val && setAvailabilityFilter(val)}
+            accessibilityLabel="Filter by availability status"
+          >
+            <ToggleGroupItem value="all" className="h-touch min-h-touch px-3.5 py-1">
+              <Text variant="caption">All items</Text>
+            </ToggleGroupItem>
+            <ToggleGroupItem value="available" className="h-touch min-h-touch px-3.5 py-1">
+              <Text variant="caption">Available only</Text>
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </View>
+
+        {hasActiveFilters ? (
+          <Button
+            variant="ghost"
+            size="compact"
+            onPress={handleResetFilters}
+            className="min-h-touch"
+          >
+            <Text className="text-xs font-semibold text-primary">Clear filters</Text>
+          </Button>
+        ) : null}
+      </View>
+
+      {/* Brand filter row */}
+      {brands.length > 0 ? (
+        <View className="flex-row items-center gap-2 pt-1">
+          <Text variant="caption" tone="muted" className="font-semibold">
+            Brand:
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerClassName="gap-2"
+          >
+            <ToggleGroup
+              type="single"
+              layout="content"
+              value={effectiveBrandId}
+              onValueChange={(val) => val && setSelectedBrandId(val)}
+              accessibilityLabel="Filter by brand"
+            >
+              <ToggleGroupItem value="all" className="h-touch min-h-touch px-3.5 py-1">
+                <Text variant="caption">All brands</Text>
+              </ToggleGroupItem>
+              {brands.map((brand) => (
+                <ToggleGroupItem
+                  key={brand.id}
+                  value={brand.id}
+                  className="h-touch min-h-touch px-3.5 py-1"
+                >
+                  <Text variant="caption">{brand.name}</Text>
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </ScrollView>
+        </View>
+      ) : null}
+    </View>
+  );
 
   return (
-    <Screen>
+    <CatalogShell
+      currentDestination="products"
+      settings={view.settings}
+      title="All products"
+      subtitle="Complete store collection"
+      countLabel={productCountLabel(filteredProducts.length)}
+    >
       <View className="flex-1">
-        <View className="gap-3 px-6 pb-2 pt-6">
-          <Text variant="h1" accessibilityRole="header">
-            All products
-          </Text>
-          <Text variant="body" tone="muted">
-            {productCountLabel(products.length)}
-          </Text>
-          <CatalogNavigation current="products" onNavigate={handleRootNavigate} />
-        </View>
         <CatalogGrid
-          data={products}
+          data={filteredProducts}
           renderItem={renderProductCard}
           keyExtractor={productKeyExtractor}
           onItemPress={handleProductPress}
+          listHeaderComponent={filterHeader}
+          listEmptyComponent={
+            <View className="items-center justify-center p-8">
+              <EmptyState
+                title="No products match these filters"
+                description="No products match your current filters. Clear filters to see the full collection."
+                action={{ label: "Clear filters", onPress: handleResetFilters }}
+              />
+            </View>
+          }
           testID="products-grid"
-          className="px-4"
+          className="px-3 md:px-6"
         />
       </View>
-    </Screen>
+    </CatalogShell>
   );
 }

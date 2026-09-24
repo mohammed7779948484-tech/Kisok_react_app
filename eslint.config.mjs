@@ -63,6 +63,7 @@ export default defineConfig([
     ignores: [
       "dist/*",
       ".expo/*",
+      ".agents/skills/**",
       "tools/generator/templates/**",
       "core/supabase/database.types.ts",
     ],

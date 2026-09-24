@@ -70,4 +70,13 @@ describe("releaseNotesFor", () => {
     // The dialog falls back to a generic line rather than breaking.
     expect(releaseNotesFor("9.9.9+99")).toEqual([]);
   });
+
+  it("returns the written KISOK 1.1.0 notes at their exact release token", () => {
+    // versionName 1.1.0, android.versionCode 2 — the redesign release.
+    expect(releaseNotesFor("1.1.0+2")).toEqual([
+      "A redesigned catalog makes products, categories, brands, and search easier to explore.",
+      "Product options and variants are easier to browse and select, including products with large option sets.",
+      "Cart, checkout, offline feedback, and the overall kiosk experience have been refined.",
+    ]);
+  });
 });

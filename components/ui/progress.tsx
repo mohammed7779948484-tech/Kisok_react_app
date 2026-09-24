@@ -1,39 +1,70 @@
 import * as ProgressPrimitive from "@rn-primitives/progress";
-import { View } from "react-native";
+import * as React from "react";
+import { Platform, View } from "react-native";
+import Animated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedStyle,
+  useDerivedValue,
+  withSpring,
+} from "react-native-reanimated";
 
 import { cn } from "@/core/utils";
 
-/**
- * Determinate progress.
- *
- * `accessibilityLabel` is REQUIRED and should describe what is progressing —
- * "Order resets in 12 seconds", not "Progress". A bare progress bar tells a
- * screen-reader user nothing, so the type enforces it rather than relying on
- * the caller remembering.
- */
+function Indicator({ value, className }: { value: number | undefined | null; className?: string }) {
+  const progress = useDerivedValue(() => value ?? 0);
+
+  const indicator = useAnimatedStyle(() => {
+    return {
+      width: withSpring(
+        `${interpolate(progress.value, [0, 100], [0, 100], Extrapolation.CLAMP)}%`,
+        { overshootClamping: true },
+      ),
+    };
+  });
+
+  if (Platform.OS === "web") {
+    return (
+      <View
+        className={cn("h-full w-full flex-1 bg-primary transition-all", className)}
+        style={{ transform: `translateX(-${100 - (value ?? 0)}%)` }}
+      >
+        <ProgressPrimitive.Indicator className={cn("h-full w-full", className)} />
+      </View>
+    );
+  }
+
+  return (
+    <ProgressPrimitive.Indicator asChild>
+      <Animated.View style={indicator} className={cn("h-full bg-primary", className)} />
+    </ProgressPrimitive.Indicator>
+  );
+}
+
 export function Progress({
   className,
   indicatorClassName,
   value,
+  max = 100,
+  accessibilityLabel,
   ...props
-}: ProgressPrimitive.RootProps & {
+}: React.ComponentProps<typeof ProgressPrimitive.Root> & {
   indicatorClassName?: string;
   accessibilityLabel: string;
 }) {
-  const percent = Math.min(100, Math.max(0, value ?? 0));
+  const normalizedMax = Number.isFinite(max) && max > 0 ? max : 100;
+  const clampedValue = Math.min(normalizedMax, Math.max(0, value ?? 0));
+  const percent = (clampedValue / normalizedMax) * 100;
 
   return (
     <ProgressPrimitive.Root
-      value={percent}
-      className={cn("h-2 w-full overflow-hidden rounded-full bg-secondary", className)}
+      value={clampedValue}
+      max={normalizedMax}
+      accessibilityLabel={accessibilityLabel}
+      className={cn("relative h-2.5 w-full overflow-hidden rounded-full bg-secondary", className)}
       {...props}
     >
-      <ProgressPrimitive.Indicator asChild>
-        <View
-          className={cn("h-full bg-primary", indicatorClassName)}
-          style={{ width: `${percent}%` }}
-        />
-      </ProgressPrimitive.Indicator>
+      <Indicator value={percent} className={indicatorClassName} />
     </ProgressPrimitive.Root>
   );
 }

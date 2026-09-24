@@ -30,9 +30,8 @@
  * - the back action.
  *
  * Mocked at the feature's own `api/` boundary (plus `expo-router` for the
- * back wiring, and the one lucide icon AppImage's fallback needs, whose ESM
- * build jest-expo does not transform) — a screen test must not know Supabase
- * exists.
+ * back wiring) — a screen test must not know Supabase exists. lucide-react-native
+ * icons are stubbed by the shared root `__mocks__/lucide-react-native.js`.
  */
 import { useRouter } from "expo-router";
 import { type QueryClient } from "@tanstack/react-query";
@@ -47,6 +46,7 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/core/testing";
 
 import { type ActiveOrderRow } from "../../api/fetch-active-orders";
@@ -57,9 +57,6 @@ import { type OrderStatusUpdate } from "../../model/order-status-update.schema";
 
 import { OrderDetailsScreen } from "./order-details-screen";
 
-// AppImage's fallback icon comes from lucide-react-native, whose ESM build
-// jest-expo does not transform — mock the one icon the tree imports.
-jest.mock("lucide-react-native", () => ({ ImageOff: () => null }));
 jest.mock("../../api/fetch-order-detail", () => ({ fetchOrderDetail: jest.fn() }));
 jest.mock("../../api/fetch-store-settings", () => ({ fetchStoreSettings: jest.fn() }));
 jest.mock("../../api/update-order-status", () => ({ updateOrderStatus: jest.fn() }));
@@ -326,8 +323,11 @@ describe("OrderDetailsScreen snapshot (AC-07)", () => {
     expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
     // The status in words, through the badge's own label source.
     expect(screen.getByText("Preparing")).toBeOnTheScreen();
-    // 05:00 UTC renders as 08:00 in the settings row's Asia/Riyadh.
-    expect(screen.getByText("Created 08:00")).toBeOnTheScreen();
+    // 05:00 UTC renders as 08:00 in the settings row's Asia/Riyadh. The
+    // "Created" caption and the formatted time are two separately-styled
+    // Text nodes (the redesign's field treatment), not one combined string.
+    expect(within(screen.getByTestId("order-created-at")).getByText("Created")).toBeOnTheScreen();
+    expect(within(screen.getByTestId("order-created-at")).getByText("08:00")).toBeOnTheScreen();
     // Decision 3: the assignment indicator compares ids — "you", not a name.
     expect(screen.getByText("You")).toBeOnTheScreen();
   });
@@ -399,8 +399,9 @@ describe("OrderDetailsScreen snapshot (AC-07)", () => {
     const midnightOrder = makeOrder({ created_at: "2026-08-26T21:00:08.123456+00:00" });
     await renderDetails({ order: midnightOrder });
 
-    expect(await screen.findByText("Created 00:00")).toBeOnTheScreen();
-    expect(screen.queryByText("Created 24:00")).toBeNull();
+    await screen.findByTestId("order-created-at");
+    expect(within(screen.getByTestId("order-created-at")).getByText("00:00")).toBeOnTheScreen();
+    expect(within(screen.getByTestId("order-created-at")).queryByText("24:00")).toBeNull();
   });
 
   it("keeps rendering the order when the settings row is absent", async () => {

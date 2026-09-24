@@ -13,7 +13,7 @@ const BUNDLE_ID = "com.kisok.kiosk";
 const config: ExpoConfig = {
   name: "KISOK",
   slug: "kisok",
-  version: "1.0.0",
+  version: "1.1.0",
   orientation: "default",
   icon: "./assets/images/icon.png",
   scheme: "kisok",
@@ -21,7 +21,7 @@ const config: ExpoConfig = {
   newArchEnabled: true,
   android: {
     adaptiveIcon: {
-      backgroundColor: "#0F1A18",
+      backgroundColor: "#213CD4",
       foregroundImage: "./assets/images/android-icon-foreground.png",
       backgroundImage: "./assets/images/android-icon-background.png",
       monochromeImage: "./assets/images/android-icon-monochrome.png",
@@ -32,8 +32,9 @@ const config: ExpoConfig = {
     // EXPLICIT, never Expo's hidden `?? 1` default. Android refuses an update
     // whose versionCode is not greater, so every MDM-delivered release must
     // bump this; the release workflow fails closed when it is absent rather
-    // than silently shipping versionCode 1 forever.
-    versionCode: 1,
+    // than silently shipping versionCode 1 forever. The last shipped MDM
+    // build (release workflow runs #1 and #3) was versionCode 1 — 2 is next.
+    versionCode: 2,
   },
   ios: {
     supportsTablet: true,
@@ -62,8 +63,8 @@ const config: ExpoConfig = {
         image: "./assets/images/splash-icon.png",
         imageWidth: 220,
         resizeMode: "contain",
-        backgroundColor: "#FCFBF8",
-        dark: { backgroundColor: "#0F1A18" },
+        backgroundColor: "#F5F6FA",
+        dark: { backgroundColor: "#0D101B" },
       },
     ],
     [

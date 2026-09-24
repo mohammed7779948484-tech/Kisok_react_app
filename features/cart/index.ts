@@ -44,6 +44,7 @@
 import "./state/sign-out-cleanup";
 
 export { CartItemRow } from "./components/cart-item-row";
+export { customerLineIdentity } from "./model/customer-line-identity";
 export { QuantityStepper } from "./components/quantity-stepper";
 export { QuickCartSheet } from "./components/quick-cart-sheet";
 export {

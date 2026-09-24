@@ -88,6 +88,7 @@ jest.mock("lucide-react-native", () => {
   // factory free of `require()` (tests lint with --max-warnings=0).
   const makeIcon = (name: string) => Object.assign(() => null, { displayName: name });
   return {
+    PackageCheck: makeIcon("PackageCheck"),
     Minus: makeIcon("Minus"),
     Plus: makeIcon("Plus"),
     Trash2: makeIcon("Trash2"),
@@ -361,8 +362,7 @@ function boundaryViolation(specifier: string, importingFile: string): string | n
 /**
  * Gates the composition on auth readiness, exactly as the app does: the
  * (customer) group only mounts under `ready && profile?.role === "customer"`,
- * and `useActiveProfile()` throwing outside authenticated surfaces is
- * core/auth's contract (the provider/button suites' AuthedHarness pattern).
+ * and `useActiveProfile()` throwing outside authenticated surfaces is core/auth's contract (the provider/button suites' AuthedHarness pattern).
  * Both wrapped components come from the PUBLIC index.
  */
 function AuthedHarness({ children }: { children: ReactNode }) {
@@ -532,13 +532,10 @@ describe("boundary scans (AC-11)", () => {
     // exactly the shape this pin enforces.
     const sanctioned = new Set([
       "expo-router",
+      "react-native",
+      "@/components/feedback",
       "@/features/catalog-cart-integration",
       "@/features/checkout",
-      // `@/features/release-notes` joined the set when the one-time
-      // post-update "What's New" message was mounted here: it is a CUSTOMER
-      // message, and this layout is the smallest point that renders only under
-      // the customer guard. Through the public index, exactly the shape this
-      // pin enforces.
       "@/features/release-notes",
     ]);
     expect(specifiers.filter((specifier) => !sanctioned.has(specifier))).toEqual([]);
@@ -605,7 +602,7 @@ describe("convergence: cart semantics through the public path (AC-07)", () => {
     expect(snapshot.lines.map((line) => line.quantity)).toEqual([1, 1]);
 
     // The option-value sets are IDENTICAL — the variant alone separates the
-    // lines (the cart's identity rule, observed; never reimplemented here).
+    // lines (the cart's identity rule, observed; never reimplemented).
     expect(new Set(snapshot.lines.map((line) => line.variantId))).toEqual(
       new Set([FIRST_VARIANT_ID, SECOND_VARIANT_ID]),
     );
@@ -711,13 +708,14 @@ describe("convergence: the public surface composes end-to-end (AC-07 through the
     // First press: one unit, and the sheet the press opens shows it.
     await user.press(addButton);
     await settleDurableWrites();
-    expect(await screen.findByRole("heading", { name: "Your Cart · 1" })).toBeOnTheScreen();
+    expect(await screen.findByText("Added to cart")).toBeOnTheScreen();
+    expect(screen.getByText("Cart · 1 item")).toBeOnTheScreen();
     expect(getCartSnapshot().totalQuantity).toBe(1);
 
-    // Back to browsing — Continue Shopping closes the sheet.
-    await user.press(screen.getByRole("button", { name: "Continue Shopping" }));
+    // Back to browsing — Keep Shopping closes the sheet.
+    await user.press(screen.getByRole("button", { name: "Keep Shopping" }));
     await waitFor(() =>
-      expect(screen.queryByRole("heading", { name: "Your Cart · 1" })).toBeNull(),
+      expect(screen.queryByRole("heading", { name: "Added to cart" })).toBeNull(),
     );
 
     // …and the SAME selection pressed again: the merge the whole seam exists
@@ -732,7 +730,8 @@ describe("convergence: the public surface composes end-to-end (AC-07 through the
     expect(snapshot.lines[0]?.variantId).toBe(FIRST_VARIANT_ID);
 
     // The reopened sheet's title reflects the merged total…
-    expect(await screen.findByRole("heading", { name: "Your Cart · 2" })).toBeOnTheScreen();
+    expect(await screen.findByText("Added to cart")).toBeOnTheScreen();
+    expect(screen.getByText("Cart · 2 items")).toBeOnTheScreen();
     // …and so does the persistent affordance's accessible name — the count
     // from the single cart model (no mirrored state), announced with the
     // badge it carries.

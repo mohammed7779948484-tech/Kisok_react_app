@@ -2,10 +2,11 @@ import { useRouter } from "expo-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ScrollView, View } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
+import { Check, Circle, CircleDot, History, LogOut, RefreshCw } from "lucide-react-native";
 
 import { EmptyState, ErrorState, InlineError, SkeletonList } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
-import { Button, Tabs, TabsContent, TabsList, TabsTrigger, Text } from "@/components/ui";
+import { Button, Icon, Tabs, TabsContent, TabsList, TabsTrigger, Text } from "@/components/ui";
 import { useAuth, useSignOutAction } from "@/core/auth";
 import { useLayout } from "@/core/responsive";
 
@@ -70,6 +71,12 @@ import {
  * result is what re-renders the board. Nothing here reads a Realtime payload.
  */
 const BOARD_STATUSES = ["new", "preparing", "ready"] as const;
+
+const BOARD_STATUS_ICON = {
+  new: Circle,
+  preparing: CircleDot,
+  ready: Check,
+} as const;
 
 type BoardStatus = (typeof BOARD_STATUSES)[number];
 
@@ -246,7 +253,7 @@ export function WorkspaceScreen() {
 
   let board: ReactNode;
   if (activeOrders.isPending) {
-    board = <SkeletonList />;
+    board = <SkeletonList itemClassName="h-44" />;
   } else if (activeOrders.isError && activeOrders.data === undefined) {
     board = <ErrorState error={activeOrders.error} onRetry={() => void activeOrders.refetch()} />;
   } else if (boardOrders.length === 0) {
@@ -258,13 +265,15 @@ export function WorkspaceScreen() {
     );
   } else if (isExpanded) {
     board = (
-      <View className="flex-row items-start gap-4">
+      <View className="flex-1 flex-row items-stretch gap-3">
         {BOARD_STATUSES.map((status) => (
           <BoardSection
             key={status}
             title={orderStatusLabel(status)}
+            status={status}
             entries={entries(status)}
             className="flex-1"
+            scrollable
             {...cardCallbacks}
           />
         ))}
@@ -276,9 +285,16 @@ export function WorkspaceScreen() {
         value={selectedTab}
         onValueChange={(value: string) => setSelectedTab(value as BoardStatus)}
       >
-        <TabsList>
+        <TabsList className="h-auto min-h-20 gap-1 p-1.5">
           {BOARD_STATUSES.map((status) => (
-            <TabsTrigger key={status} value={status}>
+            <TabsTrigger key={status} value={status} className="h-auto min-h-16 gap-2 px-2 py-2">
+              <Icon
+                as={BOARD_STATUS_ICON[status]}
+                size={18}
+                className={
+                  selectedTab === status ? "text-primary-foreground" : "text-muted-foreground"
+                }
+              />
               <Text>{`${orderStatusLabel(status)} (${entries(status).length})`}</Text>
             </TabsTrigger>
           ))}
@@ -286,60 +302,78 @@ export function WorkspaceScreen() {
         {BOARD_STATUSES.map((status) => (
           <TabsContent key={status} value={status} className="mt-3">
             {/* No title: the trigger already carries the label and count. */}
-            <BoardSection entries={entries(status)} {...cardCallbacks} />
+            <BoardSection status={status} entries={entries(status)} {...cardCallbacks} />
           </TabsContent>
         ))}
       </Tabs>
     );
   }
 
-  return (
-    <Screen edges={["top", "bottom", "left", "right"]}>
-      <ScrollView contentContainerClassName="gap-4 p-6">
-        <View className="flex-row flex-wrap items-center justify-between gap-2">
+  const workspaceBody = (
+    <>
+      <View className="gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <View className="gap-1">
           <Text variant="h1">Preparation Workspace</Text>
-          <View className="flex-row gap-2">
-            <Button variant="outline" size="compact" onPress={() => void activeOrders.refetch()}>
-              <Text>Refresh</Text>
-            </Button>
-            {/* AC-08: history is reached from the workspace — the same compact
-                outline affordance style as Refresh, pushing the history route. */}
-            <Button variant="outline" size="compact" onPress={() => router.push("/history")}>
-              <Text>History</Text>
-            </Button>
-            <Button variant="ghost" size="compact" onPress={signOut.run} disabled={signOut.pending}>
-              <Text>{signOut.pending ? "Signing out…" : "Sign out"}</Text>
-            </Button>
-          </View>
+          <Text variant="body" tone="muted">
+            Active order dispatch
+          </Text>
         </View>
-        {signOut.message !== null ? (
-          <Text variant="caption" tone="destructive" accessibilityRole="alert">
-            {signOut.message}
-          </Text>
-        ) : null}
-        {announcement !== null ? (
-          <Text variant="caption" tone="muted" accessibilityLiveRegion="polite">
-            {announcement}
-          </Text>
-        ) : null}
-        {/* T11-R04: a failed background/manual refetch while the board still
+        <View className="flex-row flex-wrap gap-2">
+          <Button variant="outline" size="compact" onPress={() => void activeOrders.refetch()}>
+            <Icon as={RefreshCw} size={18} className="text-foreground" />
+            <Text>Refresh</Text>
+          </Button>
+          {/* AC-08: history is reached from the workspace — the same compact
+                outline affordance style as Refresh, pushing the history route. */}
+          <Button variant="outline" size="compact" onPress={() => router.push("/history")}>
+            <Icon as={History} size={18} className="text-foreground" />
+            <Text>History</Text>
+          </Button>
+          <Button variant="ghost" size="compact" onPress={signOut.run} disabled={signOut.pending}>
+            <Icon as={LogOut} size={18} className="text-foreground" />
+            <Text>{signOut.pending ? "Signing out…" : "Sign out"}</Text>
+          </Button>
+        </View>
+      </View>
+      {signOut.message !== null ? (
+        <Text variant="caption" tone="destructive" accessibilityRole="alert">
+          {signOut.message}
+        </Text>
+      ) : null}
+      {announcement !== null ? (
+        <Text variant="caption" tone="muted" accessibilityLiveRegion="polite">
+          {announcement}
+        </Text>
+      ) : null}
+      {/* T11-R04: a failed background/manual refetch while the board still
             shows (stale) data is not silent — a transient inline notice beside
             the board. It clears itself on the next successful read (`isError`
             flips back); the full ErrorState stays reserved for a board with NO
             data. Realtime multiplies background refetches, so this window is
             no longer rare. */}
-        {activeOrders.isError && activeOrders.data !== undefined ? (
-          <InlineError error={activeOrders.error} />
-        ) : null}
-        {/* R2-01: the rejection feedback's fallback home. BoardSection renders
+      {activeOrders.isError && activeOrders.data !== undefined ? (
+        <InlineError error={activeOrders.error} />
+      ) : null}
+      {/* R2-01: the rejection feedback's fallback home. BoardSection renders
             it beside the card that fired the action, but when that order is no
             longer a VISIBLE card — it left the board under the rejection
             refetch, or moved into an unmounted tab group — this is the only
             place it can still reach the employee. Same InlineError surface, so
             the T04 O-1 unknown-error contract holds here too. */}
-        {orphanedActionError !== null ? <InlineError error={orphanedActionError.error} /> : null}
-        {board}
-      </ScrollView>
+      {orphanedActionError !== null ? <InlineError error={orphanedActionError.error} /> : null}
+      {board}
+    </>
+  );
+
+  return (
+    <Screen edges={["top", "bottom", "left", "right"]}>
+      {isExpanded ? (
+        <View className="flex-1 gap-4 p-6">{workspaceBody}</View>
+      ) : (
+        <ScrollView contentContainerClassName="min-h-full gap-4 p-4 md:p-6">
+          {workspaceBody}
+        </ScrollView>
+      )}
       <CancelOrderDialog
         open={cancelTarget !== null}
         onOpenChange={(open: boolean) => {

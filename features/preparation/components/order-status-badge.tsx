@@ -1,6 +1,8 @@
 import type { VariantProps } from "class-variance-authority";
+import { Check, Circle, CircleDot, PackageCheck, X } from "lucide-react-native";
+import type { LucideIcon } from "lucide-react-native";
 
-import { Badge, Text, badgeVariants } from "@/components/ui";
+import { Badge, Icon, Text, badgeVariants } from "@/components/ui";
 
 import type { OrderStatus } from "../model/store-day";
 
@@ -30,12 +32,40 @@ type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>["variant"]>;
  * `Record<OrderStatus, …>` makes the mapping total: TypeScript rejects a new
  * status without a badge, so the board can never render an unlabelled order.
  */
-const STATUS_BADGE: Record<OrderStatus, { label: string; variant: BadgeVariant }> = {
-  new: { label: "New", variant: "neutral" },
-  preparing: { label: "Preparing", variant: "primary" },
-  ready: { label: "Ready", variant: "success" },
-  completed: { label: "Completed", variant: "outline" },
-  cancelled: { label: "Cancelled", variant: "destructive" },
+const STATUS_BADGE: Record<
+  OrderStatus,
+  { label: string; variant: BadgeVariant; icon: LucideIcon; iconClassName: string }
+> = {
+  new: {
+    label: "New",
+    variant: "neutral",
+    icon: Circle,
+    iconClassName: "text-secondary-foreground",
+  },
+  preparing: {
+    label: "Preparing",
+    variant: "primary",
+    icon: CircleDot,
+    iconClassName: "text-primary-foreground",
+  },
+  ready: {
+    label: "Ready",
+    variant: "success",
+    icon: Check,
+    iconClassName: "text-success-foreground",
+  },
+  completed: {
+    label: "Completed",
+    variant: "outline",
+    icon: PackageCheck,
+    iconClassName: "text-foreground",
+  },
+  cancelled: {
+    label: "Cancelled",
+    variant: "destructive",
+    icon: X,
+    iconClassName: "text-destructive-foreground",
+  },
 };
 
 /**
@@ -59,10 +89,11 @@ export type OrderStatusBadgeProps = {
  * alone. The badge text is the accessible name.
  */
 export function OrderStatusBadge({ status, className }: OrderStatusBadgeProps) {
-  const { variant } = STATUS_BADGE[status];
+  const { variant, icon, iconClassName } = STATUS_BADGE[status];
 
   return (
-    <Badge variant={variant} className={className}>
+    <Badge variant={variant} className={`gap-1.5 ${className ?? ""}`}>
+      <Icon as={icon} size={14} className={iconClassName} />
       <Text>{orderStatusLabel(status)}</Text>
     </Badge>
   );

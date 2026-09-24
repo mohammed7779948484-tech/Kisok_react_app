@@ -1,25 +1,24 @@
-import { View } from "react-native";
-
 import { cn } from "@/core/utils";
+import * as SeparatorPrimitive from "@rn-primitives/separator";
 
-export function Separator({
-  orientation = "horizontal",
+function Separator({
   className,
-}: {
-  orientation?: "horizontal" | "vertical";
-  className?: string;
-}) {
+  orientation = "horizontal",
+  decorative = true,
+  ...props
+}: React.ComponentProps<typeof SeparatorPrimitive.Root>) {
   return (
-    <View
-      // Decorative: `aria-hidden` is the cross-platform prop. The older
-      // `importantForAccessibility` / `accessibilityElementsHidden` pair is
-      // platform-specific and leaks to the DOM under react-native-web.
-      aria-hidden
+    <SeparatorPrimitive.Root
+      decorative={decorative}
+      orientation={orientation}
       className={cn(
-        "bg-border",
-        orientation === "horizontal" ? "h-px w-full" : "w-px self-stretch",
+        "shrink-0 bg-border",
+        orientation === "horizontal" ? "h-[1px] w-full" : "h-full w-[1px]",
         className,
       )}
+      {...props}
     />
   );
 }
+
+export { Separator };

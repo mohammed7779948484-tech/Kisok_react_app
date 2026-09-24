@@ -77,6 +77,7 @@ jest.mock("lucide-react-native", () => {
     Trash2: makeIcon("Trash2"),
     ImageOff: makeIcon("ImageOff"),
     ShoppingCart: makeIcon("ShoppingCart"),
+    PackageCheck: makeIcon("PackageCheck"),
   };
 });
 
@@ -96,14 +97,18 @@ const CLEANUP_OWNER = "5e6f7a8b-9c0d-4e1f-8a2b-4c5d6e7f8a9b";
 const ADD_OWNER = "6f7a8b9c-0d1e-4f2a-8b3c-5d6e7f8a9b0c";
 const AFFORDANCE_OWNER = "708192a3-b4c5-4d6e-8f7a-9c0d1e2f3a4b";
 const CART_ROUTE_OWNER = "8192a3b4-c5d6-4e7f-8a0b-1e2f3a4b5c6d";
+const CHECKOUT_ROUTE_OWNER = "92a3b4c5-d6e7-4f8a-9b1c-2e3f4a5b6c7d";
+const SUCCESS_ROUTE_OWNER = "a3b4c5d6-e7f8-4a9b-8c2d-3e4f5a6b7c8e";
 
 const sizeSelection = {
+  optionTypeLabel: "Size",
   optionTypeId: "b2e1a4c3-8f7d-4a2b-9c6e-1d3f5a7b9c2d",
   optionValueId: "e5d3c8a1-6f2b-4c9d-8a7e-3b1f4d6c8a2b",
   optionValueLabel: "Large",
 };
 
 const milkSelection = {
+  optionTypeLabel: "Milk",
   optionTypeId: "c9d8b1f2-4a6e-4c3b-8d9a-2e7f1c5b3a4d",
   optionValueId: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
   optionValueLabel: "Oat Milk",
@@ -301,59 +306,58 @@ describe("CatalogCartProvider", () => {
     await screen.findByText("open:false");
 
     // Closed at mount: no sheet content is rendered (controlled open).
-    expect(screen.queryByRole("heading", { name: "Your Cart · 0" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Your Cart" })).toBeNull();
 
     await user.press(screen.getByRole("button", { name: "Open Quick Cart" }));
 
     // The context flips, and the sheet the provider renders shows its real
     // content through the single cart model (hydrated empty for this owner).
     expect(screen.getByText("open:true")).toBeOnTheScreen();
-    await screen.findByRole("heading", { name: "Your Cart · 0" });
+    await screen.findByText("Your Cart");
     expect(screen.getByText("Your cart is empty")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Continue Shopping" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "View Full Cart" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Keep Shopping" })).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "View Cart" })).toBeNull();
+    expect(mockRouterPush).not.toHaveBeenCalled();
 
     await user.press(screen.getByRole("button", { name: "Close Quick Cart" }));
 
     // The sheet's controlled open state is what unmounts its content.
-    await waitFor(() =>
-      expect(screen.queryByRole("heading", { name: "Your Cart · 0" })).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Your Cart" })).toBeNull());
     expect(screen.getByText("open:false")).toBeOnTheScreen();
   });
 
-  it("the sheet's own Continue Shopping close reports onOpenChange(false) and closes the sheet", async () => {
+  it("the sheet's own Keep Shopping close reports onOpenChange(false) and closes the sheet", async () => {
     const user = userEvent.setup();
     await renderProvider(<QuickCartProbe />, CLOSE_OWNER);
 
     await user.press(screen.getByRole("button", { name: "Open Quick Cart" }));
-    await screen.findByRole("button", { name: "Continue Shopping" });
+    await screen.findByRole("button", { name: "Keep Shopping" });
 
-    await user.press(screen.getByRole("button", { name: "Continue Shopping" }));
+    await user.press(screen.getByRole("button", { name: "Keep Shopping" }));
 
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "Continue Shopping" })).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Keep Shopping" })).toBeNull());
     expect(screen.getByText("open:false")).toBeOnTheScreen();
   });
 
-  it("View Full Cart pushes /cart through the router and closes the sheet", async () => {
+  it("View Cart pushes /cart through the router and closes the sheet", async () => {
     const user = userEvent.setup();
     await renderProvider(<QuickCartProbe />, VIEWCART_OWNER);
+    await act(async () => {
+      addItem(waterInput);
+    });
+    await settleDurableWrites();
 
     await user.press(screen.getByRole("button", { name: "Open Quick Cart" }));
-    await screen.findByRole("button", { name: "View Full Cart" });
+    await screen.findByRole("button", { name: "View Cart" });
 
-    await user.press(screen.getByRole("button", { name: "View Full Cart" }));
+    await user.press(screen.getByRole("button", { name: "View Cart" }));
 
     // The provider owns the navigation intent (plan decision 8): the public
     // router is pushed to the cart feature's existing route, exactly once.
     expect(mockRouterPush).toHaveBeenCalledTimes(1);
     expect(mockRouterPush).toHaveBeenCalledWith("/cart");
     // And the intent closes the sheet before leaving.
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "View Full Cart" })).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByRole("button", { name: "View Cart" })).toBeNull());
     expect(screen.getByText("open:false")).toBeOnTheScreen();
   });
 
@@ -425,7 +429,7 @@ describe("CatalogCartProvider", () => {
     // is visible without reopening — product name, and the updated total in
     // the title.
     expect(screen.getByText("Cappuccino")).toBeOnTheScreen();
-    expect(screen.getByRole("heading", { name: "Your Cart · 1" })).toBeOnTheScreen();
+    expect(screen.getByText("Cart · 1 item")).toBeOnTheScreen();
     const snapshot = getCartSnapshot();
     expect(snapshot.lines).toHaveLength(1);
     expect(snapshot.lines[0]?.productDisplayName).toBe("Cappuccino");
@@ -442,7 +446,7 @@ describe("CatalogCartProvider — persistent affordance (AC-06, plan decision 5)
     expect(await screen.findByRole("button", { name: "Open cart" })).toBeOnTheScreen();
   });
 
-  it('hides the affordance exactly on "/cart" — children and the sheet stay functional', async () => {
+  it('hides both browsing chrome and the sheet on "/cart", even if a child requests it', async () => {
     const user = userEvent.setup();
     mockPathname.current = "/cart";
     await renderProvider(<QuickCartProbe />, CART_ROUTE_OWNER);
@@ -453,13 +457,25 @@ describe("CatalogCartProvider — persistent affordance (AC-06, plan decision 5)
     // be a redundant no-op — plan decision 5)…
     expect(screen.queryByRole("button", { name: "Open cart" })).toBeNull();
 
-    // …and the sheet the provider renders still works through the context the
-    // children consume — hiding the button removes nothing else.
+    // A child cannot open browsing chrome outside the browsing routes.
     await user.press(screen.getByRole("button", { name: "Open Quick Cart" }));
-    await screen.findByRole("heading", { name: "Your Cart · 0" });
-    expect(screen.getByText("Your cart is empty")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Continue Shopping" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "View Full Cart" })).toBeOnTheScreen();
+    expect(screen.queryByRole("heading", { name: "Your Cart" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Keep Shopping" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "View Cart" })).toBeNull();
+  });
+
+  it("hides the affordance on /checkout", async () => {
+    mockPathname.current = "/checkout";
+    await renderProvider(<Text>checkout-probe</Text>, CHECKOUT_ROUTE_OWNER);
+    expect(await screen.findByText("checkout-probe")).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Open cart" })).toBeNull();
+  });
+
+  it("hides the affordance on /checkout-success", async () => {
+    mockPathname.current = "/checkout-success";
+    await renderProvider(<Text>success-probe</Text>, SUCCESS_ROUTE_OWNER);
+    expect(await screen.findByText("success-probe")).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Open cart" })).toBeNull();
   });
 });
 
@@ -490,13 +506,10 @@ describe("customer layout mount (plan decision 1; brief AC-11 thin-mount share)"
     // this pin enforces.
     const sanctioned = new Set([
       "expo-router",
+      "react-native",
+      "@/components/feedback",
       "@/features/catalog-cart-integration",
       "@/features/checkout",
-      // `@/features/release-notes` joined the set when the one-time
-      // post-update "What's New" message was mounted here: it is a CUSTOMER
-      // message, and this layout is the smallest point that renders only under
-      // the customer guard. Through the public index, exactly the shape this
-      // pin enforces.
       "@/features/release-notes",
     ]);
     expect(specifiers.filter((specifier) => !sanctioned.has(specifier))).toEqual([]);

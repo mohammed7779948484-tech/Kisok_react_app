@@ -1,7 +1,7 @@
 import { View } from "react-native";
 
 import { Text } from "@/components/ui";
-import type { CartLine } from "@/features/cart";
+import { customerLineIdentity, type CartLine } from "@/features/cart";
 
 import type { StockConflictItem } from "../state/attempt-store";
 
@@ -32,20 +32,33 @@ export function ConflictRow({ entry, lines }: { entry: StockConflictItem; lines:
   );
   const title = matches[0]?.productDisplayName ?? entry.variant_id;
   return (
-    <View className="flex-row items-center gap-3">
+    <View className="gap-4 border-b border-warning/30 py-5 md:flex-row md:items-center">
       <View className="flex-1 gap-1">
         <Text variant="h3">{title}</Text>
         {matches.map((line) => (
           <Text key={line.lineId} variant="caption">
-            {[line.variantLabel, ...line.optionSelections.map((s) => s.optionValueLabel)].join(
-              " · ",
-            )}
+            {customerLineIdentity(line).caption}
           </Text>
         ))}
       </View>
-      <Text variant="body">
-        {`Requested ${entry.requested_quantity} · Available ${entry.available_quantity}`}
-      </Text>
+      <View className="flex-row flex-wrap gap-6">
+        <View className="gap-1">
+          <Text variant="caption" tone="muted">
+            Requested
+          </Text>
+          <Text variant="h2" accessibilityLabel={`Requested ${entry.requested_quantity}`}>
+            {entry.requested_quantity}
+          </Text>
+        </View>
+        <View className="gap-1">
+          <Text variant="caption" tone="muted">
+            Available
+          </Text>
+          <Text variant="h2" accessibilityLabel={`Available ${entry.available_quantity}`}>
+            {entry.available_quantity}
+          </Text>
+        </View>
+      </View>
     </View>
   );
 }

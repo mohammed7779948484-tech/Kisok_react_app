@@ -45,17 +45,30 @@ export class AppErrorBoundary extends Component<Props, State> {
 
     return (
       <View className="flex-1 bg-background">
-        <ScrollView contentContainerClassName="flex-grow items-center justify-center gap-4 p-8">
-          <Text variant="h2" className="text-center">
-            Something went wrong
-          </Text>
-          <Text variant="body" tone="muted" className="max-w-md text-center">
-            The app hit an unexpected problem. Try again — if it keeps happening, ask a member of
-            staff.
-          </Text>
-          <Button onPress={this.reset} className="mt-2">
-            <Text>Try again</Text>
-          </Button>
+        <ScrollView contentContainerClassName="flex-grow items-center justify-center p-6 md:p-10">
+          <View
+            accessibilityRole="alert"
+            accessibilityLiveRegion="assertive"
+            className="w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-card"
+          >
+            <View className="border-b border-border bg-secondary p-6 md:px-8">
+              <Text variant="label" tone="primary">
+                App recovery
+              </Text>
+            </View>
+            <View className="items-start gap-5 p-6 md:p-10">
+              <Text variant="h1" accessibilityRole="header">
+                Something went wrong
+              </Text>
+              <Text variant="body" tone="muted" className="max-w-xl">
+                The app hit an unexpected problem. Try again — if it keeps happening, ask a member
+                of staff.
+              </Text>
+              <Button onPress={this.reset} className="mt-2">
+                <Text>Try again</Text>
+              </Button>
+            </View>
+          </View>
         </ScrollView>
       </View>
     );
