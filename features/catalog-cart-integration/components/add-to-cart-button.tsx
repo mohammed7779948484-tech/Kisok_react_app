@@ -1,7 +1,7 @@
 import { ShoppingCart } from "lucide-react-native";
 
 import { Button, Icon, Text } from "@/components/ui";
-import { useCart } from "@/features/cart";
+import { getCartSnapshot, useCart } from "@/features/cart";
 
 import { buildAddToCartInput, type CatalogCartSource } from "../model/add-to-cart-mapping";
 import { useQuickCart } from "./quick-cart-context";
@@ -74,12 +74,18 @@ export function AddToCartButton({ source }: AddToCartButtonProps) {
 
     // Add FIRST, then open: the Quick Cart that appears must already show
     // the fresh line (AC-05).
+    const before = getCartSnapshot();
+    if (!before.hydrated || before.locked) return;
+    const previousQuantities = new Map(before.lines.map((line) => [line.lineId, line.quantity]));
     cart.addItem(buildAddToCartInput(source));
-    openQuickCart();
+    const added = getCartSnapshot().lines.find(
+      (line) => previousQuantities.get(line.lineId) !== line.quantity,
+    );
+    openQuickCart(added?.lineId);
   };
 
   return (
-    <Button block disabled={!canAdd} onPress={handleAdd}>
+    <Button size="large" block disabled={!canAdd} onPress={handleAdd}>
       <Icon as={ShoppingCart} size={20} className="text-primary-foreground" />
       <Text>Add to cart</Text>
     </Button>

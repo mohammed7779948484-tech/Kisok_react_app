@@ -116,6 +116,7 @@ const waterInput: AddToCartInput = {
  * durable-clear seam the Checkout plan's decision D5 adds.
  */
 const PUBLIC_RUNTIME_EXPORTS = [
+  "customerLineIdentity",
   "CartItemRow",
   "FullCartScreen",
   "QuantityStepper",
@@ -289,7 +290,7 @@ describe("cart public API (AC-13)", () => {
     // StorageWriteResult resolved instead of dropped.
     expect(typeof cartApi.clearCartDurable).toBe("function");
 
-    // The runtime surface is EXACTLY the fourteen planned names. FULL key
+    // The runtime surface includes the shared customer identity helper. FULL key
     // equality — not a function-valued filter — so a future accidental export
     // of ANY kind (a stray `export const CART_KEY = …` is the reviewer's
     // R-T10-03 example) fails right here; type re-exports are erased at

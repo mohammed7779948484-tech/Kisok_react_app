@@ -635,3 +635,8 @@ in `core/supabase/__tests__/rpc.test.ts`), and an append-style note in
 `docs/state-management.md` (the guard's extended blocked set). No other
 shared file changed; `core/errors`' public surface (kinds, maps, retry
 semantics) is unchanged.
+
+# Phase 3 amendment
+
+The current READY redesign plan is [Cart to confirmed order](../../cart/docs/phase-3.md).
+It supersedes the separate Order Review journey below and retains the durable engine.

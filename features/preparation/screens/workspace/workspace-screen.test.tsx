@@ -266,6 +266,19 @@ async function renderWorkspace({
   return { view, spy };
 }
 
+/**
+ * The expanded (non-tab) layout's column header carries the group label and
+ * its count as two separately-styled `Text` nodes (the redesign's badge
+ * treatment — see `board-section.tsx`), not one combined string, so a plain
+ * `getByText("New (1)")` can no longer find it. `within` the header's own
+ * testID keeps the label and count assertions scoped to that one group.
+ */
+function expectGroupHeading(status: "new" | "preparing" | "ready", label: string, count: number) {
+  const header = screen.getByTestId(`board-section-header-${status}`);
+  expect(within(header).getByText(label)).toBeOnTheScreen();
+  expect(within(header).getByText(String(count))).toBeOnTheScreen();
+}
+
 beforeEach(() => {
   // The real AuthProvider (withAuth: true) logs auth state changes by design —
   // a silent sink keeps this suite at zero console output.
@@ -386,9 +399,10 @@ describe("WorkspaceScreen grouping", () => {
     await renderWorkspace({ orders: [newOrder, preparingOrder, readyOrder] });
 
     // One count per group, and every active order sits in its own group.
-    expect(await screen.findByText("New (1)")).toBeOnTheScreen();
-    expect(screen.getByText("Preparing (1)")).toBeOnTheScreen();
-    expect(screen.getByText("Ready (1)")).toBeOnTheScreen();
+    await screen.findByTestId("board-section-header-new");
+    expectGroupHeading("new", "New", 1);
+    expectGroupHeading("preparing", "Preparing", 1);
+    expectGroupHeading("ready", "Ready", 1);
     expect(screen.getByText("AB2CD4")).toBeOnTheScreen();
     expect(screen.getByText("C5D6E7")).toBeOnTheScreen();
     expect(screen.getByText("F6G7H8")).toBeOnTheScreen();
@@ -424,9 +438,10 @@ describe("WorkspaceScreen grouping", () => {
 
     // T11-R03: the empty groups render words, not blank panels — pinned so
     // the empty-within-populated state cannot regress silently.
-    expect(await screen.findByText("New (1)")).toBeOnTheScreen();
-    expect(screen.getByText("Preparing (0)")).toBeOnTheScreen();
-    expect(screen.getByText("Ready (0)")).toBeOnTheScreen();
+    await screen.findByTestId("board-section-header-new");
+    expectGroupHeading("new", "New", 1);
+    expectGroupHeading("preparing", "Preparing", 0);
+    expectGroupHeading("ready", "Ready", 0);
     expect(screen.getAllByText("No orders")).toHaveLength(2);
   });
 });
@@ -474,7 +489,7 @@ describe("WorkspaceScreen transitions", () => {
     });
 
     // The refetched board shows the order in Preparing, claimed to you.
-    await screen.findByText("Preparing (1)");
+    await waitFor(() => expectGroupHeading("preparing", "Preparing", 1));
     expect(screen.getByText("You")).toBeOnTheScreen();
     expect(fetchOrdersMock.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
@@ -584,7 +599,7 @@ describe("WorkspaceScreen rejected transitions", () => {
     // Feedback NEAR the action (InlineError beside the card), never swallowed,
     // never fabricated as a local transition — the order is still New.
     expect(await screen.findByText("This order has already been updated.")).toBeOnTheScreen();
-    expect(screen.getByText("New (1)")).toBeOnTheScreen();
+    expectGroupHeading("new", "New", 1);
     // T05-R02: the hook invalidates on success only, so the SCREEN refreshes
     // the affected data on rejection.
     await waitFor(() => expect(fetchOrdersMock.mock.calls.length).toBeGreaterThanOrEqual(2));
@@ -925,7 +940,8 @@ describe("WorkspaceScreen realtime (AC-09)", () => {
     });
     if (spy === null) throw new Error("channel spy was not installed");
 
-    expect(await screen.findByText("New (1)")).toBeOnTheScreen();
+    await screen.findByTestId("board-section-header-new");
+    expectGroupHeading("new", "New", 1);
     expect(fetchOrdersMock).toHaveBeenCalledTimes(1);
 
     // The order moves on the server while the board is open.
@@ -947,8 +963,10 @@ describe("WorkspaceScreen realtime (AC-09)", () => {
     // The event only INVALIDATED the feature's queries — the refetch re-called
     // the api boundary and the refetched result re-rendered the board.
     await waitFor(() => expect(fetchOrdersMock).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("Preparing (1)")).toBeOnTheScreen();
-    expect(screen.queryByText("New (1)")).toBeNull();
+    await waitFor(() => expectGroupHeading("preparing", "Preparing", 1));
+    // The order moved OUT of New — the group still renders (always visible),
+    // now with a zero count, never the stale "New (1)" it carried before.
+    expectGroupHeading("new", "New", 0);
     // AC-09's second half: the payload's own content never reaches the screen.
     expect(screen.queryByText("ZZ9Y8X")).toBeNull();
   });

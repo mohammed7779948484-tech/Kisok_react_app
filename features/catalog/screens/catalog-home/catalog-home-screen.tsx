@@ -1,78 +1,32 @@
 import { useCallback } from "react";
-import { ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+import { ArrowRight, Search } from "lucide-react-native";
 import { useRouter } from "expo-router";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
 import { Screen } from "@/components/layout/screen";
-import { Button, Text } from "@/components/ui";
-import { useResponsiveValue } from "@/core/responsive";
+import { AppImage } from "@/components/media/app-image";
+import { AspectRatio, Button, Card, Icon, Text } from "@/components/ui";
+import { useLayout, useResponsiveValue } from "@/core/responsive";
 
 import { BrandCard } from "../../components/brand-card";
-import { CatalogNavigation, type CatalogDestination } from "../../components/catalog-navigation";
+import { CatalogShell } from "../../components/catalog-shell";
 import { CategoryCard } from "../../components/category-card";
 import { ProductCard } from "../../components/product-card";
-import type { CatalogFullSettings } from "../../model/catalog-snapshot.schema";
+import { AvailabilityBadge } from "../../components/availability-badge";
+import { deriveFeaturedLayout, formatProductOptionCount } from "../../model/discovery-presentation";
 import type {
   CatalogBrandView,
   CatalogCategoryView,
   CatalogProductView,
-  CatalogView,
 } from "../../model/catalog-view";
 import { useCatalog } from "../../queries/use-catalog";
 
-/**
- * Catalog Home (AC-02, AC-08): store identity, root navigation and the bounded
- * discovery sections of the current snapshot.
- *
- * The screen consumes the feature's own `useCatalog` hook — never Supabase
- * directly — and renders one real state per the brief's capability-aware state
- * requirements: cold loading, error with retry only while no snapshot exists
- * (a failed background refetch keeps the populated Home on screen — TanStack
- * retains `data`, and the shared QueryClient refetches on focus/reconnect for
- * long-lived kiosk sessions), whole-catalog empty, or the populated Home. The
- * error object is passed through so `ErrorState` decides whether retry is
- * worth offering.
- *
- * Root destinations use REPLACE semantics so re-selecting one never stacks
- * duplicate history (plan Design decision 5); detail routes are PUSHED so the
- * originating surface stays mounted behind them. The bounded Home sections come
- * pre-bounded from the view model and are deliberately NOT virtualized.
- */
 export function CatalogHomeScreen() {
   const router = useRouter();
   const catalog = useCatalog();
-  // Bounded sections are small and fixed-size; only the column count is
-  // responsive, matching the CatalogGrid contract (2/3/4 columns).
+  const { isExpanded } = useLayout();
   const columns = useResponsiveValue({ compact: 2, medium: 3, expanded: 4 });
-
-  const handleRootNavigate = useCallback(
-    (destination: CatalogDestination) => {
-      switch (destination) {
-        case "home":
-          router.replace("/");
-          break;
-        case "products":
-          router.replace("/products");
-          break;
-        case "brands":
-          router.replace("/brands");
-          break;
-        case "categories":
-          router.replace("/categories");
-          break;
-        case "search":
-          router.replace("/search");
-          break;
-        default: {
-          // Compile-time exhaustiveness: if CatalogDestination gains a member,
-          // this assignment fails the build instead of silently no-oping here.
-          const exhaustive: never = destination;
-          return exhaustive;
-        }
-      }
-    },
-    [router],
-  );
 
   const handleBrandPress = useCallback(
     (brand: CatalogBrandView) => {
@@ -95,6 +49,10 @@ export function CatalogHomeScreen() {
     [router],
   );
 
+  const handleSearchShortcut = useCallback(() => {
+    router.replace("/search");
+  }, [router]);
+
   if (catalog.isPending) {
     return (
       <Screen>
@@ -103,9 +61,6 @@ export function CatalogHomeScreen() {
     );
   }
 
-  // Full-screen error only when NO snapshot exists: on a failed background
-  // refetch TanStack keeps `data` and the populated Home stays on screen
-  // through the blip (see the state rules in the component doc comment).
   if (catalog.isError && !catalog.data) {
     return (
       <Screen>
@@ -129,37 +84,86 @@ export function CatalogHomeScreen() {
   }
 
   const { brands, categories, featuredProducts } = view.home;
+  const featured = deriveFeaturedLayout(featuredProducts);
 
   return (
-    <Screen>
-      <ScrollView contentContainerClassName="gap-6 p-6">
-        <Text variant="h1" accessibilityRole="header">
-          {isFullSettings(view.settings) ? view.settings.store_name : "Catalog"}
-        </Text>
+    <CatalogShell currentDestination="home" settings={view.settings}>
+      <ScrollView contentContainerClassName="gap-10 px-5 pb-6 pt-6 md:px-8">
+        {/* Page-level accessible heading representing Store / Catalog */}
+        <View className="sr-only">
+          <Text variant="h1" accessibilityRole="header">
+            {view.settings && "store_name" in view.settings && view.settings.store_name
+              ? `${view.settings.store_name} Catalog`
+              : "Store Catalog"}
+          </Text>
+        </View>
 
-        <CatalogNavigation current="home" onNavigate={handleRootNavigate} />
+        {/* Immediate Search & Discovery Affordance */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Search catalog"
+          onPress={handleSearchShortcut}
+          className="min-h-touch flex-row items-center justify-between rounded-2xl border border-border/80 bg-card p-4 shadow-sm active:bg-muted/40"
+        >
+          <View className="flex-row items-center gap-3">
+            <View className="h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+              <Icon as={Search} size={20} className="text-primary" />
+            </View>
+            <View>
+              <Text variant="body" className="font-semibold text-foreground">
+                Search the catalog
+              </Text>
+              <Text variant="caption" tone="muted">
+                Find by product name, brand, category, or option
+              </Text>
+            </View>
+          </View>
+          <View className="h-9 items-center justify-center rounded-lg bg-secondary px-4">
+            <Text variant="caption" className="font-semibold text-secondary-foreground">
+              Search
+            </Text>
+          </View>
+        </Pressable>
 
-        {brands.length > 0 ? (
+        {/* Adaptive Featured Section */}
+        {featured.mode === "spotlight" && featured.spotlightProduct ? (
+          <SpotlightFeaturedCard
+            product={featured.spotlightProduct}
+            onPress={handleProductPress}
+            isExpanded={isExpanded}
+          />
+        ) : featured.mode === "showcase" ? (
           <HomeSection
-            title="Brands"
-            browseAllLabel="Browse all brands"
-            onBrowseAll={() => router.replace("/brands")}
+            title="Featured"
+            browseAllLabel="View all products"
+            onBrowseAll={() => router.replace("/products")}
           >
-            <HomeCards
-              items={brands}
+            <ShowcaseFeaturedGrid items={featured.items} onPress={handleProductPress} />
+          </HomeSection>
+        ) : featured.mode === "grid" ? (
+          <HomeSection
+            title="Featured"
+            browseAllLabel="View all products"
+            onBrowseAll={() => router.replace("/products")}
+          >
+            <HomeCardsGrid
+              items={featured.items}
               columns={columns}
-              renderItem={(brand) => <BrandCard brand={brand} onPress={handleBrandPress} />}
+              renderItem={(product) => (
+                <ProductCard product={product} onPress={handleProductPress} />
+              )}
             />
           </HomeSection>
         ) : null}
 
+        {/* Shop by Category Section */}
         {categories.length > 0 ? (
           <HomeSection
             title="Categories"
-            browseAllLabel="Browse all categories"
+            browseAllLabel="All categories"
             onBrowseAll={() => router.replace("/categories")}
           >
-            <HomeCards
+            <HomeCardsGrid
               items={categories}
               columns={columns}
               renderItem={(category) => (
@@ -169,49 +173,213 @@ export function CatalogHomeScreen() {
           </HomeSection>
         ) : null}
 
-        {featuredProducts.length > 0 ? (
+        {/* Explore Brands Section */}
+        {brands.length > 0 ? (
           <HomeSection
-            title="Featured products"
-            browseAllLabel="Browse all products"
-            onBrowseAll={() => router.replace("/products")}
+            title="Brands"
+            browseAllLabel="All brands"
+            onBrowseAll={() => router.replace("/brands")}
           >
-            <HomeCards
-              items={featuredProducts}
+            <HomeCardsGrid
+              items={brands}
               columns={columns}
-              renderItem={(product) => (
-                <ProductCard product={product} onPress={handleProductPress} />
-              )}
+              renderItem={(brand) => <BrandCard brand={brand} onPress={handleBrandPress} />}
             />
           </HomeSection>
         ) : null}
       </ScrollView>
-    </Screen>
+    </CatalogShell>
   );
 }
 
-function isFullSettings(settings: CatalogView["settings"]): settings is CatalogFullSettings {
-  return "store_name" in settings;
+type SpotlightFeaturedCardProps = {
+  product: CatalogProductView;
+  onPress: (product: CatalogProductView) => void;
+  isExpanded: boolean;
+};
+
+function SpotlightFeaturedCard({ product, onPress, isExpanded }: SpotlightFeaturedCardProps) {
+  const handlePress = useCallback(() => {
+    onPress(product);
+  }, [onPress, product]);
+
+  const optionCount = formatProductOptionCount(product);
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Featured product: ${product.name}`}
+      onPress={handlePress}
+      className="active:scale-[0.99]"
+    >
+      <Card className="overflow-hidden border-border/80 bg-card shadow-sm">
+        <View className={isExpanded ? "flex-row items-center" : "flex-col"}>
+          {/* Spotlight Packaging Image */}
+          <View className={isExpanded ? "w-2/5 p-6" : "w-full p-4"}>
+            <AspectRatio
+              ratio={isExpanded ? 1 : 16 / 10}
+              className="w-full rounded-xl bg-muted/25 p-4"
+            >
+              <AppImage
+                uri={product.coverMedia?.secureUrl ?? null}
+                alt={product.name}
+                contentFit="contain"
+                className="h-full w-full"
+              />
+            </AspectRatio>
+          </View>
+
+          {/* Editorial Content */}
+          <View className="flex-1 justify-center gap-4 p-6 md:p-8">
+            <View className="flex-row items-center gap-2">
+              <Text
+                variant="caption"
+                tone="primary"
+                className="font-semibold uppercase tracking-wider"
+              >
+                Featured Spotlight
+              </Text>
+              {product.brand ? (
+                <Text variant="caption" tone="muted" className="font-medium">
+                  by {product.brand.name}
+                </Text>
+              ) : null}
+            </View>
+
+            <View className="gap-2">
+              <Text variant="h2" className="text-2xl font-extrabold tracking-tight md:text-3xl">
+                {product.name}
+              </Text>
+              {product.short_description ? (
+                <Text variant="body" tone="muted" numberOfLines={3} className="leading-relaxed">
+                  {product.short_description}
+                </Text>
+              ) : null}
+            </View>
+
+            <View className="flex-row flex-wrap items-center justify-between gap-4 pt-2">
+              <View className="flex-row items-center gap-3">
+                <AvailabilityBadge
+                  type="product"
+                  isAvailable={product.isAvailable}
+                  variantCount={product.variants.length}
+                />
+                {optionCount ? (
+                  <Text variant="caption" tone="muted" className="font-medium">
+                    {optionCount}
+                  </Text>
+                ) : null}
+              </View>
+
+              {/* Visual CTA only - no nested interactive Button */}
+              <View
+                pointerEvents="none"
+                aria-hidden={true}
+                className="h-touch min-h-touch flex-row items-center gap-2 rounded-xl bg-primary px-5 py-2.5"
+              >
+                <Text variant="body" className="font-semibold text-primary-foreground">
+                  Discover product
+                </Text>
+                <Icon as={ArrowRight} size={16} className="text-primary-foreground" />
+              </View>
+            </View>
+          </View>
+        </View>
+      </Card>
+    </Pressable>
+  );
+}
+
+type ShowcaseFeaturedGridProps = {
+  items: CatalogProductView[];
+  onPress: (product: CatalogProductView) => void;
+};
+
+function ShowcaseFeaturedGrid({ items, onPress }: ShowcaseFeaturedGridProps) {
+  const count = items.length;
+
+  if (count === 2) {
+    return (
+      <View className="flex-col gap-6 md:flex-row">
+        {items.map((product) => (
+          <View key={product.id} className="flex-1">
+            <ProductCard product={product} onPress={onPress} />
+          </View>
+        ))}
+      </View>
+    );
+  }
+
+  if (count === 3) {
+    return (
+      <View className="flex-col gap-4 md:flex-row">
+        {items.map((product) => (
+          <View key={product.id} className="flex-1">
+            <ProductCard product={product} onPress={onPress} />
+          </View>
+        ))}
+      </View>
+    );
+  }
+
+  // Gate H: 4 items render as 2x2 on compact/medium and 4x1 on expanded landscape
+  if (count === 4) {
+    return (
+      <View className="flex-col gap-4 lg:flex-row">
+        <View className="flex-1 flex-row gap-4">
+          <View className="flex-1">
+            <ProductCard product={items[0]!} onPress={onPress} />
+          </View>
+          <View className="flex-1">
+            <ProductCard product={items[1]!} onPress={onPress} />
+          </View>
+        </View>
+        <View className="flex-1 flex-row gap-4">
+          <View className="flex-1">
+            <ProductCard product={items[2]!} onPress={onPress} />
+          </View>
+          <View className="flex-1">
+            <ProductCard product={items[3]!} onPress={onPress} />
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View className="flex-row flex-wrap gap-4">
+      {items.map((product) => (
+        <View key={product.id} className="min-w-[200px] flex-1">
+          <ProductCard product={product} onPress={onPress} />
+        </View>
+      ))}
+    </View>
+  );
 }
 
 type HomeSectionProps = {
   title: string;
-  /** Visible label naming the destination, e.g. "Browse all brands". */
   browseAllLabel: string;
-  /** REPLACE semantics: a Browse-all action always targets a root destination. */
   onBrowseAll: () => void;
   children: React.ReactNode;
 };
 
-/** One bounded Home section: its heading, its Browse-all action and its cards. */
 function HomeSection({ title, browseAllLabel, onBrowseAll, children }: HomeSectionProps) {
   return (
-    <View className="gap-3">
-      <View className="flex-row items-center justify-between gap-3">
-        <Text variant="h2" accessibilityRole="header">
+    <View className="gap-4">
+      <View className="flex-row items-center justify-between gap-3 border-b border-border/60 pb-3">
+        <Text variant="h2" accessibilityRole="header" className="font-bold tracking-tight">
           {title}
         </Text>
-        <Button variant="ghost" onPress={onBrowseAll} className="shrink-0">
-          <Text>{browseAllLabel}</Text>
+
+        <Button
+          variant="ghost"
+          size="compact"
+          onPress={onBrowseAll}
+          className="min-h-touch shrink-0 gap-1"
+        >
+          <Text className="font-semibold text-primary">{browseAllLabel}</Text>
+          <Icon as={ArrowRight} size={14} className="text-primary" />
         </Button>
       </View>
       {children}
@@ -219,35 +387,26 @@ function HomeSection({ title, browseAllLabel, onBrowseAll, children }: HomeSecti
   );
 }
 
-type HomeCardsProps<ItemT extends { id: string }> = {
+type HomeCardsGridProps<ItemT extends { id: string }> = {
   items: ItemT[];
   columns: number;
   renderItem: (item: ItemT) => React.ReactElement;
 };
 
-/**
- * Fixed rows of equal-width cards for a bounded Home section. The view model
- * already bounds these collections, so a ScrollView/View composition is correct
- * here — virtualizing six brands or eight featured products would be ceremony.
- * Each card sits in a `flex-1` wrapper View that is the row's direct child (the
- * T03 card roots are Pressables that carry no flex of their own, so the wrapper
- * is what makes them flex items), keyed by the item's id; the final row is
- * padded with empty-slot Views so every card keeps one width.
- */
-function HomeCards<ItemT extends { id: string }>({
+function HomeCardsGrid<ItemT extends { id: string }>({
   items,
   columns,
   renderItem,
-}: HomeCardsProps<ItemT>) {
+}: HomeCardsGridProps<ItemT>) {
   const rows: ItemT[][] = [];
   for (let index = 0; index < items.length; index += columns) {
     rows.push(items.slice(index, index + columns));
   }
 
   return (
-    <View className="gap-3">
+    <View className="gap-4">
       {rows.map((row, rowIndex) => (
-        <View key={rowIndex} className="flex-row gap-3">
+        <View key={rowIndex} className="flex-row gap-4">
           {row.map((item) => (
             <View key={item.id} className="flex-1">
               {renderItem(item)}

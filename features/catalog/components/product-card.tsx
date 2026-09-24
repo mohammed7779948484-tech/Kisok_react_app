@@ -1,38 +1,19 @@
 import { memo, useCallback } from "react";
-import { Pressable } from "react-native";
+import { Pressable, View } from "react-native";
 
 import { AppImage } from "@/components/media/app-image";
-import { Card, Text } from "@/components/ui";
+import { AspectRatio, Card, Text } from "@/components/ui";
 import { cn } from "@/core/utils";
 
+import { formatProductOptionCount } from "../model/discovery-presentation";
 import type { CatalogProductView } from "../model/catalog-view";
 import { AvailabilityBadge } from "./availability-badge";
 
-/**
- * Whole-card navigation for one product in a Catalog discovery surface.
- *
- * A single Pressable wraps the whole card (never a nested link inside a link);
- * the owning screen wires `onPress` to `router.push`. This component never
- * imports expo-router, never fetches, and never reads a store — it renders the
- * derived view it is given.
- *
- * Card-level availability is the view's derived boolean, shown in words.
- * All-unavailable products stay discoverable and pressable (AC-03).
- */
 export type ProductCardProps = {
   product: CatalogProductView;
-  /**
-   * Stable press handler: CatalogGrid hands every row one shared handler, so
-   * pass the same function down rather than closing over the product here.
-   */
   onPress: (product: CatalogProductView) => void;
   className?: string;
 };
-
-/** Shared copy for the card's accessible name and its visible badge. */
-function productAvailabilityLabel(isAvailable: boolean): string {
-  return isAvailable ? "Available" : "Out of stock";
-}
 
 export const ProductCard = memo(function ProductCard({
   product,
@@ -43,24 +24,76 @@ export const ProductCard = memo(function ProductCard({
     onPress(product);
   }, [onPress, product]);
 
+  const optionCount = formatProductOptionCount(product);
+  const availabilityText = product.isAvailable
+    ? product.variants.length <= 1
+      ? "Available"
+      : "Options available"
+    : "Currently unavailable";
+  const brandName = product.brand?.name;
+
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${product.name}, ${productAvailabilityLabel(product.isAvailable)}`}
+      accessibilityLabel={`${product.name}${brandName ? `, by ${brandName}` : ""}, ${availabilityText}`}
       onPress={handlePress}
-      className="active:opacity-90"
+      className="h-full active:scale-[0.985]"
     >
-      <Card className={cn("gap-2 p-2", className)}>
-        <AppImage
-          uri={product.coverMedia?.secureUrl ?? null}
-          alt={product.name}
-          contentFit="cover"
-          className="aspect-square w-full rounded-lg"
-        />
-        <Text variant="h3" numberOfLines={2}>
-          {product.name}
-        </Text>
-        <AvailabilityBadge isAvailable={product.isAvailable} />
+      <Card
+        className={cn(
+          "h-full overflow-hidden border-border bg-card shadow-none transition-shadow",
+          className,
+        )}
+      >
+        {/* Packaging-friendly portrait presentation */}
+        <AspectRatio ratio={3 / 4} className="w-full bg-muted/25 p-3">
+          <AppImage
+            uri={product.coverMedia?.secureUrl ?? null}
+            alt={product.name}
+            contentFit="contain"
+            className="h-full w-full"
+          />
+        </AspectRatio>
+
+        {/* Content area with stable reserved slots for aligned grid rhythm */}
+        <View className="flex-1 justify-between gap-3 p-4">
+          <View className="gap-1">
+            {/* Stable brand/context slot (h-5 preserves grid alignment even when unbranded) */}
+            <View className="h-5 justify-center">
+              {brandName ? (
+                <Text variant="caption" tone="muted" numberOfLines={1}>
+                  {brandName}
+                </Text>
+              ) : null}
+            </View>
+
+            {/* Stable two-line title slot */}
+            <View className="h-11 justify-start">
+              <Text
+                variant="h3"
+                role={undefined}
+                aria-level={undefined}
+                numberOfLines={2}
+                className="font-semibold leading-tight"
+              >
+                {product.name}
+              </Text>
+            </View>
+          </View>
+
+          <View className="h-7 flex-row items-center justify-between gap-2">
+            <AvailabilityBadge
+              type="product"
+              isAvailable={product.isAvailable}
+              variantCount={product.variants.length}
+            />
+            {optionCount ? (
+              <Text variant="caption" tone="muted" className="font-medium">
+                {optionCount}
+              </Text>
+            ) : null}
+          </View>
+        </View>
       </Card>
     </Pressable>
   );

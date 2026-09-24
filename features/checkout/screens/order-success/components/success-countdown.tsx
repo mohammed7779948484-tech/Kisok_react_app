@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppState, View, type AppStateStatus } from "react-native";
 
-import { Progress, Text } from "@/components/ui";
+import { Progress } from "@/components/ui/progress";
+import { Text } from "@/components/ui/text";
 
 /**
  * The Order Success inactivity countdown (T11, plan D10 — deadline-based).
@@ -164,10 +165,10 @@ export function SuccessCountdown({ seconds, onExpire, reArmRef }: SuccessCountdo
         restart();
       }}
     >
-      <Text variant="label" tone="muted">
+      <Text variant="caption" tone="muted" className="text-center tabular-nums">
         {label}
       </Text>
-      <Progress value={percent} accessibilityLabel={label} />
+      <Progress value={percent} accessibilityLabel={label} indicatorClassName="bg-primary/50" />
     </View>
   );
 }

@@ -81,6 +81,7 @@ jest.mock("lucide-react-native", () => {
   // factory free of `require()` (tests lint with --max-warnings=0).
   const makeIcon = (name: string) => Object.assign(() => null, { displayName: name });
   return {
+    PackageCheck: makeIcon("PackageCheck"),
     Minus: makeIcon("Minus"),
     Plus: makeIcon("Plus"),
     Trash2: makeIcon("Trash2"),
@@ -307,7 +308,8 @@ describe("AddToCartButton", () => {
     // And the press opened the Quick Cart through the integration context:
     // the sheet shows the fresh line's product name and the updated total.
     expect(screen.getByText("Almond Cold Brew")).toBeOnTheScreen();
-    expect(screen.getByRole("heading", { name: "Your Cart · 1" })).toBeOnTheScreen();
+    expect(screen.getByText("Added to cart")).toBeOnTheScreen();
+    expect(screen.getByText("Cart · 1 item")).toBeOnTheScreen();
   });
 
   it("is disabled for an UNAVAILABLE variant — the label stays stable, and a press attempt changes nothing", async () => {
@@ -327,7 +329,7 @@ describe("AddToCartButton", () => {
     const snapshot = getCartSnapshot();
     expect(snapshot.lines).toEqual([]);
     expect(snapshot.totalQuantity).toBe(0);
-    expect(screen.queryByRole("heading", { name: "Your Cart · 0" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Added to cart" })).toBeNull();
   });
 
   it("is disabled while the cart is locked — a press attempt changes nothing", async () => {
@@ -404,6 +406,6 @@ describe("AddToCartButton", () => {
     // once), and the updated total in the title.
     expect(screen.getByText("Almond Cold Brew")).toBeOnTheScreen();
     expect(screen.getByText(expectedCaption)).toBeOnTheScreen();
-    expect(screen.getByRole("heading", { name: "Your Cart · 1" })).toBeOnTheScreen();
+    expect(screen.getByText("Added to cart")).toBeOnTheScreen();
   });
 });

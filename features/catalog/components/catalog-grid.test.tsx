@@ -128,7 +128,9 @@ describe("CatalogGrid", () => {
     }
 
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-    await user.press(screen.getByRole("button", { name: "Café Crème, Available" }));
+    await user.press(
+      screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+    );
 
     expect(onItemPress).toHaveBeenCalledTimes(1);
     expect(onItemPress).toHaveBeenCalledWith(coffee);

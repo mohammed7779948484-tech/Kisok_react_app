@@ -59,6 +59,11 @@ const RELEASE_NOTES: Record<string, readonly string[]> = {
   // Add an entry when a release is worth explaining. A release with no entry
   // still shows the dialog, with the generic line below — a forgotten note is
   // not a reason to hide that the tablet changed.
+  "1.1.0+2": [
+    "A redesigned catalog makes products, categories, brands, and search easier to explore.",
+    "Product options and variants are easier to browse and select, including products with large option sets.",
+    "Cart, checkout, offline feedback, and the overall kiosk experience have been refined.",
+  ],
 };
 
 /**

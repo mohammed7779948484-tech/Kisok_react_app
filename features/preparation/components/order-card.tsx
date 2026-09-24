@@ -1,7 +1,18 @@
 import type { ReactNode } from "react";
 import { Pressable, View } from "react-native";
+import { Check, Clock3, Package, Play, UserRound, X } from "lucide-react-native";
 
-import { Badge, Button, Card, CardContent, CardFooter, CardHeader, Text } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  Icon,
+  Text,
+} from "@/components/ui";
+import { cn } from "@/core/utils";
 
 import type { ActiveOrderRow } from "../api/fetch-active-orders";
 import { allowedOrderActions } from "../model/status-actions";
@@ -109,6 +120,7 @@ export function OrderCard({
         disabled={starting}
         onPress={() => onStartPreparing(order)}
       >
+        <Icon as={Play} size={16} className="text-primary-foreground" />
         <Text>{starting ? "Starting…" : "Start Preparing"}</Text>
       </Button>,
     );
@@ -123,6 +135,7 @@ export function OrderCard({
         disabled={markingReady}
         onPress={() => onMarkReady(order)}
       >
+        <Icon as={Check} size={16} className="text-primary-foreground" />
         <Text>{markingReady ? "Marking ready…" : "Mark Ready"}</Text>
       </Button>,
     );
@@ -137,6 +150,7 @@ export function OrderCard({
         disabled={cancelling}
         onPress={() => onCancel(order)}
       >
+        <Icon as={X} size={16} className="text-destructive-foreground" />
         <Text>{cancelling ? "Cancelling…" : "Cancel"}</Text>
       </Button>,
     );
@@ -155,21 +169,47 @@ export function OrderCard({
         ? "You"
         : "Assigned to another employee";
 
+  const isPending = pendingAction !== undefined;
+
   const cardBody = (
     <>
-      <CardHeader>
+      <CardHeader className="gap-3 p-4">
         {/* flex-wrap: the mono number and the badge must wrap, not overflow,
             at 200% text scaling or in a narrow board column. */}
-        <View className="flex-row flex-wrap items-center justify-between gap-2">
-          <Text variant="mono">{order.display_number}</Text>
+        <View className="flex-row flex-wrap items-start justify-between gap-2">
+          <View className="gap-1">
+            <Text variant="caption" className="text-xs font-bold">
+              Order
+            </Text>
+            <Text variant="mono" className="text-xl">
+              {order.display_number}
+            </Text>
+          </View>
           <OrderStatusBadge status={order.status} />
         </View>
-        {createdAtLabel ? <Text variant="caption">{createdAtLabel}</Text> : null}
       </CardHeader>
-      <CardContent className="gap-2">
-        <Text variant="caption">{itemSummary}</Text>
+      <CardContent className="gap-3 px-4 pb-4 pt-0">
+        <View className="flex-row flex-wrap items-center gap-x-4 gap-y-2">
+          {createdAtLabel ? (
+            <View className="flex-row items-center gap-1.5">
+              <Icon as={Clock3} size={16} className="text-muted-foreground" />
+              <Text variant="caption">{createdAtLabel}</Text>
+            </View>
+          ) : null}
+          <View className="flex-row items-center gap-1.5">
+            <Icon as={Package} size={16} className="text-muted-foreground" />
+            <Text variant="caption" className="font-bold text-foreground">
+              {itemSummary}
+            </Text>
+          </View>
+        </View>
         {assignmentLabel ? (
-          <Badge variant="outline">
+          <Badge variant={assignmentLabel === "You" ? "primary" : "outline"} className="gap-1.5">
+            <Icon
+              as={UserRound}
+              size={14}
+              className={assignmentLabel === "You" ? "text-primary-foreground" : "text-foreground"}
+            />
             <Text>{assignmentLabel}</Text>
           </Badge>
         ) : null}
@@ -177,13 +217,18 @@ export function OrderCard({
     </>
   );
 
-  const cardFooter = footerButtons.length > 0 ? <CardFooter>{footerButtons}</CardFooter> : null;
+  const cardFooter =
+    footerButtons.length > 0 ? (
+      <CardFooter className="border-t border-border bg-muted/60 p-3">{footerButtons}</CardFooter>
+    ) : null;
 
   // No press handler: a plain display row (history unless the screen wires
   // one).
   if (!onPress) {
     return (
-      <Card className={className}>
+      <Card
+        className={cn("overflow-hidden", isPending && "border-primary bg-primary/5", className)}
+      >
         {cardBody}
         {cardFooter}
       </Card>
@@ -204,13 +249,13 @@ export function OrderCard({
   // native <button>, and nested buttons are invalid HTML — actions sit outside
   // the interactive body.
   return (
-    <Card className={className}>
+    <Card className={cn("overflow-hidden", isPending && "border-primary bg-primary/5", className)}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Order ${order.display_number}, ${orderStatusLabel(order.status)}${assignmentSuffix}`}
         // The Button primitive's own press-feedback idiom — a calm opacity dip,
         // nothing more (the restrained-motion policy).
-        className="active:opacity-90"
+        className="active:bg-secondary/70 active:opacity-90"
         onPress={() => onPress(order)}
       >
         {cardBody}
