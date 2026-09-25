@@ -11,6 +11,7 @@ name: Android release to ManageEngine
 #
 #   build a signed release APK
 #     -> verify its package identity, signature, version and embedded bundle
+#     -> preserve the verified APK as a GitHub Actions artifact
 #     -> upload it to the ManageEngine App Repository
 #     -> create KISOK, or update the existing enterprise app (matched by package)
 #
@@ -332,6 +333,18 @@ jobs:
             exit 1
           fi
 
+      # Preserve the VERIFIED APK before any ManageEngine API call. That makes
+      # the build retrievable even when the downstream MDM read/upload step
+      # fails, which is especially important while that integration is being
+      # debugged.
+      - name: Publish the verified APK as a build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kisok-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
+          if-no-files-found: error
+
       # Only a VERIFIED artifact is published. The script uploads the APK, waits
       # for ManageEngine's documented file processing if it reports the file as
       # pending, then creates KISOK or updates the existing enterprise app —
@@ -351,14 +364,3 @@ jobs:
           node tools/mdm/publish-app.ts \
             --apk android/app/build/outputs/apk/release/app-release.apk \
             ${{ inputs.dry_run && '--dry-run' || '' }}
-
-      # The APK a human can inspect between this run and the tablets picking it
-      # up. It contains the public client config only — the signing material
-      # stays in the runner's ephemeral android/ tree.
-      - name: Publish the verified APK as a build artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: kisok-release-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
-          retention-days: 30
-          if-no-files-found: error
