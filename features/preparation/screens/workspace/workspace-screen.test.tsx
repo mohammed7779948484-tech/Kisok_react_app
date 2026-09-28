@@ -2,6 +2,7 @@ import { useRouter } from "expo-router";
 import { type QueryClient } from "@tanstack/react-query";
 
 import { AppError } from "@/core/errors";
+import { runSignOutGuards } from "@/core/auth";
 import { resetLogging, setLogSink } from "@/core/logging";
 import { useLayout, type LayoutSize } from "@/core/responsive";
 import {
@@ -14,6 +15,8 @@ import {
   waitFor,
   within,
 } from "@/core/testing";
+// In production the route graph can load Checkout before a preparation sign-out.
+import "@/features/checkout";
 
 import { fetchActiveOrders, type ActiveOrderRow } from "../../api/fetch-active-orders";
 import { fetchStoreSettings, type StoreSettingsRow } from "../../api/fetch-store-settings";
@@ -888,6 +891,23 @@ describe("WorkspaceScreen affordances", () => {
 
     // The sign-out control is present (its flow is core/auth's contract).
     expect(await screen.findByRole("button", { name: "Sign out" })).toBeOnTheScreen();
+  });
+
+  it("signs out from the real workspace even while customer Checkout recovery is pending", async () => {
+    await expect(
+      runSignOutGuards({ sessionUserId: "customer", profileId: "customer", role: "customer" }),
+    ).resolves.toEqual({
+      status: "blocked",
+      reason: "We're still checking this tablet for an unfinished order submission.",
+    });
+    await renderWorkspace({ orders: [] });
+
+    await userEvent.setup().press(await screen.findByRole("button", { name: "Sign out" }));
+
+    await waitFor(() => expect(mockSupabase?.signOutCalls).toEqual([{ scope: "local" }]));
+    expect(
+      screen.queryByText("We're still checking this tablet for an unfinished order submission."),
+    ).toBeNull();
   });
 
   it("opens order details with the order's id when a card is pressed", async () => {

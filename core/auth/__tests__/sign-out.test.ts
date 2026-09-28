@@ -4,6 +4,7 @@ import {
   registerSignOutGuard,
   runSignOutCleanup,
   runSignOutGuards,
+  type SignOutContext,
 } from "@/core/auth";
 import { resetLogging, setLogSink } from "@/core/logging";
 
@@ -11,6 +12,17 @@ import { resetLogging, setLogSink } from "@/core/logging";
 // outcome does not look like a failing run.
 beforeEach(() => setLogSink(() => {}));
 afterEach(resetLogging);
+
+const CUSTOMER: SignOutContext = {
+  sessionUserId: "customer-user",
+  profileId: "customer-profile",
+  role: "customer",
+};
+const PREPARATION: SignOutContext = {
+  sessionUserId: "preparation-user",
+  profileId: "preparation-profile",
+  role: "preparation",
+};
 
 describe("sign-out guards (phase 1 — side-effect-free)", () => {
   beforeEach(clearSignOutTasks);
@@ -133,6 +145,53 @@ describe("sign-out guards (phase 1 — side-effect-free)", () => {
 
     expect(ran).toEqual([]);
   });
+
+  it("runs applicable and unscoped guards, skipping those owned by another role", async () => {
+    const ran: string[] = [];
+    registerSignOutGuard({
+      name: "customer",
+      appliesTo: ({ role }) => role === "customer",
+      run: () => {
+        ran.push("customer");
+        return { status: "ok" };
+      },
+    });
+    registerSignOutGuard({
+      name: "preparation",
+      appliesTo: ({ role }) => role === "preparation",
+      run: () => {
+        ran.push("preparation");
+        return { status: "ok" };
+      },
+    });
+    registerSignOutGuard({
+      name: "global",
+      run: () => {
+        ran.push("global");
+        return { status: "ok" };
+      },
+    });
+
+    await expect(runSignOutGuards(CUSTOMER)).resolves.toEqual({ status: "ok" });
+    expect(ran).toEqual(["customer", "global"]);
+    ran.length = 0;
+    await expect(runSignOutGuards(PREPARATION)).resolves.toEqual({ status: "ok" });
+    expect(ran).toEqual(["preparation", "global"]);
+    ran.length = 0;
+    await runSignOutGuards();
+    expect(ran).toEqual(["customer", "preparation", "global"]);
+  });
+
+  it("fails closed if an applicability predicate throws", async () => {
+    registerSignOutGuard({
+      name: "broken-scope",
+      appliesTo: () => {
+        throw new Error("bad predicate");
+      },
+      run: () => ({ status: "ok" }),
+    });
+    expect((await runSignOutGuards(CUSTOMER)).status).toBe("blocked");
+  });
 });
 
 describe("sign-out cleanup (phase 2 — destructive, guards-approved only)", () => {
@@ -193,5 +252,33 @@ describe("sign-out cleanup (phase 2 — destructive, guards-approved only)", () 
     await runSignOutCleanup();
 
     expect(ran).toEqual(["second"]);
+  });
+
+  it("skips unrelated cleanup and runs remaining applicable tasks after a failure", async () => {
+    const ran: string[] = [];
+    registerSignOutCleanup({
+      name: "customer-failure",
+      appliesTo: ({ role }) => role === "customer",
+      run: () => {
+        throw new Error("disk full");
+      },
+    });
+    registerSignOutCleanup({
+      name: "preparation-only",
+      appliesTo: ({ role }) => role === "preparation",
+      run: () => void ran.push("preparation"),
+    });
+    registerSignOutCleanup({
+      name: "customer-success",
+      appliesTo: ({ role }) => role === "customer",
+      run: () => void ran.push("customer"),
+    });
+    registerSignOutCleanup({ name: "global", run: () => void ran.push("global") });
+
+    expect(await runSignOutCleanup(CUSTOMER)).toEqual({ failures: ["customer-failure"] });
+    expect(ran).toEqual(["customer", "global"]);
+    ran.length = 0;
+    expect(await runSignOutCleanup(PREPARATION)).toEqual({ failures: [] });
+    expect(ran).toEqual(["preparation", "global"]);
   });
 });

@@ -152,12 +152,16 @@ must prove both before the tablet is considered safe for the next customer.
 
 ### Phase 1 — guards: decide, do not mutate
 
-All registered guards are side-effect-free and run before auth or local feature
-state is touched. Any guard can veto the whole sign-out:
+Applicable registered guards are side-effect-free and run before auth or local
+feature state is touched. Auth captures the session's profile ID, role and user
+ID when sign-out begins. An optional `appliesTo` predicate scopes a feature's
+tasks; tasks without it continue to apply to every session. Any applicable
+guard can veto the whole sign-out:
 
 ```ts
 registerSignOutGuard({
   name: "checkout",
+  appliesTo: ({ role }) => role === "customer",
   run: () =>
     hasUnresolvedAttempt()
       ? { status: "blocked", reason: "An order submission is still unresolved." }
@@ -169,6 +173,13 @@ This encodes a hard KISOK invariant: wiping the cart and its idempotency metadat
 while a submission's outcome is unknown could produce a duplicate order. A guard
 that throws is treated exactly like `blocked` — uncertainty is never permission
 to destroy recovery state.
+
+Checkout and Cart own customer state, so their guard and cleanup tasks apply
+only to customer sessions. An admin or profile-less unauthorized account, and
+a preparation employee, can sign out even if customer recovery has not run.
+For an active customer, `recordLoaded === false` remains blocked until durable
+recovery establishes the truth. Direct registry test calls without context
+retain the original all-tasks behavior; the AuthProvider always supplies context.
 
 The checkout guard's blocked set was extended in the R5 remediation round
 (findings F-01/F-04/F-05): beyond an unresolved record or a live submission, it
@@ -197,10 +208,16 @@ usable.
 
 ### Phase 3 — feature cleanup, then prove safe handoff
 
-Only after the auth session is gone do destructive feature cleanup tasks run:
+Only after the auth session is gone do applicable destructive feature cleanup
+tasks run. The guard/cleanup plan is captured before the auth mutation, so a
+route unmount caused by `SIGNED_OUT` cannot remove a pending cleanup:
 
 ```ts
-registerSignOutCleanup({ name: "cart", run: () => clearCart() });
+registerSignOutCleanup({
+  name: "cart",
+  appliesTo: ({ role }) => role === "customer",
+  run: () => clearCart(),
+});
 ```
 
 Every cleanup task gets a chance even if another one fails. Then:

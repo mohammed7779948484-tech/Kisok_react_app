@@ -1,7 +1,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Text } from "react-native";
 
-import { AuthProvider, clearSignOutTasks, registerSignOutCleanup, useAuth } from "@/core/auth";
+import {
+  AuthProvider,
+  clearSignOutTasks,
+  registerSignOutCleanup,
+  unregisterSignOutCleanup,
+  useAuth,
+} from "@/core/auth";
 import { AppError } from "@/core/errors";
 import { resetLogging, setLogSink } from "@/core/logging";
 import { setSupabaseClient } from "@/core/supabase";
@@ -32,6 +38,35 @@ afterEach(async () => {
 });
 
 describe("kiosk handoff concurrency", () => {
+  it("keeps the customer cleanup plan after SIGNED_OUT unregisters its task", async () => {
+    const ran: string[] = [];
+    registerSignOutCleanup({
+      name: "route-owned-cleanup",
+      appliesTo: ({ role }) => role === "customer",
+      run: () => void ran.push("cleanup"),
+    });
+    const supabase = installMockAuth({
+      signOut: async () => {
+        supabase.emit("SIGNED_OUT", null);
+        unregisterSignOutCleanup("route-owned-cleanup");
+        return { error: null };
+      },
+    });
+
+    await renderWithProviders(
+      <AuthProvider>
+        <HandoffRaceProbe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByText("ready")).toBeOnTheScreen());
+    if (!actions) throw new Error("Auth actions were not captured");
+
+    await expect(actions.signOut()).resolves.toEqual({ status: "ok" });
+    expect(ran).toEqual(["cleanup"]);
+    await waitFor(() => expect(screen.getByText("signedOut")).toBeOnTheScreen());
+    supabase.restore();
+  });
+
   it("blocks a new account while the previous sign-out cleanup is still in flight", async () => {
     let releaseCleanup: (() => void) | null = null;
     let markCleanupStarted: (() => void) | null = null;

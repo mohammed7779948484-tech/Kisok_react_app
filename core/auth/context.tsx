@@ -17,11 +17,10 @@ import { getSupabaseClient } from "@/core/supabase";
 
 import { fetchActiveProfile } from "./profile";
 import {
+  createSignOutPlan,
   finishSignOutHandoff,
   prepareSignOutHandoff,
   recoverPendingHandoff,
-  runSignOutCleanup,
-  runSignOutGuards,
   type SignOutOutcome,
 } from "./sign-out";
 import { isTabletRole, type ActiveProfile, type AuthStatus } from "./types";
@@ -211,8 +210,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async (): Promise<SignOutOutcome> => {
+    // The plan retains task membership and the role/profile at invocation.
+    // SIGNED_OUT may unmount a route before post-auth cleanup runs.
+    const plan = createSignOutPlan({
+      sessionUserId: snapshot.session?.user.id ?? null,
+      profileId: state.profile?.id ?? null,
+      role: state.profile?.role ?? null,
+    });
     // Phase 1 — all side-effect-free guards approve before anything is changed.
-    const gate = await runSignOutGuards();
+    const gate = await plan.runGuards();
     if (gate.status === "blocked") return gate;
 
     // This lock spans the whole prepared handoff. A SIGNED_OUT auth event may
@@ -270,7 +276,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Phase 2 — feature cleanup after the local auth session is gone.
-      const cleanup = await runSignOutCleanup();
+      const cleanup = await plan.runCleanup();
       clearQueryCache(queryClient);
       setSnapshot({ session: null, known: true });
 
@@ -284,7 +290,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       handoffInFlight.current = false;
     }
-  }, [queryClient]);
+  }, [queryClient, snapshot.session?.user.id, state.profile]);
 
   const retry = useCallback(() => setRetryToken((value) => value + 1), []);
 

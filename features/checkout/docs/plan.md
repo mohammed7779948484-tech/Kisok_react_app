@@ -176,7 +176,9 @@ order wins); the deployed catalog feature confirms execution is live.
   recovery-resolution surface (retry clear); confirmed + cleanup safe →
   render the success flow (fresh countdown). Importing `@/features/checkout`
   in the layout is also the module load that registers the sign-out guard
-  (the cart feature's own index uses the same side-effect pattern).
+  (the cart feature's own index uses the same side-effect pattern). The later
+  auth sign-out lifecycle scopes these registered tasks to customer sessions;
+  module loading alone does not make them run for admin or preparation.
   Rejected: recovery living inside the review screen only (correctness would
   depend on that screen having stayed mounted — explicitly forbidden by the
   brief), and a checkout-owned second cart hydration (the

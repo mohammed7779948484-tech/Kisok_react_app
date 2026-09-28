@@ -14,6 +14,8 @@ export const TEST_PROFILE: ActiveProfile = {
 export type MockAuthOptions = {
   /** Omit to start signed out. */
   profile?: ActiveProfile | null;
+  /** A session whose profile RPC returns zero rows (inactive/missing profile). */
+  sessionUserId?: string;
   role?: AppRole;
   /** Handlers for the feature's own RPCs, alongside `current_active_profile`. */
   rpc?: Record<string, (args: unknown) => RpcResponse | Promise<RpcResponse>>;
@@ -46,6 +48,7 @@ export type MockAuthOptions = {
  */
 export function installMockAuth({
   profile,
+  sessionUserId,
   role,
   rpc = {},
   signOut,
@@ -54,9 +57,8 @@ export function installMockAuth({
   const resolved =
     profile === null ? null : { ...TEST_PROFILE, ...(role ? { role } : {}), ...(profile ?? {}) };
 
-  const session = resolved
-    ? { access_token: "test-access-token", user: { id: resolved.id } }
-    : null;
+  const sessionId = resolved?.id ?? sessionUserId;
+  const session = sessionId ? { access_token: "test-access-token", user: { id: sessionId } } : null;
 
   const calls: { name: string; args: unknown }[] = [];
   const signOutCalls: ({ scope?: string } | undefined)[] = [];
