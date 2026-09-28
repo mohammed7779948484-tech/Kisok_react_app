@@ -179,5 +179,14 @@ const runCheckoutSignOutGuard = (): SignOutGuardResult => {
 // precedent): the feature's public API (`features/checkout/index.ts`) imports
 // this module, so loading the feature makes the guard + cleanup live — the
 // customer layout's module load (D7) is what registers them in production.
-registerSignOutGuard({ name: "checkout", run: runCheckoutSignOutGuard });
-registerSignOutCleanup({ name: "checkout-cleanup", run: clearCheckoutForSignOut });
+// Their applicability is checked against the captured session role.
+registerSignOutGuard({
+  name: "checkout",
+  appliesTo: ({ role }) => role === "customer",
+  run: runCheckoutSignOutGuard,
+});
+registerSignOutCleanup({
+  name: "checkout-cleanup",
+  appliesTo: ({ role }) => role === "customer",
+  run: clearCheckoutForSignOut,
+});

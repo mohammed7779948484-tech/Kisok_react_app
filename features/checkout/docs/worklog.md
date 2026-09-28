@@ -1648,3 +1648,45 @@ TEST project; Customer@gmail.com). All PASS unless noted:
   5 logical confirmations + 1 same-ID completion (idempotent), zero
   duplicates. One transient get_customer_catalog 401 mid-session (recovered
   by the auth refresh; no user-facing effect, no console error).
+
+## Production maintenance — role-scoped sign-out (2026-09-28)
+
+**CLASSIFY:** `bug`. Checkout's index import registers a global guard while
+only the customer layout mounts RecoveryGate. An admin/preparation session has
+no customer recovery read, so the initial `recordLoaded: false` blocked its
+shared sign-out action. Cart and Checkout cleanup were also registered globally.
+
+**RED:** `corepack pnpm exec jest features/checkout/state/role-scoped-sign-out.test.tsx --runInBand --silent`
+→ 1 failed / 0 passed. Admin UnauthorizedScreen remained visible after Sign
+out and displayed "We're still checking this tablet for an unfinished order
+submission." instead of reaching `signedOut`.
+
+**IMPLEMENT:** `core/auth` captures an immutable session context and both
+registry task lists before running guards; Checkout and Cart register optional
+customer-role predicates. The captured cleanup list runs after the local
+Supabase sign-out even if `SIGNED_OUT` causes route unmount/registration changes.
+Unscoped tasks and direct no-context registry calls keep their prior behavior.
+
+**GREEN / AFFECTED CHECKS:** The new role-scoped lifecycle suite and core
+registry suite passed (23/23). Then auth, Checkout sign-out, Cart sign-out,
+Preparation Workspace, and route/auth guard suites passed (12 suites, 124/124).
+Coverage includes admin/profile-less Unauthorized, Preparation's real Sign out
+button, customer recovery-pending/submitting/held/unsafe refusal, safe customer
+cleanup and marker ordering, task applicability, and a `SIGNED_OUT` cleanup
+registration race. Existing detailed checkout guard and handoff tests remain.
+
+**FULL CHECK:** `PATH=/tmp/kisok-pnpm-bin:$PATH corepack pnpm verify` → exit 0:
+typecheck, lint, format, 103 Jest suites (1493/1493 tests), docs/commit/CI
+script/Android app ID checks and generator smoke passed. The toolchain's
+`db:verify` reported SKIPPED because PostgreSQL 16 is unavailable; this bug
+has no schema change. An initial invocation used the environment's pnpm 11
+wrapper and failed before checks; a second got through 1493 tests but its
+CI-script probe used Corepack outside a project directory. The final command
+used the repository's pnpm 9.12.0 binary for every nested invocation and
+passed the complete script. No repository toolchain/config file was changed.
+
+**DIFF REVIEW:** Checkout's `recordLoaded: false`, unresolved, held and unsafe
+branches remain unchanged. Foundation imports no feature. Both customer-owned
+cleanups skip admin/preparation/profile-less sessions; local Supabase scope,
+marker-before-auth, cleanup-after-auth and emergency namespace reset are
+unchanged. Runtime physical APK validation and PR CI are pending.

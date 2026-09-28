@@ -14,6 +14,7 @@ export type {
   SignOutGuardResult,
   SignOutCleanupTask,
   SignOutOutcome,
+  SignOutContext,
 } from "./sign-out";
 export {
   appRoleSchema,

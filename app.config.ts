@@ -13,7 +13,7 @@ const BUNDLE_ID = "com.kisok.kiosk";
 const config: ExpoConfig = {
   name: "KISOK",
   slug: "kisok",
-  version: "1.1.0",
+  version: "1.1.1",
   orientation: "default",
   icon: "./assets/images/icon.png",
   scheme: "kisok",
@@ -33,8 +33,8 @@ const config: ExpoConfig = {
     // whose versionCode is not greater, so every MDM-delivered release must
     // bump this; the release workflow fails closed when it is absent rather
     // than silently shipping versionCode 1 forever. The last shipped MDM
-    // build (release workflow runs #1 and #3) was versionCode 1 — 2 is next.
-    versionCode: 2,
+    // build was versionCode 2 — 3 is next.
+    versionCode: 3,
   },
   ios: {
     supportsTablet: true,
