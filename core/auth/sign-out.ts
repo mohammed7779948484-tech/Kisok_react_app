@@ -2,6 +2,8 @@ import { toAppError } from "@/core/errors";
 import { createLogger } from "@/core/logging";
 import { clearKisokStorage, storage, storageKey } from "@/core/storage";
 
+import type { AppRole } from "./types";
+
 const log = createLogger("auth.signOut");
 const HANDOFF_MARKER_KEY = storageKey("auth", "handoff-pending");
 const HANDOFF_MARKER_VERSION = 1;
@@ -27,7 +29,19 @@ const HANDOFF_REASON =
  */
 export type SignOutGuardResult = { status: "ok" } | { status: "blocked"; reason: string };
 
-export type SignOutGuard = {
+/** The authenticated identity at the start of one sign-out operation. */
+export type SignOutContext = Readonly<{
+  sessionUserId: string | null;
+  profileId: string | null;
+  role: AppRole | null;
+}>;
+
+type SignOutApplicability = {
+  /** Omitted for tasks that apply to every session. Must only inspect context. */
+  appliesTo?: (context: SignOutContext) => boolean;
+};
+
+export type SignOutGuard = SignOutApplicability & {
   /** Used in logs and in the message shown when sign-out is blocked. */
   name: string;
   run: () => Promise<SignOutGuardResult> | SignOutGuardResult;
@@ -40,7 +54,7 @@ export type SignOutGuard = {
  * the actual Supabase session is already gone (or never existed), so there is
  * nothing left to protect by blocking here.
  */
-export type SignOutCleanupTask = {
+export type SignOutCleanupTask = SignOutApplicability & {
   /** Used in logs when this task's cleanup fails. */
   name: string;
   run: () => Promise<void> | void;
@@ -95,10 +109,14 @@ export function clearSignOutTasks() {
  * Phase 1 — run every registered guard, in registration order, stopping at
  * the first block so no LATER guard and no cleanup task ever runs.
  */
-export async function runSignOutGuards(): Promise<SignOutGuardResult> {
-  for (const guard of guards.values()) {
+async function executeGuards(
+  tasks: readonly SignOutGuard[],
+  context?: SignOutContext,
+): Promise<SignOutGuardResult> {
+  for (const guard of tasks) {
     let result: SignOutGuardResult;
     try {
+      if (context && guard.appliesTo && !guard.appliesTo(context)) continue;
       result = await guard.run();
     } catch (error) {
       log.error("Sign-out guard threw; treating sign-out as blocked", {
@@ -118,14 +136,23 @@ export async function runSignOutGuards(): Promise<SignOutGuardResult> {
   return { status: "ok" };
 }
 
+/** Direct callers without context retain the original all-tasks behavior. */
+export function runSignOutGuards(context?: SignOutContext): Promise<SignOutGuardResult> {
+  return executeGuards([...guards.values()], context);
+}
+
 /**
  * Phase 2 — run every registered cleanup task after the session is gone.
  * Every task gets a chance even if an earlier cleanup fails.
  */
-export async function runSignOutCleanup(): Promise<{ failures: string[] }> {
+async function executeCleanup(
+  tasks: readonly SignOutCleanupTask[],
+  context?: SignOutContext,
+): Promise<{ failures: string[] }> {
   const failures: string[] = [];
-  for (const task of cleanupTasks.values()) {
+  for (const task of tasks) {
     try {
+      if (context && task.appliesTo && !task.appliesTo(context)) continue;
       await task.run();
     } catch (error) {
       failures.push(task.name);
@@ -136,6 +163,22 @@ export async function runSignOutCleanup(): Promise<{ failures: string[] }> {
     }
   }
   return { failures };
+}
+
+/** Direct callers without context retain the original all-tasks behavior. */
+export function runSignOutCleanup(context?: SignOutContext): Promise<{ failures: string[] }> {
+  return executeCleanup([...cleanupTasks.values()], context);
+}
+
+/** Freeze task membership before auth mutation can unmount route modules. */
+export function createSignOutPlan(context: SignOutContext) {
+  const immutableContext = Object.freeze({ ...context });
+  const guardPlan = [...guards.values()];
+  const cleanupPlan = [...cleanupTasks.values()];
+  return {
+    runGuards: () => executeGuards(guardPlan, immutableContext),
+    runCleanup: () => executeCleanup(cleanupPlan, immutableContext),
+  };
 }
 
 function parseHandoffMarker(raw: unknown): true {

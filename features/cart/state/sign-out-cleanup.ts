@@ -88,5 +88,10 @@ export const clearCartForSignOut = async (): Promise<void> => {
 // Registration happens at import (plan decision 10): the feature's public API
 // (`features/cart/index.ts`, T10) imports this module, so loading the feature
 // makes the cleanup live. `clearCartForSignOut` above is exported for its test
-// only — the registration side-effect is this module's public surface.
-registerSignOutCleanup({ name: "cart", run: clearCartForSignOut });
+// only — the registration side-effect is this module's public surface. The
+// cleanup applies only to customer sessions, whose cart it owns.
+registerSignOutCleanup({
+  name: "cart",
+  appliesTo: ({ role }) => role === "customer",
+  run: clearCartForSignOut,
+});

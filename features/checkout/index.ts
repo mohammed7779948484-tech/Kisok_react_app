@@ -18,7 +18,8 @@
 // `state/sign-out-cleanup`, which registers checkout's sign-out guard and
 // destructive cleanup with core/auth's public registry — features register
 // from their own modules, and the layout/route module loads make the
-// registration live (D7: the customer layout imports this entry).
+// registration live (D7: the customer layout imports this entry). The tasks
+// participate only when the sign-out session belongs to a customer.
 import "./state/sign-out-cleanup";
 
 // D7: the session-level recovery composition the customer layout mounts

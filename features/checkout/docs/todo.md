@@ -1,5 +1,18 @@
 # Checkout — execution state
 
+## Production maintenance: role-scoped sign-out (2026-09-28)
+
+- **Mode:** `bug` — regression RED reproduced before the implementation.
+- **Scope:** additive `core/auth` task applicability and captured plan; Checkout
+  guard/cleanup and Cart cleanup restricted to customer sessions; auth and
+  preparation screen regressions. No generator capability applies to an
+  existing sign-out lifecycle fix.
+- **Stage:** local task gate PASS (`pnpm verify` passed; `db:verify` explicitly
+  skipped schema verification because PostgreSQL 16 is unavailable). PR CI,
+  independent review and physical APK validation remain pending. Keep the PR
+  draft until those feature-gate requirements are met.
+- **Evidence:** see the matching maintenance entry in `worklog.md`.
+
 **This file is the working memory.** After a context compaction, an interrupted
 session, or a handoff, this is what tells the next agent exactly where the work
 stopped and what the next legal move is. Keep it current as you go, not at
