@@ -3,8 +3,7 @@ import { useIsFocused } from "@react-navigation/native";
 import { BackHandler, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 
-import { Screen } from "@/components/layout/screen";
-import { Alert, Button, Spinner, Text } from "@/components/ui";
+import { Alert, Button, Screen, Spinner, Text } from "@/design-system";
 import { FullCartScreen, getCartSnapshot, useCart } from "@/features/cart";
 
 import { MAX_NORMALIZED_ITEMS, normalizeCartLines } from "../../model/normalized-request";

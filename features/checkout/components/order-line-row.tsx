@@ -1,7 +1,6 @@
 import { View } from "react-native";
 
-import { AppImage } from "@/components/media/app-image";
-import { Text } from "@/components/ui";
+import { AppImage, cloudinaryImageUrl, Text } from "@/design-system";
 import { cn } from "@/core/utils";
 import { customerLineIdentity, type CartLine } from "@/features/cart";
 
@@ -14,7 +13,7 @@ export function OrderLineRow({ line, className }: OrderLineRowProps) {
     <View className={cn("flex-row items-center gap-4 border-b border-border/70 py-5", className)}>
       <View className="w-16 rounded-lg bg-muted/25 p-2 md:w-20" style={{ aspectRatio: 3 / 4 }}>
         <AppImage
-          uri={line.imageUri}
+          uri={cloudinaryImageUrl(line.imageUri, "packshot")}
           alt={line.productDisplayName}
           contentFit="contain"
           className="h-full w-full"

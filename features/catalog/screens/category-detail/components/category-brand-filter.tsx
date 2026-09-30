@@ -1,6 +1,6 @@
 import { ScrollView, View } from "react-native";
 
-import { Text, ToggleGroup, ToggleGroupItem } from "@/components/ui";
+import { Text, ToggleGroup, ToggleGroupItem } from "@/design-system";
 import { cn } from "@/core/utils";
 
 export type CategoryBrandFilterOption = {
@@ -35,7 +35,7 @@ export function CategoryBrandFilter({
 
   return (
     <View className={cn("gap-2", className)}>
-      <Text variant="caption" tone="muted" className="font-semibold">
+      <Text variant="caption" tone="muted" className="font-sans-semibold">
         Filter by brand
       </Text>
       <ScrollView
@@ -56,7 +56,7 @@ export function CategoryBrandFilter({
             accessibilityLabel="All Brands"
             className="h-touch px-4 py-2"
           >
-            <Text variant="caption" className="font-medium">
+            <Text variant="caption" className="font-sans-medium">
               All Brands
             </Text>
           </ToggleGroupItem>
@@ -68,7 +68,7 @@ export function CategoryBrandFilter({
               accessibilityLabel={option.name}
               className="h-touch px-4 py-2"
             >
-              <Text variant="caption" className="font-medium">
+              <Text variant="caption" className="font-sans-medium">
                 {option.name}
               </Text>
             </ToggleGroupItem>

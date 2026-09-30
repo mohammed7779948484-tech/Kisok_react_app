@@ -1,6 +1,6 @@
 import { View } from "react-native";
 
-import { Text } from "@/components/ui";
+import { Text } from "@/design-system";
 import { customerLineIdentity, type CartLine } from "@/features/cart";
 
 import type { StockConflictItem } from "../state/attempt-store";

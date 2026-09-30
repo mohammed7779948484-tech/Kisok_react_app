@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppState, View, type AppStateStatus } from "react-native";
 
-import { Progress } from "@/components/ui/progress";
-import { Text } from "@/components/ui/text";
+import { Progress, Text } from "@/design-system";
 
 /**
  * The Order Success inactivity countdown (T11, plan D10 — deadline-based).
