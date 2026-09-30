@@ -1,45 +1,51 @@
+import type { ReactNode } from "react";
 import { View } from "react-native";
 
-import { AppImage } from "@/components/media/app-image";
-import { Text } from "@/components/ui";
+import { MediaFrame, Text } from "@/design-system";
 import { cn } from "@/core/utils";
 import { customerLineIdentity, type CartLine } from "@/features/cart";
 
-export type OrderLineRowProps = { line: CartLine; className?: string };
+export type OrderLineRowProps = {
+  line: CartLine;
+  /** Replaces the quantity figure on the right, e.g. a requested/available pair. */
+  trailing?: ReactNode;
+  className?: string;
+};
 
-/** Immutable submitted snapshot, using the same merchandising identity as Cart. */
-export function OrderLineRow({ line, className }: OrderLineRowProps) {
+/** One submitted line — read-only, with the same identity the cart shows. */
+export function OrderLineRow({ line, trailing, className }: OrderLineRowProps) {
   const { title, caption } = customerLineIdentity(line);
   return (
-    <View className={cn("flex-row items-center gap-4 border-b border-border/70 py-5", className)}>
-      <View className="w-16 rounded-lg bg-muted/25 p-2 md:w-20" style={{ aspectRatio: 3 / 4 }}>
-        <AppImage
-          uri={line.imageUri}
-          alt={line.productDisplayName}
-          contentFit="contain"
-          className="h-full w-full"
-        />
-      </View>
-      <View className="min-w-0 flex-1 gap-2">
-        <Text variant="h3">{title}</Text>
+    <View className={cn("flex-row items-center gap-4 py-3", className)}>
+      <MediaFrame
+        source={line.imageUri}
+        alt=""
+        fit="contain"
+        preset="row"
+        inset={3}
+        tint="paper"
+        fallbackLabel={line.productDisplayName}
+        className="h-16 w-16 rounded-xl border border-border/60"
+      />
+      <View className="min-w-0 flex-1 gap-0.5">
+        <Text variant="title" numberOfLines={2}>
+          {title}
+        </Text>
         {caption ? (
-          <Text variant="caption" tone="muted">
+          <Text variant="meta" tone="muted" numberOfLines={1}>
             {caption}
           </Text>
         ) : null}
       </View>
-      <View className="min-w-16 items-center px-3 py-2">
-        <Text variant="caption" tone="muted">
-          Qty
-        </Text>
-        <Text
-          variant="h3"
-          className="tabular-nums"
-          accessibilityLabel={`Quantity: ${line.quantity}`}
+      {trailing ?? (
+        <View
+          accessible
+          accessibilityLabel={`Quantity ${line.quantity}`}
+          className="min-w-12 items-center rounded-full bg-secondary px-3 py-1.5"
         >
-          {line.quantity}
-        </Text>
-      </View>
+          <Text className="font-sans-bold text-body tabular-nums">{`×${line.quantity}`}</Text>
+        </View>
+      )}
     </View>
   );
 }

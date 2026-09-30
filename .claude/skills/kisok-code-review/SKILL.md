@@ -64,19 +64,20 @@ rule — check for suppressions:
 
 - Nothing async inside an `onAuthStateChange` callback — it runs while Supabase
   holds its auth lock and can deadlock the app.
-- Is `signOut`'s outcome handled? `void signOut()` discards blocked/failed/unsafe
-  handoff outcomes. Use `useSignOutAction`.
-- Is the sign-out safety gate intact? Nothing may clear pending checkout
-  recovery state before every pre-sign-out guard allows it.
-- If auth is gone but local cleanup fails, does durable kiosk handoff remain
-  fail-closed so the next customer cannot inherit stale cart/checkout state?
+- Is `signOut`'s outcome handled? `void signOut()` discards a failed sign-out.
+  Use `useSignOutAction`.
+- Is customer isolation intact? Every persisted customer record carries its
+  owner, and a restore for another profile must start empty and discard it.
+- Checkout: is the pending request (same `client_request_id`, same items)
+  saved before the first `create_order` and kept on an ambiguous result?
 
 ### State ownership
 
 - Server data belongs in TanStack Query; client-owned state in Zustand. Server
   data copied into a store goes stale and is a common source of subtle bugs.
-- Are persistence failures surfaced rather than swallowed? Telling a customer
-  their cart is saved when it is not is a correctness bug on a shared kiosk.
+- Are persistence failures handled with the cheapest honest response — a
+  non-blocking note for the cart, refusing to send for checkout — rather than
+  swallowed or promoted into lifecycle states?
 - Realtime is an **invalidation signal**. Rendering from a Realtime payload
   bypasses RLS-shaped reads and is a finding.
 

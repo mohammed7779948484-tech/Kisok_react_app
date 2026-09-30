@@ -1,100 +1,120 @@
 import { memo, useCallback } from "react";
 import { Pressable, View } from "react-native";
 
-import { AppImage } from "@/components/media/app-image";
-import { AspectRatio, Card, Text } from "@/components/ui";
+import { ArrowDisc, MediaFrame, Text } from "@/design-system";
 import { cn } from "@/core/utils";
 
-import { formatProductOptionCount } from "../model/discovery-presentation";
 import type { CatalogProductView } from "../model/catalog-view";
+import {
+  optionCountLabel,
+  optionTypeSummary,
+  productAvailabilityLabel,
+} from "../model/product-summary";
+import type { SearchMatchReason } from "../model/search-match";
 import { AvailabilityBadge } from "./availability-badge";
+
+/** Product media is square and contained: packaging is never cropped to fill. */
+const MEDIA_RATIO = { aspectRatio: 1 };
 
 export type ProductCardProps = {
   product: CatalogProductView;
   onPress: (product: CatalogProductView) => void;
+  /** Search results say why a product matched when it was not by name. */
+  matchReason?: SearchMatchReason | null;
   className?: string;
 };
 
+/**
+ * One card per product — never one per variant. Packaging is `contain`ed on a
+ * stable tint; the footer carries the brand, availability, name and the
+ * choices the product offers.
+ */
 export const ProductCard = memo(function ProductCard({
   product,
   onPress,
+  matchReason,
   className,
 }: ProductCardProps) {
   const handlePress = useCallback(() => {
     onPress(product);
   }, [onPress, product]);
 
-  const optionCount = formatProductOptionCount(product);
-  const availabilityText = product.isAvailable
-    ? product.variants.length <= 1
-      ? "Available"
-      : "Options available"
-    : "Currently unavailable";
   const brandName = product.brand?.name;
+  const availabilityText = productAvailabilityLabel(product);
+  const typeSummary = optionTypeSummary(product);
+  const hasChoices = product.variants.length > 1;
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${product.name}${brandName ? `, by ${brandName}` : ""}, ${availabilityText}`}
       onPress={handlePress}
-      className="h-full active:scale-[0.985]"
+      className={cn(
+        "h-full overflow-hidden rounded-xl border border-border bg-card active:opacity-90",
+        className,
+      )}
     >
-      <Card
-        className={cn(
-          "h-full overflow-hidden border-border bg-card shadow-none transition-shadow",
-          className,
-        )}
-      >
-        {/* Packaging-friendly portrait presentation */}
-        <AspectRatio ratio={3 / 4} className="w-full bg-muted/25 p-3">
-          <AppImage
-            uri={product.coverMedia?.secureUrl ?? null}
-            alt={product.name}
-            contentFit="contain"
-            className="h-full w-full"
-          />
-        </AspectRatio>
+      <MediaFrame
+        source={product.coverMedia}
+        alt=""
+        fit="contain"
+        preset="card"
+        inset={4}
+        tint="paper"
+        fallbackLabel={product.name}
+        recyclingKey={product.id}
+        className="w-full"
+        style={MEDIA_RATIO}
+      />
 
-        {/* Content area with stable reserved slots for aligned grid rhythm */}
-        <View className="flex-1 justify-between gap-3 p-4">
-          <View className="gap-1">
-            {/* Stable brand/context slot (h-5 preserves grid alignment even when unbranded) */}
-            <View className="h-5 justify-center">
-              {brandName ? (
-                <Text variant="caption" tone="muted" numberOfLines={1}>
-                  {brandName}
+      <View className="flex-1 gap-1.5 px-4 pb-4 pt-3.5">
+        <View className="h-5 flex-row items-center justify-between gap-2">
+          <Text
+            numberOfLines={1}
+            className="min-w-0 shrink font-sans-extrabold text-eyebrow uppercase tracking-[1.4px] text-muted-foreground"
+          >
+            {brandName ?? ""}
+          </Text>
+          <AvailabilityBadge
+            type="product"
+            isAvailable={product.isAvailable}
+            variantCount={product.variants.length}
+            aria-hidden
+          />
+        </View>
+
+        <View className="flex-1 flex-row items-end justify-between gap-3">
+          <View className="min-w-0 flex-1 gap-1">
+            <Text
+              numberOfLines={2}
+              className="font-sans-bold text-title-lg leading-[26px] tracking-[-0.3px]"
+            >
+              {product.name}
+            </Text>
+            {matchReason ? (
+              <View className="flex-row items-baseline gap-2">
+                <Text className="font-sans-extrabold text-eyebrow uppercase tracking-[1.2px] text-muted-foreground">
+                  Matched
+                </Text>
+                <Text numberOfLines={1} className="shrink font-sans-bold text-caption text-primary">
+                  {matchReason.field} · {matchReason.value}
+                </Text>
+              </View>
+            ) : null}
+            <View className="flex-row items-baseline gap-2">
+              <Text className="shrink-0 font-sans-bold text-caption text-foreground/80">
+                {hasChoices ? optionCountLabel(product) : "Single option"}
+              </Text>
+              {typeSummary ? (
+                <Text numberOfLines={1} className="shrink text-caption text-muted-foreground">
+                  {typeSummary}
                 </Text>
               ) : null}
             </View>
-
-            {/* Stable two-line title slot */}
-            <View className="h-11 justify-start">
-              <Text
-                variant="h3"
-                role={undefined}
-                aria-level={undefined}
-                numberOfLines={2}
-                className="font-semibold leading-tight"
-              >
-                {product.name}
-              </Text>
-            </View>
           </View>
-
-          <View className="h-7 flex-row items-center justify-between gap-2">
-            <AvailabilityBadge
-              type="product"
-              isAvailable={product.isAvailable}
-              variantCount={product.variants.length}
-            />
-            {optionCount ? (
-              <Text variant="caption" tone="muted" className="font-medium">
-                {optionCount}
-              </Text>
-            ) : null}
-          </View>
+          <ArrowDisc tone="tonal" size={34} />
         </View>
-      </Card>
+      </View>
     </Pressable>
   );
 });

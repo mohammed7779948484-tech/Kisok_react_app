@@ -14,17 +14,17 @@ primitive in every state, and it is faster than reading the source.
 
 ## What already exists
 
-| Where                   | What                                                                                                                    |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `@/components/ui`       | `Button` `Text` `Card` `Input` `Badge` `Alert` `Dialog` `Tabs` `Progress` `Separator` `Skeleton` `Icon` `AdaptiveSheet` |
-| `@/components/feedback` | `LoadingState` `EmptyState` `ErrorState` `SkeletonList` `ConfirmDialog` `BlockingOverlay` `OfflineNotice`               |
-| `@/components/layout`   | `Screen` — safe-area aware page wrapper                                                                                 |
-| `@/components/media`    | `AppImage`                                                                                                              |
-| `@/core/responsive`     | `useLayout` `useResponsiveValue` `BREAKPOINTS` `CONTENT_MAX_WIDTH`                                                      |
+| Where                 | What                                                                                                                    |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `@/design-system`     | `Button` `Text` `Card` `Input` `Badge` `Alert` `Dialog` `Tabs` `Progress` `Separator` `Skeleton` `Icon` `AdaptiveSheet` |
+| `@/design-system`     | `LoadingState` `EmptyState` `ErrorState` `SkeletonList` `ConfirmDialog` `BlockingOverlay` `OfflineNotice`               |
+| `@/components/layout` | `Screen` — safe-area aware page wrapper                                                                                 |
+| `@/components/media`  | `AppImage`                                                                                                              |
+| `@/design-system`     | `useLayout` `useResponsiveValue` `BREAKPOINTS` `CONTENT_MAX_WIDTH`                                                      |
 
 ## Colour and spacing come from tokens
 
-Semantic tokens are HSL CSS variables in `global.css`, surfaced through Tailwind:
+Semantic tokens are HSL CSS variables in `design-system/theme/global.css`, surfaced through Tailwind:
 `background` `foreground` `card` `primary` `secondary` `muted` `accent`
 `destructive` `success` `warning` `border` `input` `ring`.
 
@@ -38,7 +38,7 @@ Name the **role**, not the colour: `text-destructive`, not `text-red-600`. A raw
 hex value or an inline dimension that should be a token is a review finding — it
 silently opts that element out of theming and out of every future adjustment.
 
-Need a colour that does not exist? Add the token to `global.css` and
+Need a colour that does not exist? Add the token to `design-system/theme/global.css` and
 `tailwind.config.js` first, then use it. Do not inline it "just here".
 
 ## Where UI belongs

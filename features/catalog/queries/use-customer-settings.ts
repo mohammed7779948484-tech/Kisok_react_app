@@ -34,7 +34,7 @@ function selectCustomerCatalogSettings(snapshot: CatalogSnapshot): CustomerCatal
  * This is the settings seam of checkout plan D6 (`features/checkout/docs/plan.md`):
  * same `catalogKeys.all` key and same `fetchCatalog` queryFn as `useCatalog()`,
  * so TanStack dedupes the two observers — mounting this next to the catalog
- * screens fires NO second `get_customer_catalog()` RPC and the cache stays the
+ * screens fires NO second `get_customer_catalog_v2()` RPC and the cache stays the
  * single server-state truth (one raw snapshot under one key). A separate
  * `useQuery` (rather than deriving from `useCatalog()`) keeps this hook's
  * re-renders scoped to the settings object instead of any `CatalogView` change.

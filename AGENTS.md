@@ -121,7 +121,7 @@ failure, and the fix is to move the code — not to add a disable comment.
    imports.
 4. **Server state lives in TanStack Query. Client state lives in Zustand.**
    Never mirror database data into a store.
-5. **The foundation never depends on a feature.** `core/` and `components/` are
+5. **The foundation never depends on a feature.** `core/`, `design-system/` and `components/` are
    blocked from importing `@/features/*` at all. Dependencies point one way.
 6. **Legacy stacks stay gone.** tRPC, Drizzle, MySQL, Express, and axios are
    blocked at the lint level.
@@ -213,7 +213,7 @@ directly** — everything comes through `get_customer_catalog()`.
 
 ## 6. UI and design system
 
-- Compose from `@/components/ui` and `@/components/feedback`. Do not build a
+- Compose from `@/design-system` and `@/design-system`. Do not build a
   one-off button, card, or dialog.
 - Use **semantic token classes** (`bg-primary`, `text-muted-foreground`,
   `border-border`). Never a raw hex value or an arbitrary pixel dimension that
@@ -297,7 +297,7 @@ Generator reference: [`docs/generator.md`](./docs/generator.md).
 
 ### Changing the architecture
 
-The foundation is shared. If you believe a `core/`, `components/`, or config
+The foundation is shared. If you believe a `core/`, `design-system/`, `components/`, or config
 change is genuinely needed:
 
 1. Confirm it cannot live inside your feature.

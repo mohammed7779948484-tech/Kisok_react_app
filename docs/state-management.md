@@ -62,37 +62,53 @@ smaller edit than adding it correctly.
 
 Zustand, writing through `@/core/storage`.
 
-**Why not zustand's `persist` middleware:** it gives no way to observe a failed
-write. For KISOK that is a correctness problem, not a nuisance — telling a
-customer their cart is saved when the write failed is exactly the kind of lie the
-Flutter app went out of its way to avoid. `@/core/storage` returns a result:
+**Why not zustand's `persist` middleware:** a store sometimes has to act on a
+failed write, and `persist` hides it. `@/core/storage` returns a result:
 
 ```ts
 const result = await storage.write(key, value);
 // { status: "persisted" } | { status: "rejected", error }
 ```
 
-So a store can hold an honest `persistence` status and the UI can say so. The
-generated `state/` template shows the pattern, and distinguishes two DIFFERENT
-failures rather than collapsing them into one `memoryOnly`:
+What a failure means is the store's decision, and it should be the cheapest
+honest response:
 
-- `memoryOnly` — the current value only exists in memory; a plain write failed.
-  Worth a small warning ("your changes may not be saved"), nothing more.
-- `clearFailed` — a durable **clear** could not remove the previous value from
-  disk, even after the template's own fallback (overwriting the key with an
-  explicit empty value) also failed. On a shared kiosk this is a safety bug,
-  not a nuisance: the NEXT customer's cold start could read the previous
-  customer's data straight back. Never report this as `memoryOnly` — that
-  status undersells what actually happened.
+- **Cart** — a failed save is a small, non-blocking note ("this change may not
+  survive a restart"). The cart keeps working in memory.
+- **Checkout** — a pending order that cannot be saved is **not sent**: without
+  the saved request id a lost response could not be retried safely.
+
+One serialized queue per store keeps writes in order. Do not build lifecycle
+states around storage details; a record that cannot be read is discarded,
+logged, and the experience starts clean.
 
 Storage is AsyncStorage-backed: it works unchanged on Android and, via
 localStorage, on the web dev preview. See
 [adr/0003-client-state.md](./adr/0003-client-state.md) for why not MMKV.
 
 Namespace keys with `storageKey("cart", "lines")` → `kisok:cart:lines`.
-`core/auth` reserves another namespaced key for the durable kiosk-handoff marker.
-The emergency handoff fallback removes **only** `kisok:*` keys; it never clears
-unrelated browser/device storage.
+
+### Customer isolation
+
+Every persisted customer record carries its `ownerId`. Restoring for a
+different profile starts empty and removes the other customer's record, so
+one customer's cart or order never reaches another — without any sign-out
+cleanup. The customer UI has no sign-out; preparation and unauthorized
+accounts own no local state.
+
+### Checkout's duplicate-order guarantee
+
+The one client-side guarantee checkout must keep, end to end:
+
+1. a new order gets a fresh `client_request_id`;
+2. the id and the exact items are saved **before** the first `create_order`;
+3. an ambiguous result (network, unknown, malformed response) keeps them;
+4. every retry — including after a restart — re-sends the same id and items;
+   `create_order` deduplicates server-side;
+5. the cart is cleared only after the server confirms the order.
+
+The saved record is only ever `null`, `pending` or `confirmed`. A definite
+answer (success, stock conflict, error) replaces or removes it.
 
 ## Errors
 
@@ -144,109 +160,13 @@ log.warn("Cart saved in memory only", { reason: result.error.message });
 **Never log a token, password, or key** — and do not defeat redaction by
 stringifying an object before passing it.
 
-## The sign-out and kiosk-handoff lifecycle
+## Sign-out
 
-Authentication and **device handoff** are related but not identical. A Supabase
-session can be gone while stale customer-owned state still exists on disk. KISOK
-must prove both before the tablet is considered safe for the next customer.
+`useAuth().signOut()` signs out **this device** (`scope: "local"`; a store
+account is shared by several tablets), then clears the query cache so the
+next account cannot read the previous session's data. If Supabase reports an
+error, `core/auth` checks whether the local session actually remains and
+never reports success while it may still be usable.
 
-### Phase 1 — guards: decide, do not mutate
-
-Applicable registered guards are side-effect-free and run before auth or local
-feature state is touched. Auth captures the session's profile ID, role and user
-ID when sign-out begins. An optional `appliesTo` predicate scopes a feature's
-tasks; tasks without it continue to apply to every session. Any applicable
-guard can veto the whole sign-out:
-
-```ts
-registerSignOutGuard({
-  name: "checkout",
-  appliesTo: ({ role }) => role === "customer",
-  run: () =>
-    hasUnresolvedAttempt()
-      ? { status: "blocked", reason: "An order submission is still unresolved." }
-      : { status: "ok" },
-});
-```
-
-This encodes a hard KISOK invariant: wiping the cart and its idempotency metadata
-while a submission's outcome is unknown could produce a duplicate order. A guard
-that throws is treated exactly like `blocked` — uncertainty is never permission
-to destroy recovery state.
-
-Checkout and Cart own customer state, so their guard and cleanup tasks apply
-only to customer sessions. An admin or profile-less unauthorized account, and
-a preparation employee, can sign out even if customer recovery has not run.
-For an active customer, `recordLoaded === false` remains blocked until durable
-recovery establishes the truth. Direct registry test calls without context
-retain the original all-tasks behavior; the AuthProvider always supplies context.
-
-The checkout guard's blocked set was extended in the R5 remediation round
-(findings F-01/F-04/F-05): beyond an unresolved record or a live submission, it
-now also blocks while the session's first durable recovery read is still pending
-(disk may hold an attempt this session has never seen — approving would let the
-sign-out wipe destroy its idempotency identity), while a K1003 hold owns the
-session (a held record or phase `held`), and while an unsafe-recovery hold owns
-it (phase `unsafe-recovery`). The recovery-pending case surfaces its own reason
-text ("We're still checking this tablet for an unfinished order submission.");
-the unresolved-family reason above is unchanged contract.
-
-### Handoff marker — durable before auth is removed
-
-After all guards pass, `core/auth` writes a durable `kisok:auth:*` handoff marker
-**before** calling Supabase sign-out. If that marker cannot be persisted, sign-out
-stops while the current session is still intact. This prevents a cold restart
-from forgetting that customer cleanup still needs to happen.
-
-### Phase 2 — local Supabase sign-out
-
-Supabase sign-out uses `scope: "local"`; a store account can be used by several
-tablets, so one kiosk must not revoke every other tablet's refresh token. If the
-call errors, `core/auth` checks whether the local session actually remains. It
-never reports a successful auth sign-out while the stored session may still be
-usable.
-
-### Phase 3 — feature cleanup, then prove safe handoff
-
-Only after the auth session is gone do applicable destructive feature cleanup
-tasks run. The guard/cleanup plan is captured before the auth mutation, so a
-route unmount caused by `SIGNED_OUT` cannot remove a pending cleanup:
-
-```ts
-registerSignOutCleanup({
-  name: "cart",
-  appliesTo: ({ role }) => role === "customer",
-  run: () => clearCart(),
-});
-```
-
-Every cleanup task gets a chance even if another one fails. Then:
-
-- if every cleanup succeeds, the durable handoff marker is removed;
-- if any cleanup fails, `core/auth` performs an emergency reset of all KISOK-owned
-  `kisok:*` storage keys;
-- if that reset succeeds, the tablet is safe even though one feature cleanup had
-  failed;
-- if the reset cannot be proven, sign-out returns `unsafe`, the durable marker
-  remains, and the next sign-in is blocked.
-
-`useSignOutAction()` surfaces `blocked`, `failed`, and `unsafe`; do not discard the
-outcome with `void signOut()`.
-
-### Cold restart recovery
-
-The handoff marker survives process death. On startup with an existing session,
-`AuthProvider` recovers a pending marker **before** resolving the profile and
-making the experience `ready`. On a signed-out screen, `signIn()` performs the
-same recovery before calling `signInWithPassword`. If recovery cannot clear the
-KISOK namespace, the tablet fails closed rather than exposing stale state.
-
-### Never combine guards and cleanup
-
-A function that both checks a condition and performs cleanup makes safety depend
-on registration order: an earlier task could destroy state before a later guard
-blocks. Register the guard and cleanup separately — even under the same `name`,
-because they live in different registries.
-
-Features register their own guards and cleanup from their own modules — there is
-no central list to edit.
+`useSignOutAction()` surfaces a failure; do not discard the outcome with
+`void signOut()`.

@@ -15,6 +15,9 @@
  * `useCustomerCatalogSettings` (checkout plan D6) is the narrow settings read
  * over the existing catalog query cache — the Checkout success countdown
  * reads the cached `customer_success_reset_seconds` with no second fetch.
+ *
+ * `useInvalidateCatalog` lets Checkout mark the snapshot stale after an order,
+ * so the stock it shows (`available_quantity`) is refetched.
  */
 export { CatalogHomeScreen } from "./screens/catalog-home/catalog-home-screen";
 export { ProductsScreen } from "./screens/products/products-screen";
@@ -25,3 +28,4 @@ export { CategoriesScreen } from "./screens/categories/categories-screen";
 export { CategoryDetailScreen } from "./screens/category-detail/category-detail-screen";
 export { ProductDetailScreen } from "./screens/product-detail/product-detail-screen";
 export { useCustomerCatalogSettings } from "./queries/use-customer-settings";
+export { useInvalidateCatalog } from "./queries/use-invalidate-catalog";

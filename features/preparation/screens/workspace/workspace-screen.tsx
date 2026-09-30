@@ -1,133 +1,106 @@
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ScrollView, View } from "react-native";
-import { useQueryClient } from "@tanstack/react-query";
-import { Check, Circle, CircleDot, History, LogOut, RefreshCw } from "lucide-react-native";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Pressable, View } from "react-native";
+import { Coffee } from "lucide-react-native";
 
-import { EmptyState, ErrorState, InlineError, SkeletonList } from "@/components/feedback";
-import { Screen } from "@/components/layout/screen";
-import { Button, Icon, Tabs, TabsContent, TabsList, TabsTrigger, Text } from "@/components/ui";
+import {
+  ErrorState,
+  Icon,
+  InlineError,
+  Screen,
+  SkeletonGrid,
+  Text,
+  useLayout,
+  usePageGutter,
+} from "@/design-system";
 import { useAuth, useSignOutAction } from "@/core/auth";
-import { useLayout } from "@/core/responsive";
+import { cn } from "@/core/utils";
 
 import type { ActiveOrderRow } from "../../api/fetch-active-orders";
-import { CancelOrderDialog } from "../../components/cancel-order-dialog";
-import { orderStatusLabel } from "../../components/order-status-badge";
+import { OrderFocus } from "../../components/order-focus";
+import { OrderTicket } from "../../components/order-ticket";
+import { STATUS_META } from "../../components/order-status-badge";
+import { useNow } from "../../components/use-now";
+import { useOrderActions } from "../../components/use-order-actions";
 import { formatCreatedAt } from "../../model/order-display";
 import { effectiveTimezone, resolveStoreTimezone } from "../../model/store-day";
-import { preparationKeys } from "../../queries/keys";
 import { useActiveOrders } from "../../queries/use-active-orders";
 import { useOrdersRealtime } from "../../queries/use-orders-realtime";
 import { useStoreSettings } from "../../queries/use-store-settings";
-import { useUpdateOrderStatusMutation } from "../../queries/use-update-order-status-mutation";
+import { LANE_COPY, StatusLane, type LaneStatus } from "./components/status-lane";
+import { WorkspaceHeader } from "./components/workspace-header";
 
-import {
-  BoardSection,
-  type BoardSectionActionError,
-  type BoardSectionEntry,
-} from "./components/board-section";
+const LANES: LaneStatus[] = ["new", "preparing", "ready"];
 
-/**
- * The Preparation Workspace (AC-01/02/04/05/10): the operational board of
- * active orders grouped New / Preparing / Ready, each group with its count —
- * three columns on an expanded (landscape tablet) layout, three tabs on
- * compact/medium (plan decision 11, the ui-lab precedent). It owns the two
- * reads (`useActiveOrders`, `useStoreSettings`), the ONE transition mutation
- * (start preparing / mark ready / cancel — all through
- * `useUpdateOrderStatusMutation`), the cancel dialog's open state, and the
- * per-card in-flight + rejection feedback (decision 5: per-card, never a
- * screen-wide BlockingOverlay).
- *
- * The mutation hook invalidates the feature's queries on SUCCESS only
- * (T05-R02), so THIS screen owns the rejected-transition refresh: onError
- * renders the failure beside the card that fired it and invalidates, so the
- * refetched board shows the server's unchanged truth — a transition is never
- * fabricated locally or silently swallowed (AC-10). A rejected cancel closes
- * the dialog first (T10-R01): feedback behind an open modal is invisible.
- *
- * The rejection feedback always renders SOMEWHERE the employee can see
- * (R2-01): normally beside the card that fired it, but two reachable states
- * hide that card — the rejected order can DEPART the active board under the
- * rejection refetch (a colleague's cancel landed first), or on the tab layout
- * it can move into a group whose TabsContent is not mounted (a claim race
- * pushing it to a hidden Preparing tab). When the errored order is not among
- * the VISIBLE cards, the feedback falls back to the screen body beside the
- * board instead of rendering nowhere — a failure that looks like success is
- * the one outcome AC-10 forbids.
- *
- * Time display is store-timezone (decision 8): the settings read degrades
- * silently to the device timezone when the row is absent or the read fails —
- * the operational board never fails on it. Cards show the created time, not a
- * ticking timer (decision 10), and new-order arrivals are announced through a
- * polite live region (decision 9) — no toast, no sound. The workspace also
- * carries the sign-out affordance, a manual refresh (the behaviour
- * research's refresh affordance; the same created-time policy as decision
- * 10), and the History affordance (AC-08: the store-day history screen is
- * reached from here).
- *
- * While this screen is mounted it holds the orders Realtime subscription
- * (AC-09, `useOrdersRealtime`): an `orders` change is an INVALIDATION signal
- * only — the hook invalidates the feature's queries and the refetched query
- * result is what re-renders the board. Nothing here reads a Realtime payload.
- */
-const BOARD_STATUSES = ["new", "preparing", "ready"] as const;
-
-const BOARD_STATUS_ICON = {
-  new: Circle,
-  preparing: CircleDot,
-  ready: Check,
-} as const;
-
-type BoardStatus = (typeof BOARD_STATUSES)[number];
-
-type BoardAction = NonNullable<BoardSectionEntry["pendingAction"]>;
-
-/** The in-flight card action for the transition the RPC is running. */
-const PENDING_ACTION_BY_TARGET: Record<"preparing" | "ready" | "cancelled", BoardAction> = {
-  preparing: "startPreparing",
-  ready: "markReady",
-  cancelled: "cancel",
-};
-
-/**
- * How long an arrival announcement stays on screen (T11-R02): long enough to
- * read, short enough that an all-shift board never accumulates stale captions.
- */
+/** How long an arrival announcement stays on screen. */
 export const ANNOUNCEMENT_CLEAR_MILLIS = 6000;
 
+const FOCUS_WIDTH = 420;
+
+/** Oldest first within a lane: the order that has waited longest is the one to act on. */
+function laneOrder(status: LaneStatus, orders: ActiveOrderRow[]) {
+  const key = (order: ActiveOrderRow) =>
+    Date.parse(status === "new" ? order.created_at : order.updated_at);
+  return orders.filter((order) => order.status === status).sort((a, b) => key(a) - key(b));
+}
+
+/**
+ * The Preparation workspace: a live operational board.
+ *
+ * - Three status lanes — Incoming, In preparation, Ready for pickup — each
+ *   oldest-first, with the next step right on every ticket.
+ * - On a wide landscape tablet, tapping a ticket opens it in a focus panel
+ *   beside the board, so the whole shift stays in view while one order is
+ *   handled; narrower screens open the order full screen.
+ * - Portrait and narrow screens switch lanes with a segmented control.
+ *
+ * Several employees work the same board. Every transition is decided by the
+ * server (`update_order_status`); Realtime changes to `orders` refresh the
+ * board, and a rejected action is explained beside its order while the board
+ * refreshes to the truth.
+ */
 export function WorkspaceScreen() {
   const { profile } = useAuth();
-  // Decision 3: the assignment comparison is by id, never names. The route
-  // gate guarantees a resolved preparation profile here; the fallback simply
-  // never matches an assignment, which degrades safe (no Mark Ready offered).
   const actorPreparationId = profile?.id ?? "";
   const router = useRouter();
-  const queryClient = useQueryClient();
-  const { isExpanded } = useLayout();
+  const { width, isLandscape } = useLayout();
+  const gutter = usePageGutter();
   const signOut = useSignOutAction();
+  const now = useNow();
 
   const activeOrders = useActiveOrders();
   const storeSettings = useStoreSettings();
-  const mutation = useUpdateOrderStatusMutation();
-
-  // AC-09: while this screen is mounted, `orders` changes arrive as Realtime
-  // events whose ONLY job is to invalidate the feature's queries — the
-  // refetched query result is the rendered truth, never the payload. The hook
-  // owns the channel's lifecycle (one channel, removed on unmount).
+  const actions = useOrderActions();
   useOrdersRealtime();
 
-  const [selectedTab, setSelectedTab] = useState<BoardStatus>("new");
-  const [cancelTarget, setCancelTarget] = useState<ActiveOrderRow | null>(null);
-  const [actionError, setActionError] = useState<BoardSectionActionError | null>(null);
+  const canvas = isLandscape && width >= 1100;
+  const lanesSideBySide = isLandscape && width >= 900;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [tab, setTab] = useState<LaneStatus>("new");
   const [announcement, setAnnouncement] = useState<string | null>(null);
   const seenOrderIds = useRef<Set<string> | null>(null);
 
-  // Decision 9: announce new-order arrivals politely. The board's first
-  // population is not an arrival — only orders that APPEAR after the first
-  // read are (a colleague's action moving an order does not re-announce it:
-  // the id was already seen).
+  const timezone = effectiveTimezone(resolveStoreTimezone(storeSettings.data ?? null));
+  const orders = activeOrders.data;
+  const lanes = useMemo(
+    () =>
+      Object.fromEntries(
+        LANES.map((status) => [status, laneOrder(status, orders ?? [])]),
+      ) as Record<LaneStatus, ActiveOrderRow[]>,
+    [orders],
+  );
+  const counts = {
+    new: lanes.new.length,
+    preparing: lanes.preparing.length,
+    ready: lanes.ready.length,
+  };
+  const total = counts.new + counts.preparing + counts.ready;
+  const mine = (orders ?? []).filter(
+    (order) => order.status === "preparing" && order.assigned_preparation_id === actorPreparationId,
+  ).length;
+
+  // Announce arrivals politely (no sound, no toast).
   useEffect(() => {
-    const orders = activeOrders.data;
     if (orders === undefined) return;
     const currentIds = new Set(orders.map((order) => order.id));
     const previousIds = seenOrderIds.current;
@@ -135,254 +108,204 @@ export function WorkspaceScreen() {
     if (previousIds === null) return;
     const arrivals = orders.filter((order) => !previousIds.has(order.id));
     if (arrivals.length === 0) return;
-    const [firstArrival] = arrivals;
+    const [first] = arrivals;
     setAnnouncement(
-      firstArrival !== undefined && arrivals.length === 1
-        ? `New order ${firstArrival.display_number}`
+      first !== undefined && arrivals.length === 1
+        ? `New order ${first.display_number}`
         : `${arrivals.length} new orders`,
     );
-  }, [activeOrders.data]);
+  }, [orders]);
 
-  // T11-R02: the caption is transient — cleared after a short delay, so an
-  // all-shift board never keeps a stale arrival announcement on screen until
-  // the NEXT arrival. A newer arrival with a DIFFERENT caption replaces it
-  // and restarts the timer (the effect re-runs on the new value); React's
-  // same-value setState bailout means an identical caption string keeps the
-  // existing window (T12-R01 — accepted, benign). Unmount always clears it.
   useEffect(() => {
     if (announcement === null) return;
     const timeout = setTimeout(() => setAnnouncement(null), ANNOUNCEMENT_CLEAR_MILLIS);
     return () => clearTimeout(timeout);
   }, [announcement]);
 
-  // Decision 8: prefer the store timezone, degrade to the device zone when
-  // the settings row is absent OR its read failed — never a board failure.
-  const timezone = effectiveTimezone(resolveStoreTimezone(storeSettings.data ?? null));
+  // The focus panel only exists on the canvas layout.
+  useEffect(() => {
+    if (!canvas) setSelectedId(null);
+  }, [canvas]);
 
-  const runTransition = (
-    order: ActiveOrderRow,
-    targetStatus: "preparing" | "ready" | "cancelled",
-  ) => {
-    // One in-flight transition at a time: the shared mutation's state tracks
-    // its LATEST call, so a second concurrent write would un-track the first
-    // (re-enabling its card's guard). This is the repeat-press guard AC-04
-    // layers on top of the disabled button.
-    if (mutation.isPending) return;
-    setActionError(null);
-    mutation.mutate(
-      { orderId: order.id, targetStatus },
-      {
-        onSuccess: () => {
-          // The hook's own onSuccess invalidates the feature's queries; the
-          // screen only closes the dialog it owns.
-          if (targetStatus === "cancelled") setCancelTarget(null);
-        },
-        onError: (error: unknown) => {
-          // T05-R02: the hook invalidates on success ONLY — the screen owns
-          // AC-10's rejected-transition refresh, so the board refetches and
-          // shows the server's unchanged truth.
-          setActionError({ orderId: order.id, error });
-          // T10-R01: a rejected cancel must not leave its modal open over the
-          // feedback that replaces it.
-          setCancelTarget(null);
-          void queryClient.invalidateQueries({ queryKey: preparationKeys.all });
-        },
-      },
-    );
-  };
-
-  const handleStartPreparing = (order: ActiveOrderRow) => runTransition(order, "preparing");
-  const handleMarkReady = (order: ActiveOrderRow) => runTransition(order, "ready");
-  const handleCancelRequested = (order: ActiveOrderRow) => {
-    if (mutation.isPending) return;
-    setCancelTarget(order);
-  };
-  const handleCancelConfirmed = () => {
-    // The dialog reports the display echo; the screen closes over the selected
-    // row, which carries the order_id the mutation needs (T10's contract).
-    if (cancelTarget === null) return;
-    runTransition(cancelTarget, "cancelled");
-  };
-  const handleOpenOrderDetails = (order: ActiveOrderRow) => {
-    // Plan decision 1: the static details route with orderId as a query param.
-    router.push({ pathname: "/order-details", params: { orderId: order.id } });
-  };
-
-  // The per-card in-flight state (decision 5), derived from the mutation's
-  // own ground truth: while a write is pending, the target card's action
-  // renders disabled with its label swapped.
-  const pendingInput = mutation.isPending ? mutation.variables : undefined;
-  const pendingOrderId = pendingInput?.orderId ?? null;
-  const pendingAction =
-    pendingInput === undefined ? undefined : PENDING_ACTION_BY_TARGET[pendingInput.targetStatus];
-
-  const boardOrders = activeOrders.data ?? [];
-  const entries = (status: BoardStatus): BoardSectionEntry[] =>
-    boardOrders
-      .filter((order) => order.status === status)
-      .map((order) => ({
-        order,
-        createdAtLabel: formatCreatedAt(order.created_at, timezone),
-        pendingAction: order.id === pendingOrderId ? pendingAction : undefined,
-      }));
-
-  // R2-01: the orders whose cards are currently MOUNTED — every group on the
-  // column layout, the selected tab's group alone on the tab layout (an
-  // inactive TabsContent renders null, so its cards are not "visible" in any
-  // sense that matters to feedback placement). When a rejected action's order
-  // is not among them, BoardSection has no card to attach the InlineError to,
-  // and the screen body carries it instead — see the fallback render below.
-  const visibleOrderIds = new Set(
-    (isExpanded ? BOARD_STATUSES : [selectedTab]).flatMap((status) =>
-      entries(status).map((entry) => entry.order.id),
-    ),
+  const open = useCallback(
+    (order: ActiveOrderRow) => {
+      if (canvas) {
+        setSelectedId((current) => (current === order.id ? null : order.id));
+        return;
+      }
+      router.push({ pathname: "/order-details", params: { orderId: order.id } });
+    },
+    [canvas, router],
   );
-  const orphanedActionError =
-    actionError !== null && !visibleOrderIds.has(actionError.orderId) ? actionError : null;
+  const advance = useCallback(
+    (order: ActiveOrderRow, target: "preparing" | "ready") => actions.run(order.id, target),
+    [actions],
+  );
 
-  // The card callbacks every group shares; the eligibility matrix (T07) keeps
-  // each card honest about which of them actually render a button.
-  const cardCallbacks = {
-    actorPreparationId,
-    actionError,
-    onStartPreparing: handleStartPreparing,
-    onMarkReady: handleMarkReady,
-    onCancel: handleCancelRequested,
-    onPress: handleOpenOrderDetails,
-  };
+  const pendingOrderId = actions.pending?.orderId;
+  const renderTicket = (order: ActiveOrderRow) => (
+    <OrderTicket
+      order={order}
+      actorPreparationId={actorPreparationId}
+      now={now}
+      selected={order.id === selectedId}
+      pendingTarget={order.id === pendingOrderId ? actions.pending?.target : undefined}
+      locked={actions.busy && order.id !== pendingOrderId}
+      error={actions.error?.orderId === order.id ? actions.error.error : undefined}
+      onOpen={open}
+      onAdvance={advance}
+    />
+  );
+  const ticketsKey = `${now}|${selectedId}|${pendingOrderId}|${actions.error?.orderId}`;
+
+  // A rejection for an order that has left the visible lanes still has to be seen.
+  const visibleIds = new Set(
+    (lanesSideBySide ? LANES : [tab]).flatMap((status) => lanes[status].map((order) => order.id)),
+  );
+  const orphanError =
+    actions.error && !visibleIds.has(actions.error.orderId) && actions.error.orderId !== selectedId
+      ? actions.error.error
+      : null;
 
   let board: ReactNode;
   if (activeOrders.isPending) {
-    board = <SkeletonList itemClassName="h-44" />;
-  } else if (activeOrders.isError && activeOrders.data === undefined) {
+    board = <SkeletonGrid count={6} columns={lanesSideBySide ? 3 : 1} itemClassName="h-44" />;
+  } else if (activeOrders.isError && orders === undefined) {
     board = <ErrorState error={activeOrders.error} onRetry={() => void activeOrders.refetch()} />;
-  } else if (boardOrders.length === 0) {
+  } else if (total === 0) {
     board = (
-      <EmptyState
-        title="No active orders"
-        description="New orders will appear here as customers place them."
-      />
+      <View className="flex-1 items-center justify-center gap-5 rounded-3xl bg-muted/45 p-10">
+        <View className="h-24 w-24 items-center justify-center rounded-full bg-card">
+          <Icon as={Coffee} size={36} className="text-primary" />
+        </View>
+        <View className="max-w-md items-center gap-2">
+          <Text variant="h1" className="text-center">
+            All caught up
+          </Text>
+          <Text variant="lead" className="text-center">
+            New orders appear here the moment a customer confirms one.
+          </Text>
+        </View>
+      </View>
     );
-  } else if (isExpanded) {
+  } else if (lanesSideBySide) {
     board = (
-      <View className="flex-1 flex-row items-stretch gap-3">
-        {BOARD_STATUSES.map((status) => (
-          <BoardSection
+      <View className="min-h-0 flex-1 flex-row gap-3">
+        {LANES.map((status) => (
+          <StatusLane
             key={status}
-            title={orderStatusLabel(status)}
             status={status}
-            entries={entries(status)}
+            orders={lanes[status]}
+            renderTicket={renderTicket}
+            extraData={ticketsKey}
             className="flex-1"
-            scrollable
-            {...cardCallbacks}
           />
         ))}
       </View>
     );
   } else {
     board = (
-      <Tabs
-        value={selectedTab}
-        onValueChange={(value: string) => setSelectedTab(value as BoardStatus)}
-      >
-        <TabsList className="h-auto min-h-20 gap-1 p-1.5">
-          {BOARD_STATUSES.map((status) => (
-            <TabsTrigger key={status} value={status} className="h-auto min-h-16 gap-2 px-2 py-2">
-              <Icon
-                as={BOARD_STATUS_ICON[status]}
-                size={18}
-                className={
-                  selectedTab === status ? "text-primary-foreground" : "text-muted-foreground"
-                }
-              />
-              <Text>{`${orderStatusLabel(status)} (${entries(status).length})`}</Text>
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        {BOARD_STATUSES.map((status) => (
-          <TabsContent key={status} value={status} className="mt-3">
-            {/* No title: the trigger already carries the label and count. */}
-            <BoardSection status={status} entries={entries(status)} {...cardCallbacks} />
-          </TabsContent>
-        ))}
-      </Tabs>
+      <View className="min-h-0 flex-1 gap-3">
+        <View
+          accessibilityRole="tablist"
+          className="flex-row gap-1.5 rounded-2xl bg-muted/60 p-1.5"
+        >
+          {LANES.map((status) => {
+            const selected = tab === status;
+            const meta = STATUS_META[status];
+            return (
+              <Pressable
+                key={status}
+                accessibilityRole="tab"
+                accessibilityState={{ selected }}
+                accessibilityLabel={`${LANE_COPY[status].title}, ${counts[status]}`}
+                onPress={() => setTab(status)}
+                className={cn(
+                  "min-h-touch flex-1 flex-row items-center justify-center gap-2 rounded-xl px-2",
+                  selected ? "bg-card" : "active:bg-card/50",
+                )}
+              >
+                <View className={cn("h-2.5 w-2.5 rounded-full", meta.accent)} />
+                <Text
+                  numberOfLines={1}
+                  className={cn("text-body", selected ? "font-sans-bold" : "text-muted-foreground")}
+                >
+                  {LANE_COPY[status].title}
+                </Text>
+                <Text className="font-display-semibold text-body tabular-nums">
+                  {counts[status]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <StatusLane
+          key={tab}
+          status={tab}
+          orders={lanes[tab]}
+          renderTicket={renderTicket}
+          showHeader={false}
+          columns={width >= 700 ? 2 : 1}
+          extraData={ticketsKey}
+          className="flex-1 pt-3"
+        />
+      </View>
     );
   }
 
-  const workspaceBody = (
-    <>
-      <View className="gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
-        <View className="gap-1">
-          <Text variant="h1">Preparation Workspace</Text>
-          <Text variant="body" tone="muted">
-            Active order dispatch
-          </Text>
-        </View>
-        <View className="flex-row flex-wrap gap-2">
-          <Button variant="outline" size="compact" onPress={() => void activeOrders.refetch()}>
-            <Icon as={RefreshCw} size={18} className="text-foreground" />
-            <Text>Refresh</Text>
-          </Button>
-          {/* AC-08: history is reached from the workspace — the same compact
-                outline affordance style as Refresh, pushing the history route. */}
-          <Button variant="outline" size="compact" onPress={() => router.push("/history")}>
-            <Icon as={History} size={18} className="text-foreground" />
-            <Text>History</Text>
-          </Button>
-          <Button variant="ghost" size="compact" onPress={signOut.run} disabled={signOut.pending}>
-            <Icon as={LogOut} size={18} className="text-foreground" />
-            <Text>{signOut.pending ? "Signing out…" : "Sign out"}</Text>
-          </Button>
-        </View>
-      </View>
-      {signOut.message !== null ? (
-        <Text variant="caption" tone="destructive" accessibilityRole="alert">
-          {signOut.message}
-        </Text>
-      ) : null}
-      {announcement !== null ? (
-        <Text variant="caption" tone="muted" accessibilityLiveRegion="polite">
-          {announcement}
-        </Text>
-      ) : null}
-      {/* T11-R04: a failed background/manual refetch while the board still
-            shows (stale) data is not silent — a transient inline notice beside
-            the board. It clears itself on the next successful read (`isError`
-            flips back); the full ErrorState stays reserved for a board with NO
-            data. Realtime multiplies background refetches, so this window is
-            no longer rare. */}
-      {activeOrders.isError && activeOrders.data !== undefined ? (
-        <InlineError error={activeOrders.error} />
-      ) : null}
-      {/* R2-01: the rejection feedback's fallback home. BoardSection renders
-            it beside the card that fired the action, but when that order is no
-            longer a VISIBLE card — it left the board under the rejection
-            refetch, or moved into an unmounted tab group — this is the only
-            place it can still reach the employee. Same InlineError surface, so
-            the T04 O-1 unknown-error contract holds here too. */}
-      {orphanedActionError !== null ? <InlineError error={orphanedActionError.error} /> : null}
-      {board}
-    </>
-  );
+  const selectedFallback = selectedId
+    ? (orders ?? []).find((order) => order.id === selectedId)
+    : undefined;
 
   return (
-    <Screen edges={["top", "bottom", "left", "right"]}>
-      {isExpanded ? (
-        <View className="flex-1 gap-4 p-6">{workspaceBody}</View>
-      ) : (
-        <ScrollView contentContainerClassName="min-h-full gap-4 p-4 md:p-6">
-          {workspaceBody}
-        </ScrollView>
-      )}
-      <CancelOrderDialog
-        open={cancelTarget !== null}
-        onOpenChange={(open: boolean) => {
-          if (!open) setCancelTarget(null);
-        }}
-        order={cancelTarget}
-        onCancelOrder={handleCancelConfirmed}
-        busy={mutation.isPending && mutation.variables?.targetStatus === "cancelled"}
-      />
+    <Screen edges={["top", "bottom", "left", "right"]} constrained={false}>
+      <View className="min-h-0 flex-1 gap-4 py-5" style={{ paddingHorizontal: gutter }}>
+        <WorkspaceHeader
+          clock={formatCreatedAt(new Date(now).toISOString(), timezone)}
+          counts={counts}
+          mine={mine}
+          refreshing={activeOrders.isFetching}
+          compact={width < 700}
+          signingOut={signOut.pending}
+          onRefresh={() => void activeOrders.refetch()}
+          onHistory={() => router.push("/history")}
+          onSignOut={signOut.run}
+        />
+        {signOut.message ? (
+          <Text variant="caption" tone="destructive" accessibilityRole="alert">
+            {signOut.message}
+          </Text>
+        ) : null}
+        {announcement ? (
+          <Text variant="meta" tone="primary" accessibilityLiveRegion="polite">
+            {announcement}
+          </Text>
+        ) : null}
+        {activeOrders.isError && orders !== undefined ? (
+          <InlineError error={activeOrders.error} />
+        ) : null}
+        {orphanError ? <InlineError error={orphanError} /> : null}
+        <View className="min-h-0 flex-1 flex-row gap-4">
+          <View className="min-h-0 min-w-0 flex-1">{board}</View>
+          {canvas && selectedId ? (
+            <View
+              style={{ width: FOCUS_WIDTH }}
+              className="rounded-3xl border border-border bg-card p-5"
+            >
+              <OrderFocus
+                key={selectedId}
+                orderId={selectedId}
+                fallback={selectedFallback}
+                actorPreparationId={actorPreparationId}
+                timezone={timezone}
+                now={now}
+                actions={actions}
+                onClose={() => setSelectedId(null)}
+              />
+            </View>
+          ) : null}
+        </View>
+      </View>
     </Screen>
   );
 }

@@ -1,7 +1,6 @@
 import { Link, Stack } from "expo-router";
 
-import { Screen } from "@/components/layout/screen";
-import { Button, Text } from "@/components/ui";
+import { Button, Screen, Text } from "@/design-system";
 import { View } from "react-native";
 
 export default function NotFoundRoute() {

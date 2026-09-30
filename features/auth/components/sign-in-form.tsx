@@ -2,8 +2,7 @@ import { useState } from "react";
 import { View } from "react-native";
 import { Eye, EyeOff } from "lucide-react-native";
 
-import { Button, Icon, Input, Text } from "@/components/ui";
-import { InlineError } from "@/components/feedback";
+import { Button, Icon, InlineError, Input, Text } from "@/design-system";
 import { useAuth } from "@/core/auth";
 import { toAppError } from "@/core/errors";
 

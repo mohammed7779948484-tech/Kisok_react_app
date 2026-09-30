@@ -60,7 +60,7 @@ Ordering is not enforced, but this reads best and matches the existing files:
 import { useState } from "react"; // external
 import { View } from "react-native";
 
-import { Button } from "@/components/ui"; // internal absolute
+import { Button } from "@/design-system"; // internal absolute
 import { toAppError } from "@/core/errors";
 
 import { fetchCatalog } from "../api/catalog-api"; // relative (same feature)

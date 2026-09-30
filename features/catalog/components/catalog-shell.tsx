@@ -1,44 +1,53 @@
 import { useCallback } from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
+import { Search } from "lucide-react-native";
 
-import { Screen } from "@/components/layout/screen";
-import { AppImage } from "@/components/media/app-image";
-import { Text } from "@/components/ui";
-import { useLayout } from "@/core/responsive";
+import {
+  AppImage,
+  cloudinaryImageUrl,
+  ContentContainer,
+  HeaderActionHost,
+  Icon,
+  Screen,
+  Text,
+  useLayout,
+} from "@/design-system";
 import { cn } from "@/core/utils";
 
 import type { CatalogFullSettings } from "../model/catalog-snapshot.schema";
 import type { CatalogView } from "../model/catalog-view";
 import { CatalogNavigation, type CatalogDestination } from "./catalog-navigation";
 
+/** Below this window width the navigation tabs move to their own row. */
+const SINGLE_ROW_MIN_WIDTH = 1180;
+
 function isFullSettings(settings: CatalogView["settings"]): settings is CatalogFullSettings {
   return "store_name" in settings;
 }
 
 export type CatalogShellProps = {
-  currentDestination: CatalogDestination;
+  /** The active tab. `null` on pages that are not a tab (a product, a detail page). */
+  currentDestination: CatalogDestination | null;
   settings?: CatalogView["settings"];
-  title?: string;
-  subtitle?: string;
-  countLabel?: string;
-  headerRight?: React.ReactNode;
   children: React.ReactNode;
   contentClassName?: string;
 };
 
+/**
+ * The catalog chrome: the store's identity, a search field that is always
+ * one tap away, the browse tabs, and the header action slot the cart fills.
+ * The page below is the screen's own.
+ */
 export function CatalogShell({
   currentDestination,
   settings,
-  title,
-  subtitle,
-  countLabel,
-  headerRight,
   children,
   contentClassName,
 }: CatalogShellProps) {
   const router = useRouter();
-  const { isExpanded } = useLayout();
+  const { width, isCompact } = useLayout();
+  const singleRow = width >= SINGLE_ROW_MIN_WIDTH;
 
   const handleNavigate = useCallback(
     (destination: CatalogDestination) => {
@@ -66,78 +75,94 @@ export function CatalogShell({
   const storeName = settings && isFullSettings(settings) ? settings.store_name : "KISOK";
   const logoUrl = settings && isFullSettings(settings) ? settings.logo_secure_url : null;
 
-  return (
-    <Screen>
-      <View className="flex-1">
-        {/* Unified Store Top Chrome */}
-        <View className="border-b border-border/80 bg-card px-5 py-3 md:px-8">
-          <View
-            className={cn(
-              "items-center justify-between gap-4",
-              isExpanded ? "flex-row" : "flex-col items-stretch",
-            )}
-          >
-            {/* Store Brand Mark / Name */}
-            <View className="flex-row items-center gap-3">
-              {logoUrl ? (
-                <AppImage
-                  uri={logoUrl}
-                  alt={storeName}
-                  contentFit="contain"
-                  className="h-9 w-9 rounded-lg"
-                />
-              ) : (
-                <View className="h-9 w-9 items-center justify-center rounded-lg bg-primary">
-                  <Text variant="caption" className="font-bold text-primary-foreground">
-                    {storeName.slice(0, 2).toUpperCase()}
-                  </Text>
-                </View>
-              )}
-              <View>
-                <Text variant="body" className="font-bold tracking-tight">
-                  {storeName}
-                </Text>
-                <Text variant="caption" tone="muted">
-                  In-store catalog
-                </Text>
-              </View>
-            </View>
+  const lockup = (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={`${storeName}, explore the store`}
+      onPress={() => handleNavigate("home")}
+      className="min-h-touch shrink-0 flex-row items-center gap-3 active:opacity-80"
+    >
+      <View className="h-10 w-10 items-center justify-center overflow-hidden rounded-[13px] bg-primary">
+        {logoUrl ? (
+          <AppImage
+            uri={cloudinaryImageUrl(logoUrl, "row")}
+            alt=""
+            contentFit="contain"
+            className="h-full w-full"
+          />
+        ) : (
+          <View className="h-4 w-4 rotate-45 rounded-[4px] border-2 border-primary-foreground" />
+        )}
+      </View>
+      <View className="gap-1">
+        <Text
+          numberOfLines={1}
+          className="font-sans-extrabold text-title uppercase leading-[20px] tracking-[2px]"
+          style={{ maxWidth: 220 }}
+        >
+          {storeName}
+        </Text>
+        <Text variant="caption" tone="muted" className="leading-[14px]">
+          In-store catalog
+        </Text>
+      </View>
+    </Pressable>
+  );
 
-            {/* Navigation Bar */}
-            <CatalogNavigation current={currentDestination} onNavigate={handleNavigate} />
-          </View>
+  const searchField = (
+    <Pressable
+      accessibilityRole="search"
+      accessibilityLabel="Search the store"
+      accessibilityHint="Opens search"
+      onPress={() => handleNavigate("search")}
+      className={cn(
+        "h-control min-w-0 flex-1 flex-row items-center gap-3 rounded-full border border-border bg-card px-4 active:bg-card/70",
+        currentDestination === "search" && "border-primary/30",
+      )}
+    >
+      <Icon as={Search} size={19} className="text-primary" />
+      <Text numberOfLines={1} className="flex-1 text-body-lg text-muted-foreground">
+        Search products, brands, categories, or options…
+      </Text>
+    </Pressable>
+  );
+
+  return (
+    <Screen constrained={false}>
+      <View className="flex-1">
+        <View className="border-b border-foreground/[0.08] bg-background">
+          <ContentContainer>
+            {singleRow ? (
+              <View className="min-h-[84px] flex-row items-center gap-6">
+                {lockup}
+                {searchField}
+                <CatalogNavigation current={currentDestination} onNavigate={handleNavigate} />
+                <View className="justify-center">
+                  <HeaderActionHost />
+                </View>
+              </View>
+            ) : (
+              <View className="gap-2 py-3">
+                <View className="flex-row items-center gap-4">
+                  {lockup}
+                  {isCompact ? <View className="flex-1" /> : searchField}
+                  <View className="justify-center">
+                    <HeaderActionHost />
+                  </View>
+                </View>
+                {isCompact ? searchField : null}
+                <CatalogNavigation
+                  current={currentDestination}
+                  onNavigate={handleNavigate}
+                  scrollable={isCompact}
+                  className="-ml-3.5"
+                />
+              </View>
+            )}
+          </ContentContainer>
         </View>
 
-        {/* Optional Page Header */}
-        {title ? (
-          <View className="gap-1 border-b border-border/40 px-5 py-4 md:px-8">
-            <View className="flex-row flex-wrap items-center justify-between gap-3">
-              <View className="gap-0.5">
-                <Text variant="h1" accessibilityRole="header" className="font-bold">
-                  {title}
-                </Text>
-                {subtitle ? (
-                  <Text variant="caption" tone="muted">
-                    {subtitle}
-                  </Text>
-                ) : null}
-              </View>
-              {countLabel || headerRight ? (
-                <View className="flex-row items-center gap-3">
-                  {countLabel ? (
-                    <Text variant="caption" tone="muted" className="font-medium">
-                      {countLabel}
-                    </Text>
-                  ) : null}
-                  {headerRight}
-                </View>
-              ) : null}
-            </View>
-          </View>
-        ) : null}
-
-        {/* Screen Content */}
-        <View className={cn("flex-1", contentClassName)}>{children}</View>
+        <View className={cn("min-h-0 flex-1", contentClassName)}>{children}</View>
       </View>
     </Screen>
   );

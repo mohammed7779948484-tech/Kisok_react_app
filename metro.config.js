@@ -4,7 +4,7 @@ const { withNativeWind } = require("nativewind/metro");
 const config = getDefaultConfig(__dirname);
 
 module.exports = withNativeWind(config, {
-  input: "./global.css",
+  input: "./design-system/theme/global.css",
   // NativeWind resolves `rem` units to 14px on native by DEFAULT, while a
   // browser resolves them to 16px. Tailwind's scale is rem-based, so the default
   // makes every size ~12% smaller on the Android tablet than in the web preview

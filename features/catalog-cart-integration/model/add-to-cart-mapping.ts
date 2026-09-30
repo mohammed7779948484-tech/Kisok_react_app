@@ -16,7 +16,7 @@ import type { AddToCartInput } from "@/features/cart";
  * The label rule (brief AC-04) mirrors catalog-view's fallback semantics for
  * the no-option families while deliberately diverging for the option-backed
  * one: the option TYPE names become the label, and the option VALUES reach the
- * cart row caption only through `optionSelections`. `CartItemRow` renders
+ * cart row caption only through `optionSelections`. `CartLineCard` renders
  * `[variantLabel, ...optionValueLabels].join(" · ")`, and Catalog's own label
  * for option-backed variants is the joined option pairs — mapping that label
  * would duplicate every option value in the caption ("Flavor: Watermelon ·
@@ -39,6 +39,13 @@ export type CatalogCartSource = {
     /** Raw title_override from the catalog snapshot (mapper trims). */
     titleOverride: string | null;
     isAvailable: boolean;
+    /**
+     * Sellable units from the catalog snapshot (inventory at snapshot time).
+     * When present it caps what can be added, net of what is already in the
+     * cart; the server still re-validates stock when the order is placed.
+     * Not part of the cart line — the mapper never forwards it.
+     */
+    availableQuantity?: number;
     /** variant.primaryMedia?.secureUrl ?? null (cover fallback already applied by the catalog view). */
     primaryImageUri: string | null;
     options: {
@@ -78,8 +85,12 @@ function deriveVariantLabel(source: CatalogCartSource): string {
   return `Option ${source.variantIndex + 1}`;
 }
 
-/** Maps a structural Catalog selection to the cart's public AddToCartInput. */
-export function buildAddToCartInput(source: CatalogCartSource): AddToCartInput {
+/**
+ * Maps a structural Catalog selection to the cart's public AddToCartInput.
+ * `quantity` defaults to one unit; the cart clamps whatever it receives to its
+ * own line bounds.
+ */
+export function buildAddToCartInput(source: CatalogCartSource, quantity = 1): AddToCartInput {
   return {
     variantId: source.variant.id,
     productId: source.productId,
@@ -91,6 +102,6 @@ export function buildAddToCartInput(source: CatalogCartSource): AddToCartInput {
       optionValueLabel: option.optionValueLabel,
     })),
     imageUri: source.variant.primaryImageUri,
-    quantity: 1,
+    quantity,
   };
 }

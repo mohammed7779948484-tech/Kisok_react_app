@@ -1,7 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { ScrollView, View } from "react-native";
 
-import { Button, Text } from "@/components/ui";
+import { Button, Text } from "@/design-system";
 import { createLogger } from "@/core/logging";
 
 const log = createLogger("app.errorBoundary");

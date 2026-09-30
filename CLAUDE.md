@@ -88,7 +88,7 @@ pnpm verify             # package-script checks mirrored by CI's verify job; CI 
 | Route (thin, no logic)    | `app/`             |
 | Feature vertical slice    | `features/<name>/` |
 | Shared foundation         | `core/`            |
-| Shared UI / design system | `components/`      |
+| Shared UI / design system | `design-system/`   |
 
 Supabase may only be called from a feature's `api/` module. ESLint enforces this.
 
