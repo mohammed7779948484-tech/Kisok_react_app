@@ -1,21 +1,6 @@
 export { AuthProvider, useAuth, useActiveProfile } from "./context";
+export type { SignOutOutcome } from "./context";
 export { fetchActiveProfile } from "./profile";
-export {
-  registerSignOutGuard,
-  unregisterSignOutGuard,
-  registerSignOutCleanup,
-  unregisterSignOutCleanup,
-  clearSignOutTasks,
-  runSignOutGuards,
-  runSignOutCleanup,
-} from "./sign-out";
-export type {
-  SignOutGuard,
-  SignOutGuardResult,
-  SignOutCleanupTask,
-  SignOutOutcome,
-  SignOutContext,
-} from "./sign-out";
 export {
   appRoleSchema,
   activeProfileSchema,

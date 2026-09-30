@@ -11,9 +11,9 @@ const log = createLogger("storage");
  * react-native-web (localStorage). MMKV was rejected because it needs a native
  * build and is unavailable in Expo Go — see docs/adr/0003-client-state.md.
  *
- * The API returns a RESULT instead of throwing, because some state (the cart)
- * must be able to tell the user "this change is in memory but was not saved".
- * Swallowing a write failure is a correctness bug for KISOK, not a nuisance.
+ * The API returns a RESULT instead of throwing, so a caller can decide what a
+ * failed write means for it: checkout must not send an order it could not
+ * save, while the cart only notes that a change may not survive a restart.
  */
 export type StorageWriteResult = { status: "persisted" } | { status: "rejected"; error: Error };
 
@@ -86,20 +86,3 @@ export type JsonStorage = ReturnType<typeof createJsonStorage>;
 
 /** The app-wide instance. Features should use this rather than AsyncStorage directly. */
 export const storage = createJsonStorage();
-
-/**
- * Emergency kiosk handoff reset. Removes only KISOK-owned client state, never
- * arbitrary browser/device storage. This is the fallback when a feature-level
- * cleanup cannot prove that the previous customer's durable state was erased.
- */
-export async function clearKisokStorage(): Promise<StorageWriteResult> {
-  try {
-    const keys = await AsyncStorage.getAllKeys();
-    const ownedKeys = keys.filter((key) => key.startsWith(KISOK_STORAGE_PREFIX));
-    if (ownedKeys.length > 0) await AsyncStorage.multiRemove(ownedKeys);
-    return { status: "persisted" };
-  } catch (error) {
-    log.error("Failed to clear KISOK storage namespace", { error: asError(error).message });
-    return { status: "rejected", error: asError(error) };
-  }
-}

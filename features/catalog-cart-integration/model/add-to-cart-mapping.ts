@@ -16,7 +16,7 @@ import type { AddToCartInput } from "@/features/cart";
  * The label rule (brief AC-04) mirrors catalog-view's fallback semantics for
  * the no-option families while deliberately diverging for the option-backed
  * one: the option TYPE names become the label, and the option VALUES reach the
- * cart row caption only through `optionSelections`. `CartItemRow` renders
+ * cart row caption only through `optionSelections`. `CartLineCard` renders
  * `[variantLabel, ...optionValueLabels].join(" · ")`, and Catalog's own label
  * for option-backed variants is the joined option pairs — mapping that label
  * would duplicate every option value in the caption ("Flavor: Watermelon ·

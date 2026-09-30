@@ -145,7 +145,7 @@ export function SuccessCountdown({ seconds, onExpire, reArmRef }: SuccessCountdo
     };
   }, [reArmRef, restart]);
 
-  const label = `Order resets in ${remaining} ${remaining === 1 ? "second" : "seconds"}`;
+  const label = `Returning to the store in ${remaining} ${remaining === 1 ? "second" : "seconds"}`;
   const percent = seconds > 0 ? (remaining / seconds) * 100 : 0;
 
   return (
