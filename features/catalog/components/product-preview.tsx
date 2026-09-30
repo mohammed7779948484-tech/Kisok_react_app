@@ -2,7 +2,7 @@ import { memo, useCallback } from "react";
 import { Pressable, View } from "react-native";
 import { ArrowRight } from "lucide-react-native";
 
-import { ArrowDisc, Icon, MediaFrame, Text, tintFor } from "@/design-system";
+import { ArrowDisc, Icon, MediaFrame, Text } from "@/design-system";
 import { cn } from "@/core/utils";
 
 import type { CatalogProductView } from "../model/catalog-view";
@@ -75,8 +75,9 @@ export const ProductPreview = memo(function ProductPreview({
           source={product.coverMedia}
           alt=""
           fit="contain"
-          backdrop
-          tint={tintFor(product.id)}
+          preset="card"
+          inset={4}
+          tint="paper"
           fallbackLabel={product.name}
           className="flex-1"
         />
@@ -98,8 +99,9 @@ export const ProductPreview = memo(function ProductPreview({
         source={product.coverMedia}
         alt=""
         fit="contain"
-        backdrop
-        tint={tintFor(product.id, ["stone", "sand", "sage"])}
+        preset="card"
+        inset={4}
+        tint="paper"
         fallbackLabel={product.name}
         className={mediaHeight === undefined ? "min-h-[90px] w-full flex-1" : "w-full"}
         style={mediaHeight === undefined ? undefined : { height: mediaHeight }}

@@ -43,7 +43,6 @@ export function ProductMediaGallery({
   const activePosition = activeIndex >= 0 ? activeIndex + 1 : 1;
   const mainAlt = media.length > 1 ? `${alt}, image ${activePosition} of ${media.length}` : alt;
   const orbit = Math.min(visualHeight + 22, 420);
-  const ambient = cloudinaryImageUrl(active, "backdrop");
 
   return (
     <View className={cn("gap-2", className)}>
@@ -51,20 +50,6 @@ export function ProductMediaGallery({
         className="items-center justify-center overflow-hidden border-y border-foreground/10 bg-muted/60"
         style={{ height: visualHeight }}
       >
-        {/* The image's own colours, blurred, fill the panel behind it. */}
-        {ambient ? (
-          <>
-            <AppImage
-              key={`ambient-${ambient}`}
-              uri={ambient}
-              alt=""
-              contentFit="cover"
-              transition={0}
-              className="absolute inset-0 h-full w-full opacity-45"
-            />
-            <View aria-hidden className="absolute inset-0 bg-card/40" />
-          </>
-        ) : null}
         <View
           aria-hidden
           className="absolute rounded-full border border-primary/[0.13]"
@@ -75,7 +60,7 @@ export function ProductMediaGallery({
           className="absolute rounded-full border border-primary/[0.075]"
           style={{ width: orbit - 92, height: orbit - 92 }}
         />
-        <View className="absolute bottom-[26px] left-[34px] right-[34px] top-4">
+        <View className="absolute bottom-4 left-4 right-4 top-3">
           <AppImage
             key={active?.secureUrl ?? "media-fallback"}
             uri={cloudinaryImageUrl(active, "detail")}
@@ -114,9 +99,9 @@ export function ProductMediaGallery({
                 )}
               >
                 <AppImage
-                  uri={cloudinaryImageUrl(item, "thumbnail")}
+                  uri={cloudinaryImageUrl(item, "row")}
                   alt=""
-                  contentFit="cover"
+                  contentFit="contain"
                   className="h-full w-full rounded-[7px]"
                 />
               </Pressable>

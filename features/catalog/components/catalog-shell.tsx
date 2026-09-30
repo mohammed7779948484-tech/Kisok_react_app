@@ -85,7 +85,7 @@ export function CatalogShell({
       <View className="h-10 w-10 items-center justify-center overflow-hidden rounded-[13px] bg-primary">
         {logoUrl ? (
           <AppImage
-            uri={cloudinaryImageUrl(logoUrl, "packshot")}
+            uri={cloudinaryImageUrl(logoUrl, "row")}
             alt=""
             contentFit="contain"
             className="h-full w-full"

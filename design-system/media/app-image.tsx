@@ -26,6 +26,12 @@ export type AppImageProps = Omit<ImageProps, "source" | "alt"> & {
   fallbackClassName?: string;
   /** Text colour for the fallback label on dark tints. */
   fallbackTextClassName?: string;
+  /**
+   * For decorative images (blurred backdrops, ambient fills): a missing or
+   * failed image renders nothing instead of the fallback surface, so no
+   * broken-image mark ever shows behind the real content.
+   */
+  hideFallback?: boolean;
 };
 
 /**
@@ -42,12 +48,15 @@ export function AppImage({
   fallbackLabel,
   fallbackClassName,
   fallbackTextClassName,
+  hideFallback = false,
   transition = 200,
   recyclingKey,
   ...props
 }: AppImageProps) {
   const [failedUri, setFailedUri] = useState<string | null>(null);
   const showFallback = !uri || failedUri === uri;
+
+  if (showFallback && hideFallback) return null;
 
   if (showFallback) {
     return (

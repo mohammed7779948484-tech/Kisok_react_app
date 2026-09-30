@@ -48,8 +48,14 @@ tablet. It should feel premium, calm, and deliberate.
 - **Images go through `AppImage`** (or `MediaFrame`), which handles the
   missing/failed fallback and requires an `alt`. Pass `alt=""` for decorative
   imagery. Request a right-sized Cloudinary rendition with
-  `cloudinaryImageUrl(source, preset)` — `thumbnail`, `card`, `detail`, `cover`
-  or `backdrop` — never the original upload.
+  `cloudinaryImageUrl(source, preset)` — never the original upload. The media
+  contract: product cards are square, `contain`, `card` (limitFit 720), inset
+  ≤ 4, no backdrop; Product Detail is `contain` + `detail` (limitFit 1400);
+  cart, order and option rows are `contain` + `row` (limitFit 240); only
+  category/editorial heroes use `cover` (fill + auto gravity); brand logos are
+  always `contain` with generous room. Packaging is never cropped to fill a
+  frame. Decorative images (`backdrop`) pass `hideFallback` so a failure shows
+  nothing.
 - **No prices, totals, or payment UI anywhere.** A deliberate product boundary.
 
 Inspect everything at `/ui-lab` in a dev build. Add new shared components there

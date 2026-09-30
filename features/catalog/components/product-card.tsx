@@ -1,7 +1,7 @@
 import { memo, useCallback } from "react";
 import { Pressable, View } from "react-native";
 
-import { ArrowDisc, MediaFrame, Text, tintFor } from "@/design-system";
+import { ArrowDisc, MediaFrame, Text } from "@/design-system";
 import { cn } from "@/core/utils";
 
 import type { CatalogProductView } from "../model/catalog-view";
@@ -13,7 +13,8 @@ import {
 import type { SearchMatchReason } from "../model/search-match";
 import { AvailabilityBadge } from "./availability-badge";
 
-const MEDIA_RATIO = { aspectRatio: 3 / 2 };
+/** Product media is square and contained: packaging is never cropped to fill. */
+const MEDIA_RATIO = { aspectRatio: 1 };
 
 export type ProductCardProps = {
   product: CatalogProductView;
@@ -57,8 +58,9 @@ export const ProductCard = memo(function ProductCard({
         source={product.coverMedia}
         alt=""
         fit="contain"
-        backdrop
-        tint={tintFor(product.id)}
+        preset="card"
+        inset={4}
+        tint="paper"
         fallbackLabel={product.name}
         recyclingKey={product.id}
         className="w-full"

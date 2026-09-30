@@ -1,163 +1,310 @@
 import { FlashList } from "@shopify/flash-list";
-import { ArrowLeft, ShoppingCart, Trash2 } from "lucide-react-native";
-import { useRef, useState, type ReactNode } from "react";
+import { ArrowLeft, Search, ShoppingBag, Undo2 } from "lucide-react-native";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 
 import {
-  Alert,
   Button,
   ConfirmDialog,
-  EmptyState,
+  Eyebrow,
   Icon,
   Screen,
   SkeletonList,
   Text,
   useLayout,
+  usePageGutter,
 } from "@/design-system";
 import { cn } from "@/core/utils";
 
-import { CartItemRow } from "../../components/cart-item-row";
-import { getCartSnapshot, useCart } from "../../state/use-cart";
+import { CartLineCard } from "../../components/cart-line-card";
+import type { CartLine } from "../../model/cart-line.schema";
+import { useCart } from "../../state/use-cart";
 
 export type FullCartScreenProps = {
-  /** Checkout composes its final action here; Cart never imports Checkout. */
+  /** The confirm action; Checkout composes it here, Cart never imports Checkout. */
   finalAction?: ReactNode;
+  /** A notice shown above the final action (Checkout's own guidance). */
   notice?: ReactNode;
+  /** Disable every edit, e.g. while Checkout is still restoring. */
   interactionDisabled?: boolean;
+  /** A note under a line's name, e.g. a quantity the store no longer has. */
+  lineNote?: (line: CartLine) => ReactNode;
 };
 
-/** Editable final review. Persistence and mutation remain owned by the cart store. */
+const RAIL_WIDTH = 384;
+const UNDO_MS = 6000;
+
+/**
+ * The cart as a calm review workspace: selections on the left, a summary
+ * rail with the confirm action on the right (stacked below on narrow and
+ * portrait screens). No prices — quantities and options are the whole story.
+ */
 export function FullCartScreen({
   finalAction,
   notice,
   interactionDisabled = false,
+  lineNote,
 }: FullCartScreenProps) {
   const router = useRouter();
-  const view = useCart();
-  const { lines, persistence, locked, hydrated, totalQuantity, distinctLineCount } = view;
-  const { isExpanded, isLandscape } = useLayout();
-  const split = isExpanded && isLandscape;
-  const disabled = locked || interactionDisabled;
-  const disabledRef = useRef(disabled);
-  disabledRef.current = disabled;
-  const canEdit = () => !disabledRef.current && !getCartSnapshot().locked;
-  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const cart = useCart();
+  const { lines, hydrated, locked, saveFailed, totalQuantity, distinctLineCount } = cart;
+  const { setLineQuantity, removeLine } = cart;
+  const { width, isLandscape } = useLayout();
+  const gutter = usePageGutter();
+  const split = isLandscape && width >= 1000;
+  const compactLines = width < 720;
+  const disabled = locked || interactionDisabled || !hydrated;
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [removed, setRemoved] = useState<CartLine | null>(null);
 
-  const warnings = (
-    <>
-      {persistence === "memoryOnly" ? (
-        <Alert
-          variant="warning"
-          title="Saved in memory only"
-          description="We couldn't save your cart to this tablet, so it may be lost if the app closes."
-        />
-      ) : null}
-      {persistence === "clearFailed" ? (
-        <Alert
-          variant="destructive"
-          title="Couldn't clear the saved cart"
-          description="A previous cart may still be stored on this tablet. Please let store staff know."
-        />
+  useEffect(() => {
+    if (!removed) return;
+    const timer = setTimeout(() => setRemoved(null), UNDO_MS);
+    return () => clearTimeout(timer);
+  }, [removed]);
+
+  const setQuantity = useCallback(
+    (lineId: string, next: number) => setLineQuantity(lineId, next),
+    [setLineQuantity],
+  );
+  const remove = useCallback(
+    (line: CartLine) => {
+      removeLine(line.lineId);
+      setRemoved(line);
+    },
+    [removeLine],
+  );
+  const undo = () => {
+    if (!removed) return;
+    const { lineId: _lineId, ...input } = removed;
+    cart.addItem(input);
+    setRemoved(null);
+  };
+
+  const browse = () => (router.canGoBack() ? router.back() : router.replace("/"));
+
+  const header = (
+    <View
+      className="flex-row flex-wrap items-end justify-between gap-4 pb-5 pt-6"
+      style={{ paddingHorizontal: gutter }}
+    >
+      <View className="gap-2">
+        <Eyebrow rule>Your selection</Eyebrow>
+        <Text variant="display">Cart</Text>
+      </View>
+      <Button variant="tonal" disabled={locked} onPress={browse}>
+        <Icon as={ArrowLeft} size={18} />
+        <Text>Keep browsing</Text>
+      </Button>
+    </View>
+  );
+
+  const undoBar = removed ? (
+    <View
+      accessibilityLiveRegion="polite"
+      className="flex-row items-center justify-between gap-3 rounded-xl bg-foreground px-4 py-2"
+    >
+      <Text numberOfLines={1} className="flex-1 text-body text-background">
+        {`Removed ${removed.productDisplayName}`}
+      </Text>
+      <Button variant="text" onPress={undo} className="px-2">
+        <Icon as={Undo2} size={18} className="text-accent-soft" />
+        <Text className="text-accent-soft">Undo</Text>
+      </Button>
+    </View>
+  ) : null;
+
+  if (!hydrated) {
+    return (
+      <Screen edges={["top", "bottom", "left", "right"]}>
+        {header}
+        <View style={{ paddingHorizontal: gutter }}>
+          <SkeletonList />
+        </View>
+      </Screen>
+    );
+  }
+
+  if (lines.length === 0) {
+    return (
+      <Screen edges={["top", "bottom", "left", "right"]}>
+        {header}
+        <View className="flex-1 items-center justify-center gap-7 px-6 pb-16">
+          <View className="h-36 w-36 items-center justify-center rounded-full bg-secondary">
+            <View className="h-24 w-24 items-center justify-center rounded-full bg-card">
+              <Icon as={ShoppingBag} size={40} className="text-primary" />
+            </View>
+          </View>
+          <View className="max-w-md items-center gap-3">
+            <Text variant="h1" className="text-center">
+              Your cart is empty
+            </Text>
+            <Text variant="lead" className="text-center">
+              Browse the store and add what you’d like. Your selections will wait here until you’re
+              ready to order.
+            </Text>
+          </View>
+          <View className="flex-row flex-wrap justify-center gap-3">
+            <Button size="large" onPress={() => router.replace("/products")}>
+              <Text>Browse products</Text>
+            </Button>
+            <Button size="large" variant="tonal" onPress={() => router.replace("/search")}>
+              <Icon as={Search} size={20} />
+              <Text>Search</Text>
+            </Button>
+          </View>
+          {undoBar ? <View className="w-full max-w-md">{undoBar}</View> : null}
+        </View>
+      </Screen>
+    );
+  }
+
+  const summary = (
+    <View className="gap-5">
+      <View className="gap-1">
+        <Text variant="eyebrow">Ready to order</Text>
+        <View className="flex-row items-baseline gap-3">
+          <Text
+            className="font-display text-display-lg text-foreground"
+            accessibilityLabel={`${totalQuantity} items`}
+          >
+            {totalQuantity}
+          </Text>
+          <Text variant="title">{totalQuantity === 1 ? "item" : "items"}</Text>
+        </View>
+        <Text variant="meta" tone="muted">
+          {distinctLineCount} {distinctLineCount === 1 ? "selection" : "selections"}
+        </Text>
+      </View>
+      <View className="gap-2 border-t border-border pt-4">
+        <Text variant="meta" tone="muted">
+          Confirming sends your order to the store team. You’ll get an order number to collect it.
+        </Text>
+      </View>
+      {saveFailed ? (
+        <Text variant="caption" tone="warning">
+          This tablet couldn’t save your latest change. Your cart still works — just finish your
+          order before leaving.
+        </Text>
       ) : null}
       {notice}
-    </>
+      {finalAction}
+      <Button
+        variant="text"
+        disabled={disabled}
+        onPress={() => setConfirmClear(true)}
+        className="self-center"
+      >
+        <Text className="text-muted-foreground">Clear cart</Text>
+      </Button>
+    </View>
+  );
+
+  const list = (
+    <FlashList
+      data={lines}
+      keyExtractor={(line) => line.lineId}
+      extraData={`${disabled}|${compactLines}|${lineNote ? "notes" : ""}`}
+      renderItem={({ item }) => (
+        <View className="pb-3">
+          <CartLineCard
+            line={item}
+            disabled={disabled}
+            compact={compactLines}
+            note={lineNote?.(item)}
+            onSetQuantity={setQuantity}
+            onRemove={remove}
+          />
+        </View>
+      )}
+      ListHeaderComponent={
+        <View className="flex-row items-center justify-between pb-3">
+          <Text variant="label" tone="muted">
+            {`${distinctLineCount} ${distinctLineCount === 1 ? "selection" : "selections"}`}
+          </Text>
+          {locked ? (
+            <Text variant="label" tone="muted">
+              Editing paused while your order is sent
+            </Text>
+          ) : null}
+        </View>
+      }
+      contentContainerStyle={{ paddingBottom: 24 }}
+    />
   );
 
   return (
     <Screen edges={["top", "bottom", "left", "right"]}>
-      <View className="flex-row flex-wrap items-center justify-between gap-3 px-5 pb-4 pt-6 md:px-8">
-        <View className="gap-1">
-          <Text variant="h1">Your Cart</Text>
-          <Text tone="muted">Your selections, ready to confirm.</Text>
-        </View>
-        <Button variant="ghost" disabled={disabled} onPress={() => router.push("/")}>
-          <Icon as={ArrowLeft} />
-          <Text>Continue Shopping</Text>
-        </Button>
-      </View>
-      {!hydrated ? (
-        <View className="p-6">
-          <SkeletonList />
-        </View>
-      ) : lines.length === 0 ? (
-        <View className="flex-1">
-          <View className="gap-3 px-5 md:px-8">{warnings}</View>
-          <EmptyState
-            icon={ShoppingCart}
-            title="Your cart is empty"
-            description="Items you add while browsing will appear here."
-            action={{ label: "Browse Products", onPress: () => router.push("/") }}
-          />
+      {header}
+      {split ? (
+        <View className="min-h-0 flex-1 flex-row gap-6" style={{ paddingHorizontal: gutter }}>
+          <View className="min-h-0 min-w-0 flex-1 gap-3">
+            {undoBar}
+            {list}
+          </View>
+          <View style={{ width: RAIL_WIDTH }} className="pb-6">
+            <ScrollView
+              className="rounded-3xl border border-border bg-secondary/50"
+              contentContainerClassName="p-6"
+              bounces={false}
+            >
+              {summary}
+            </ScrollView>
+          </View>
         </View>
       ) : (
-        <View className={cn("min-h-0 flex-1", split && "flex-row gap-8 px-8 pb-6")}>
-          <View className={cn("min-h-0 min-w-0 flex-1", !split && "px-5 md:px-8")}>
-            <View className="flex-row flex-wrap items-center justify-between gap-2 border-b border-border/60 py-2">
-              <Text variant="label" tone="muted">
-                {distinctLineCount} {distinctLineCount === 1 ? "selection" : "selections"}
-              </Text>
-              <Button
-                variant="ghost"
-                size="compact"
-                disabled={disabled}
-                onPress={() => setConfirmClearOpen(true)}
-              >
-                <Icon as={Trash2} size={18} />
-                <Text>Clear Cart</Text>
-              </Button>
-            </View>
-            <FlashList
-              data={lines}
-              keyExtractor={(line) => line.lineId}
-              extraData={disabled}
-              renderItem={({ item }) => (
-                <CartItemRow
-                  line={item}
-                  locked={disabled}
-                  onSetQuantity={(next) => {
-                    if (canEdit()) view.setLineQuantity(item.lineId, next);
-                  }}
-                  onRemove={() => {
-                    if (canEdit()) view.removeLine(item.lineId);
-                  }}
-                />
-              )}
-              contentContainerStyle={{ paddingBottom: 24 }}
-            />
+        <View className="min-h-0 flex-1">
+          <View className="min-h-0 flex-1 gap-3" style={{ paddingHorizontal: gutter }}>
+            {undoBar}
+            {list}
           </View>
           <View
-            className={cn(
-              "bg-secondary/40",
-              split ? "w-80 rounded-xl" : "max-h-[45%] border-t border-border/60",
-            )}
+            className={cn("border-t border-border bg-secondary/60 py-5")}
+            style={{ paddingHorizontal: gutter }}
           >
-            <ScrollView contentContainerClassName="gap-4 p-5 md:p-6" bounces={false}>
-              <View className="gap-2">
-                <Text variant="h2">Ready when you are</Text>
-                <Text variant="lead">
-                  {totalQuantity} {totalQuantity === 1 ? "item" : "items"}
+            <View className="flex-row flex-wrap items-center gap-x-6 gap-y-3">
+              <View className="min-w-[160px] flex-1 gap-0.5">
+                <Text variant="title">
+                  {`${totalQuantity} ${totalQuantity === 1 ? "item" : "items"} · ${distinctLineCount} ${distinctLineCount === 1 ? "selection" : "selections"}`}
                 </Text>
-                <Text tone="muted">
-                  Check your options and quantities. Confirming sends this order to the store.
+                <Text variant="meta" tone="muted">
+                  You’ll get an order number to collect it.
                 </Text>
               </View>
-              {warnings}
-              {finalAction}
-            </ScrollView>
+              <View className="min-w-[260px] flex-1">{finalAction}</View>
+            </View>
+            {notice || saveFailed ? (
+              <View className="gap-2 pt-3">
+                {saveFailed ? (
+                  <Text variant="caption" tone="warning">
+                    This tablet couldn’t save your latest change. Finish your order before leaving.
+                  </Text>
+                ) : null}
+                {notice}
+              </View>
+            ) : null}
+            <Button
+              variant="text"
+              disabled={disabled}
+              onPress={() => setConfirmClear(true)}
+              className="mt-1 self-start"
+            >
+              <Text className="text-muted-foreground">Clear cart</Text>
+            </Button>
           </View>
         </View>
       )}
       <ConfirmDialog
-        open={confirmClearOpen && !disabled}
-        onOpenChange={setConfirmClearOpen}
-        title="Clear the cart?"
-        description="All items will be removed from your cart. This can't be undone."
-        confirmLabel="Remove All"
+        open={confirmClear && !disabled}
+        onOpenChange={setConfirmClear}
+        title="Clear your cart?"
+        description="Every selection will be removed."
+        confirmLabel="Clear cart"
         destructive
         onConfirm={() => {
-          setConfirmClearOpen(false);
-          if (canEdit()) view.clearCart();
+          setConfirmClear(false);
+          cart.clearCart();
         }}
       />
     </Screen>

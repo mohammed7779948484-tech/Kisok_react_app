@@ -1,532 +1,59 @@
 import { useRouter } from "expo-router";
-import { useState, type ReactNode } from "react";
-import { ScrollView, View } from "react-native";
-import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, Clock3, Package, Play, Tag, UserRound, X } from "lucide-react-native";
+import { ArrowLeft } from "lucide-react-native";
+import { View } from "react-native";
 
-import {
-  AppImage,
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  cloudinaryImageUrl,
-  EmptyState,
-  ErrorState,
-  Icon,
-  InlineError,
-  Screen,
-  SkeletonList,
-  Text,
-} from "@/design-system";
+import { Button, EmptyState, Icon, Screen, Text, usePageGutter } from "@/design-system";
 import { useAuth } from "@/core/auth";
 
-import type { ActiveOrderRow } from "../../api/fetch-active-orders";
-import { CancelOrderDialog } from "../../components/cancel-order-dialog";
-import { OrderStatusBadge } from "../../components/order-status-badge";
-import { formatCreatedAt } from "../../model/order-display";
-import { allowedOrderActions } from "../../model/status-actions";
+import { OrderFocus } from "../../components/order-focus";
+import { useNow } from "../../components/use-now";
+import { useOrderActions } from "../../components/use-order-actions";
 import { effectiveTimezone, resolveStoreTimezone } from "../../model/store-day";
-import { preparationKeys } from "../../queries/keys";
-import { useOrderDetail } from "../../queries/use-order-detail";
 import { useStoreSettings } from "../../queries/use-store-settings";
-import { useUpdateOrderStatusMutation } from "../../queries/use-update-order-status-mutation";
-
-/**
- * The Order Details screen (AC-07/AC-10): one order's immutable item snapshot
- * — product name, variant label, options, brand, quantity, image where one
- * was captured — rendered AS STORED, never rebuilt from the catalog (which is
- * additionally unreadable to this role). Reached from the board and from
- * history; terminal orders (completed/cancelled) render inspection-only, with
- * no action buttons.
- *
- * Plan decision 1: a STATIC route with `orderId` as a query param — the route
- * file reads `useLocalSearchParams` and passes the param down as a prop, and
- * THIS screen branches on a missing/empty id FIRST (T03-R03): the read hook
- * is mounted only with a real id, because it has no `enabled` guard by
- * design — a fabricated id would stringify into a doomed retryable request.
- *
- * The screen owns the one read (`useOrderDetail`), the settings read for the
- * created-time timezone (decision 8: store zone, silent degrade to the device
- * zone when the row is absent or the read fails), the ONE transition mutation
- * with its per-action pending surface (decision 5, the workspace convention),
- * the cancel dialog's open state, and the rejection handling. The mutation
- * hook invalidates the feature's queries on SUCCESS only (T05-R02), so THIS
- * screen owns AC-10's rejected-transition refresh: onError renders the
- * failure near the actions and invalidates, so the refetched order shows the
- * server's unchanged truth — a transition is never fabricated locally or
- * silently swallowed. A rejected cancel closes the dialog first (T10-R01):
- * feedback behind an open modal is invisible.
- *
- * The rejection feedback always renders SOMEWHERE the employee can see
- * (R2-01): normally below the order card the actions live in, but when the
- * loaded order is not on screen — the rejection refetch failed (the error
- * state replaces the content; the brief forbids stale content here), or the
- * refetched row is terminal with no actions row to anchor near — the feedback
- * falls back to the screen body instead of rendering nowhere. The two copies
- * are mutually exclusive by construction: the near-action copy renders only
- * for the loaded order, the fallback only when it is not. Its lifetime
- * matches the workspace (R2-06): it persists until the NEXT action dispatch,
- * never auto-cleared by a successful read.
- *
- * Items render in the deterministic client-side `variant_sku` order (decision
- * 7), and the created time is the fixed store-timezone wall clock (decision
- * 10 — no ticking timer).
- */
-
-/** One item row of the embedded snapshot — the migration-07 shape. */
-type ItemRow = ActiveOrderRow["order_items"][number];
-
-/** The in-flight action for the transition the RPC is running. */
-type OrderDetailAction = "startPreparing" | "markReady" | "cancel";
-
-/** A rejected action on this order — rendered near the actions, or by the fallback. */
-type ActionError = {
-  orderId: string;
-  error: unknown;
-};
-
-const PENDING_ACTION_BY_TARGET: Record<"preparing" | "ready" | "cancelled", OrderDetailAction> = {
-  preparing: "startPreparing",
-  ready: "markReady",
-  cancelled: "cancel",
-};
-
-/**
- * The deterministic client-side item order (plan decision 7): codepoint
- * comparison on `variant_sku` — stable across platforms, unlike
- * `localeCompare`. The sort is stable, so equal SKUs keep the read's order.
- */
-function compareByVariantSku(left: ItemRow, right: ItemRow): number {
-  if (left.variant_sku === right.variant_sku) return 0;
-  return left.variant_sku < right.variant_sku ? -1 : 1;
-}
-
-/**
- * The stored options as labels: the snapshot's `variant_options` is the
- * migration-07 array of `{type, value}` pairs, rendered AS STORED. The
- * generated type is the wide `Json` union, so each entry is checked before it
- * renders — a non-conforming entry has no honest label and is skipped rather
- * than stringified.
- */
-function optionTexts(variantOptions: ItemRow["variant_options"]): string[] {
-  if (!Array.isArray(variantOptions)) return [];
-  const labels: string[] = [];
-  for (const entry of variantOptions) {
-    if (typeof entry !== "object" || entry === null) continue;
-    const type = (entry as Record<string, unknown>).type;
-    const value = (entry as Record<string, unknown>).value;
-    if (typeof type !== "string" || typeof value !== "string") continue;
-    labels.push(`${type}: ${value}`);
-  }
-  return labels;
-}
-
-/** The image alt: the product and its variant label, as stored. */
-function itemImageAlt(item: ItemRow): string {
-  return item.variant_name !== null
-    ? `${item.product_name}, ${item.variant_name}`
-    : item.product_name;
-}
-
-/** The unavailable state: no order to show, and a way out via the back action. */
-function OrderUnavailable() {
-  return (
-    <EmptyState
-      title="Order unavailable"
-      description="We couldn't find this order. Go back and reopen it from the board or history."
-    />
-  );
-}
 
 type OrderDetailsScreenProps = {
-  /**
-   * The order to show, from the route's `orderId` query param (plan decision
-   * 1). Absent or empty renders the unavailable state WITHOUT mounting the
-   * read (T03-R03) — a fabricated id would stringify into a doomed retryable
-   * request.
-   */
   orderId?: string;
 };
 
+/**
+ * One order full screen — opened from the board on narrower tablets and
+ * from today's history. The same focus view as the board's side panel, so an
+ * order reads and acts the same wherever it is opened.
+ */
 export function OrderDetailsScreen({ orderId }: OrderDetailsScreenProps) {
   const router = useRouter();
+  const gutter = usePageGutter();
+  const { profile } = useAuth();
+  const storeSettings = useStoreSettings();
+  const actions = useOrderActions();
+  const now = useNow();
+  const timezone = effectiveTimezone(resolveStoreTimezone(storeSettings.data ?? null));
+  const back = () => (router.canGoBack() ? router.back() : router.replace("/(preparation)"));
 
   return (
     <Screen edges={["top", "bottom", "left", "right"]}>
-      <ScrollView contentContainerClassName="min-h-full gap-5 p-4 md:p-6">
-        {/* The back action is screen chrome: present in every state, including
-            the unavailable one — a details screen always has a way out. */}
-        <View className="flex-row items-center gap-3 border-b border-border pb-4">
-          <Button variant="ghost" size="compact" onPress={() => router.back()}>
-            <Icon as={ArrowLeft} size={20} className="text-foreground" />
-            <Text>Back</Text>
-          </Button>
-          <View className="min-w-0 flex-1 gap-1">
-            <Text variant="h1">Order Details</Text>
-            <Text variant="caption">Stored order ticket and item snapshot</Text>
-          </View>
-        </View>
-        {/* T03-R03: branch FIRST — the read-bearing subtree below mounts only
-            with a real id. */}
-        {typeof orderId === "string" && orderId.length > 0 ? (
-          <OrderDetailContent orderId={orderId} />
-        ) : (
-          <OrderUnavailable />
-        )}
-      </ScrollView>
-    </Screen>
-  );
-}
-
-/**
- * The screen body for a real order id: the read, the settings read, the
- * mutation, the dialog state, and the state branches. Split from
- * {@link OrderDetailsScreen} so the query hook mounts only on the real-id
- * branch — the param branch above stays hook-free.
- */
-function OrderDetailContent({ orderId }: { orderId: string }) {
-  const { profile } = useAuth();
-  // Decision 3: the assignment comparison is by id, never names. The route
-  // gate guarantees a resolved preparation profile here; the fallback simply
-  // never matches an assignment, which degrades safe (no Mark Ready offered).
-  const actorPreparationId = profile?.id ?? "";
-  const queryClient = useQueryClient();
-
-  const orderQuery = useOrderDetail(orderId);
-  const storeSettings = useStoreSettings();
-  const mutation = useUpdateOrderStatusMutation();
-
-  const [actionError, setActionError] = useState<ActionError | null>(null);
-  const [cancelOpen, setCancelOpen] = useState(false);
-
-  // Decision 8: prefer the store timezone, degrade to the device zone when
-  // the settings row is absent OR its read failed — never a details failure.
-  const timezone = effectiveTimezone(resolveStoreTimezone(storeSettings.data ?? null));
-
-  const runTransition = (targetStatus: "preparing" | "ready" | "cancelled") => {
-    // One in-flight transition at a time: the shared mutation's state tracks
-    // its LATEST call (the workspace convention). This is also the repeat
-    // guard AC-04 layers on top of the disabled button.
-    if (mutation.isPending) return;
-    // R2-06: the rejection feedback persists until the NEXT action dispatch —
-    // the workspace lifetime agreement; a successful read never clears it.
-    setActionError(null);
-    mutation.mutate(
-      { orderId, targetStatus },
-      {
-        onSuccess: () => {
-          // The hook's own onSuccess invalidates the feature's queries — the
-          // refetched order is the rendered truth. The screen only closes the
-          // dialog it owns.
-          if (targetStatus === "cancelled") setCancelOpen(false);
-        },
-        onError: (error: unknown) => {
-          // T05-R02: the hook invalidates on success ONLY — the screen owns
-          // AC-10's rejected-transition refresh, so the order refetches and
-          // shows the server's unchanged truth.
-          setActionError({ orderId, error });
-          // T10-R01: a rejected cancel must not leave its modal open over the
-          // feedback that replaces it. Only cancel opens the dialog, so this
-          // is a no-op for the other transitions.
-          setCancelOpen(false);
-          void queryClient.invalidateQueries({ queryKey: preparationKeys.all });
-        },
-      },
-    );
-  };
-
-  const handleCancelRequested = () => {
-    if (mutation.isPending) return;
-    setCancelOpen(true);
-  };
-
-  // The in-flight action (decision 5), derived from the mutation's own ground
-  // truth — the workspace convention mirrored here: while a write is pending,
-  // THAT action alone renders disabled with its label swapped.
-  const pendingInput = mutation.isPending ? mutation.variables : undefined;
-  const pendingAction =
-    pendingInput !== undefined && pendingInput.orderId === orderId
-      ? PENDING_ACTION_BY_TARGET[pendingInput.targetStatus]
-      : undefined;
-
-  const order = orderQuery.data ?? null;
-  const isOrderLoaded = !orderQuery.isPending && !orderQuery.isError && order !== null;
-  // The rejection for THIS order — a param change leaves an older order's
-  // error behind in state, and it must not surface on the new one.
-  const ownActionError =
-    actionError !== null && actionError.orderId === orderId ? actionError : null;
-
-  let body: ReactNode;
-  if (orderQuery.isPending) {
-    body = <SkeletonList itemClassName="h-32" />;
-  } else if (orderQuery.isError) {
-    // A failed fetch shows the unavailable state instead of stale content —
-    // the error passes through as unknown (T04 O-1: transport-level throws
-    // are not AppError at the screen) and ErrorState decides whether a retry
-    // can help.
-    body = (
-      <ErrorState
-        title="Order unavailable"
-        error={orderQuery.error}
-        onRetry={() => void orderQuery.refetch()}
-      />
-    );
-  } else if (order === null) {
-    // A successful read that found no row: a value, not a failure. There is
-    // nothing to retry — the back action is the way out.
-    body = <OrderUnavailable />;
-  } else {
-    body = (
-      <View className="gap-4 lg:flex-row lg:items-start">
-        <View className="lg:w-1/3">
-          <OrderSummaryCard
-            order={order}
-            timezone={timezone}
-            actorPreparationId={actorPreparationId}
-            pendingAction={pendingAction}
-            actionError={ownActionError}
-            onStartPreparing={() => runTransition("preparing")}
-            onMarkReady={() => runTransition("ready")}
-            onCancel={handleCancelRequested}
-          />
-        </View>
-        <View className="flex-1 gap-3">
-          <View className="flex-row items-center justify-between border-b border-border pb-3">
-            <View className="flex-row items-center gap-2">
-              <Icon as={Package} size={20} className="text-primary" />
-              <Text variant="h2">Items</Text>
-            </View>
-            <Badge variant="neutral">
-              <Text>
-                {order.order_items.length === 1 ? "1 line" : `${order.order_items.length} lines`}
-              </Text>
-            </Badge>
-          </View>
-          {[...order.order_items].sort(compareByVariantSku).map((item) => (
-            <OrderItemRow key={item.id} item={item} />
-          ))}
+      <View className="min-h-0 flex-1 gap-4 py-5" style={{ paddingHorizontal: gutter }}>
+        <Button variant="tonal" onPress={back}>
+          <Icon as={ArrowLeft} size={18} />
+          <Text>Back</Text>
+        </Button>
+        <View className="min-h-0 w-full max-w-3xl flex-1 self-center rounded-3xl border border-border bg-card p-5 md:p-6">
+          {typeof orderId === "string" && orderId.length > 0 ? (
+            <OrderFocus
+              orderId={orderId}
+              actorPreparationId={profile?.id ?? ""}
+              timezone={timezone}
+              now={now}
+              actions={actions}
+            />
+          ) : (
+            <EmptyState
+              title="Order unavailable"
+              description="Go back and open the order from the board or today’s history."
+            />
+          )}
         </View>
       </View>
-    );
-  }
-
-  // R2-01: the rejection feedback's fallback home. The summary card renders
-  // it below the order the actions fired on, but when that order is not on
-  // screen — the rejection refetch failed (the error state replaces the
-  // content), or the row is gone — this is the only place it can still reach
-  // the employee. Same InlineError surface, so the T04 O-1 unknown-error
-  // contract holds here too. The two copies are mutually exclusive by
-  // construction: this renders only when the order is NOT loaded.
-  const fallbackError = ownActionError !== null && !isOrderLoaded ? ownActionError : null;
-
-  return (
-    <View className="gap-4">
-      {fallbackError !== null ? <InlineError error={fallbackError.error} /> : null}
-      {body}
-      {order !== null ? (
-        <CancelOrderDialog
-          open={cancelOpen}
-          onOpenChange={(open: boolean) => {
-            if (!open) setCancelOpen(false);
-          }}
-          order={order}
-          onCancelOrder={() => runTransition("cancelled")}
-          busy={mutation.isPending && mutation.variables?.targetStatus === "cancelled"}
-        />
-      ) : null}
-    </View>
-  );
-}
-
-type OrderSummaryCardProps = {
-  order: ActiveOrderRow;
-  /** The effective (store, else device) timezone for the created-time label. */
-  timezone: string;
-  /** The signed-in employee's profile id — the assignment comparison. */
-  actorPreparationId: string;
-  /** The action whose mutation is currently in flight on this order. */
-  pendingAction?: OrderDetailAction;
-  /** The rejection feedback to render below the card, near the actions. */
-  actionError?: ActionError | null;
-  onStartPreparing: () => void;
-  onMarkReady: () => void;
-  onCancel: () => void;
-};
-
-/**
- * The order's metadata card: the display number prominent, the status badge,
- * the created time in the store timezone, the assignment indicator, and the
- * allowed actions for the order's current state in the footer. Presentational
- * — the parent owns the reads, the mutation, and the dialog; the actions here
- * mirror the board card's per-action pending surface (decision 5). A terminal
- * order renders no footer at all: status-actions grants nothing, which is
- * the eligibility matrix's own answer, never re-derived here.
- */
-function OrderSummaryCard({
-  order,
-  timezone,
-  actorPreparationId,
-  pendingAction,
-  actionError,
-  onStartPreparing,
-  onMarkReady,
-  onCancel,
-}: OrderSummaryCardProps) {
-  // T07 owns the eligibility matrix; this card consumes it, never re-derives.
-  const actions = allowedOrderActions(order, actorPreparationId);
-
-  // Words, never colour alone — and real names are unobtainable under current
-  // RLS (decision 3).
-  const assignmentLabel =
-    order.assigned_preparation_id === null
-      ? null
-      : order.assigned_preparation_id === actorPreparationId
-        ? "You"
-        : "Assigned to another employee";
-
-  // A footer button needs the affordance; a pending action disables its OWN
-  // button only, swapping its label (the board card's convention).
-  const footerButtons: ReactNode[] = [];
-  if (actions.startPreparing) {
-    const starting = pendingAction === "startPreparing";
-    footerButtons.push(
-      <Button
-        key="start-preparing"
-        variant="primary"
-        disabled={starting}
-        onPress={onStartPreparing}
-      >
-        <Icon as={Play} size={18} className="text-primary-foreground" />
-        <Text>{starting ? "Starting…" : "Start Preparing"}</Text>
-      </Button>,
-    );
-  }
-  if (actions.markReady) {
-    const markingReady = pendingAction === "markReady";
-    footerButtons.push(
-      <Button key="mark-ready" variant="primary" disabled={markingReady} onPress={onMarkReady}>
-        <Icon as={Check} size={18} className="text-primary-foreground" />
-        <Text>{markingReady ? "Marking ready…" : "Mark Ready"}</Text>
-      </Button>,
-    );
-  }
-  if (actions.cancel) {
-    const cancelling = pendingAction === "cancel";
-    footerButtons.push(
-      <Button key="cancel" variant="destructive" disabled={cancelling} onPress={onCancel}>
-        <Icon as={X} size={18} className="text-destructive-foreground" />
-        <Text>{cancelling ? "Cancelling…" : "Cancel"}</Text>
-      </Button>,
-    );
-  }
-
-  return (
-    <View className="gap-2">
-      <Card
-        className={
-          pendingAction !== undefined
-            ? "overflow-hidden border-primary bg-primary/5"
-            : "overflow-hidden"
-        }
-      >
-        <CardHeader className="gap-4 bg-secondary/70 p-4">
-          {/* flex-wrap: the mono number and the badge must wrap, not overflow,
-              at 200% text scaling. */}
-          <View className="flex-row flex-wrap items-start justify-between gap-3">
-            <View className="gap-1">
-              <Text variant="caption" className="font-sans-bold text-caption">
-                Order ticket
-              </Text>
-              <Text variant="h2" className="font-mono tracking-wider">
-                {order.display_number}
-              </Text>
-            </View>
-            <OrderStatusBadge status={order.status} />
-          </View>
-        </CardHeader>
-        <CardContent className="gap-3 p-4">
-          <View className="flex-row items-center gap-2">
-            <Icon as={Clock3} size={18} className="text-muted-foreground" />
-            <View testID="order-created-at" className="gap-0.5">
-              <Text variant="caption">Created</Text>
-              <Text variant="label">{formatCreatedAt(order.created_at, timezone)}</Text>
-            </View>
-          </View>
-          {assignmentLabel !== null ? (
-            <View className="flex-row items-center gap-2 border-t border-border pt-3">
-              <Icon as={UserRound} size={18} className="text-muted-foreground" />
-              <Badge variant={assignmentLabel === "You" ? "primary" : "outline"}>
-                <Text>{assignmentLabel}</Text>
-              </Badge>
-            </View>
-          ) : null}
-        </CardContent>
-        {footerButtons.length > 0 ? (
-          <CardFooter className="flex-wrap border-t border-border bg-muted/70 p-4">
-            {footerButtons}
-          </CardFooter>
-        ) : null}
-      </Card>
-      {/* AC-10: the rejection feedback for THIS order renders here — directly
-          below the card the actions fired on, never swallowed, never
-          fabricated as a local transition. The error passes through as
-          unknown (T04 O-1). */}
-      {actionError != null ? <InlineError error={actionError.error} /> : null}
-    </View>
-  );
-}
-
-/**
- * One line of the immutable item snapshot (AC-07): the captured image (or its
- * placeholder) beside the stored product name, variant label, options, brand,
- * and SKU, with the quantity as its own prominent label. The snapshot renders
- * AS STORED — nothing here re-derives a label from the catalog.
- */
-function OrderItemRow({ item }: { item: ItemRow }) {
-  return (
-    <Card className="overflow-hidden">
-      <CardContent className="gap-4 p-4 sm:flex-row">
-        <AppImage
-          uri={cloudinaryImageUrl(item.image_secure_url, "packshot")}
-          alt={itemImageAlt(item)}
-          className="h-24 w-24 shrink-0 rounded-md"
-        />
-        <View className="min-w-0 flex-1 gap-2">
-          <View className="flex-row flex-wrap items-start justify-between gap-3">
-            <Text variant="h3" className="min-w-0 flex-1">
-              {item.product_name}
-            </Text>
-            <View className="min-w-touch items-center rounded-md bg-accent px-3 py-2">
-              <Text variant="h3" className="text-accent-foreground">{`×${item.quantity}`}</Text>
-            </View>
-          </View>
-          {item.variant_name !== null ? <Text variant="body">{item.variant_name}</Text> : null}
-          <View className="gap-1">
-            {optionTexts(item.variant_options).map((label, index) => (
-              // T13-R03: a malformed snapshot with duplicate option labels
-              // cannot come from migration 07 — but a compound key costs nothing
-              // and never collides regardless.
-              <Text key={`${label}-${index}`} variant="caption">
-                {label}
-              </Text>
-            ))}
-          </View>
-          <View className="flex-row flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-3">
-            {item.brand_name !== null ? (
-              <View className="flex-row items-center gap-1.5">
-                <Icon as={Tag} size={15} className="text-muted-foreground" />
-                <Text variant="caption">{item.brand_name}</Text>
-              </View>
-            ) : null}
-            <Text variant="mono" className="text-caption">
-              {item.variant_sku}
-            </Text>
-          </View>
-        </View>
-      </CardContent>
-    </Card>
+    </Screen>
   );
 }

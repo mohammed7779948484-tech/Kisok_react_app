@@ -46,7 +46,11 @@ export type MediaFrameProps = {
   alt: string;
   /** `contain` keeps packaging and logos whole; `cover` fills with imagery. */
   fit?: "contain" | "cover";
-  /** Cloudinary size preset. Defaults to `card` for contain and `cover` for cover. */
+  /**
+   * Cloudinary size preset. Defaults to `card` for contain and `cover` for
+   * cover. Products always stay `contain` with a `limitFit` preset (`card`,
+   * `detail`, `row`); `cover` is for category and editorial imagery only.
+   */
   preset?: CloudinaryPreset;
   /**
    * Fill the frame behind a contained image with a soft, blurred copy of the
@@ -99,6 +103,7 @@ export function MediaFrame({
             alt=""
             contentFit="cover"
             transition={0}
+            hideFallback
             recyclingKey={recyclingKey ? `${recyclingKey}:backdrop` : undefined}
             className="absolute inset-0 h-full w-full"
           />

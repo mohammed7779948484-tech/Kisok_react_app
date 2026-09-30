@@ -12,19 +12,15 @@ type SignOutActionState = {
   run: () => void;
   /** True while it is in flight — disable the control. */
   pending: boolean;
-  /**
-   * Set when sign-out cannot complete safely: a guard blocked it, the auth
-   * session may still be usable, or auth is gone but kiosk handoff cleanup is
-   * still unsafe. Null when idle or fully successful.
-   */
+  /** Set when sign-out failed and the session may still be usable. Null otherwise. */
   message: string | null;
 };
 
 /**
  * Sign out and surface every non-success outcome.
  *
- * Exists so a screen cannot accidentally discard sign-out safety with
- * `void signOut()`. On full success nothing is rendered: the auth gate has
+ * Exists so a screen cannot silently drop a failed sign-out with
+ * `void signOut()`. On success nothing is rendered: the auth gate has
  * already moved the user to the sign-in screen.
  */
 export function useSignOutAction(): SignOutActionState {
