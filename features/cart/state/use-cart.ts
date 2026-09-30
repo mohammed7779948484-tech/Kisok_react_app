@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 
 import { useActiveProfile } from "@/core/auth";
 
@@ -34,31 +34,63 @@ export type CartSnapshot = {
  * The cart for React consumers. It also restores the active customer's cart:
  * the store keeps one restore per customer, so every consumer can call it.
  * Zustand stays an implementation detail behind this view.
+ *
+ * The public view is synchronously owner-scoped. A profile can change before
+ * React runs the hydration effect; during that render the previous owner's
+ * in-memory state must never be exposed or mutated by the new customer.
  */
 export function useCart(): CartView {
   const profile = useActiveProfile();
+  const ownerId = useCartStore((state) => state.ownerId);
   const lines = useCartStore((state) => state.lines);
   const hydrated = useCartStore((state) => state.hydrated);
   const locked = useCartStore((state) => state.locked);
   const saveFailed = useCartStore((state) => state.saveFailed);
   const totalQuantity = useCartStore(selectTotalQuantity);
   const distinctLineCount = useCartStore(selectDistinctLineCount);
+  const owned = ownerId === profile.id;
 
   useEffect(() => {
     void useCartStore.getState().hydrate(profile.id);
   }, [profile.id]);
 
+  const addOwnedItem = useCallback(
+    (input: AddToCartInput) => {
+      if (useCartStore.getState().ownerId !== profile.id) return;
+      addItem(input);
+    },
+    [profile.id],
+  );
+  const setOwnedLineQuantity = useCallback(
+    (lineId: string, quantity: number) => {
+      if (useCartStore.getState().ownerId !== profile.id) return;
+      setLineQuantity(lineId, quantity);
+    },
+    [profile.id],
+  );
+  const removeOwnedLine = useCallback(
+    (lineId: string) => {
+      if (useCartStore.getState().ownerId !== profile.id) return;
+      removeLine(lineId);
+    },
+    [profile.id],
+  );
+  const clearOwnedCart = useCallback(() => {
+    if (useCartStore.getState().ownerId !== profile.id) return;
+    clearCart();
+  }, [profile.id]);
+
   return {
-    lines,
-    totalQuantity,
-    distinctLineCount,
-    hydrated,
-    locked,
-    saveFailed,
-    addItem,
-    setLineQuantity,
-    removeLine,
-    clearCart,
+    lines: owned ? lines : [],
+    totalQuantity: owned ? totalQuantity : 0,
+    distinctLineCount: owned ? distinctLineCount : 0,
+    hydrated: owned && hydrated,
+    locked: !owned || locked,
+    saveFailed: owned && saveFailed,
+    addItem: addOwnedItem,
+    setLineQuantity: setOwnedLineQuantity,
+    removeLine: removeOwnedLine,
+    clearCart: clearOwnedCart,
   };
 }
 
