@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# Feature and fix pull requests target `develop`, while the repository's default
+# branch is `main`. CodeRabbit auto-reviews only the default branch unless told
+# otherwise (`base_branches` defaults to []), so every PR into develop was
+# skipped. No path filters: every change is reviewed.
+reviews:
+  auto_review:
+    enabled: true
+    base_branches:
+      - develop
