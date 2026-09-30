@@ -59,8 +59,9 @@ export function CatalogCartProvider({ children }: CatalogCartProviderProps) {
         addedLineId={addedLineId}
         onOpenChange={setOpen}
         onViewFullCart={() => {
-          setOpen(false);
-          router.push("/cart");
+          // Pathname cleanup owns dismissal after the route changes. Avoid
+          // tearing down the native portal in the same event as navigation.
+          router.navigate("/(customer)/cart");
         }}
       />
     </QuickCartContext.Provider>

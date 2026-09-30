@@ -36,7 +36,10 @@ function Indicator({ value, className }: { value: number | undefined | null; cla
 
   return (
     <ProgressPrimitive.Indicator asChild>
-      <Animated.View style={indicator} className={cn("h-full bg-primary", className)} />
+      <Animated.View
+        style={[{ height: "100%" }, indicator]}
+        className={cn("h-full bg-primary", className)}
+      />
     </ProgressPrimitive.Indicator>
   );
 }
