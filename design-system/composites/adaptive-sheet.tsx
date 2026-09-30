@@ -1,5 +1,5 @@
 import * as DialogPrimitive from "@rn-primitives/dialog";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useLayout } from "../foundations/responsive";
@@ -7,6 +7,7 @@ import { cn } from "@/core/utils";
 
 import { Dialog, DialogClose, DialogOverlay, DialogPortal, DialogTrigger } from "./dialog";
 import { Text } from "../primitives/text";
+import { size } from "../tokens/sizing";
 
 export const AdaptiveSheet = Dialog;
 export const AdaptiveSheetTrigger = DialogTrigger;
@@ -15,14 +16,17 @@ export const AdaptiveSheetClose = DialogClose;
 export function AdaptiveSheetContent({
   className,
   children,
+  style,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content>) {
-  const { isExpanded } = useLayout();
+  const { isExpanded, width, height } = useLayout();
   const insets = useSafeAreaInsets();
   return (
     <DialogPortal>
       <DialogOverlay
         className={cn("items-stretch justify-end p-0", isExpanded && "flex-row justify-end")}
+        nativeOverlayStyle={{ padding: 0 }}
+        nativeContentStyle={{ alignItems: "flex-end", justifyContent: "flex-end" }}
       >
         <DialogPrimitive.Content
           className={cn(
@@ -32,7 +36,21 @@ export function AdaptiveSheetContent({
               : "max-h-[88%] w-full rounded-t-3xl border-t border-border",
             className,
           )}
-          style={{ paddingTop: isExpanded ? insets.top : 0, paddingBottom: insets.bottom }}
+          style={[
+            Platform.OS === "web"
+              ? null
+              : isExpanded
+                ? { height: "100%", width: Math.min(size.sheet, width) }
+                : {
+                    width: "100%",
+                    maxHeight: Math.max(
+                      0,
+                      Math.min(height * 0.88, height - insets.top - insets.bottom),
+                    ),
+                  },
+            { paddingTop: isExpanded ? insets.top : 0, paddingBottom: insets.bottom },
+            style,
+          ]}
           {...props}
         >
           {!isExpanded ? (

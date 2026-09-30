@@ -1,6 +1,6 @@
 import { Image, type ImageContentFit, type ImageProps } from "expo-image";
 import { useState } from "react";
-import { View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import type { LucideIcon } from "lucide-react-native";
 import { ImageOff } from "lucide-react-native";
 
@@ -51,10 +51,20 @@ export function AppImage({
   hideFallback = false,
   transition = 200,
   recyclingKey,
+  style,
+  onError,
   ...props
 }: AppImageProps) {
   const [failedUri, setFailedUri] = useState<string | null>(null);
   const showFallback = !uri || failedUri === uri;
+  const dimensions = StyleSheet.flatten(style);
+  const nativeFill =
+    dimensions?.aspectRatio == null
+      ? { width: "100%" as const, height: "100%" as const }
+      : dimensions.width == null && dimensions.height == null
+        ? { width: "100%" as const }
+        : null;
+  const imageStyle = Platform.OS === "web" ? style : [nativeFill, style];
 
   if (showFallback && hideFallback) return null;
 
@@ -65,6 +75,7 @@ export function AppImage({
         accessibilityRole="image"
         accessibilityLabel={alt || undefined}
         className={cn("items-center justify-center bg-muted p-4", className, fallbackClassName)}
+        style={imageStyle}
       >
         {fallbackLabel ? (
           <Text
@@ -92,8 +103,16 @@ export function AppImage({
       transition={transition}
       cachePolicy="memory-disk"
       recyclingKey={recyclingKey ?? uri ?? undefined}
-      onError={() => setFailedUri(uri)}
+      onError={(event) => {
+        setFailedUri(uri);
+        onError?.(event);
+      }}
       className={className}
+      // expo-image is a third-party native view. Its className is useful on
+      // web, but cannot be the only source of its native layout dimensions.
+      // Caller styles come last; a supplied aspect ratio keeps its derived
+      // dimension, even when only one explicit size was given.
+      style={imageStyle}
       {...props}
     />
   );

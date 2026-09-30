@@ -1,4 +1,4 @@
-import { View, type StyleProp, type ViewStyle } from "react-native";
+import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 
 import { cn } from "@/core/utils";
 
@@ -106,6 +106,7 @@ export function MediaFrame({
             hideFallback
             recyclingKey={recyclingKey ? `${recyclingKey}:backdrop` : undefined}
             className="absolute inset-0 h-full w-full"
+            style={StyleSheet.absoluteFillObject}
           />
           {/* A light veil keeps the blurred colour quiet behind the product. */}
           <View aria-hidden className="absolute inset-0 bg-card/35" />
@@ -113,7 +114,7 @@ export function MediaFrame({
       ) : null}
       {/* An inset wrapper, not image padding: expo-image does not reliably
           inset its content by padding on every platform. */}
-      <View className="absolute" style={padded ? box : FILL}>
+      <View style={{ position: "absolute", ...(padded ? box : FILL) }}>
         <AppImage
           uri={uri}
           alt={alt}
