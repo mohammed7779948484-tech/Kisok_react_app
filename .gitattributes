@@ -1,0 +1,17 @@
+# Keep text files LF in every working tree, including Windows checkouts with
+# core.autocrlf=true: Prettier enforces LF, and the workflow tests match on
+# LF-only content. Without this a Windows clone fails `pnpm verify` locally.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.zip binary
+*.jar binary
+*.keystore binary
+*.jks binary
