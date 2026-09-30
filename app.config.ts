@@ -13,7 +13,7 @@ const BUNDLE_ID = "com.kisok.kiosk";
 const config: ExpoConfig = {
   name: "KISOK",
   slug: "kisok",
-  version: "1.1.2",
+  version: "1.1.3",
   orientation: "default",
   icon: "./assets/images/icon.png",
   scheme: "kisok",
@@ -32,8 +32,8 @@ const config: ExpoConfig = {
     // EXPLICIT, never Expo's hidden `?? 1` default. Android refuses an update
     // whose versionCode is not greater, so every MDM-delivered release must
     // bump this; the release workflow fails closed when it is absent rather
-    // than silently shipping versionCode 1 forever. This release uses 4.
-    versionCode: 4,
+    // than silently shipping versionCode 1 forever. This release uses 5.
+    versionCode: 5,
   },
   ios: {
     supportsTablet: true,

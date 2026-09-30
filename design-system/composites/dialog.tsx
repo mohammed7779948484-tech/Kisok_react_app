@@ -3,10 +3,14 @@ import { X } from "lucide-react-native";
 import * as React from "react";
 import {
   Platform,
+  StyleSheet,
   Text as RNText,
   View,
+  useWindowDimensions,
   type GestureResponderEvent,
+  type StyleProp,
   type ViewProps,
+  type ViewStyle,
 } from "react-native";
 import { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 import { FullWindowOverlay as RNFullWindowOverlay } from "react-native-screens";
@@ -26,11 +30,16 @@ function DialogOverlay({
   className,
   children,
   onPress,
+  nativeContentStyle,
+  nativeOverlayStyle,
   ...props
 }: Omit<React.ComponentProps<typeof DialogPrimitive.Overlay>, "asChild"> & {
   children?: React.ReactNode;
+  nativeContentStyle?: StyleProp<ViewStyle>;
+  nativeOverlayStyle?: StyleProp<ViewStyle>;
 }) {
   const { onOpenChange } = DialogPrimitive.useRootContext();
+  const { width } = useWindowDimensions();
 
   function onOverlayPress(event: GestureResponderEvent) {
     onPress?.(event);
@@ -53,10 +62,22 @@ function DialogOverlay({
           entering={FadeIn.duration(180).reduceMotion(ReduceMotion.System)}
           exiting={FadeOut.duration(140).reduceMotion(ReduceMotion.System)}
           as="Pressable"
+          style={[
+            StyleSheet.absoluteFillObject,
+            { padding: width >= 768 ? 32 : 16 },
+            nativeOverlayStyle,
+          ]}
         >
+          {Platform.OS !== "web" ? (
+            <View pointerEvents="none" className="absolute inset-0 bg-foreground/55" />
+          ) : null}
           <NativeOnlyAnimatedView
             entering={FadeIn.delay(40).duration(180).reduceMotion(ReduceMotion.System)}
             exiting={FadeOut.duration(140).reduceMotion(ReduceMotion.System)}
+            style={[
+              { flex: 1, width: "100%", alignItems: "center", justifyContent: "center" },
+              nativeContentStyle,
+            ]}
           >
             <>{children}</>
           </NativeOnlyAnimatedView>
