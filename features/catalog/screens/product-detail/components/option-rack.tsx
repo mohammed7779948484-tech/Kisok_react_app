@@ -23,6 +23,8 @@ import {
 /** Within this distance of the end, the "more below" fade is dropped. */
 const END_THRESHOLD = 8;
 const ROW_GAP = 8;
+/** Below this rack width, a pair of choices would squeeze their labels. */
+const TWO_UP_MIN_WIDTH = 440;
 
 /**
  * The choices, shown in place — never behind a sheet. The rack keeps a fixed
@@ -62,6 +64,7 @@ export function OptionRack({
     setMoreBelow(content - viewport - offset > END_THRESHOLD);
   }, []);
 
+  const [rackWidth, setRackWidth] = useState(0);
   const searching = decision.searchable && query.trim().length > 0;
   const matches = searching ? filterChoices(decision.choices, query) : decision.choices;
   const visible =
@@ -69,9 +72,12 @@ export function OptionRack({
   const compact = decision.mode === "variations";
   const hidden = decision.choices.length - PREVIEW_CHOICE_COUNT;
 
+  // Two choices per row when the rack is wide enough for a thumbnail and a
+  // readable label side by side; one per row on a narrow rack.
+  const perRow = rackWidth === 0 || rackWidth >= TWO_UP_MIN_WIDTH ? 2 : 1;
   const rows: OptionChoice[][] = [];
-  for (let index = 0; index < visible.length; index += 2) {
-    rows.push(visible.slice(index, index + 2));
+  for (let index = 0; index < visible.length; index += perRow) {
+    rows.push(visible.slice(index, index + perRow));
   }
 
   // Read by the effect below without re-running it on every selection.
@@ -151,7 +157,10 @@ export function OptionRack({
         </View>
       ) : null}
 
-      <View className="min-h-0 flex-1">
+      <View
+        className="min-h-0 flex-1"
+        onLayout={(event) => setRackWidth(Math.round(event.nativeEvent.layout.width))}
+      >
         <ScrollView
           ref={scrollRef}
           accessibilityRole="radiogroup"
@@ -184,7 +193,7 @@ export function OptionRack({
                     lowStockThreshold={lowStockThreshold}
                   />
                 ))}
-                {row.length === 1 ? <View className="flex-1" /> : null}
+                {row.length < perRow ? <View className="flex-1" /> : null}
               </View>
             );
           })}

@@ -32,7 +32,7 @@ export const OptionRackItem = memo(function OptionRackItem({
   const unavailable = !choice.isAvailable;
   const markIcon = selected ? Check : unavailable ? X : ArrowRight;
   const lowStock = !unavailable && choice.availableQuantity <= lowStockThreshold;
-  const thumbUri = cloudinaryImageUrl(choice.thumb, "thumbnail");
+  const thumbUri = cloudinaryImageUrl(choice.thumb, "row");
 
   return (
     <Pressable
@@ -52,7 +52,7 @@ export const OptionRackItem = memo(function OptionRackItem({
     >
       <View
         className={cn(
-          "h-[72px] w-[72px] items-center justify-center overflow-hidden rounded-md border",
+          "h-[72px] w-[72px] items-center justify-center overflow-hidden rounded-md border p-1",
           selected ? "border-primary/40" : "border-border",
           thumbUri ? "bg-card" : "bg-secondary/70",
           unavailable && "opacity-55",
@@ -62,7 +62,7 @@ export const OptionRackItem = memo(function OptionRackItem({
           <AppImage
             uri={thumbUri}
             alt=""
-            contentFit="cover"
+            contentFit="contain"
             fallbackLabel={choice.initials}
             className="h-full w-full"
           />

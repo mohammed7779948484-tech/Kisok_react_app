@@ -71,6 +71,7 @@ export function FeaturedShowcase({
             alt=""
             contentFit="cover"
             transition={0}
+            hideFallback
             className="h-full w-full opacity-40"
           />
           <View aria-hidden className="absolute inset-0 bg-primary/60" />
