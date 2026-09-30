@@ -1,8 +1,6 @@
 import { View } from "react-native";
 
-import { ErrorState, LoadingState } from "@/components/feedback";
-import { Screen } from "@/components/layout/screen";
-import { Text } from "@/components/ui";
+import { ErrorState, LoadingState, Screen, Text } from "@/design-system";
 import { useAuth } from "@/core/auth";
 
 /**

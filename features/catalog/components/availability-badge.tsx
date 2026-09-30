@@ -1,4 +1,7 @@
-import { Badge, Text } from "@/components/ui";
+import { View } from "react-native";
+
+import { Text } from "@/design-system";
+import { cn } from "@/core/utils";
 
 export type AvailabilityBadgeProps = {
   /** True if available */
@@ -9,16 +12,23 @@ export type AvailabilityBadgeProps = {
   variantCount?: number;
   /** Optional custom text override */
   label?: string;
+  /** For use on an evergreen panel. */
+  inverse?: boolean;
   className?: string;
   "aria-hidden"?: boolean;
   accessible?: boolean;
 };
 
+/**
+ * A dot and a word. Availability is stated in text, never by colour alone;
+ * the dot only reinforces it.
+ */
 export function AvailabilityBadge({
   isAvailable,
   type = "variant",
   variantCount,
   label: customLabel,
+  inverse = false,
   className,
   "aria-hidden": ariaHidden,
   accessible,
@@ -34,16 +44,33 @@ export function AvailabilityBadge({
       : "Currently unavailable");
 
   return (
-    <Badge
-      variant={isAvailable ? "success" : "destructive"}
+    <View
+      accessible={accessible ?? !ariaHidden}
       accessibilityLabel={ariaHidden ? undefined : resolvedLabel}
       aria-hidden={ariaHidden}
-      accessible={accessible ?? (ariaHidden ? false : true)}
-      className={className}
+      className={cn("shrink-0 flex-row items-center gap-1.5", className)}
     >
-      <Text variant="caption" className="font-semibold" aria-hidden={ariaHidden}>
+      <View
+        aria-hidden
+        className={cn(
+          "h-[7px] w-[7px] rounded-full",
+          isAvailable ? (inverse ? "bg-accent-soft" : "bg-success") : "bg-unavailable",
+        )}
+      />
+      <Text
+        numberOfLines={1}
+        aria-hidden={ariaHidden}
+        className={cn(
+          "font-sans-semibold text-caption",
+          inverse
+            ? "text-primary-foreground/85"
+            : isAvailable
+              ? "text-foreground/80"
+              : "text-unavailable",
+        )}
+      >
         {resolvedLabel}
       </Text>
-    </Badge>
+    </View>
   );
 }

@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * KISOK colour roles — the single source of colour truth.
+ *
+ * Contract: semantic HSL triples (no `hsl()` wrapper), consumed by
+ * tailwind.config.js as `hsl(var(--token))`. The names are the ones React
+ * Native Reusables generates, so a primitive added through its CLI themes
+ * correctly with no edits. `navigation-theme.ts` mirrors these values for React
+ * Navigation, which cannot read CSS variables.
+ *
+ * The light palette is the High Fidelity reference: an ivory canvas, warm
+ * paper surfaces, a deep evergreen primary, sage and bronze accents, and a
+ * green-black ink. Never hardcode a colour in a component — use a role class
+ * (`bg-card`, `text-muted-foreground`, `border-border`).
+ *
+ * Roles beyond the RNR set:
+ *   --accent-soft   bronze wash used behind media placeholders
+ *   --unavailable   the muted rose that marks an option that cannot be added
+ */
+@layer base {
+  :root {
+    --background: 42 28% 93%;
+    --foreground: 156 10% 10%;
+
+    --card: 45 33% 98%;
+    --card-foreground: 156 10% 10%;
+
+    --popover: 45 33% 98%;
+    --popover-foreground: 156 10% 10%;
+
+    --primary: 163 47% 17%;
+    --primary-foreground: 72 24% 96%;
+
+    --secondary: 135 13% 88%;
+    --secondary-foreground: 163 47% 17%;
+
+    --muted: 42 23% 89%;
+    --muted-foreground: 153 5% 37%;
+
+    --accent: 27 29% 47%;
+    --accent-foreground: 72 24% 96%;
+    --accent-soft: 31 40% 82%;
+
+    --success: 161 43% 31%;
+    --success-foreground: 72 24% 96%;
+
+    --warning: 39 78% 42%;
+    --warning-foreground: 202 32% 12%;
+    --warning-text: 35 86% 27%;
+
+    --destructive: 8 52% 42%;
+    --destructive-foreground: 72 24% 96%;
+
+    --unavailable: 10 24% 42%;
+
+    --border: 47 11% 85%;
+    --input: 45 8% 72%;
+    --ring: 162 42% 24%;
+
+    --radius: 0.875rem;
+  }
+
+  .dark:root {
+    --background: 160 14% 8%;
+    --foreground: 45 20% 92%;
+
+    --card: 160 12% 12%;
+    --card-foreground: 45 20% 92%;
+
+    --popover: 160 12% 12%;
+    --popover-foreground: 45 20% 92%;
+
+    --primary: 150 30% 70%;
+    --primary-foreground: 163 47% 12%;
+
+    --secondary: 160 12% 18%;
+    --secondary-foreground: 45 20% 92%;
+
+    --muted: 160 10% 16%;
+    --muted-foreground: 150 6% 66%;
+
+    --accent: 30 40% 64%;
+    --accent-foreground: 160 14% 8%;
+    --accent-soft: 30 20% 24%;
+
+    --success: 155 40% 56%;
+    --success-foreground: 160 14% 8%;
+
+    --warning: 40 75% 60%;
+    --warning-foreground: 40 50% 9%;
+    --warning-text: 40 75% 70%;
+
+    --destructive: 8 60% 66%;
+    --destructive-foreground: 8 40% 10%;
+
+    --unavailable: 10 30% 68%;
+
+    --border: 160 8% 24%;
+    --input: 160 8% 34%;
+    --ring: 150 30% 64%;
+  }
+}

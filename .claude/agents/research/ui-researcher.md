@@ -12,11 +12,11 @@ not already in your context. It is the contract you report against.
 
 ## What to survey
 
-- `components/ui`, `components/feedback`, `components/layout`, `components/media`
+- `components/ui`, `design-system/feedback`, `components/layout`, `components/media`
   — what is available, and in which variants
 - `components/app/ui-lab.tsx` — how each primitive is meant to be used
-- `global.css` and `tailwind.config.js` — the semantic tokens that exist
-- `core/responsive` — `useLayout`, `useResponsiveValue`, the breakpoints
+- `design-system/theme/global.css` and `tailwind.config.js` — the semantic tokens that exist
+- `design-system/foundations/responsive.ts` — `useLayout`, `useResponsiveValue`, the breakpoints
 - Existing screens in `features/` — the conventions already in use
 
 ## What to report

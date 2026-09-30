@@ -1,3 +1,5 @@
+import { useLocalSearchParams } from "expo-router";
+
 import { ProductsScreen } from "@/features/catalog";
 
 /**
@@ -14,5 +16,8 @@ import { ProductsScreen } from "@/features/catalog";
  * screen as props.
  */
 export default function ProductsRoute() {
-  return <ProductsScreen />;
+  // Optional scope from a category page's "View all products".
+  const { categoryId } = useLocalSearchParams<{ categoryId?: string }>();
+
+  return <ProductsScreen initialCategoryId={categoryId} />;
 }

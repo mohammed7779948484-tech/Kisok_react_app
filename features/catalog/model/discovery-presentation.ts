@@ -64,3 +64,42 @@ export function formatProductOptionCount(product: CatalogProductView): string | 
 
   return `${count} options`;
 }
+
+export type DiscoveryOptionType = { id: string; name: string; productCount: number };
+
+/**
+ * Option types that customers genuinely choose between somewhere in the
+ * catalog, most widespread first. A type offered with a single value on every
+ * product is a spec, not a way to discover, so it is left out.
+ */
+export function deriveDiscoveryOptionTypes(
+  products: readonly CatalogProductView[],
+): DiscoveryOptionType[] {
+  const byType = new Map<string, { name: string; order: number; products: Set<string> }>();
+  for (const product of products) {
+    const valuesByType = new Map<string, Set<string>>();
+    for (const variant of product.variants) {
+      for (const option of variant.options) {
+        const values = valuesByType.get(option.type.id) ?? new Set<string>();
+        values.add(option.value.id);
+        valuesByType.set(option.type.id, values);
+        if (!byType.has(option.type.id)) {
+          byType.set(option.type.id, {
+            name: option.type.name,
+            order: option.type.display_order,
+            products: new Set(),
+          });
+        }
+      }
+    }
+    for (const [typeId, values] of valuesByType) {
+      if (values.size > 1) byType.get(typeId)?.products.add(product.id);
+    }
+  }
+  return [...byType.entries()]
+    .filter(([, entry]) => entry.products.size > 0)
+    .sort(
+      ([, left], [, right]) => right.products.size - left.products.size || left.order - right.order,
+    )
+    .map(([id, entry]) => ({ id, name: entry.name, productCount: entry.products.size }));
+}

@@ -1,6 +1,7 @@
 import { ShoppingCart } from "lucide-react-native";
+import { View } from "react-native";
 
-import { Badge, Button, Icon, Text } from "@/components/ui";
+import { Button, Icon, Text } from "@/design-system";
 import { useCart } from "@/features/cart";
 import { useQuickCart } from "./quick-cart-context";
 
@@ -10,18 +11,13 @@ export function CartAccessButton() {
   const { openQuickCart } = useQuickCart();
   const label = `Open cart${totalQuantity > 0 ? `, ${totalQuantity} items` : ""}`;
   return (
-    <Button
-      size="large"
-      className="px-6"
-      accessibilityLabel={label}
-      onPress={() => openQuickCart()}
-    >
-      <Icon as={ShoppingCart} size={24} className="text-primary-foreground" />
+    <Button accessibilityLabel={label} onPress={() => openQuickCart()} className="px-5">
+      <Icon as={ShoppingCart} size={20} className="text-primary-foreground" />
       <Text>Cart</Text>
       {totalQuantity > 0 ? (
-        <Badge variant="primary">
-          <Text>{totalQuantity}</Text>
-        </Badge>
+        <View className="min-w-[22px] items-center justify-center rounded-full bg-accent-soft px-1.5 py-0.5">
+          <Text className="font-sans-extrabold text-caption text-primary">{totalQuantity}</Text>
+        </View>
       ) : null}
     </Button>
   );

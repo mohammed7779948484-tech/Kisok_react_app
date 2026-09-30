@@ -2,9 +2,7 @@ import { Trash2 } from "lucide-react-native";
 import { useState } from "react";
 import { View } from "react-native";
 
-import { ConfirmDialog } from "@/components/feedback";
-import { AppImage } from "@/components/media/app-image";
-import { Button, Icon, Text } from "@/components/ui";
+import { AppImage, Button, cloudinaryImageUrl, ConfirmDialog, Icon, Text } from "@/design-system";
 import { cn } from "@/core/utils";
 
 import type { CartLine } from "../model/cart-line.schema";
@@ -71,7 +69,7 @@ export function CartItemRow({
         style={{ aspectRatio: 3 / 4 }}
       >
         <AppImage
-          uri={line.imageUri}
+          uri={cloudinaryImageUrl(line.imageUri, "packshot")}
           alt={line.productDisplayName}
           contentFit="contain"
           className="h-full w-full"

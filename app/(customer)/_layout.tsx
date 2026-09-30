@@ -1,7 +1,7 @@
 import { Stack } from "expo-router";
 import { View } from "react-native";
 
-import { OfflineNotice } from "@/components/feedback";
+import { OfflineNotice } from "@/design-system";
 import { CatalogCartProvider } from "@/features/catalog-cart-integration";
 import { RecoveryGate } from "@/features/checkout";
 import { WhatsNewGate } from "@/features/release-notes";

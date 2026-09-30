@@ -1,9 +1,6 @@
 import { ScrollView, View } from "react-native";
 
-import { Screen } from "@/components/layout/screen";
-import { OfflineNotice } from "@/components/feedback";
-import { Text } from "@/components/ui";
-import { useLayout } from "@/core/responsive";
+import { OfflineNotice, Screen, Text, useLayout } from "@/design-system";
 
 import { SignInForm } from "../components/sign-in-form";
 

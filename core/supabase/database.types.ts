@@ -783,6 +783,7 @@ export type Database = {
         }[]
       }
       get_customer_catalog: { Args: never; Returns: Json }
+      get_customer_catalog_v2: { Args: never; Returns: Json }
       get_media_asset_usage: {
         Args: { target_media_asset_id: string }
         Returns: Json

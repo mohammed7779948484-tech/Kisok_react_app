@@ -1,3 +1,5 @@
+import { useLocalSearchParams } from "expo-router";
+
 import { SearchScreen } from "@/features/catalog";
 
 /**
@@ -14,5 +16,8 @@ import { SearchScreen } from "@/features/catalog";
  * screen as props.
  */
 export default function SearchRoute() {
-  return <SearchScreen />;
+  // Optional starting query, e.g. from a Home discovery shortcut.
+  const { q } = useLocalSearchParams<{ q?: string }>();
+
+  return <SearchScreen initialQuery={q} />;
 }

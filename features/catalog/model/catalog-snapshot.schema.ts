@@ -108,6 +108,12 @@ const catalogVariantSchema = z.strictObject({
   search_keywords: nullableKeywordsSchema,
   display_order: displayOrderSchema,
   is_available: z.boolean(),
+  /**
+   * Sellable units right now: inventory.current_quantity, the figure
+   * create_order() validates against. Orders placed elsewhere can lower it
+   * before this snapshot refreshes, so the server remains the final word.
+   */
+  available_quantity: z.number().int().nonnegative(),
 });
 
 const catalogVariantOptionValueSchema = z.strictObject({
@@ -126,7 +132,7 @@ const catalogVariantMediaSchema = z.strictObject({
 });
 
 const catalogSnapshotShapeSchema = z.strictObject({
-  schema_version: z.literal("kiosk.catalog.lean.v1"),
+  schema_version: z.literal("kiosk.catalog.lean.v2"),
   settings: catalogSettingsSchema,
   brands: z.array(catalogBrandSchema),
   categories: z.array(catalogCategorySchema),
@@ -144,7 +150,7 @@ function hasCompleteNullableTuple(values: readonly unknown[]): boolean {
   return nullCount === 0 || nullCount === values.length;
 }
 
-/** Runtime contract of the customer-safe `get_customer_catalog()` JSON snapshot. */
+/** Runtime contract of the customer-safe `get_customer_catalog_v2()` JSON snapshot. */
 export const catalogSnapshotSchema = catalogSnapshotShapeSchema.superRefine((snapshot, context) => {
   const addIssue = (path: (string | number)[], message: string): void => {
     context.addIssue({ code: "custom", path, message });

@@ -1,8 +1,6 @@
 import { PackageCheck, ShoppingCart } from "lucide-react-native";
 import { ScrollView, View } from "react-native";
 
-import { EmptyState, LoadingState } from "@/components/feedback";
-import { AppImage } from "@/components/media/app-image";
 import {
   AdaptiveSheet,
   AdaptiveSheetClose,
@@ -12,10 +10,14 @@ import {
   AdaptiveSheetHeader,
   AdaptiveSheetTitle,
   Alert,
+  AppImage,
   Button,
+  cloudinaryImageUrl,
+  EmptyState,
   Icon,
+  LoadingState,
   Text,
-} from "@/components/ui";
+} from "@/design-system";
 import { cn } from "@/core/utils";
 
 import { customerLineIdentity } from "../model/customer-line-identity";
@@ -96,7 +98,7 @@ export function QuickCartSheet({
                       style={{ aspectRatio: 3 / 4 }}
                     >
                       <AppImage
-                        uri={line.imageUri}
+                        uri={cloudinaryImageUrl(line.imageUri, "packshot")}
                         alt=""
                         contentFit="contain"
                         className="h-full w-full"

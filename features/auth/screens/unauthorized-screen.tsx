@@ -1,7 +1,6 @@
 import { View } from "react-native";
 
-import { Button, Text } from "@/components/ui";
-import { Screen } from "@/components/layout/screen";
+import { Button, Screen, Text } from "@/design-system";
 import { useAuth, useSignOutAction } from "@/core/auth";
 
 /**

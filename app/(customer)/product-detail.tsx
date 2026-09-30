@@ -18,7 +18,11 @@ import { ProductDetailScreen } from "@/features/catalog";
 export default function ProductDetailRoute() {
   // Flat query-param route (plan Design decision 4): the detail id arrives as
   // /product-detail?productId=…, read here and handed to the screen as a prop.
-  const { productId } = useLocalSearchParams<{ productId: string }>();
+  // `backLabel` optionally names the page the customer came from.
+  const { productId, backLabel } = useLocalSearchParams<{
+    productId: string;
+    backLabel?: string;
+  }>();
 
-  return <ProductDetailScreen productId={productId} />;
+  return <ProductDetailScreen productId={productId} backLabel={backLabel} />;
 }

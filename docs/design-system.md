@@ -6,7 +6,7 @@ generic dense-dashboard look — this is retail.
 
 ## Tokens
 
-All colour lives in `global.css` as semantic HSL triples, consumed by
+All colour lives in `design-system/theme/global.css` as semantic HSL triples, consumed by
 `tailwind.config.js` as `hsl(var(--token))`. This is the same contract React
 Native Reusables generates, so components added later via its CLI theme
 correctly with no edits.
@@ -34,11 +34,11 @@ Tailwind scale in agreement — and suits a screen read at arm's length.
 Radius scale: `rounded-sm|md|lg|xl`, derived from `--radius` (14px).
 Spacing: the Tailwind scale, plus `h-touch` / `w-touch` = **48dp**.
 
-React Navigation cannot read CSS variables, so `core/theme.ts` mirrors the
+React Navigation cannot read CSS variables, so `design-system/theme/navigation-theme.ts` mirrors the
 tokens as values and supplies `NAV_THEME` to the root `ThemeProvider` — without
 it the navigator paints its own white default behind every screen. That mirror
 is a second copy of the tokens, so `core/__tests__/theme.test.ts` fails if it
-ever stops matching `global.css`, including when a new token is added there.
+ever stops matching `design-system/theme/global.css`, including when a new token is added there.
 
 ## Typography
 
@@ -52,18 +52,18 @@ Tone is separate from size: `<Text variant="body" tone="muted">`.
 
 ## Components
 
-**Primitives** — `@/components/ui`:
+**Primitives** — `@/design-system`:
 
 `Text` · `Button` · `Card` · `Input` · `Badge` · `Separator` · `Skeleton` ·
 `Icon` · `Alert` · `Progress` · `Tabs` · `Dialog` · `AdaptiveSheet`
 
-**Shared UX states** — `@/components/feedback`:
+**Shared UX states** — `@/design-system`:
 
 `LoadingState` · `SkeletonList` / `SkeletonGrid` · `EmptyState` · `ErrorState` /
 `InlineError` · `BlockingOverlay` · `ConfirmDialog` · `OfflineNotice`
 
-**Also:** `Screen` (`@/components/layout/screen`) and `AppImage`
-(`@/components/media/app-image`).
+**Also:** `Screen` (`@/design-system`) and `AppImage`
+(`@/design-system`).
 
 ### `AdaptiveSheet`
 
@@ -73,7 +73,7 @@ correct in both presentations.
 
 ### React Native Reusables
 
-`components/ui/` follows RNR's architecture: components are **owned source in
+`design-system/primitives/` follows RNR's architecture: components are **owned source in
 this repo**, built on `@rn-primitives/*`, styled with `class-variance-authority`,
 using the `TextClassContext` pattern so a parent can style its child text.
 
@@ -92,10 +92,10 @@ vendored, not a dependency.
 Two fields in that file carry KISOK-specific meaning:
 
 - `aliases.lib` is `@/core`, not the CLI's default. It is why the CLI's theme
-  check looks for `core/theme.ts` (a flat file, matching `core/utils.ts`) and
+  check looks for `design-system/theme/navigation-theme.ts` (a flat file, matching `core/utils.ts`) and
   why an added component's imports resolve here at all.
 - `aliases.components` and `aliases.ui` keep vendored components in
-  `components/ui/`.
+  `design-system/primitives/`.
 
 Run `npx @react-native-reusables/cli@latest doctor` before using the CLI. If the
 file is invalid for the installed CLI version, the doctor **offers to rewrite
@@ -105,9 +105,9 @@ the aliases survive; otherwise add the fields it names by hand. `rsc`, `tsx`,
 `hooks` and `iconLibrary` are present for exactly that reason, and `platform`
 was removed because the current CLI rejects it.
 
-`NAV_THEME` in `core/theme.ts` is the name the doctor looks for. It restates the
+`NAV_THEME` in `design-system/theme/navigation-theme.ts` is the name the doctor looks for. It restates the
 colour tokens because React Navigation cannot read CSS variables;
-`core/__tests__/theme.test.ts` parses `global.css` and fails if the two copies
+`core/__tests__/theme.test.ts` parses `design-system/theme/global.css` and fails if the two copies
 diverge, or if a new token is added to the CSS and not mirrored.
 
 ## Responsive
