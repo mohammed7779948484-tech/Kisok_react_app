@@ -51,12 +51,15 @@ current_active_profile();
 ```
 
 ```ts
-get_customer_catalog();
-// → one jsonb snapshot, schema_version "kiosk.catalog.lean.v1"
+get_customer_catalog_v2();
+// → one jsonb snapshot, schema_version "kiosk.catalog.lean.v2"
 // Requires an active `customer` profile; raises 42501 otherwise.
 // Contains: settings, brands, categories, products, product_categories,
 //           option_types, option_values, variants, variant_option_values,
-//           variant_media.
+//           variant_media. Each variant carries `available_quantity` — the
+//           sellable stock create_order() validates against.
+// v2 wraps v1 (get_customer_catalog, schema "kiosk.catalog.lean.v1"), which
+// stays unchanged because installed clients parse its shape strictly.
 ```
 
 ```ts
@@ -75,11 +78,11 @@ update_order_status(order_id: uuid, target_status: order_status, reason?: text)
 
 ### Direct table access
 
-| Role          | May read directly                                                |
-| ------------- | ---------------------------------------------------------------- |
-| `customer`    | **nothing** — everything comes through `get_customer_catalog()`  |
-| `preparation` | `orders`, `order_items`, `store_settings`                        |
-| `admin`       | catalog and inventory tables — but Admin is the separate web app |
+| Role          | May read directly                                                  |
+| ------------- | ------------------------------------------------------------------ |
+| `customer`    | **nothing** — everything comes through `get_customer_catalog_v2()` |
+| `preparation` | `orders`, `order_items`, `store_settings`                          |
+| `admin`       | catalog and inventory tables — but Admin is the separate web app   |
 
 The `authenticated` grant on `profiles` is explicitly revoked. Resolve identity
 through `current_active_profile()`; a `select` will fail.
@@ -131,7 +134,7 @@ import { callRpc } from "@/core/supabase";
 import { catalogSnapshotSchema } from "../model/catalog-snapshot.schema";
 
 export async function fetchCatalog() {
-  return callRpc("get_customer_catalog", catalogSnapshotSchema);
+  return callRpc("get_customer_catalog_v2", catalogSnapshotSchema);
 }
 ```
 

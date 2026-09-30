@@ -1,7 +1,6 @@
 import { Pressable, ScrollView, View } from "react-native";
 
-import { AppImage } from "@/components/media/app-image";
-import { AspectRatio, Card } from "@/components/ui";
+import { AppImage, cloudinaryImageUrl } from "@/design-system";
 import { cn } from "@/core/utils";
 
 import type { CatalogMedia } from "../../../model/catalog-view";
@@ -15,42 +14,88 @@ export type ProductMediaGalleryProps = {
   activeMediaAssetId: string | null;
   /** Reports the pressed thumbnail's media asset id. */
   onSelectMedia: (mediaAssetId: string) => void;
+  /** Height of the visual panel. */
+  visualHeight?: number;
+  /** Overlay drawn on the panel (the preview caption). */
+  caption?: React.ReactNode;
+  /** Shown on the neutral fallback when there is no image. */
+  fallbackLabel?: string;
   className?: string;
 };
 
+/**
+ * The Product Stage's picture: packaging `contain`ed on a quiet panel with
+ * two faint orbit rings, a caption laid over the lower corner, and a row of
+ * thumbnails when there is more than one image.
+ */
 export function ProductMediaGallery({
   media,
   alt,
   activeMediaAssetId,
   onSelectMedia,
+  visualHeight = 398,
+  caption,
+  fallbackLabel,
   className,
 }: ProductMediaGalleryProps) {
   const active = media.find((item) => item.mediaAssetId === activeMediaAssetId) ?? media[0];
   const activeIndex = media.findIndex((item) => item.mediaAssetId === activeMediaAssetId);
   const activePosition = activeIndex >= 0 ? activeIndex + 1 : 1;
   const mainAlt = media.length > 1 ? `${alt}, image ${activePosition} of ${media.length}` : alt;
+  const orbit = Math.min(visualHeight + 22, 420);
+  const ambient = cloudinaryImageUrl(active, "backdrop");
 
   return (
-    <View className={cn("gap-4", className)}>
-      {/* Packaging-friendly portrait presentation */}
-      <Card className="overflow-hidden border-border bg-card shadow-none">
-        <AspectRatio ratio={3 / 4} className="w-full bg-muted/20 p-6 md:p-8">
+    <View className={cn("gap-2", className)}>
+      <View
+        className="items-center justify-center overflow-hidden border-y border-foreground/10 bg-muted/60"
+        style={{ height: visualHeight }}
+      >
+        {/* The image's own colours, blurred, fill the panel behind it. */}
+        {ambient ? (
+          <>
+            <AppImage
+              key={`ambient-${ambient}`}
+              uri={ambient}
+              alt=""
+              contentFit="cover"
+              transition={0}
+              className="absolute inset-0 h-full w-full opacity-45"
+            />
+            <View aria-hidden className="absolute inset-0 bg-card/40" />
+          </>
+        ) : null}
+        <View
+          aria-hidden
+          className="absolute rounded-full border border-primary/[0.13]"
+          style={{ width: orbit, height: orbit }}
+        />
+        <View
+          aria-hidden
+          className="absolute rounded-full border border-primary/[0.075]"
+          style={{ width: orbit - 92, height: orbit - 92 }}
+        />
+        <View className="absolute bottom-[26px] left-[34px] right-[34px] top-4">
           <AppImage
             key={active?.secureUrl ?? "media-fallback"}
-            uri={active?.secureUrl ?? null}
+            uri={cloudinaryImageUrl(active, "detail")}
             alt={mainAlt}
             contentFit="contain"
+            fallbackLabel={fallbackLabel}
+            fallbackClassName="bg-transparent"
             className="h-full w-full"
           />
-        </AspectRatio>
-      </Card>
+        </View>
+        {caption ? (
+          <View className="absolute bottom-3 left-[18px] max-w-[300px]">{caption}</View>
+        ) : null}
+      </View>
 
-      {/* Thumbnails row if more than 1 image */}
       {media.length > 1 ? (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerClassName="gap-3 pb-1"
+          contentContainerClassName="gap-2.5 py-0.5"
         >
           {media.map((item, index) => {
             const isThumbSelected = item.mediaAssetId === active?.mediaAssetId;
@@ -64,17 +109,15 @@ export function ProductMediaGallery({
                 aria-selected={isThumbSelected}
                 onPress={() => onSelectMedia(item.mediaAssetId)}
                 className={cn(
-                  "h-16 w-16 overflow-hidden rounded-xl border-2 p-1 transition-all active:scale-[0.96]",
-                  isThumbSelected
-                    ? "border-primary bg-primary/10 shadow-sm"
-                    : "border-border/80 bg-muted/40",
+                  "h-gallery-thumb w-gallery-thumb overflow-hidden rounded-sm border bg-card/60 p-1",
+                  isThumbSelected ? "border-primary" : "border-foreground/10 active:opacity-80",
                 )}
               >
                 <AppImage
-                  uri={item.secureUrl}
+                  uri={cloudinaryImageUrl(item, "thumbnail")}
                   alt=""
-                  contentFit="contain"
-                  className="h-full w-full"
+                  contentFit="cover"
+                  className="h-full w-full rounded-[7px]"
                 />
               </Pressable>
             );

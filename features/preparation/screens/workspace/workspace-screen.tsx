@@ -4,9 +4,20 @@ import { ScrollView, View } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Circle, CircleDot, History, LogOut, RefreshCw } from "lucide-react-native";
 
-import { EmptyState, ErrorState, InlineError, SkeletonList } from "@/components/feedback";
-import { Screen } from "@/components/layout/screen";
-import { Button, Icon, Tabs, TabsContent, TabsList, TabsTrigger, Text } from "@/components/ui";
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  Icon,
+  InlineError,
+  Screen,
+  SkeletonList,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  Text,
+} from "@/design-system";
 import { useAuth, useSignOutAction } from "@/core/auth";
 import { useLayout } from "@/core/responsive";
 

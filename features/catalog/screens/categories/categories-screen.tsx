@@ -1,23 +1,29 @@
 import { useCallback } from "react";
-import { Pressable, View } from "react-native";
-import { ArrowRight } from "lucide-react-native";
+import { ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
-import { FlashList } from "@shopify/flash-list";
 
-import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
-import { Screen } from "@/components/layout/screen";
-import { AppImage } from "@/components/media/app-image";
-import { Icon, Text } from "@/components/ui";
+import { ContentContainer, EmptyState, PageHeading, useLayout } from "@/design-system";
 
 import { CatalogShell } from "../../components/catalog-shell";
-import { deriveCategoryFamilies, type CategoryFamily } from "../../model/category-presentation";
+import { CategoryCard } from "../../components/category-card";
+import {
+  CatalogEmptyState,
+  CatalogErrorState,
+  CatalogLoadingState,
+} from "../../components/catalog-state-panel";
 import type { CatalogCategoryView } from "../../model/catalog-view";
-import { productCountLabel } from "../../model/labels";
 import { useCatalog } from "../../queries/use-catalog";
+
+/** Alternating row proportions give the directory its editorial rhythm. */
+const ROW_SHAPES = [
+  { lead: 1.3, height: 280 },
+  { lead: 1.65, height: 360 },
+] as const;
 
 export function CategoriesScreen() {
   const router = useRouter();
   const catalog = useCatalog();
+  const { isExpanded, isCompact } = useLayout();
 
   const handleCategoryPress = useCallback(
     (category: CatalogCategoryView) => {
@@ -26,173 +32,91 @@ export function CategoriesScreen() {
     [router],
   );
 
-  const keyExtractor = useCallback((family: CategoryFamily) => family.root.id, []);
-
-  if (catalog.isPending) {
-    return (
-      <Screen>
-        <LoadingState label="Loading the catalog…" />
-      </Screen>
-    );
-  }
+  if (catalog.isPending) return <CatalogLoadingState destination="categories" />;
 
   if (catalog.isError && !catalog.data) {
     return (
-      <Screen>
-        <ErrorState error={catalog.error} onRetry={() => void catalog.refetch()} />
-      </Screen>
+      <CatalogErrorState
+        destination="categories"
+        error={catalog.error}
+        onRetry={() => void catalog.refetch()}
+      />
     );
   }
 
   const view = catalog.data;
-
-  if (view.products.length === 0) {
-    return (
-      <Screen>
-        <EmptyState
-          title="The catalog is empty"
-          description="Nothing is available to browse right now. Please try again in a moment or ask a store employee for help."
-          action={{ label: "Try again", onPress: () => void catalog.refetch() }}
-        />
-      </Screen>
-    );
+  if (!view || view.products.length === 0) {
+    return <CatalogEmptyState destination="categories" onRetry={() => void catalog.refetch()} />;
   }
 
-  if (view.rootCategories.length === 0) {
+  const categories = view.rootCategories.filter((category) => category.productCount > 0);
+
+  const heading = (
+    <PageHeading
+      className="pt-8"
+      wide={isExpanded}
+      layout="split"
+      breadcrumb={[
+        { label: "Explore", onPress: () => router.replace("/") },
+        { label: "Categories" },
+      ]}
+      eyebrow="Browse by category"
+      title="Categories"
+      description="Choose a product family, then narrow into a more specific category when it helps."
+    />
+  );
+
+  if (categories.length === 0) {
     return (
-      <Screen>
+      <CatalogShell currentDestination="categories" settings={view.settings}>
+        <ContentContainer>{heading}</ContentContainer>
         <EmptyState
           title="No categories yet"
           description="This store has no categories listed right now. You can still browse all of its products."
           action={{ label: "Browse all products", onPress: () => router.replace("/products") }}
         />
-      </Screen>
+      </CatalogShell>
     );
   }
 
-  const families = deriveCategoryFamilies(view.rootCategories);
-
-  const renderFamily = ({ item: family, index }: { item: CategoryFamily; index: number }) => (
-    <CategoryFamilySection
-      family={family}
-      onCategoryPress={handleCategoryPress}
-      isLast={index === families.length - 1}
-    />
-  );
+  const rows: CatalogCategoryView[][] = [];
+  const perRow = isExpanded ? 2 : 1;
+  for (let index = 0; index < categories.length; index += perRow) {
+    rows.push(categories.slice(index, index + perRow));
+  }
 
   return (
-    <CatalogShell
-      currentDestination="categories"
-      settings={view.settings}
-      title="All categories"
-      subtitle="Shop by department and category"
-      countLabel={
-        view.rootCategories.length === 1
-          ? "1 department"
-          : `${view.rootCategories.length} departments`
-      }
-    >
-      <View className="flex-1 px-5 md:px-8">
-        <FlashList<CategoryFamily>
-          data={families}
-          renderItem={renderFamily}
-          keyExtractor={keyExtractor}
-          contentContainerStyle={{ paddingTop: 24, paddingBottom: 24 }}
-          testID="categories-list"
-        />
-      </View>
+    <CatalogShell currentDestination="categories" settings={view.settings}>
+      <ScrollView testID="categories-list" contentContainerClassName="pb-16">
+        <ContentContainer className="gap-8">
+          {heading}
+          <View className="gap-5">
+            {rows.map((row, rowIndex) => {
+              const shape = ROW_SHAPES[rowIndex % ROW_SHAPES.length] ?? ROW_SHAPES[0];
+              return (
+                <View
+                  key={row.map((category) => category.id).join("|")}
+                  className="flex-row gap-5"
+                  style={{ height: isCompact ? undefined : shape.height }}
+                >
+                  {row.map((category, index) => (
+                    <View
+                      key={category.id}
+                      style={{ flex: row.length > 1 && index === 0 ? shape.lead : 1 }}
+                    >
+                      <CategoryCard
+                        category={category}
+                        onPress={handleCategoryPress}
+                        stacked={isCompact}
+                      />
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
+          </View>
+        </ContentContainer>
+      </ScrollView>
     </CatalogShell>
-  );
-}
-
-type CategoryFamilySectionProps = {
-  family: CategoryFamily;
-  onCategoryPress: (category: CatalogCategoryView) => void;
-  isLast: boolean;
-};
-
-function CategoryFamilySection({ family, onCategoryPress, isLast }: CategoryFamilySectionProps) {
-  const { root, children } = family;
-
-  return (
-    <View className={isLast ? "gap-4" : "gap-4 border-b border-border/50 pb-10"}>
-      {/* Root Department Header */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${root.name}, main department, ${productCountLabel(root.productCount)}`}
-        onPress={() => onCategoryPress(root)}
-        className="min-h-touch flex-row items-center justify-between gap-4 active:opacity-80"
-      >
-        <View className="flex-1 flex-row items-center gap-4">
-          <View className="h-16 w-16 overflow-hidden rounded-xl bg-muted/20 md:h-20 md:w-20">
-            <AppImage
-              uri={root.image?.secureUrl ?? null}
-              alt={root.name}
-              contentFit="cover"
-              className="h-full w-full"
-            />
-          </View>
-          <View className="flex-1 gap-0.5">
-            <Text
-              variant="caption"
-              tone="primary"
-              className="font-semibold uppercase tracking-wider"
-            >
-              Department
-            </Text>
-            <Text variant="h2" accessibilityRole="header" className="text-xl font-bold md:text-2xl">
-              {root.name}
-            </Text>
-            <Text variant="caption" tone="muted">
-              {productCountLabel(root.productCount)}
-            </Text>
-          </View>
-        </View>
-
-        <View className="min-h-touch flex-row items-center gap-1.5 rounded-lg bg-secondary px-3.5 py-2">
-          <Text variant="caption" className="font-semibold text-secondary-foreground">
-            Explore department
-          </Text>
-          <Icon as={ArrowRight} size={14} className="text-secondary-foreground" />
-        </View>
-      </Pressable>
-
-      {/* Direct Subcategories grouping */}
-      {children.length > 0 ? (
-        <View className="gap-2.5 pt-1">
-          <Text variant="caption" tone="muted" className="font-semibold">
-            Subcategories:
-          </Text>
-          <View className="flex-row flex-wrap gap-3">
-            {children.map((child) => (
-              <Pressable
-                key={child.id}
-                accessibilityRole="button"
-                accessibilityLabel={`${child.name}, subcategory of ${root.name}, ${productCountLabel(child.productCount)}`}
-                onPress={() => onCategoryPress(child)}
-                className="min-h-touch flex-row items-center gap-3 rounded-xl border border-border/80 bg-card p-2.5 pr-4 shadow-sm active:scale-[0.99] active:bg-muted/50"
-              >
-                <View className="h-10 w-10 overflow-hidden rounded-lg bg-muted/40">
-                  <AppImage
-                    uri={child.image?.secureUrl ?? null}
-                    alt={child.name}
-                    contentFit="cover"
-                    className="h-full w-full"
-                  />
-                </View>
-                <View>
-                  <Text variant="body" className="text-sm font-semibold">
-                    {child.name}
-                  </Text>
-                  <Text variant="caption" tone="muted" className="text-xs">
-                    {productCountLabel(child.productCount)}
-                  </Text>
-                </View>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      ) : null}
-    </View>
   );
 }

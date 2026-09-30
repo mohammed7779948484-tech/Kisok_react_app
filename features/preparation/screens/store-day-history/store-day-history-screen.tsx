@@ -3,9 +3,16 @@ import type { ReactNode } from "react";
 import { ScrollView, View } from "react-native";
 import { ArrowLeft, CalendarDays, PackageCheck, XCircle } from "lucide-react-native";
 
-import { EmptyState, ErrorState, InlineError, SkeletonList } from "@/components/feedback";
-import { Screen } from "@/components/layout/screen";
-import { Button, Icon, Text } from "@/components/ui";
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  Icon,
+  InlineError,
+  Screen,
+  SkeletonList,
+  Text,
+} from "@/design-system";
 import { useAuth } from "@/core/auth";
 
 import type { ActiveOrderRow } from "../../api/fetch-active-orders";
@@ -158,7 +165,7 @@ function HistoryGroup({
           </Text>
         </View>
         <View className="min-w-touch items-center rounded-full bg-background/90 px-3 py-1.5">
-          <Text variant="mono" className="text-base text-foreground">
+          <Text variant="mono" className="text-body text-foreground">
             {orders.length}
           </Text>
         </View>

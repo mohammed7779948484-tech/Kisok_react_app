@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 
-import { Button } from "@/components/ui/button";
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Text } from "@/components/ui/text";
+  Text,
+} from "@/design-system";
 
 import { readReleaseIdentity, releaseNotesFor, shouldAnnounce } from "../model/release-notes";
 import { readLastSeenRelease, writeLastSeenRelease } from "../state/last-seen-release";
@@ -87,7 +87,7 @@ export function WhatsNewGate() {
 
         {notes.length > 0 ? (
           <View className="gap-2" accessibilityRole="list">
-            <Text className="font-medium">What&apos;s New</Text>
+            <Text className="font-sans-medium">What&apos;s New</Text>
             {notes.map((note) => (
               <Text key={note}>• {note}</Text>
             ))}

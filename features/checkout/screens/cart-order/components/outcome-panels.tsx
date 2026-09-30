@@ -2,7 +2,7 @@ import { FlashList } from "@shopify/flash-list";
 import { AlertTriangle, CircleX, ShieldQuestion } from "lucide-react-native";
 import { View } from "react-native";
 
-import { Icon, Text } from "@/components/ui";
+import { Icon, Text } from "@/design-system";
 import type { CartLine } from "@/features/cart";
 import type { AttemptFailure, StockConflictItem } from "../../../state/attempt-store";
 import { ConflictRow } from "../../../components/conflict-row";

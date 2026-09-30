@@ -1,6 +1,6 @@
 import { ScrollView, View } from "react-native";
 
-import { Text } from "@/components/ui";
+import { Text } from "@/design-system";
 import { getEnv } from "@/core/env";
 
 /**

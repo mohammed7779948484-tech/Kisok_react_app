@@ -2,8 +2,7 @@ import { ScrollView, View } from "react-native";
 import { Check, Circle, CircleDot } from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
 
-import { InlineError } from "@/components/feedback";
-import { Icon, Text } from "@/components/ui";
+import { Icon, InlineError, Text } from "@/design-system";
 import { cn } from "@/core/utils";
 
 import type { ActiveOrderRow } from "../../../api/fetch-active-orders";
@@ -165,7 +164,7 @@ export function BoardSection({
             </Text>
           </View>
           <View className="min-w-touch items-center px-3 py-1.5">
-            <Text variant="mono" className="text-base text-foreground">
+            <Text variant="mono" className="text-body text-foreground">
               {entries.length}
             </Text>
           </View>

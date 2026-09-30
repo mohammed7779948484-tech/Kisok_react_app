@@ -1,210 +1,85 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ScrollView, View } from "react-native";
+import { useCallback, useMemo } from "react";
 import { useRouter } from "expo-router";
 
-import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
-import { Screen } from "@/components/layout/screen";
-import { Button, Text, ToggleGroup, ToggleGroupItem } from "@/components/ui";
+import { KeyFigure, PageHeading, useLayout } from "@/design-system";
 
-import { CatalogGrid, type CatalogGridRowInfo } from "../../components/catalog-grid";
+import { BrowseResults } from "../../components/browse-results";
 import { CatalogShell } from "../../components/catalog-shell";
-import { ProductCard } from "../../components/product-card";
+import {
+  CatalogEmptyState,
+  CatalogErrorState,
+  CatalogLoadingState,
+} from "../../components/catalog-state-panel";
+import { EMPTY_FILTERS, type BrowseFilters } from "../../model/browse-filters";
 import type { CatalogProductView } from "../../model/catalog-view";
-import { productCountLabel } from "../../model/labels";
 import { useCatalog } from "../../queries/use-catalog";
+import { productDetailHref } from "../product-detail/product-detail-href";
 
-const productKeyExtractor = (product: CatalogProductView) => product.id;
+export type ProductsScreenProps = {
+  /** Open already scoped to a category (from a category page's "View all"). */
+  initialCategoryId?: string;
+};
 
-export function ProductsScreen() {
+export function ProductsScreen({ initialCategoryId }: ProductsScreenProps = {}) {
   const router = useRouter();
   const catalog = useCatalog();
-
-  // Local-only discovery filter: "all" | "available"
-  const [availabilityFilter, setAvailabilityFilter] = useState<string>("all");
-  // Local-only brand filter: brandId or "all"
-  const [selectedBrandId, setSelectedBrandId] = useState<string>("all");
-
-  // Gate F: Reconcile selectedBrandId if selected brand is removed from catalog
-  useEffect(() => {
-    if (selectedBrandId !== "all" && catalog.data?.brands) {
-      const exists = catalog.data.brands.some((b) => b.id === selectedBrandId);
-      if (!exists) {
-        setSelectedBrandId("all");
-      }
-    }
-  }, [catalog.data?.brands, selectedBrandId]);
+  const { isExpanded } = useLayout();
 
   const handleProductPress = useCallback(
     (product: CatalogProductView) => {
-      router.push({ pathname: "/product-detail", params: { productId: product.id } });
+      router.push(productDetailHref(product.id, "Back to products"));
     },
     [router],
   );
 
-  const renderProductCard = useCallback(
-    ({ item, onPress }: CatalogGridRowInfo<CatalogProductView>) => (
-      <ProductCard product={item} onPress={onPress} />
-    ),
-    [],
-  );
-
-  // Stale brand recovery: if selectedBrandId !== "all" and not in current brands, fall back to "all"
-  const brands = catalog.data?.brands ?? [];
-  const isBrandValid = selectedBrandId === "all" || brands.some((b) => b.id === selectedBrandId);
-  const effectiveBrandId = isBrandValid ? selectedBrandId : "all";
-
-  // Local filtering (preserves source backend order)
-  const filteredProducts = useMemo(() => {
-    const products = catalog.data?.products ?? [];
-    return products.filter((product) => {
-      if (availabilityFilter === "available" && !product.isAvailable) {
-        return false;
-      }
-      if (effectiveBrandId !== "all" && product.brand?.id !== effectiveBrandId) {
-        return false;
-      }
-      return true;
-    });
-  }, [catalog.data?.products, availabilityFilter, effectiveBrandId]);
-
-  if (catalog.isPending) {
-    return (
-      <Screen>
-        <LoadingState label="Loading the catalog…" />
-      </Screen>
-    );
-  }
-
-  if (catalog.isError && !catalog.data) {
-    return (
-      <Screen>
-        <ErrorState error={catalog.error} onRetry={() => void catalog.refetch()} />
-      </Screen>
-    );
-  }
-
   const view = catalog.data;
+  const initialFilters = useMemo<BrowseFilters>(() => {
+    const category = initialCategoryId ? view?.resolveCategory(initialCategoryId) : undefined;
+    if (!category) return EMPTY_FILTERS;
+    return { ...EMPTY_FILTERS, categoryIds: [category.parent_id ?? category.id] };
+  }, [initialCategoryId, view]);
 
-  if (view.products.length === 0) {
+  if (catalog.isPending) return <CatalogLoadingState destination="products" />;
+
+  if (catalog.isError && !view) {
     return (
-      <Screen>
-        <EmptyState
-          title="The catalog is empty"
-          description="Nothing is available to browse right now. Please try again in a moment or ask a store employee for help."
-          action={{ label: "Try again", onPress: () => void catalog.refetch() }}
-        />
-      </Screen>
+      <CatalogErrorState
+        destination="products"
+        error={catalog.error}
+        onRetry={() => void catalog.refetch()}
+      />
     );
   }
 
-  const hasActiveFilters = availabilityFilter !== "all" || effectiveBrandId !== "all";
-
-  const handleResetFilters = () => {
-    setAvailabilityFilter("all");
-    setSelectedBrandId("all");
-  };
-
-  const filterHeader = (
-    <View className="gap-3 pb-4 pt-2">
-      {/* Quick local discovery filters */}
-      <View className="flex-row flex-wrap items-center justify-between gap-3">
-        <View className="flex-row flex-wrap items-center gap-2">
-          <Text variant="caption" tone="muted" className="font-semibold">
-            Status:
-          </Text>
-          <ToggleGroup
-            type="single"
-            layout="content"
-            value={availabilityFilter}
-            onValueChange={(val) => val && setAvailabilityFilter(val)}
-            accessibilityLabel="Filter by availability status"
-          >
-            <ToggleGroupItem value="all" className="h-touch min-h-touch px-3.5 py-1">
-              <Text variant="caption">All items</Text>
-            </ToggleGroupItem>
-            <ToggleGroupItem value="available" className="h-touch min-h-touch px-3.5 py-1">
-              <Text variant="caption">Available only</Text>
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </View>
-
-        {hasActiveFilters ? (
-          <Button
-            variant="ghost"
-            size="compact"
-            onPress={handleResetFilters}
-            className="min-h-touch"
-          >
-            <Text className="text-xs font-semibold text-primary">Clear filters</Text>
-          </Button>
-        ) : null}
-      </View>
-
-      {/* Brand filter row */}
-      {brands.length > 0 ? (
-        <View className="flex-row items-center gap-2 pt-1">
-          <Text variant="caption" tone="muted" className="font-semibold">
-            Brand:
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerClassName="gap-2"
-          >
-            <ToggleGroup
-              type="single"
-              layout="content"
-              value={effectiveBrandId}
-              onValueChange={(val) => val && setSelectedBrandId(val)}
-              accessibilityLabel="Filter by brand"
-            >
-              <ToggleGroupItem value="all" className="h-touch min-h-touch px-3.5 py-1">
-                <Text variant="caption">All brands</Text>
-              </ToggleGroupItem>
-              {brands.map((brand) => (
-                <ToggleGroupItem
-                  key={brand.id}
-                  value={brand.id}
-                  className="h-touch min-h-touch px-3.5 py-1"
-                >
-                  <Text variant="caption">{brand.name}</Text>
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </ScrollView>
-        </View>
-      ) : null}
-    </View>
-  );
+  if (!view || view.products.length === 0) {
+    return <CatalogEmptyState destination="products" onRetry={() => void catalog.refetch()} />;
+  }
 
   return (
-    <CatalogShell
-      currentDestination="products"
-      settings={view.settings}
-      title="All products"
-      subtitle="Complete store collection"
-      countLabel={productCountLabel(filteredProducts.length)}
-    >
-      <View className="flex-1">
-        <CatalogGrid
-          data={filteredProducts}
-          renderItem={renderProductCard}
-          keyExtractor={productKeyExtractor}
-          onItemPress={handleProductPress}
-          listHeaderComponent={filterHeader}
-          listEmptyComponent={
-            <View className="items-center justify-center p-8">
-              <EmptyState
-                title="No products match these filters"
-                description="No products match your current filters. Clear filters to see the full collection."
-                action={{ label: "Clear filters", onPress: handleResetFilters }}
-              />
-            </View>
-          }
-          testID="products-grid"
-          className="px-3 md:px-6"
-        />
-      </View>
+    <CatalogShell currentDestination="products" settings={view.settings}>
+      <BrowseResults
+        view={view}
+        products={view.products}
+        scopeLabel="All catalog products"
+        onProductPress={handleProductPress}
+        showShortcuts
+        initialFilters={initialFilters}
+        testID="products-grid"
+        header={
+          <PageHeading
+            className="pt-8"
+            wide={isExpanded}
+            breadcrumb={[
+              { label: "Explore", onPress: () => router.replace("/") },
+              { label: "Products" },
+            ]}
+            eyebrow="Complete catalog"
+            title="Products"
+            description="Browse the store, then narrow by category, brand, or availability."
+            aside={<KeyFigure value={view.products.length} label="products in the store" />}
+          />
+        }
+      />
     </CatalogShell>
   );
 }

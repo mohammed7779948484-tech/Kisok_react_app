@@ -2,7 +2,7 @@ import type { VariantProps } from "class-variance-authority";
 import { Check, Circle, CircleDot, PackageCheck, X } from "lucide-react-native";
 import type { LucideIcon } from "lucide-react-native";
 
-import { Badge, Icon, Text, badgeVariants } from "@/components/ui";
+import { Badge, Icon, Text, badgeVariants } from "@/design-system";
 
 import type { OrderStatus } from "../model/store-day";
 

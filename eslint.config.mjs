@@ -38,7 +38,7 @@ const NO_DEEP_FEATURE_IMPORT = {
 const NO_FEATURE_IMPORT = {
   group: ["@/features", "@/features/*", "@/features/*/*"],
   message:
-    "Foundation code must not depend on a feature. Dependencies point features -> core/components, never back. Move the shared part into core/, or keep it in the feature.",
+    "Foundation code must not depend on a feature. Dependencies point features -> core/design-system, never back. Move the shared part into core/, or keep it in the feature.",
 };
 
 /** Only a feature's `api/` module may reach the network. */
@@ -74,6 +74,7 @@ export default defineConfig([
       "app/**/*.{ts,tsx}",
       "components/**/*.{ts,tsx}",
       "core/**/*.{ts,tsx}",
+      "design-system/**/*.{ts,tsx}",
       "features/**/*.{ts,tsx}",
     ],
     rules: {
@@ -114,9 +115,9 @@ export default defineConfig([
     },
   },
   {
-    // The shared design system never talks to the network, and never depends on
-    // a feature.
-    files: ["components/**/*.{ts,tsx}"],
+    // The shared design system (and the app-level gates in components/) never
+    // talks to the network, and never depends on a feature.
+    files: ["components/**/*.{ts,tsx}", "design-system/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
         "error",

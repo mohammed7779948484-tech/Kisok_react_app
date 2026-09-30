@@ -79,7 +79,7 @@ benefit.
 A screen owns a directory. UI used by only that screen lives in its own
 `components/` next door; UI shared by several screens in the feature moves up to
 `features/<name>/components/`; UI reused across features belongs in the design
-system under root `components/`.
+system under root `design-system/`.
 
 A feature generates only the layers it needs. A read-only screen has no business
 carrying an empty `state/` directory.
@@ -94,42 +94,50 @@ copy the anatomy above for every new business feature, never this one's shape.
 
 ### `core/` — foundation
 
-| Module            | Responsibility                                                           |
-| ----------------- | ------------------------------------------------------------------------ |
-| `core/env`        | Validated public configuration, fail-fast with an actionable message     |
-| `core/supabase`   | Typed client, validated RPC caller, Realtime helpers, generated DB types |
-| `core/auth`       | Session restoration, profile/role resolution, the sign-out safety gate   |
-| `core/query`      | QueryClient defaults, provider, focus/online managers                    |
-| `core/errors`     | The `AppError` model and mapping from Postgres/Auth/network failures     |
-| `core/logging`    | Scoped, level-filtered, redacting logger                                 |
-| `core/storage`    | Durable key/value storage that reports write failures                    |
-| `core/responsive` | Semantic layout sizes matching the Tailwind breakpoints                  |
-| `core/theme`      | `NAV_THEME` and the colour tokens React Navigation needs as values       |
-| `core/testing`    | Render helper, test QueryClient, Supabase and storage fakes              |
-| `core/utils`      | `cn()`                                                                   |
+| Module          | Responsibility                                                           |
+| --------------- | ------------------------------------------------------------------------ |
+| `core/env`      | Validated public configuration, fail-fast with an actionable message     |
+| `core/supabase` | Typed client, validated RPC caller, Realtime helpers, generated DB types |
+| `core/auth`     | Session restoration, profile/role resolution, the sign-out safety gate   |
+| `core/query`    | QueryClient defaults, provider, focus/online managers                    |
+| `core/errors`   | The `AppError` model and mapping from Postgres/Auth/network failures     |
+| `core/logging`  | Scoped, level-filtered, redacting logger                                 |
+| `core/storage`  | Durable key/value storage that reports write failures                    |
+| `core/testing`  | Render helper, test QueryClient, Supabase and storage fakes              |
+| `core/utils`    | `cn()`                                                                   |
 
 `core/` never imports from `features/`. If a piece of `core/` only makes sense
 for one feature, it belongs in that feature.
 
-### `components/` — design system
+### `design-system/` — the shared visual system
 
-`components/ui/` holds primitives (React Native Reusables architecture),
-`components/feedback/` the shared UX states, `components/layout/` the screen
-shell, `components/media/` the image abstraction, and `components/app/` the small
-pieces the root layout needs.
+One import, `@/design-system`, over nine parts: `theme` (colour roles in
+`theme/global.css`, bundled fonts, `NAV_THEME`), `tokens` (type, space, size,
+radius, motion and layout scales — also read by `tailwind.config.js`),
+`foundations` (responsive sizes matching the Tailwind breakpoints, touch
+targets, accessibility, reduced motion), `primitives` (React Native Reusables
+architecture), `composites`, `feedback` (the shared UX states), `layout`,
+`media` (`AppImage`, `MediaFrame`, Cloudinary renditions) and `patterns`.
+`design-system/lab` is the dev-only UI Lab. None of it knows about a feature.
+
+### `components/app/` — app-level gates
+
+The environment gate and error boundary the root layout needs. The files left in
+`components/ui/`, and `core/theme.ts` / `core/responsive`, are temporary
+re-exports kept for existing test imports only.
 
 ## The boundary rules
 
 Documentation alone does not hold a boundary — these are enforced in
 `eslint.config.mjs`, and a violation fails CI.
 
-| Rule                                                                       | Enforced by                                                                                     |
-| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Routes may not import Supabase, Zustand, or TanStack Query                 | `no-restricted-imports` on `app/**`                                                             |
-| Screens and components may not import Supabase                             | `no-restricted-imports` on `features/*/screens/**`, `features/*/components/**`, `components/**` |
-| No deep cross-feature imports (`@/features/x/api/y`)                       | `no-restricted-imports` pattern `@/features/*/*`                                                |
-| No `console` outside the logger                                            | `no-console`                                                                                    |
-| Removed legacy stacks cannot return (tRPC, Drizzle, MySQL, Express, axios) | `no-restricted-imports` paths                                                                   |
+| Rule                                                                       | Enforced by                                                                                                         |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Routes may not import Supabase, Zustand, or TanStack Query                 | `no-restricted-imports` on `app/**`                                                                                 |
+| Screens and components may not import Supabase                             | `no-restricted-imports` on `features/*/screens/**`, `features/*/components/**`, `components/**`, `design-system/**` |
+| No deep cross-feature imports (`@/features/x/api/y`)                       | `no-restricted-imports` pattern `@/features/*/*`                                                                    |
+| No `console` outside the logger                                            | `no-console`                                                                                                        |
+| Removed legacy stacks cannot return (tRPC, Drizzle, MySQL, Express, axios) | `no-restricted-imports` paths                                                                                       |
 
 The cross-feature rule works by forbidding the deep-path _pattern_ globally.
 Inside a feature, internals are reached with relative imports, so the rule needs

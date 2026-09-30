@@ -1,4 +1,4 @@
-import { ConfirmDialog } from "@/components/feedback";
+import { ConfirmDialog } from "@/design-system";
 
 /**
  * AC-06's destructive confirmation for cancelling an order: it composes the

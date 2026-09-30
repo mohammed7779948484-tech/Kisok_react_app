@@ -3,8 +3,7 @@ import { ShieldAlert, ShieldQuestion } from "lucide-react-native";
 import { BackHandler, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 
-import { Screen } from "@/components/layout/screen";
-import { Button, Icon, Spinner, Text } from "@/components/ui";
+import { Button, Icon, Screen, Spinner, Text } from "@/design-system";
 import { useActiveProfile } from "@/core/auth";
 import { useCart } from "@/features/cart";
 

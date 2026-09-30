@@ -11,7 +11,7 @@ import {
   CardHeader,
   Icon,
   Text,
-} from "@/components/ui";
+} from "@/design-system";
 import { cn } from "@/core/utils";
 
 import type { ActiveOrderRow } from "../api/fetch-active-orders";
@@ -178,10 +178,10 @@ export function OrderCard({
             at 200% text scaling or in a narrow board column. */}
         <View className="flex-row flex-wrap items-start justify-between gap-2">
           <View className="gap-1">
-            <Text variant="caption" className="text-xs font-bold">
+            <Text variant="caption" className="font-sans-bold text-caption">
               Order
             </Text>
-            <Text variant="mono" className="text-xl">
+            <Text variant="mono" className="text-title-lg">
               {order.display_number}
             </Text>
           </View>
@@ -198,7 +198,7 @@ export function OrderCard({
           ) : null}
           <View className="flex-row items-center gap-1.5">
             <Icon as={Package} size={16} className="text-muted-foreground" />
-            <Text variant="caption" className="font-bold text-foreground">
+            <Text variant="caption" className="font-sans-bold text-foreground">
               {itemSummary}
             </Text>
           </View>

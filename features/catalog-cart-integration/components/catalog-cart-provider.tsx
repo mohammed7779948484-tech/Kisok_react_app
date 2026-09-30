@@ -1,11 +1,9 @@
 import { usePathname, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 
-import { Text } from "@/components/ui";
-import { CONTENT_MAX_WIDTH } from "@/core/responsive";
-import { QuickCartSheet, useCart } from "@/features/cart";
+import { HeaderAction } from "@/design-system";
+import { QuickCartSheet } from "@/features/cart";
 
 import { CartAccessButton } from "./cart-access-button";
 import { QuickCartContext, type QuickCartContextValue } from "./quick-cart-context";
@@ -22,9 +20,12 @@ const CATALOG_BROWSING_ROUTES = new Set([
   "/product-detail",
 ]);
 
-/** Browsing chrome owns its geometry; catalog content never pads around an overlay. */
+/**
+ * Owns cart access while browsing: it places the cart button in the catalog
+ * chrome's header action slot on browsing routes, and hosts the Quick Cart.
+ * The chrome owns where the slot sits; this provider only fills it.
+ */
 export function CatalogCartProvider({ children }: CatalogCartProviderProps) {
-  const cart = useCart();
   const [open, setOpen] = useState(false);
   const [addedLineId, setAddedLineId] = useState<string | null>(null);
   const router = useRouter();
@@ -45,32 +46,14 @@ export function CatalogCartProvider({ children }: CatalogCartProviderProps) {
   );
   return (
     <QuickCartContext.Provider value={contextValue}>
-      <View className="flex-1">
-        <View className="min-h-0 flex-1">{children}</View>
-        {browsing ? (
-          <SafeAreaView
-            edges={["bottom", "left", "right"]}
-            className="border-t border-border/60 bg-background"
-          >
-            <View
-              className="w-full flex-row items-center justify-between gap-4 self-center px-5 py-3 md:px-8"
-              style={{ maxWidth: CONTENT_MAX_WIDTH }}
-            >
-              <View className="min-w-0 flex-1 gap-1">
-                <Text variant="label">
-                  {cart.totalQuantity > 0 ? "Your selections" : "Take your time"}
-                </Text>
-                <Text variant="caption" tone="muted">
-                  {cart.totalQuantity > 0
-                    ? `${cart.totalQuantity} ${cart.totalQuantity === 1 ? "item" : "items"} in your cart`
-                    : "Explore the store. Your cart stays here."}
-                </Text>
-              </View>
-              <CartAccessButton />
-            </View>
-          </SafeAreaView>
-        ) : null}
-      </View>
+      <View className="flex-1">{children}</View>
+      {/* The cart lives in the catalog chrome's header action slot while
+          browsing; the chrome renders the slot, this provider fills it. */}
+      {browsing ? (
+        <HeaderAction name="catalog-cart-access">
+          <CartAccessButton />
+        </HeaderAction>
+      ) : null}
       <QuickCartSheet
         open={open && browsing}
         addedLineId={addedLineId}

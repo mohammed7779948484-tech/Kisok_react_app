@@ -1,4 +1,4 @@
-import { UiLabScreen } from "@/components/app/ui-lab";
+import { UiLabScreen } from "@/design-system/lab";
 
 export default function UiLabRoute() {
   return <UiLabScreen />;

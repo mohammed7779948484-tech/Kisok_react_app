@@ -4,10 +4,17 @@ import { useRef, useState, type ReactNode } from "react";
 import { ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 
-import { ConfirmDialog, EmptyState, SkeletonList } from "@/components/feedback";
-import { Screen } from "@/components/layout/screen";
-import { Alert, Button, Icon, Text } from "@/components/ui";
-import { useLayout } from "@/core/responsive";
+import {
+  Alert,
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  Icon,
+  Screen,
+  SkeletonList,
+  Text,
+  useLayout,
+} from "@/design-system";
 import { cn } from "@/core/utils";
 
 import { CartItemRow } from "../../components/cart-item-row";

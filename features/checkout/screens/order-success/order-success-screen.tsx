@@ -4,11 +4,9 @@ import { Check } from "lucide-react-native";
 import { BackHandler, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 
-import { Screen } from "@/components/layout/screen";
-import { Alert, Button, Icon, Text } from "@/components/ui";
-import { useLayout } from "@/core/responsive";
+import { Alert, Button, Icon, Screen, Text, useLayout } from "@/design-system";
 import { cn } from "@/core/utils";
-import { useCustomerCatalogSettings } from "@/features/catalog";
+import { useCustomerCatalogSettings, useInvalidateCatalog } from "@/features/catalog";
 
 import { OrderLineRow } from "../../components/order-line-row";
 import { useAttemptStore } from "../../state/attempt-store";
@@ -37,6 +35,13 @@ export function OrderSuccessScreen() {
   const confirmedRecord = record?.status === "confirmed" ? record : null;
   const isValidSuccess = confirmedRecord !== null && phase === "confirmed";
   const cartClear = confirmedRecord?.cleanup.cartClear ?? null;
+
+  // The order lowered stock on the server; refresh the snapshot so the next
+  // customer is not offered units that are gone.
+  const invalidateCatalog = useInvalidateCatalog();
+  useEffect(() => {
+    if (isValidSuccess) invalidateCatalog();
+  }, [isValidSuccess, invalidateCatalog]);
 
   useEffect(() => {
     if (!isValidSuccess) return;

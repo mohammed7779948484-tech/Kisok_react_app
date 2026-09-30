@@ -1,25 +1,28 @@
-import { useCallback } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 
-import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
-import { Screen } from "@/components/layout/screen";
+import { EmptyState, PageHeading, SearchInput, usePageGutter, useLayout } from "@/design-system";
 
 import { BrandCard } from "../../components/brand-card";
 import { CatalogGrid, type CatalogGridRowInfo } from "../../components/catalog-grid";
 import { CatalogShell } from "../../components/catalog-shell";
-import type { CatalogBrandView } from "../../model/catalog-view";
+import {
+  CatalogEmptyState,
+  CatalogErrorState,
+  CatalogLoadingState,
+} from "../../components/catalog-state-panel";
+import { normalizeCatalogSearchText, type CatalogBrandView } from "../../model/catalog-view";
 import { useCatalog } from "../../queries/use-catalog";
 
 const brandKeyExtractor = (brand: CatalogBrandView) => brand.id;
 
-function brandCountLabel(count: number): string {
-  return count === 1 ? "1 brand" : `${count} brands`;
-}
-
 export function BrandsScreen() {
   const router = useRouter();
   const catalog = useCatalog();
+  const gutter = usePageGutter();
+  const { isExpanded } = useLayout();
+  const [query, setQuery] = useState("");
 
   const handleBrandPress = useCallback(
     (brand: CatalogBrandView) => {
@@ -28,75 +31,111 @@ export function BrandsScreen() {
     [router],
   );
 
+  const view = catalog.data;
+  // Option totals per brand, derived once per snapshot.
+  const optionCountByBrand = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const product of view?.products ?? []) {
+      if (product.brand) {
+        counts.set(product.brand.id, (counts.get(product.brand.id) ?? 0) + product.variants.length);
+      }
+    }
+    return counts;
+  }, [view]);
+
   const renderBrandCard = useCallback(
     ({ item, onPress }: CatalogGridRowInfo<CatalogBrandView>) => (
-      <BrandCard brand={item} onPress={onPress} />
+      <BrandCard
+        brand={item}
+        size="directory"
+        onPress={onPress}
+        optionCount={optionCountByBrand.get(item.id)}
+      />
     ),
-    [],
+    [optionCountByBrand],
   );
 
-  if (catalog.isPending) {
+  if (catalog.isPending) return <CatalogLoadingState destination="brands" />;
+
+  if (catalog.isError && !view) {
     return (
-      <Screen>
-        <LoadingState label="Loading the catalog…" />
-      </Screen>
+      <CatalogErrorState
+        destination="brands"
+        error={catalog.error}
+        onRetry={() => void catalog.refetch()}
+      />
     );
   }
 
-  if (catalog.isError && !catalog.data) {
-    return (
-      <Screen>
-        <ErrorState error={catalog.error} onRetry={() => void catalog.refetch()} />
-      </Screen>
-    );
+  if (!view || view.products.length === 0) {
+    return <CatalogEmptyState destination="brands" onRetry={() => void catalog.refetch()} />;
   }
 
-  const view = catalog.data;
+  // A brand with nothing to browse is not put in front of the customer.
+  const stocked = view.brands.filter((brand) => brand.productCount > 0);
+  const normalizedQuery = normalizeCatalogSearchText(query);
+  const brands = normalizedQuery
+    ? stocked.filter((brand) => normalizeCatalogSearchText(brand.name).includes(normalizedQuery))
+    : stocked;
 
-  if (view.products.length === 0) {
-    return (
-      <Screen>
-        <EmptyState
-          title="The catalog is empty"
-          description="Nothing is available to browse right now. Please try again in a moment or ask a store employee for help."
-          action={{ label: "Try again", onPress: () => void catalog.refetch() }}
-        />
-      </Screen>
-    );
-  }
+  const header = (
+    <View className="gap-8 pb-8">
+      <PageHeading
+        className="pt-8"
+        wide={isExpanded}
+        layout="split"
+        breadcrumb={[{ label: "Explore", onPress: () => router.replace("/") }, { label: "Brands" }]}
+        eyebrow="Browse by brand"
+        title="Brands"
+        description="Find a brand you know, then browse its products and available options."
+      />
+      {stocked.length > 6 ? (
+        <View style={{ maxWidth: 520 }}>
+          <SearchInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Find a brand…"
+            accessibilityLabel="Find a brand"
+            className="rounded-lg"
+          />
+        </View>
+      ) : null}
+    </View>
+  );
 
-  if (view.brands.length === 0) {
+  if (stocked.length === 0) {
     return (
-      <Screen>
+      <CatalogShell currentDestination="brands" settings={view.settings}>
         <EmptyState
           title="No brands yet"
           description="This store has no brands listed right now. You can still browse all of its products."
           action={{ label: "Browse all products", onPress: () => router.replace("/products") }}
         />
-      </Screen>
+      </CatalogShell>
     );
   }
 
-  const brands = view.brands;
-
   return (
-    <CatalogShell
-      currentDestination="brands"
-      settings={view.settings}
-      title="All brands"
-      subtitle="Discover brand collections"
-      countLabel={brandCountLabel(brands.length)}
-    >
-      <View className="flex-1 pt-2">
-        <CatalogGrid
-          data={brands}
-          renderItem={renderBrandCard}
-          keyExtractor={brandKeyExtractor}
-          onItemPress={handleBrandPress}
-          testID="brands-grid"
-          className="px-3 md:px-6"
-        />
-      </View>
+    <CatalogShell currentDestination="brands" settings={view.settings}>
+      <CatalogGrid
+        data={brands}
+        renderItem={renderBrandCard}
+        keyExtractor={brandKeyExtractor}
+        onItemPress={handleBrandPress}
+        gap={18}
+        minItemWidth={250}
+        maxColumns={4}
+        horizontalPadding={gutter}
+        listHeaderComponent={header}
+        listEmptyComponent={
+          <EmptyState
+            className="py-12"
+            title={`No brands match “${query.trim()}”`}
+            action={{ label: "Show all brands", onPress: () => setQuery("") }}
+          />
+        }
+        testID="brands-grid"
+      />
     </CatalogShell>
   );
 }

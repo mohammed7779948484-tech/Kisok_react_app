@@ -32,7 +32,9 @@ const log = createLogger("supabase.rpc");
  */
 export const MOBILE_RPC_NAMES = [
   "current_active_profile",
+  // v1 remains a live backend contract for installed clients; this app reads v2.
   "get_customer_catalog",
+  "get_customer_catalog_v2",
   "create_order",
   "update_order_status",
 ] as const satisfies readonly (keyof Database["public"]["Functions"])[];
@@ -50,7 +52,7 @@ export type DbFunctions = Pick<Database["public"]["Functions"], MobileRpcName>;
  *
  * Supabase generates a zero-argument function as `Args: never`, which nothing
  * can satisfy, not even `{}`. So the argument slot disappears entirely for those
- * and `callRpc("get_customer_catalog", schema)` is the only spelling that
+ * and `callRpc("get_customer_catalog_v2", schema)` is the only spelling that
  * compiles. Adding an argument to the function in a migration turns the
  * two-argument form back on, and every call site fails to compile until updated.
  */

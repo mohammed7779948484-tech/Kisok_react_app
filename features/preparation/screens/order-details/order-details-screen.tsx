@@ -4,19 +4,23 @@ import { ScrollView, View } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, Clock3, Package, Play, Tag, UserRound, X } from "lucide-react-native";
 
-import { EmptyState, ErrorState, InlineError, SkeletonList } from "@/components/feedback";
-import { Screen } from "@/components/layout/screen";
-import { AppImage } from "@/components/media/app-image";
 import {
+  AppImage,
   Badge,
   Button,
   Card,
   CardContent,
   CardFooter,
   CardHeader,
+  cloudinaryImageUrl,
+  EmptyState,
+  ErrorState,
   Icon,
+  InlineError,
+  Screen,
+  SkeletonList,
   Text,
-} from "@/components/ui";
+} from "@/design-system";
 import { useAuth } from "@/core/auth";
 
 import type { ActiveOrderRow } from "../../api/fetch-active-orders";
@@ -433,7 +437,7 @@ function OrderSummaryCard({
               at 200% text scaling. */}
           <View className="flex-row flex-wrap items-start justify-between gap-3">
             <View className="gap-1">
-              <Text variant="caption" className="text-xs font-bold">
+              <Text variant="caption" className="font-sans-bold text-caption">
                 Order ticket
               </Text>
               <Text variant="h2" className="font-mono tracking-wider">
@@ -486,7 +490,7 @@ function OrderItemRow({ item }: { item: ItemRow }) {
     <Card className="overflow-hidden">
       <CardContent className="gap-4 p-4 sm:flex-row">
         <AppImage
-          uri={item.image_secure_url}
+          uri={cloudinaryImageUrl(item.image_secure_url, "packshot")}
           alt={itemImageAlt(item)}
           className="h-24 w-24 shrink-0 rounded-md"
         />
@@ -517,7 +521,7 @@ function OrderItemRow({ item }: { item: ItemRow }) {
                 <Text variant="caption">{item.brand_name}</Text>
               </View>
             ) : null}
-            <Text variant="mono" className="text-xs">
+            <Text variant="mono" className="text-caption">
               {item.variant_sku}
             </Text>
           </View>

@@ -1,155 +1,121 @@
 import { useCallback } from "react";
 import { View } from "react-native";
-import { ArrowLeft } from "lucide-react-native";
 import { useRouter } from "expo-router";
 
-import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
-import { Screen } from "@/components/layout/screen";
-import { AppImage } from "@/components/media/app-image";
-import { Button, Icon, Text } from "@/components/ui";
+import { SectionHeading, SectionLink, useLayout } from "@/design-system";
 
-import { CatalogGrid, type CatalogGridRowInfo } from "../../components/catalog-grid";
-import { ProductCard } from "../../components/product-card";
-import { productCountLabel } from "../../model/labels";
-import type { CatalogBrandView, CatalogProductView } from "../../model/catalog-view";
+import { BrowseResults } from "../../components/browse-results";
+import { CatalogHero, HeroFact } from "../../components/catalog-hero";
+import { CatalogShell } from "../../components/catalog-shell";
+import {
+  CatalogEmptyState,
+  CatalogErrorState,
+  CatalogLoadingState,
+  CatalogMissingState,
+} from "../../components/catalog-state-panel";
+import type { CatalogProductView } from "../../model/catalog-view";
 import { useCatalog } from "../../queries/use-catalog";
-
-const productKeyExtractor = (product: CatalogProductView) => product.id;
+import { productDetailHref } from "../product-detail/product-detail-href";
 
 export type BrandDetailScreenProps = {
   brandId: string;
 };
 
+/** A brand's page shows its products directly; the brand facet is implied and hidden. */
 export function BrandDetailScreen({ brandId }: BrandDetailScreenProps) {
   const router = useRouter();
   const catalog = useCatalog();
-
-  const handleBack = useCallback(() => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/brands");
-    }
-  }, [router]);
+  const { isExpanded } = useLayout();
 
   const handleProductPress = useCallback(
     (product: CatalogProductView) => {
-      router.push({ pathname: "/product-detail", params: { productId: product.id } });
+      const name = catalog.data?.resolveBrand(brandId)?.name;
+      router.push(productDetailHref(product.id, name ? `Back to ${name}` : undefined));
     },
-    [router],
+    [router, catalog.data, brandId],
   );
 
-  const renderProductCard = useCallback(
-    ({ item, onPress }: CatalogGridRowInfo<CatalogProductView>) => (
-      <ProductCard product={item} onPress={onPress} />
-    ),
-    [],
-  );
-
-  if (catalog.isPending) {
-    return (
-      <Screen>
-        <LoadingState label="Loading the catalog…" />
-      </Screen>
-    );
-  }
+  if (catalog.isPending) return <CatalogLoadingState destination="brands" />;
 
   if (catalog.isError && !catalog.data) {
     return (
-      <Screen>
-        <ErrorState error={catalog.error} onRetry={() => void catalog.refetch()} />
-      </Screen>
+      <CatalogErrorState
+        destination="brands"
+        error={catalog.error}
+        onRetry={() => void catalog.refetch()}
+      />
     );
   }
 
   const view = catalog.data;
-
-  if (view.products.length === 0) {
-    return (
-      <Screen>
-        <EmptyState
-          title="The catalog is empty"
-          description="Nothing is available to browse right now. Please try again in a moment or ask a store employee for help."
-          action={{ label: "Try again", onPress: () => void catalog.refetch() }}
-        />
-      </Screen>
-    );
+  if (!view || view.products.length === 0) {
+    return <CatalogEmptyState destination="brands" onRetry={() => void catalog.refetch()} />;
   }
 
   const brand = view.resolveBrand(brandId);
-
   if (brand === undefined) {
     return (
-      <Screen>
-        <EmptyState
-          title="Brand not found"
-          description="This brand isn't in the current catalog. It may have been removed since you started browsing."
-          action={{ label: "Back to brands", onPress: () => router.replace("/brands") }}
-        />
-      </Screen>
+      <CatalogMissingState
+        destination="brands"
+        settings={view.settings}
+        title="This brand is no longer available"
+        description="It may have been removed since you started browsing."
+        action={{ label: "Back to brands", onPress: () => router.replace("/brands") }}
+        secondaryAction={{
+          label: "Browse all products",
+          onPress: () => router.replace("/products"),
+        }}
+      />
     );
   }
 
   const products = view.productsForBrand(brandId);
+  const optionCount = products.reduce((total, product) => total + product.variants.length, 0);
 
   return (
-    <Screen>
-      <View className="flex-1">
-        <View className="gap-4 px-5 pb-4 pt-6 md:px-8">
-          <Button
-            variant="ghost"
-            size="compact"
-            onPress={handleBack}
-            className="min-h-touch gap-1.5 self-start pl-2"
-            accessibilityLabel="Go back"
-          >
-            <Icon as={ArrowLeft} size={18} />
-            <Text className="font-semibold">Back</Text>
-          </Button>
-
-          <BrandIdentity brand={brand} productCount={products.length} />
-        </View>
-
-        <CatalogGrid
-          data={products}
-          renderItem={renderProductCard}
-          keyExtractor={productKeyExtractor}
-          onItemPress={handleProductPress}
-          testID="brand-products-grid"
-          className="px-3 md:px-6"
-        />
-      </View>
-    </Screen>
-  );
-}
-
-type BrandIdentityProps = {
-  brand: CatalogBrandView;
-  productCount: number;
-};
-
-function BrandIdentity({ brand, productCount }: BrandIdentityProps) {
-  return (
-    <View className="flex-row items-center gap-5 rounded-2xl border border-border/80 bg-card p-4 md:p-5">
-      <View className="h-20 w-20 items-center justify-center rounded-xl bg-muted/25 p-2 md:h-24 md:w-24">
-        <AppImage
-          uri={brand.image?.secureUrl ?? null}
-          alt={brand.name}
-          contentFit="contain"
-          className="h-full w-full"
-        />
-      </View>
-      <View className="flex-1 gap-1">
-        <Text variant="caption" tone="primary" className="font-semibold uppercase tracking-wider">
-          Brand Collection
-        </Text>
-        <Text variant="h1" accessibilityRole="header" className="text-2xl font-bold md:text-3xl">
-          {brand.name}
-        </Text>
-        <Text variant="caption" tone="muted">
-          {productCountLabel(productCount)}
-        </Text>
-      </View>
-    </View>
+    <CatalogShell currentDestination="brands" settings={view.settings}>
+      <BrowseResults
+        view={view}
+        products={products}
+        refine="inline"
+        showBrandFacet={false}
+        scopeLabel={`${brand.name} products`}
+        onProductPress={handleProductPress}
+        testID="brand-products-grid"
+        emptyTitle={products.length === 0 ? "Nothing from this brand right now" : undefined}
+        emptySecondaryAction={{ label: "All brands", onPress: () => router.replace("/brands") }}
+        header={
+          <View>
+            <CatalogHero
+              wide={isExpanded}
+              breadcrumb={[
+                { label: "Brands", onPress: () => router.replace("/brands") },
+                { label: brand.name },
+              ]}
+              eyebrow="Brand"
+              title={brand.name}
+              media={brand.image}
+              mediaFit="contain"
+              mediaTint="evergreen"
+              mediaCaption={brand.name}
+            >
+              <View className="flex-row gap-10">
+                <HeroFact
+                  value={products.length}
+                  label={products.length === 1 ? "product" : "products"}
+                />
+                <HeroFact value={optionCount} label="catalog options" />
+              </View>
+            </CatalogHero>
+            <SectionHeading
+              className="pt-10"
+              eyebrow={`Products by ${brand.name}`}
+              title={`Browse ${brand.name}`}
+              action={<SectionLink label="All brands" onPress={() => router.replace("/brands")} />}
+            />
+          </View>
+        }
+      />
+    </CatalogShell>
   );
 }

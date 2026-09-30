@@ -1,7 +1,7 @@
 import { Stack } from "expo-router";
 import { View } from "react-native";
 
-import { OfflineNotice } from "@/components/feedback";
+import { OfflineNotice } from "@/design-system";
 
 /**
  * Preparation employee experience. Same rules as the customer layout:

@@ -1,52 +1,54 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { ScrollView, View } from "react-native";
-import { ArrowLeft } from "lucide-react-native";
+import { ArrowRight } from "lucide-react-native";
 import { useRouter } from "expo-router";
 
-import { EmptyState, ErrorState, LoadingState } from "@/components/feedback";
-import { Screen } from "@/components/layout/screen";
-import { AppImage } from "@/components/media/app-image";
-import { Button, Icon, Text } from "@/components/ui";
-import { useLayout } from "@/core/responsive";
-
-import { CatalogGrid, type CatalogGridRowInfo } from "../../components/catalog-grid";
-import { CategoryCard } from "../../components/category-card";
-import { ProductCard } from "../../components/product-card";
-import { productCountLabel } from "../../model/labels";
-import type { CatalogCategoryView, CatalogProductView } from "../../model/catalog-view";
-import { useCatalog } from "../../queries/use-catalog";
 import {
-  CategoryBrandFilter,
-  type CategoryBrandFilterOption,
-} from "./components/category-brand-filter";
+  Button,
+  ContentContainer,
+  GridCell,
+  Icon,
+  ResponsiveGrid,
+  SectionHeading,
+  Text,
+  useLayout,
+} from "@/design-system";
 
-const productKeyExtractor = (product: CatalogProductView) => product.id;
+import { BrowseResults } from "../../components/browse-results";
+import { CatalogHero } from "../../components/catalog-hero";
+import { CatalogShell } from "../../components/catalog-shell";
+import { CategoryCard } from "../../components/category-card";
+import {
+  CatalogEmptyState,
+  CatalogErrorState,
+  CatalogLoadingState,
+  CatalogMissingState,
+} from "../../components/catalog-state-panel";
+import type { CatalogCategoryView, CatalogProductView } from "../../model/catalog-view";
+import { productCountLabel } from "../../model/labels";
+import { useCatalog } from "../../queries/use-catalog";
+import { productDetailHref } from "../product-detail/product-detail-href";
 
 export type CategoryDetailScreenProps = {
   categoryId: string;
 };
 
+/**
+ * A category page never dead-ends in an empty in-between step: a root with
+ * sub-categories offers those paths (and every product at once); any other
+ * category shows its products directly.
+ */
 export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) {
   const router = useRouter();
   const catalog = useCatalog();
-  const { isLandscape, isExpanded } = useLayout();
-  const useWideHeader = isLandscape && isExpanded;
-
-  const [selectedBrand, setSelectedBrand] = useState<CategoryBrandFilterOption | null>(null);
-
-  const handleBack = useCallback(() => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/categories");
-    }
-  }, [router]);
+  const { isExpanded } = useLayout();
 
   const handleProductPress = useCallback(
     (product: CatalogProductView) => {
-      router.push({ pathname: "/product-detail", params: { productId: product.id } });
+      const name = catalog.data?.resolveCategory(categoryId)?.name;
+      router.push(productDetailHref(product.id, name ? `Back to ${name}` : undefined));
     },
-    [router],
+    [router, catalog.data, categoryId],
   );
 
   const handleChildPress = useCallback(
@@ -56,206 +58,141 @@ export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) 
     [router],
   );
 
-  const handleResetBrand = useCallback(() => {
-    setSelectedBrand(null);
-  }, []);
-
-  const renderProductCard = useCallback(
-    ({ item, onPress }: CatalogGridRowInfo<CatalogProductView>) => (
-      <ProductCard product={item} onPress={onPress} />
-    ),
-    [],
-  );
-
-  if (catalog.isPending) {
-    return (
-      <Screen>
-        <LoadingState label="Loading the catalog…" />
-      </Screen>
-    );
-  }
+  if (catalog.isPending) return <CatalogLoadingState destination="categories" />;
 
   if (catalog.isError && !catalog.data) {
     return (
-      <Screen>
-        <ErrorState error={catalog.error} onRetry={() => void catalog.refetch()} />
-      </Screen>
+      <CatalogErrorState
+        destination="categories"
+        error={catalog.error}
+        onRetry={() => void catalog.refetch()}
+      />
     );
   }
 
   const view = catalog.data;
-
-  if (view.products.length === 0) {
-    return (
-      <Screen>
-        <EmptyState
-          title="The catalog is empty"
-          description="Nothing is available to browse right now. Please try again in a moment or ask a store employee for help."
-          action={{ label: "Try again", onPress: () => void catalog.refetch() }}
-        />
-      </Screen>
-    );
+  if (!view || view.products.length === 0) {
+    return <CatalogEmptyState destination="categories" onRetry={() => void catalog.refetch()} />;
   }
 
   const category = view.resolveCategory(categoryId);
-
   if (category === undefined) {
     return (
-      <Screen>
-        <EmptyState
-          title="Category not found"
-          description="This category is no longer in the catalog. It may have been removed since you started browsing."
-          action={{ label: "Back to categories", onPress: () => router.replace("/categories") }}
-        />
-      </Screen>
+      <CatalogMissingState
+        destination="categories"
+        settings={view.settings}
+        title="This category is no longer available"
+        description="It may have been removed since you started browsing."
+        action={{ label: "Back to categories", onPress: () => router.replace("/categories") }}
+        secondaryAction={{
+          label: "Browse all products",
+          onPress: () => router.replace("/products"),
+        }}
+      />
     );
   }
 
-  const products = view.productsForCategory(categoryId, selectedBrand?.brandId ?? null);
-  const childCategories = category.children;
+  const products = view.productsForCategory(categoryId);
+  const children = category.children.filter((child) => child.productCount > 0);
+  const breadcrumb = [
+    { label: "Categories", onPress: () => router.replace("/categories") },
+    ...(category.parent
+      ? [
+          {
+            label: category.parent.name,
+            onPress: () =>
+              router.push({
+                pathname: "/category-detail",
+                params: { categoryId: category.parent?.id ?? "" },
+              }),
+          },
+        ]
+      : []),
+    { label: category.name },
+  ];
 
-  const currentOptions: CategoryBrandFilterOption[] = view
-    .brandsForCategory(categoryId)
-    .map((brand) => ({ brandId: brand.id, name: brand.name }));
-  const filterOptions =
-    selectedBrand !== null &&
-    !currentOptions.some((option) => option.brandId === selectedBrand.brandId)
-      ? [...currentOptions, selectedBrand]
-      : currentOptions;
+  if (children.length > 0) {
+    return (
+      <CatalogShell currentDestination="categories" settings={view.settings}>
+        <ScrollView contentContainerClassName="pb-16">
+          <ContentContainer className="gap-10">
+            <CatalogHero
+              wide={isExpanded}
+              breadcrumb={breadcrumb}
+              eyebrow="Category"
+              title={category.name}
+              description="Choose a more specific path, or view every product in this category."
+              media={category.image}
+              mediaTint="evergreen"
+            >
+              <Button
+                variant="tonal"
+                onPress={() =>
+                  router.push({ pathname: "/products", params: { categoryId: category.id } })
+                }
+              >
+                <Text>View all {productCountLabel(products.length)}</Text>
+                <Icon as={ArrowRight} size={18} />
+              </Button>
+            </CatalogHero>
 
-  const handleSelectBrand = (brandId: string | null): void => {
-    if (brandId === null) {
-      setSelectedBrand(null);
-      return;
-    }
-
-    const option = filterOptions.find((candidate) => candidate.brandId === brandId);
-    if (option !== undefined) {
-      setSelectedBrand(option);
-    }
-  };
-
-  const categoryDiscoveryHeader = (
-    <View className="gap-5 px-2 pb-5 pt-3">
-      {/* Category header and filters responsive layout */}
-      <View
-        className={
-          useWideHeader
-            ? "flex-row items-start justify-between gap-8 border-b border-border/50 pb-5"
-            : "gap-4 border-b border-border/50 pb-4"
-        }
-      >
-        <View className={useWideHeader ? "max-w-md flex-1" : "w-full"}>
-          <CategoryIdentity category={category} />
-        </View>
-
-        {filterOptions.length > 0 ? (
-          <View className={useWideHeader ? "flex-1 pt-1" : "w-full pt-1"}>
-            <CategoryBrandFilter
-              options={filterOptions}
-              selectedBrandId={selectedBrand?.brandId ?? null}
-              onSelectBrand={handleSelectBrand}
-            />
-          </View>
-        ) : null}
-      </View>
-
-      {/* Subcategories Horizontal Scroll Row (Roots only) */}
-      {childCategories.length > 0 ? (
-        <View className="gap-2.5">
-          <Text variant="caption" tone="muted" className="font-semibold">
-            Subcategories:
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerClassName="gap-3 pb-1"
-          >
-            {childCategories.map((child) => (
-              <CategoryCard
-                key={child.id}
-                category={child}
-                onPress={handleChildPress}
-                className="w-48"
+            <View className="gap-6">
+              <SectionHeading
+                eyebrow="Choose a path"
+                title={`Explore ${category.name}`}
+                action={
+                  <Text variant="meta" tone="muted">
+                    {children.length === 1 ? "1 subcategory" : `${children.length} subcategories`}
+                  </Text>
+                }
               />
-            ))}
-          </ScrollView>
-        </View>
-      ) : null}
-    </View>
-  );
+              <ResponsiveGrid minItemWidth={340} gap={18} maxColumns={3}>
+                {children.map((child) => (
+                  <GridCell key={child.id}>
+                    <CategoryCard category={child} variant="path" onPress={handleChildPress} />
+                  </GridCell>
+                ))}
+              </ResponsiveGrid>
+            </View>
+          </ContentContainer>
+        </ScrollView>
+      </CatalogShell>
+    );
+  }
 
   return (
-    <Screen>
-      <View className="flex-1">
-        {/* Back navigation header */}
-        <View className="px-5 pt-4 md:px-8">
-          <Button
-            variant="ghost"
-            size="compact"
-            onPress={handleBack}
-            className="min-h-touch gap-1.5 self-start pl-2"
-            accessibilityLabel="Go back"
-          >
-            <Icon as={ArrowLeft} size={18} />
-            <Text className="font-semibold">Back</Text>
-          </Button>
-        </View>
-
-        {products.length > 0 ? (
-          <CatalogGrid
-            data={products}
-            renderItem={renderProductCard}
-            keyExtractor={productKeyExtractor}
-            onItemPress={handleProductPress}
-            listHeaderComponent={categoryDiscoveryHeader}
-            testID="category-products-grid"
-            className="px-3 md:px-6"
+    <CatalogShell currentDestination="categories" settings={view.settings}>
+      <BrowseResults
+        view={view}
+        products={products}
+        refine="inline"
+        showCategoryFacet={false}
+        scopeLabel={`${category.name} products`}
+        onProductPress={handleProductPress}
+        testID="category-products-grid"
+        header={
+          <CatalogHero
+            wide={isExpanded}
+            breadcrumb={breadcrumb}
+            eyebrow="Category"
+            title={category.name}
+            description={
+              products.length > 0
+                ? `${productCountLabel(products.length)} in this category.`
+                : "Nothing is listed in this category right now."
+            }
+            media={category.image}
+            mediaTint="evergreen"
           />
-        ) : (
-          <ScrollView contentContainerClassName="flex-grow px-3 md:px-6">
-            {categoryDiscoveryHeader}
-            <EmptyState
-              title="No products from this brand"
-              description={`This brand currently has no products in this category. Clear the brand filter to browse the full ${category.parent !== null ? "category" : "department"}.`}
-              action={{ label: "Show all brands", onPress: handleResetBrand }}
-              className="min-h-80"
-            />
-          </ScrollView>
-        )}
-      </View>
-    </Screen>
-  );
-}
-
-type CategoryIdentityProps = {
-  category: CatalogCategoryView;
-};
-
-function CategoryIdentity({ category }: CategoryIdentityProps) {
-  const isSubcategory = category.parent !== null;
-
-  return (
-    <View className="flex-row items-center gap-4">
-      <View className="h-16 w-16 overflow-hidden rounded-xl bg-muted/20 md:h-20 md:w-20">
-        <AppImage
-          uri={category.image?.secureUrl ?? null}
-          alt={category.name}
-          contentFit="cover"
-          className="h-full w-full"
-        />
-      </View>
-      <View className="flex-1 gap-0.5">
-        <Text variant="caption" tone="primary" className="font-semibold uppercase tracking-wider">
-          {isSubcategory ? `Subcategory of ${category.parent!.name}` : "Department"}
-        </Text>
-        <Text variant="h1" accessibilityRole="header" className="text-2xl font-bold md:text-3xl">
-          {category.name}
-        </Text>
-        <Text variant="caption" tone="muted">
-          {productCountLabel(category.productCount)}
-        </Text>
-      </View>
-    </View>
+        }
+        emptyTitle={
+          products.length === 0 ? "Nothing here right now" : "No products match these filters"
+        }
+        emptySecondaryAction={{
+          label: "Browse all products",
+          onPress: () => router.replace("/products"),
+        }}
+      />
+    </CatalogShell>
   );
 }

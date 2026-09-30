@@ -1,129 +1,77 @@
 import { Pressable, ScrollView, View } from "react-native";
-import { House, LayoutGrid, Package, Search, Tags, type LucideIcon } from "lucide-react-native";
 
-import { Icon, Text } from "@/components/ui";
-import { useLayout } from "@/core/responsive";
+import { Text } from "@/design-system";
 import { cn } from "@/core/utils";
 
 export const CATALOG_DESTINATIONS = ["home", "products", "categories", "brands", "search"] as const;
 
 export type CatalogDestination = (typeof CATALOG_DESTINATIONS)[number];
 
-const DESTINATION_LABELS: Record<CatalogDestination, string> = {
-  home: "Home",
-  products: "Products",
-  categories: "Categories",
-  brands: "Brands",
-  search: "Search",
-};
-
-const DESTINATION_ICONS: Record<CatalogDestination, LucideIcon> = {
-  home: House,
-  products: Package,
-  categories: LayoutGrid,
-  brands: Tags,
-  search: Search,
-};
+/** The four browse destinations shown as tabs. Search lives in the chrome's field. */
+const NAV_DESTINATIONS: { destination: CatalogDestination; label: string }[] = [
+  { destination: "home", label: "Explore" },
+  { destination: "products", label: "Products" },
+  { destination: "categories", label: "Categories" },
+  { destination: "brands", label: "Brands" },
+];
 
 export type CatalogNavigationProps = {
-  current: CatalogDestination;
+  current: CatalogDestination | null;
   onNavigate: (destination: CatalogDestination) => void;
+  /** Let the row scroll sideways when the chrome is too narrow for it. */
+  scrollable?: boolean;
   className?: string;
 };
 
-export function CatalogNavigation({ current, onNavigate, className }: CatalogNavigationProps) {
-  const { isCompact } = useLayout();
-  const mainDestinations: CatalogDestination[] = ["home", "products", "categories", "brands"];
-
-  const searchButton = (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={DESTINATION_LABELS.search}
-      accessibilityState={{ selected: current === "search" }}
-      onPress={() => onNavigate("search")}
-      className={cn(
-        "h-touch min-h-touch shrink-0 flex-row items-center gap-2 rounded-xl border px-3.5 active:scale-[0.98] md:px-4",
-        current === "search"
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border/80 bg-card active:bg-muted/60",
-      )}
-    >
-      <Icon
-        as={Search}
-        size={18}
-        className={current === "search" ? "text-primary-foreground" : "text-foreground"}
-      />
-      <Text
-        variant="body"
+export function CatalogNavigation({
+  current,
+  onNavigate,
+  scrollable = false,
+  className,
+}: CatalogNavigationProps) {
+  const tabs = NAV_DESTINATIONS.map(({ destination, label }) => {
+    const selected = destination === current;
+    return (
+      <Pressable
+        key={destination}
+        accessibilityRole="tab"
+        accessibilityLabel={label}
+        accessibilityState={{ selected }}
+        onPress={() => onNavigate(destination)}
         className={cn(
-          "text-sm font-semibold md:text-base",
-          current === "search" ? "text-primary-foreground" : "text-foreground",
+          "h-touch min-w-touch items-center justify-center rounded-md px-3.5",
+          selected ? "bg-primary/[0.07]" : "active:bg-muted",
         )}
       >
-        Search
-      </Text>
-    </Pressable>
-  );
-
-  const taxonomyBar = (
-    <View className="flex-row items-center gap-1 rounded-xl border border-border/70 bg-muted/50 p-1">
-      {mainDestinations.map((destination) => {
-        const isSelected = destination === current;
-        const DestinationIcon = DESTINATION_ICONS[destination];
-
-        return (
-          <Pressable
-            key={destination}
-            accessibilityRole="button"
-            accessibilityLabel={DESTINATION_LABELS[destination]}
-            accessibilityState={{ selected: isSelected }}
-            onPress={() => onNavigate(destination)}
-            className={cn(
-              "h-touch min-h-touch flex-row items-center gap-2 rounded-lg px-3 transition-all active:scale-[0.98] md:px-4",
-              isSelected ? "bg-primary shadow-sm" : "bg-transparent active:bg-muted",
-            )}
-          >
-            <Icon
-              as={DestinationIcon}
-              size={18}
-              className={isSelected ? "text-primary-foreground" : "text-muted-foreground"}
-            />
-            <Text
-              variant="body"
-              className={cn(
-                "text-sm font-semibold md:text-base",
-                isSelected ? "text-primary-foreground" : "text-foreground",
-              )}
-            >
-              {DESTINATION_LABELS[destination]}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-
-  // Gate I: Keep Search button pinned outside horizontal ScrollView on compact viewports
-  if (isCompact) {
-    return (
-      <View className={cn("flex-row items-center justify-between gap-2.5", className)}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerClassName="items-center py-0.5 pr-2"
-          className="flex-1"
+        <Text
+          className={cn(
+            "font-sans-semibold text-body-lg",
+            selected ? "text-primary" : "text-muted-foreground",
+          )}
         >
-          {taxonomyBar}
-        </ScrollView>
-        {searchButton}
-      </View>
+          {label}
+        </Text>
+      </Pressable>
+    );
+  });
+
+  if (scrollable) {
+    return (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        accessibilityRole="tablist"
+        className={className}
+        contentContainerClassName="items-center gap-0.5"
+      >
+        {tabs}
+      </ScrollView>
     );
   }
 
   return (
-    <View className={cn("flex-row items-center justify-between gap-2.5", className)}>
-      {taxonomyBar}
-      {searchButton}
+    <View accessibilityRole="tablist" className={cn("flex-row items-center gap-0.5", className)}>
+      {tabs}
     </View>
   );
 }
