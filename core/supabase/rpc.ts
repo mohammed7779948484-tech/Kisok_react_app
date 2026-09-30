@@ -59,8 +59,21 @@ export type DbFunctions = Pick<Database["public"]["Functions"], MobileRpcName>;
 type RpcInvocation<Name extends keyof DbFunctions, Parsed> = [DbFunctions[Name]["Args"]] extends [
   never,
 ]
-  ? [schema: ZodType<Parsed>]
-  : [args: DbFunctions[Name]["Args"], schema: ZodType<Parsed>];
+  ? [schema: ZodType<Parsed>, options?: RpcOptions]
+  : [args: DbFunctions[Name]["Args"], schema: ZodType<Parsed>, options?: RpcOptions];
+
+export type RpcOptions = {
+  /**
+   * Cancels the request. On Android, React Native's HTTP client has no timeout
+   * of its own, so a caller that must not wait forever passes one here. An
+   * aborted call fails as a `network` AppError — its outcome is unknown.
+   */
+  signal?: AbortSignal;
+};
+
+function isSchema(value: unknown): value is ZodType {
+  return typeof (value as { safeParse?: unknown } | undefined)?.safeParse === "function";
+}
 
 /**
  * Call a Postgres function and validate its payload.
@@ -77,14 +90,17 @@ export async function callRpc<Name extends keyof DbFunctions, Parsed>(
   name: Name,
   ...invocation: RpcInvocation<Name, Parsed>
 ): Promise<Parsed> {
-  const [first, second] = invocation as [unknown, ZodType<Parsed>?];
-  const hasArgs = second !== undefined;
+  const [first, second, third] = invocation as unknown[];
+  const hasArgs = isSchema(second);
   const args = hasArgs ? first : undefined;
   const schema = (hasArgs ? second : first) as ZodType<Parsed>;
+  const options = (hasArgs ? third : second) as RpcOptions | undefined;
 
   const supabase = getSupabaseClient();
 
-  const { data, error } = await supabase.rpc(name as never, args as never);
+  let request = supabase.rpc(name as never, args as never);
+  if (options?.signal) request = request.abortSignal(options.signal);
+  const { data, error } = await request;
 
   if (error) {
     const appError = toAppError(error);

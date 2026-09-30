@@ -4,7 +4,7 @@ import { installMockSupabase } from "@/core/testing";
 
 import type { CreateOrderResponse } from "../model/create-order-response.schema";
 
-import { submitOrder, type SubmitOrderInput } from "./submit-order";
+import { SUBMIT_ORDER_TIMEOUT_MS, submitOrder, type SubmitOrderInput } from "./submit-order";
 
 let supabase: ReturnType<typeof installMockSupabase> | undefined;
 
@@ -218,6 +218,45 @@ describe("submitOrder", () => {
 
     expect(failure).toBeInstanceOf(AppError);
     expect(failure).toMatchObject({ kind: "network", retryable: true });
+  });
+
+  it("cancels a request that gets no answer and reports its outcome as unknown (network)", async () => {
+    jest.useFakeTimers();
+    try {
+      let receivedSignal: AbortSignal | undefined;
+      supabase = installMockSupabase({
+        rpc: {
+          // A connection that never answers, until the caller cancels it —
+          // then the shape postgrest-js returns for an aborted fetch.
+          create_order: (_args, { signal }) =>
+            new Promise((resolve) => {
+              receivedSignal = signal;
+              signal?.addEventListener("abort", () =>
+                resolve({
+                  data: null,
+                  error: {
+                    message: "AbortError: Aborted",
+                    details: "",
+                    hint: "Request was aborted (timeout or manual cancellation)",
+                    code: "",
+                  },
+                }),
+              );
+            }),
+        },
+      });
+
+      const outcome = submitOrder(input).catch((error: unknown) => error);
+      await jest.advanceTimersByTimeAsync(SUBMIT_ORDER_TIMEOUT_MS - 1);
+      expect(receivedSignal?.aborted).toBe(false);
+      await jest.advanceTimersByTimeAsync(1);
+
+      const failure = await outcome;
+      expect(failure).toBeInstanceOf(AppError);
+      expect(failure).toMatchObject({ kind: "network" });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("converts an unrecognized rejection to an AppError of kind unknown, preserving its detail", async () => {
