@@ -97,6 +97,21 @@ function isDefinite(error: unknown): error is AppError {
   return true;
 }
 
+/**
+ * For a request that may ALREADY have been placed (an earlier attempt had no
+ * answer, or it was resumed after a restart), only an error `create_order`
+ * raises from its payload or after its duplicate check proves no order exists
+ * under this id. A server, session or role failure is raised before that
+ * check, so it says nothing about the earlier attempt.
+ */
+function provesNoOrder(error: AppError): boolean {
+  return (
+    error.kind === "validation" ||
+    error.kind === "unavailable" ||
+    error.kind === "idempotency-conflict"
+  );
+}
+
 function failureFor(error: AppError): CheckoutFailure {
   if (error.kind === "idempotency-conflict") {
     return {
@@ -127,7 +142,8 @@ function failureFor(error: AppError): CheckoutFailure {
  * The duplicate-order guarantee, end to end:
  * 1. a new order gets a fresh `client_request_id`;
  * 2. the id and the exact items are saved BEFORE the first request;
- * 3. an ambiguous result keeps them;
+ * 3. an ambiguous result keeps them — and once a request may have been
+ *    placed, only an answer proving no order exists under its id ends it;
  * 4. every retry — including after a restart — re-sends the SAME id and
  *    items, which `create_order` deduplicates server-side;
  * 5. the cart is cleared only after the server confirms.
@@ -138,7 +154,13 @@ function failureFor(error: AppError): CheckoutFailure {
 export function createCheckoutStore(backend: JsonStorage = storage, deps: Deps = defaultDeps) {
   return create<CheckoutState>((set, get) => {
     // One request at a time: a double tap or an overlapping retry is ignored.
+    // `starting` spans the save that precedes the first send, so a second
+    // press during that write cannot mint a second request id.
     let sending = false;
+    let starting = false;
+    // The request id that may already have reached the store: set once an
+    // attempt ends without an answer, or when a saved request is resumed.
+    let maybePlaced: string | null = null;
     let recovery: { ownerId: string; done: Promise<void> } | null = null;
 
     const save = (record: SavedCheckout) => backend.write(STORAGE_KEY, record);
@@ -193,12 +215,15 @@ export function createCheckoutStore(backend: JsonStorage = storage, deps: Deps =
         await resolve(pending, response);
       } catch (error) {
         if (get().pending?.requestId !== pending.requestId) return;
-        if (isDefinite(error)) {
+        const definite =
+          isDefinite(error) && (maybePlaced !== pending.requestId || provesNoOrder(error));
+        if (definite) {
           await discard("definite failure");
           unlockCart();
           set({ phase: "failure", pending: null, failure: failureFor(error) });
         } else {
           log.warn("Order result unknown; keeping the request to re-send");
+          maybePlaced = pending.requestId;
           set({ phase: "unknown" });
         }
       } finally {
@@ -234,9 +259,59 @@ export function createCheckoutStore(backend: JsonStorage = storage, deps: Deps =
         set({ ready: true, phase: "confirmed", confirmed: record });
         return;
       }
+      // It may have been sent before the restart.
+      maybePlaced = record.requestId;
       lockCart();
       set({ ready: true, pending: record });
       await send(record);
+    };
+
+    /**
+     * Turn the cart into a pending order and save it. Null when nothing may
+     * be sent — the phase already says why.
+     */
+    const prepare = async (ownerId: string, lines: CartLine[]): Promise<PendingOrder | null> => {
+      let items;
+      try {
+        items = normalizeCartLines(lines);
+      } catch {
+        set({
+          phase: "failure",
+          failure: {
+            title: "Too many different selections",
+            message:
+              "One order can include up to 100 different options. Remove a few and try again.",
+            retryable: false,
+          },
+        });
+        return null;
+      }
+
+      const next: PendingOrder = {
+        version: 1,
+        state: "pending",
+        ownerId,
+        requestId: deps.newRequestId(),
+        items,
+        lineSnapshots: lines,
+      };
+      // Saved BEFORE the request: without it a lost response could not be
+      // re-sent under the same id, so nothing is sent if the save fails.
+      const written = await save(next);
+      if (written.status === "rejected") {
+        set({
+          phase: "failure",
+          failure: {
+            title: "Your order wasn't sent",
+            message: "This tablet couldn't prepare your order. Please try again.",
+            retryable: true,
+          },
+        });
+        return null;
+      }
+      lockCart();
+      set({ pending: next, conflicts: null });
+      return next;
     };
 
     return {
@@ -269,50 +344,16 @@ export function createCheckoutStore(backend: JsonStorage = storage, deps: Deps =
 
       submit: async (lines) => {
         const { ready, phase, pending, ownerId } = get();
-        if (!ready || !ownerId || pending || sending) return;
+        if (!ready || !ownerId || pending || sending || starting) return;
         if (phase !== "idle" && phase !== "failure" && phase !== "conflict") return;
-
-        let items;
+        starting = true;
+        let next: PendingOrder | null;
         try {
-          items = normalizeCartLines(lines);
-        } catch {
-          set({
-            phase: "failure",
-            failure: {
-              title: "Too many different selections",
-              message:
-                "One order can include up to 100 different options. Remove a few and try again.",
-              retryable: false,
-            },
-          });
-          return;
+          next = await prepare(ownerId, lines);
+        } finally {
+          starting = false;
         }
-
-        const next: PendingOrder = {
-          version: 1,
-          state: "pending",
-          ownerId,
-          requestId: deps.newRequestId(),
-          items,
-          lineSnapshots: lines,
-        };
-        // Saved BEFORE the request: without it a lost response could not be
-        // re-sent under the same id, so nothing is sent if the save fails.
-        const written = await save(next);
-        if (written.status === "rejected") {
-          set({
-            phase: "failure",
-            failure: {
-              title: "Your order wasn't sent",
-              message: "This tablet couldn't prepare your order. Please try again.",
-              retryable: true,
-            },
-          });
-          return;
-        }
-        lockCart();
-        set({ pending: next, conflicts: null });
-        await send(next);
+        if (next) await send(next);
       },
 
       retry: async () => {
