@@ -1,7 +1,9 @@
 import { View } from "react-native";
 
-import { Button, Screen, Text } from "@/design-system";
+import { Button, Text } from "@/design-system";
 import { useAuth, useSignOutAction } from "@/core/auth";
+
+import { AuthFrame } from "../components/auth-frame";
 
 /**
  * The account authenticated but has no place in the tablet app: its profile is
@@ -14,50 +16,37 @@ import { useAuth, useSignOutAction } from "@/core/auth";
 export function UnauthorizedScreen() {
   const { profile } = useAuth();
   const signOut = useSignOutAction();
-
-  const reason =
-    profile?.role === "admin"
-      ? "Administrator accounts are managed in the web admin app, not on the store tablet."
-      : "This account doesn't have an active store profile. Ask an administrator to activate it.";
+  const admin = profile?.role === "admin";
 
   return (
-    <Screen edges={["top", "bottom", "left", "right"]}>
-      <View className="flex-1 items-center justify-center p-6 md:p-10">
-        <View className="w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-card">
-          <View className="flex-row items-center justify-between bg-primary p-6 md:p-8">
-            <Text variant="label" className="text-primary-foreground">
-              Account access
-            </Text>
-            <View className="h-3 w-14 rounded-sm bg-accent" />
-          </View>
-          <View accessibilityRole="alert" className="items-start gap-5 p-6 md:p-10">
-            <Text variant="h1" accessibilityRole="header">
-              This account cannot use the tablet
-            </Text>
-            <Text variant="body" tone="muted" className="max-w-xl">
-              {reason}
-            </Text>
-            <Button
-              variant="secondary"
-              onPress={signOut.run}
-              disabled={signOut.pending}
-              className="mt-2"
-            >
-              <Text>{signOut.pending ? "Signing out…" : "Sign out"}</Text>
-            </Button>
-            {signOut.message ? (
-              <Text
-                variant="body"
-                tone="destructive"
-                accessibilityLiveRegion="polite"
-                className="max-w-xl"
-              >
-                {signOut.message}
-              </Text>
-            ) : null}
-          </View>
+    <AuthFrame
+      eyebrow="Account access"
+      headline="This account isn’t for the tablet."
+      lead="Store tablets open with a customer or preparation account."
+    >
+      <View
+        accessibilityRole="alert"
+        className="gap-6 rounded-3xl border border-border bg-card p-6"
+      >
+        <View className="gap-2">
+          <Text variant="h2" accessibilityRole="header">
+            {admin ? "Administrator account" : "No active store profile"}
+          </Text>
+          <Text tone="muted">
+            {admin
+              ? "Administrator accounts are managed in the web admin app, not on the store tablet."
+              : "This account doesn’t have an active store profile. Ask an administrator to activate it."}
+          </Text>
         </View>
+        <Button size="large" block onPress={signOut.run} disabled={signOut.pending}>
+          <Text>{signOut.pending ? "Signing out…" : "Sign out"}</Text>
+        </Button>
+        {signOut.message ? (
+          <Text tone="destructive" accessibilityLiveRegion="polite">
+            {signOut.message}
+          </Text>
+        ) : null}
       </View>
-    </Screen>
+    </AuthFrame>
   );
 }
