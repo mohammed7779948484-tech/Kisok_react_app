@@ -48,3 +48,13 @@ generated `state/` template demonstrates the pattern.
 - One storage adapter works on both target platforms with no native build.
 - `createMemoryStore({ failOn: "setItem" })` makes the failure path directly
   testable, so it can be covered rather than assumed.
+
+## Amendment (2026-09-29)
+
+The `persisted / memoryOnly / clearFailed` status doctrine was retired with
+the customer-flow simplification. Stores still write through
+`@/core/storage` and still see every failed write, but each store picks the
+cheapest honest response: the cart shows a non-blocking "may not survive a
+restart" note; checkout refuses to send an order it could not save. Customer
+isolation comes from the owner stored inside each record, not from sign-out
+cleanup. See [state-management.md](../state-management.md).
