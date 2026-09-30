@@ -29,3 +29,43 @@ export function formatCreatedAt(isoTimestamp: string, timezone: string): string 
   const hour = Number(component("hour")) % 24;
   return `${String(hour).padStart(2, "0")}:${component("minute")}`;
 }
+
+/** Whole minutes between an ISO timestamp and `now`, never negative. */
+export function minutesSince(isoTimestamp: string, now: number): number {
+  return Math.max(0, Math.floor((now - Date.parse(isoTimestamp)) / 60_000));
+}
+
+/** A short age label: "just now", "4 min", "1 h 12 min". */
+export function formatAge(minutes: number): string {
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
+}
+
+type SummarizableItem = { product_name: string; quantity: number };
+
+/** Line count, unit count and the first product names, for a compact ticket. */
+export function summarizeItems(items: readonly SummarizableItem[], names = 2) {
+  const units = items.reduce((sum, item) => sum + item.quantity, 0);
+  const lead = items.slice(0, names).map((item) => `${item.product_name} ×${item.quantity}`);
+  const more = items.length - lead.length;
+  return {
+    lines: items.length,
+    units,
+    headline: more > 0 ? `${lead.join(", ")} +${more} more` : lead.join(", "),
+  };
+}
+
+/** `variant_options` snapshot → "Type: Value" labels; malformed entries are skipped. */
+export function optionTexts(variantOptions: unknown): string[] {
+  if (!Array.isArray(variantOptions)) return [];
+  const labels: string[] = [];
+  for (const entry of variantOptions) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { type, value } = entry as Record<string, unknown>;
+    if (typeof type === "string" && typeof value === "string") labels.push(`${type}: ${value}`);
+  }
+  return labels;
+}
