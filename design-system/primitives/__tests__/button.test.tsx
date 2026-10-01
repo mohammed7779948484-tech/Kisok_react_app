@@ -1,5 +1,4 @@
-import { Button } from "@/components/ui/button";
-import { Text } from "@/components/ui/text";
+import { Button, Text } from "@/design-system";
 import { renderWithProviders, screen, userEvent } from "@/core/testing";
 
 /**

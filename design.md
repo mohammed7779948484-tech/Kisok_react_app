@@ -10,7 +10,7 @@ Preparation uses the same palette and typography at a denser rhythm. Orders read
 
 ## Color
 
-Semantic HSL tokens live in `global.css` and are mirrored in `core/theme.ts` for native navigation.
+Semantic HSL tokens live in `design-system/theme/global.css` and are mirrored in `design-system/theme/navigation-theme.ts` for native navigation.
 
 - `background`: cool mist, reducing glare around white product surfaces
 - `foreground`: deep graphite-indigo for arm's-length contrast
@@ -53,7 +53,7 @@ The Android system typeface is used intentionally for reliable rendering and tex
 - Tablet portrait uses stacked content, substantial tab controls, and bottom sheets.
 - Tablet landscape uses split product-detail composition, side trays, and independent preparation lanes.
 - Text-heavy content remains width-constrained while imagery and operational boards use the available tablet canvas.
-- Rotation derives from `core/responsive`; presentation state is never fixed at mount.
+- Rotation derives from `useLayout()` (`@/design-system`); presentation state is never fixed at mount.
 
 ## Experience Modes
 
