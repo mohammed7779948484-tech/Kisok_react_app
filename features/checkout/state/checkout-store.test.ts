@@ -262,6 +262,18 @@ describe("checkout store — the duplicate-order guarantee", () => {
     ],
     ["an expired session", new AppError({ kind: "auth", userMessage: "x", code: "PGRST301" })],
     ["a rejected role check", new AppError({ kind: "forbidden", userMessage: "x", code: "42501" })],
+    [
+      "K1001 before the duplicate lookup",
+      new AppError({ kind: "validation", userMessage: "x", code: "K1001" }),
+    ],
+    [
+      "K1003 reporting an existing request",
+      new AppError({ kind: "idempotency-conflict", userMessage: "x", code: "K1003" }),
+    ],
+    [
+      "an unavailable result before the duplicate lookup",
+      new AppError({ kind: "unavailable", userMessage: "x", code: "PGRST116" }),
+    ],
   ])(
     "keeps the SAME request when a re-send after an unknown result meets %s",
     async (_label, error) => {
@@ -291,7 +303,10 @@ describe("checkout store — the duplicate-order guarantee", () => {
     },
   );
 
-  it("keeps a resumed order's id when its re-send meets a server error", async () => {
+  it.each([
+    ["a server error", new AppError({ kind: "server", userMessage: "x", code: "PGRST002" })],
+    ["K1001", new AppError({ kind: "validation", userMessage: "x", code: "K1001" })],
+  ])("keeps a resumed order's id when its re-send meets %s", async (_label, error) => {
     const owner = nextOwner();
     const { memory, store, submit, saved } = setup();
     memory.map.set(
@@ -305,14 +320,16 @@ describe("checkout store — the duplicate-order guarantee", () => {
         lineSnapshots: [line],
       }),
     );
-    submit.mockRejectedValueOnce(
-      new AppError({ kind: "server", userMessage: "x", code: "PGRST002" }),
-    );
+    submit.mockRejectedValueOnce(error);
 
     await store.getState().recover(owner);
 
     expect(store.getState().phase).toBe("unknown");
     expect(saved()).toMatchObject({ state: "pending", requestId: requestId(5) });
+    expect(submit).toHaveBeenCalledWith({
+      clientRequestId: requestId(5),
+      items: [{ variant_id: VARIANT, quantity: 2 }],
+    });
   });
 
   it("ends a re-sent request when the server's answer proves it placed nothing", async () => {

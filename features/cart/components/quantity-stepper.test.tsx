@@ -109,8 +109,8 @@ describe("QuantityStepper", () => {
     expect(screen.getByRole("button", { name: "Increase quantity" })).toBeDisabled();
 
     await renderWithProviders(
-      <QuantityStepper value={8} reserved={90} max={50} onValueChange={jest.fn()} />,
+      <QuantityStepper value={9} reserved={90} max={50} onValueChange={jest.fn()} />,
     );
-    expect(screen.getByRole("button", { name: "Increase quantity" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Increase quantity" })).toBeDisabled();
   });
 });

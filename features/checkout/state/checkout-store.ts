@@ -98,18 +98,13 @@ function isDefinite(error: unknown): error is AppError {
 }
 
 /**
- * For a request that may ALREADY have been placed (an earlier attempt had no
- * answer, or it was resumed after a restart), only an error `create_order`
- * raises from its payload or after its duplicate check proves no order exists
- * under this id. A server, session or role failure is raised before that
- * check, so it says nothing about the earlier attempt.
+ * For a request that may ALREADY have been placed, only create_order's K1002
+ * proves no order exists under this id: it is raised after the duplicate
+ * lookup. K1001 is raised before the lookup, and K1003 means an order exists.
+ * Other errors may not have reached the lookup at all.
  */
 function provesNoOrder(error: AppError): boolean {
-  return (
-    error.kind === "validation" ||
-    error.kind === "unavailable" ||
-    error.kind === "idempotency-conflict"
-  );
+  return error.code === "K1002";
 }
 
 function failureFor(error: AppError): CheckoutFailure {

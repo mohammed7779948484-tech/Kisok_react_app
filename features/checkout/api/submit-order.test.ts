@@ -103,8 +103,8 @@ describe("submitOrder", () => {
       retryable: false,
       userMessage: "Some items are no longer available.",
     },
-    // K1003 is the idempotency conflict: a definite server answer that must
-    // never be auto-retried (plan D11).
+    // K1003 is an answered RPC error, but it also says an order exists under
+    // this id. The store must retain a previously ambiguous request's identity.
     {
       code: "K1003",
       kind: "idempotency-conflict",
