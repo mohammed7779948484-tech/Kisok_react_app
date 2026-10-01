@@ -15,6 +15,7 @@ import {
   userEvent,
   waitFor,
 } from "@/core/testing";
+import { HeaderActionHost } from "@/design-system";
 import { addItem, getCartSnapshot, hydrateCart, type CartLine } from "@/features/cart";
 /**
  * THE seam under pin: everything this suite touches in the integration arrives
@@ -61,41 +62,21 @@ import { buildAddToCartInput } from "./model/add-to-cart-mapping";
  */
 
 /**
- * The provider calls `useRouter()`/`usePathname()` from expo-router (plan
- * decisions 5/8); the repo-standard minimal module mock keeps the rendered
- * tree possible (the provider/button suites' pattern). The pathname reports
- * Product Detail — a browsing route — so the affordance renders exactly as
- * the delivered app shows it there. The `mock` prefix keeps the reference
- * inside jest's factory allowlist.
+ * The provider calls `useRouter()`/`usePathname()` from expo-router; the
+ * pathname reports Product Detail — a browsing route — so the affordance
+ * renders exactly as the delivered app shows it there.
  */
-const mockRouterPush = jest.fn();
+const mockRouter = {
+  push: jest.fn(),
+  replace: jest.fn(),
+  navigate: jest.fn(),
+  back: jest.fn(),
+  canGoBack: jest.fn(() => true),
+};
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockRouterPush }),
+  useRouter: () => mockRouter,
   usePathname: () => "/product-detail",
 }));
-
-/**
- * lucide-react-native resolves (via the `react-native` condition) to an
- * untransformed ESM entry under jest-expo, so no test in this repo can
- * value-import it without a jest-config change. The provider/button/sheet
- * graph renders several icons; they are decorative SVGs, so the standardized
- * null-rendering stand-ins keep this a test of the contracts (see the cart
- * and integration suites).
- */
-jest.mock("lucide-react-native", () => {
-  // Null-rendering stand-ins need no import at all — a component returning
-  // null references nothing from react or react-native — which keeps the
-  // factory free of `require()` (tests lint with --max-warnings=0).
-  const makeIcon = (name: string) => Object.assign(() => null, { displayName: name });
-  return {
-    PackageCheck: makeIcon("PackageCheck"),
-    Minus: makeIcon("Minus"),
-    Plus: makeIcon("Plus"),
-    Trash2: makeIcon("Trash2"),
-    ImageOff: makeIcon("ImageOff"),
-    ShoppingCart: makeIcon("ShoppingCart"),
-  };
-});
 
 /** The single durable key the cart's hydrate() reads (cart plan decision 1). */
 const KEY = storageKey("cart", "lines");
@@ -222,8 +203,9 @@ const FORBIDDEN_EXPORT_NAMES = [
   "unlockCart",
   "hydrateCart",
   "getCartSnapshot",
+  "clearCartAfterOrder",
   "QuickCartSheet",
-  "CartItemRow",
+  "CartLineCard",
   "QuantityStepper",
   "FullCartScreen",
   // the cart's internals — never public from anywhere
@@ -264,18 +246,22 @@ function setFrame({ width, height }: Frame) {
   });
 }
 
-/**
- * The cart's mutations persist fire-and-forget; this feature's tests cannot
- * call the store's own `persistNow` (deep import), so one macrotask turn —
- * the button suite's `settleDurableWrites` pattern — lets the serialized
- * write chain settle inside act.
- */
+/** The cart saves fire-and-forget; one macrotask turn lets the save settle inside act. */
 async function settleDurableWrites() {
   await act(async () => {
     await new Promise((resolve) => {
       setTimeout(resolve, 0);
     });
   });
+}
+
+/** Whole-cart summaries, computed from the public snapshot's lines. */
+function cartSummary() {
+  const { lines } = getCartSnapshot();
+  return {
+    distinctLineCount: lines.length,
+    totalQuantity: lines.reduce((total, line) => total + line.quantity, 0),
+  };
 }
 
 /** Read the durable envelope back through the app's real storage API — fail loudly if it is not there. */
@@ -360,27 +346,27 @@ function boundaryViolation(specifier: string, importingFile: string): string | n
 }
 
 /**
- * Gates the composition on auth readiness, exactly as the app does: the
- * (customer) group only mounts under `ready && profile?.role === "customer"`,
- * and `useActiveProfile()` throwing outside authenticated surfaces is core/auth's contract (the provider/button suites' AuthedHarness pattern).
- * Both wrapped components come from the PUBLIC index.
+ * Auth-gated like the (customer) group, with a header-action host standing in
+ * for the catalog shell's chrome (where the provider places the cart
+ * affordance). The wrapped components come from the PUBLIC index.
  */
 function AuthedHarness({ children }: { children: ReactNode }) {
   const { status, profile } = useAuth();
   if (status !== "ready" || profile === null) return null;
-  return <publicApi.CatalogCartProvider>{children}</publicApi.CatalogCartProvider>;
+  return (
+    <publicApi.CatalogCartProvider>
+      <HeaderActionHost />
+      {children}
+    </publicApi.CatalogCartProvider>
+  );
 }
 
-/** installMockAuth restored after every test — the provider suite's holder pattern. */
 const mockAuthHolder: { current: ReturnType<typeof installMockAuth> | null } = { current: null };
 
 beforeEach(async () => {
-  // The store's mutation and hydration paths log by design; keep the suite
-  // silent per the repo convention.
+  // Ignored edits and storage discards log by design.
   setLogSink(() => {});
-  mockRouterPush.mockClear();
-  // Disk hygiene: hydrate() reads this key, so a previous test's envelope must
-  // not leak into the next one's restore. Through the app's own API.
+  jest.clearAllMocks();
   await storage.remove(KEY);
 });
 
@@ -510,30 +496,24 @@ describe("boundary scans (AC-11)", () => {
     expect(deepIntegrationImports).toEqual([]);
   });
 
-  it("the customer layout imports only the sanctioned public indexes and expo-router (the thin mount), and RecoveryGate is mounted", () => {
+  it("the customer layout is a thin mount: CheckoutGate and CatalogCartProvider through public indexes only", () => {
     const layoutSource = readFileSync(CUSTOMER_LAYOUT_PATH, "utf8");
     const specifiers = importSpecifiers(layoutSource);
 
-    // The T04 mount: the provider arrives through the integration's public
-    // index — the one sanctioned way another module may reach this feature.
+    // The provider arrives through the integration's public index.
     expect(specifiers).toContain("@/features/catalog-cart-integration");
-    // The checkout RecoveryGate is positively mounted too (F-T12-01: the
-    // sanctioned-set check alone would silently pass if the gate and its
-    // import were both removed) — checkout plan D7.
+    expect(layoutSource).toContain("<CatalogCartProvider>");
+    // The checkout gate is positively mounted too: the sanctioned-set check
+    // alone would silently pass if the gate and its import were both removed.
     expect(specifiers).toContain("@/features/checkout");
-    expect(layoutSource).toContain("RecoveryGate");
+    expect(layoutSource).toContain("<CheckoutGate>");
 
-    // Thin-mount discipline, the full-cart route suite's sanctioned-set shape:
-    // anything beyond the router's own Stack and the public indexes is out of
-    // place here (and would fail the app/** ESLint boundary anyway).
-    // `@/features/checkout` joined the set when the checkout feature mounted
-    // its session-level RecoveryGate in the customer layout (checkout plan
-    // D7, listed in that plan's external-changes): through the public index,
-    // exactly the shape this pin enforces.
+    // Anything beyond the router, React Native, the design system and the
+    // public indexes is out of place in a thin mount.
     const sanctioned = new Set([
       "expo-router",
       "react-native",
-      "@/components/feedback",
+      "@/design-system",
       "@/features/catalog-cart-integration",
       "@/features/checkout",
       "@/features/release-notes",
@@ -553,8 +533,7 @@ describe("convergence: cart semantics through the public path (AC-07)", () => {
     addItem(input); // the SAME input — same variant, same option-value set
 
     const snapshot = getCartSnapshot();
-    expect(snapshot.distinctLineCount).toBe(1);
-    expect(snapshot.totalQuantity).toBe(2);
+    expect(cartSummary()).toEqual({ distinctLineCount: 1, totalQuantity: 2 });
     expect(snapshot.lines).toHaveLength(1);
 
     // The cart's own merge rule, observed through the public snapshot — the
@@ -575,8 +554,7 @@ describe("convergence: cart semantics through the public path (AC-07)", () => {
     addItem(buildAddToCartInput(vanillaOatSource)); // V1 + [Vanilla, Oat]
 
     const snapshot = getCartSnapshot();
-    expect(snapshot.distinctLineCount).toBe(2);
-    expect(snapshot.totalQuantity).toBe(2);
+    expect(cartSummary()).toEqual({ distinctLineCount: 2, totalQuantity: 2 });
     expect(snapshot.lines.map((line) => line.quantity)).toEqual([1, 1]);
 
     // Distinct identities on the SAME variant — the option selection is the
@@ -597,8 +575,7 @@ describe("convergence: cart semantics through the public path (AC-07)", () => {
     addItem(buildAddToCartInput(sameOptionsOtherVariantSource)); // V2 + [Hazelnut, Oat]
 
     const snapshot = getCartSnapshot();
-    expect(snapshot.distinctLineCount).toBe(2);
-    expect(snapshot.totalQuantity).toBe(2);
+    expect(cartSummary()).toEqual({ distinctLineCount: 2, totalQuantity: 2 });
     expect(snapshot.lines.map((line) => line.quantity)).toEqual([1, 1]);
 
     // The option-value sets are IDENTICAL — the variant alone separates the
@@ -627,7 +604,7 @@ describe("convergence: re-hydration through the public path (AC-08)", () => {
     const populated = getCartSnapshot();
     expect(populated.ownerId).toBe(REHYDRATION_OWNER);
     expect(populated.lines).toHaveLength(2);
-    expect(populated.totalQuantity).toBe(3);
+    expect(cartSummary().totalQuantity).toBe(3);
 
     // The durable envelope, read through the app's REAL storage API: the
     // populated store's own write is on disk — owner, version, and the exact
@@ -638,14 +615,14 @@ describe("convergence: re-hydration through the public path (AC-08)", () => {
     expect(envelope.lines).toHaveLength(2);
     expect(envelope.lines.map((line) => line.quantity).sort((a, b) => a - b)).toEqual([1, 2]);
 
-    // The reload's hard part, driven through public actions only: another
-    // profile hydrating resets memory (and durably discards the previous
-    // owner's envelope — the kiosk mismatch safety path, so the re-seed below
-    // is needed; in a real reload nothing removes the envelope between runs).
+    // Another customer on the tablet: memory resets and the previous
+    // customer's saved cart is removed (the shared-tablet safety path, so the
+    // re-seed below is needed; in a real reload nothing removes it).
     await hydrateCart(REHYDRATION_TAKEOVER_OWNER);
     const afterSwitch = getCartSnapshot();
     expect(afterSwitch.ownerId).toBe(REHYDRATION_TAKEOVER_OWNER);
     expect(afterSwitch.lines).toEqual([]);
+    expect((await storage.read(KEY, (raw) => raw)).status).toBe("miss");
 
     // The previous session's durable cart — the exact envelope bytes the
     // populated store wrote — is back on disk, as it is across a real reload.
@@ -660,7 +637,7 @@ describe("convergence: re-hydration through the public path (AC-08)", () => {
     expect(restored.hydrated).toBe(true);
     expect(restored.ownerId).toBe(REHYDRATION_OWNER);
     expect(restored.lines).toHaveLength(2);
-    expect(restored.totalQuantity).toBe(3);
+    expect(cartSummary().totalQuantity).toBe(3);
 
     // Lines and quantities persist exactly: the merged line and the distinct
     // one (both carry the SAME variantId — the selection is the identity),
@@ -686,8 +663,8 @@ describe("convergence: re-hydration through the public path (AC-08)", () => {
   });
 });
 
-describe("convergence: the public surface composes end-to-end (AC-07 through the real components)", () => {
-  it("a real Add press ×2 inside the real provider merges to one line — the sheet and the affordance badge show the merged total", async () => {
+describe("convergence: the public surface composes end-to-end", () => {
+  it("a real Add press ×2 inside the real provider merges to one line — the sheet and the affordance show the merged total", async () => {
     const user = userEvent.setup();
     setFrame(LANDSCAPE);
     mockAuthHolder.current = installMockAuth({
@@ -701,22 +678,19 @@ describe("convergence: the public surface composes end-to-end (AC-07 through the
     );
 
     const addButton = await screen.findByRole("button", { name: "Add to cart" });
-    // Enabled once the provider's own hydration has landed (the awaited
-    // render drains the microtask chains).
+    // Enabled once the cart has restored itself for this customer.
     await waitFor(() => expect(addButton).not.toBeDisabled());
 
     // First press: one unit, and the sheet the press opens shows it.
     await user.press(addButton);
     await settleDurableWrites();
-    expect(await screen.findByText("Added to cart")).toBeOnTheScreen();
-    expect(screen.getByText("Cart · 1 item")).toBeOnTheScreen();
-    expect(getCartSnapshot().totalQuantity).toBe(1);
+    expect(await screen.findByText("Added to your cart")).toBeOnTheScreen();
+    expect(screen.getByText("1 item · 1 selection")).toBeOnTheScreen();
+    expect(cartSummary().totalQuantity).toBe(1);
 
-    // Back to browsing — Keep Shopping closes the sheet.
-    await user.press(screen.getByRole("button", { name: "Keep Shopping" }));
-    await waitFor(() =>
-      expect(screen.queryByRole("heading", { name: "Added to cart" })).toBeNull(),
-    );
+    // Back to browsing — Keep browsing closes the sheet.
+    await user.press(screen.getByRole("button", { name: "Keep browsing" }));
+    await waitFor(() => expect(screen.queryByText("Added to your cart")).toBeNull());
 
     // …and the SAME selection pressed again: the merge the whole seam exists
     // for, observed end-to-end through the public path.
@@ -724,17 +698,14 @@ describe("convergence: the public surface composes end-to-end (AC-07 through the
     await settleDurableWrites();
 
     const snapshot = getCartSnapshot();
-    expect(snapshot.distinctLineCount).toBe(1);
-    expect(snapshot.totalQuantity).toBe(2);
+    expect(cartSummary()).toEqual({ distinctLineCount: 1, totalQuantity: 2 });
     expect(snapshot.lines[0]?.quantity).toBe(2);
     expect(snapshot.lines[0]?.variantId).toBe(FIRST_VARIANT_ID);
 
-    // The reopened sheet's title reflects the merged total…
-    expect(await screen.findByText("Added to cart")).toBeOnTheScreen();
-    expect(screen.getByText("Cart · 2 items")).toBeOnTheScreen();
-    // …and so does the persistent affordance's accessible name — the count
-    // from the single cart model (no mirrored state), announced with the
-    // badge it carries.
+    // The reopened sheet reflects the merged total…
+    expect(await screen.findByText("Added to your cart")).toBeOnTheScreen();
+    expect(screen.getByText("2 items · 1 selection")).toBeOnTheScreen();
+    // …and so does the cart affordance's accessible name.
     expect(screen.getByRole("button", { name: "Open cart, 2 items" })).toBeOnTheScreen();
   });
 });

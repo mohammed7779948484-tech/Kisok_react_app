@@ -3,29 +3,11 @@ import { renderWithProviders, screen, userEvent } from "@/core/testing";
 import { QuantityStepper } from "./quantity-stepper";
 
 /**
- * lucide-react-native resolves (via the `react-native` condition) to an
- * untransformed ESM entry under jest-expo, so no test in this repo can
- * value-import it without a jest-config change. The icons are decorative
- * SVGs here — the stepper's accessible names come from the buttons'
- * `accessibilityLabel`s — so minimal stand-ins keep this a test of the
- * stepper contract, not of lucide's renderer.
- */
-jest.mock("lucide-react-native", () => {
-  // Null-rendering stand-ins need no import at all — a component returning
-  // null references nothing from react or react-native — which keeps the
-  // factory free of `require()` (tests lint with --max-warnings=0).
-  const makeIcon = (name: string) => Object.assign(() => null, { displayName: name });
-  return { Minus: makeIcon("Minus"), Plus: makeIcon("Plus") };
-});
-
-/**
  * Behaviour and accessibility, not styling: the stepper is used on shared
  * kiosk surfaces, so the contract that matters is what assistive technology
  * and a person standing at the tablet perceive — labelled increment and
  * decrement controls, an announced value, and bounds expressed as disabled
  * states rather than ignored taps.
- *
- * Conventions follow components/ui/__tests__/button.test.tsx.
  */
 describe("QuantityStepper", () => {
   it("renders increment and decrement controls with accessible names", async () => {
@@ -118,5 +100,17 @@ describe("QuantityStepper", () => {
     await user.press(screen.getByRole("button", { name: "Increase quantity" }));
     expect(onValueChange).toHaveBeenCalledTimes(1);
     expect(onValueChange).toHaveBeenCalledWith(2);
+  });
+
+  it("leaves room only for the rest of the line cap when units are already reserved", async () => {
+    await renderWithProviders(
+      <QuantityStepper value={9} reserved={90} onValueChange={jest.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: "Increase quantity" })).toBeDisabled();
+
+    await renderWithProviders(
+      <QuantityStepper value={8} reserved={90} max={50} onValueChange={jest.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: "Increase quantity" })).not.toBeDisabled();
   });
 });
