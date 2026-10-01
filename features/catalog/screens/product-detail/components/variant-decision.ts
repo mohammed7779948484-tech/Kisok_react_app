@@ -78,8 +78,10 @@ export function deriveVariantDecision(variants: readonly CatalogVariantView[]): 
       ? variant.options.find((option) => option.type.id === dimension.typeId)?.value.value
       : undefined;
     const label = variant.title_override?.trim() || dimensionValue || formatVariantSummary(variant);
-    const details =
+    const fullDetails =
       mode === "variations" ? formatVariantDetails(variant, { useKeyPrefix: true }) : null;
+    // A variant labelled by its own option pairs has nothing further to say.
+    const details = fullDetails === label ? null : fullDetails;
     return {
       id: variant.id,
       variant,
