@@ -1,37 +1,12 @@
 import { View } from "react-native";
 
+import { resetLogging, setLogSink } from "@/core/logging";
 import { renderWithProviders, screen, userEvent } from "@/core/testing";
 
 import { catalogFixtureIds, createCatalogSnapshotFixture } from "../model/catalog-snapshot.fixture";
-import {
-  createCatalogView,
-  type CatalogCategoryView,
-  type CatalogMedia,
-} from "../model/catalog-view";
+import { createCatalogView, type CatalogCategoryView } from "../model/catalog-view";
 
 import { CategoryCard } from "./category-card";
-
-jest.mock("lucide-react-native", () => {
-  const createMockIcon = (name: string) => {
-    const MockIcon = () => null;
-    MockIcon.displayName = name;
-    return MockIcon;
-  };
-
-  return new Proxy(
-    { __esModule: true },
-    {
-      get: (target: any, prop: string | symbol) => {
-        if (prop in target) return target[prop];
-        if (typeof prop === "string") {
-          target[prop] = createMockIcon(prop);
-          return target[prop];
-        }
-        return undefined;
-      },
-    },
-  );
-});
 
 const catalogView = createCatalogView(createCatalogSnapshotFixture());
 
@@ -42,12 +17,6 @@ function requireCategory(categoryId: string): CatalogCategoryView {
   }
   return category;
 }
-
-const categoryImage: CatalogMedia = {
-  mediaAssetId: catalogFixtureIds.media.category,
-  publicId: "categories/drinks",
-  secureUrl: "https://res.cloudinary.com/kisok/image/upload/drinks.png",
-};
 
 function categoryWithCount(name: string, productCount: number): CatalogCategoryView {
   return {
@@ -65,8 +34,37 @@ function categoryWithCount(name: string, productCount: number): CatalogCategoryV
   };
 }
 
+type RenderedNode = {
+  props: { source?: unknown; contentFit?: unknown };
+  children: readonly (RenderedNode | string)[];
+};
+
+/** Every rendered image (a host with a `source`) inside `element`. */
+function imagesWithin(element: RenderedNode): { uri?: string; contentFit?: unknown }[] {
+  const own = Array.isArray(element.props.source)
+    ? (element.props.source as readonly { uri?: string }[]).map((entry) => ({
+        uri: entry.uri,
+        contentFit: element.props.contentFit,
+      }))
+    : [];
+  return [
+    ...own,
+    ...element.children.flatMap((child) => (typeof child === "string" ? [] : imagesWithin(child))),
+  ];
+}
+
+beforeEach(() => {
+  // The fixture's stored public ids differ from their delivery paths, which
+  // the Cloudinary helper reports at debug level.
+  setLogSink(() => {});
+});
+
+afterEach(() => {
+  resetLogging();
+});
+
 describe("CategoryCard", () => {
-  it("shows the category name and its derived product count", async () => {
+  it("names each card by its category and derived product count", async () => {
     await renderWithProviders(
       <View>
         <CategoryCard category={categoryWithCount("Drinks", 1)} onPress={jest.fn()} />
@@ -74,9 +72,9 @@ describe("CategoryCard", () => {
       </View>,
     );
 
-    expect(screen.getByText("Drinks")).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Drinks, 1 product" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Everything Else, 7 products" })).toBeOnTheScreen();
     expect(screen.getByText("1 product")).toBeOnTheScreen();
-    expect(screen.getByText("Everything Else")).toBeOnTheScreen();
     expect(screen.getByText("7 products")).toBeOnTheScreen();
   });
 
@@ -85,34 +83,74 @@ describe("CategoryCard", () => {
       <CategoryCard category={categoryWithCount("Quiet Corner", 0)} onPress={jest.fn()} />,
     );
 
-    expect(screen.getByText("Quiet Corner")).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Quiet Corner, 0 products" })).toBeOnTheScreen();
     expect(screen.getByText("0 products")).toBeOnTheScreen();
   });
 
-  it("presses report the pressed category upward through one whole-card target", async () => {
+  it("lists a root category's sub-categories, or invites browsing when it has none", async () => {
+    const drinks = requireCategory(catalogFixtureIds.categories.drinks);
+    await renderWithProviders(
+      <View>
+        <CategoryCard category={drinks} onPress={jest.fn()} />
+        <CategoryCard category={categoryWithCount("Leaf", 2)} onPress={jest.fn()} />
+      </View>,
+    );
+
+    expect(screen.getByText("Tóp Picks")).toBeOnTheScreen();
+    expect(screen.getByText("View products")).toBeOnTheScreen();
+  });
+
+  it("reports the pressed category upward through one whole-card target", async () => {
     const drinks = requireCategory(catalogFixtureIds.categories.drinks);
     const onPress = jest.fn();
     const user = userEvent.setup();
     await renderWithProviders(<CategoryCard category={drinks} onPress={onPress} />);
 
-    await user.press(screen.getByRole("button", { name: /Drínks/ }));
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    await user.press(screen.getByRole("button", { name: /^Drínks, / }));
 
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(onPress).toHaveBeenCalledWith(drinks);
   });
 
-  it("renders the category image through AppImage and keeps the slot when it is missing", async () => {
-    const drinks = requireCategory(catalogFixtureIds.categories.drinks);
-    const withImage: CatalogCategoryView = { ...drinks, image: categoryImage };
-    const withoutImage = requireCategory(catalogFixtureIds.categories.specials);
+  it("reports presses from the compact path variant too", async () => {
+    const specials = requireCategory(catalogFixtureIds.categories.specials);
+    const onPress = jest.fn();
+    const user = userEvent.setup();
     await renderWithProviders(
-      <View>
-        <CategoryCard category={withImage} onPress={jest.fn()} />
-        <CategoryCard category={withoutImage} onPress={jest.fn()} />
-      </View>,
+      <CategoryCard category={specials} variant="path" onPress={onPress} />,
     );
 
-    expect(screen.getByLabelText("Drínks")).toBeOnTheScreen();
-    expect(screen.getByRole("image", { name: "Tóp Picks" })).toBeOnTheScreen();
+    await user.press(screen.getByRole("button", { name: /^Tóp Picks, / }));
+
+    expect(onPress).toHaveBeenCalledWith(specials);
+  });
+
+  it("fills its imagery with the editorial cover rendition when an image exists", async () => {
+    const drinks = requireCategory(catalogFixtureIds.categories.drinks);
+    await renderWithProviders(<CategoryCard category={drinks} onPress={jest.fn()} />);
+
+    const card = screen.getByRole("button", { name: /^Drínks, / }) as unknown as RenderedNode;
+
+    expect(imagesWithin(card)).toEqual([
+      {
+        uri: expect.stringMatching(
+          /^https:\/\/res\.cloudinary\.com\/kisok\/image\/upload\/c_fill,g_auto,h_900,w_1280\/q_auto\/f_auto\/drinks$/,
+        ),
+        contentFit: "cover",
+      },
+    ]);
+    expect(screen.getAllByText("Drínks")).toHaveLength(1);
+  });
+
+  it("keeps the image slot with a named fallback surface when the image is missing", async () => {
+    const specials = requireCategory(catalogFixtureIds.categories.specials);
+    await renderWithProviders(<CategoryCard category={specials} onPress={jest.fn()} />);
+
+    const card = screen.getByRole("button", { name: /^Tóp Picks, / }) as unknown as RenderedNode;
+
+    expect(imagesWithin(card)).toEqual([]);
+    // The fallback caption plus the card title.
+    expect(screen.getAllByText("Tóp Picks")).toHaveLength(2);
   });
 });

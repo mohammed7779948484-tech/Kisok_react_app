@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { resetLogging, setLogSink } from "@/core/logging";
-import { clearKisokStorage, createJsonStorage, storageKey } from "@/core/storage";
+import { createJsonStorage, storageKey } from "@/core/storage";
 import { createMemoryStore } from "@/core/testing";
 
 // These tests deliberately exercise failure paths, and the storage module logs
@@ -61,19 +61,5 @@ describe("createJsonStorage", () => {
     const result = await storage.read("k", (raw) => raw);
 
     expect(result.status).toBe("rejected");
-  });
-});
-
-describe("clearKisokStorage", () => {
-  it("clears only KISOK-owned durable state", async () => {
-    await AsyncStorage.setItem(storageKey("cart", "lines"), "old-cart");
-    await AsyncStorage.setItem(storageKey("checkout", "request"), "old-request");
-    await AsyncStorage.setItem("unrelated:host-storage", "keep-me");
-
-    await expect(clearKisokStorage()).resolves.toEqual({ status: "persisted" });
-
-    await expect(AsyncStorage.getItem(storageKey("cart", "lines"))).resolves.toBeNull();
-    await expect(AsyncStorage.getItem(storageKey("checkout", "request"))).resolves.toBeNull();
-    await expect(AsyncStorage.getItem("unrelated:host-storage")).resolves.toBe("keep-me");
   });
 });

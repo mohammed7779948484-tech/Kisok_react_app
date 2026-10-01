@@ -14,17 +14,10 @@ function issuePaths(result: ReturnType<typeof persistedCartSchema.safeParse>) {
   return result.success ? [] : result.error.issues.map((issue) => issue.path);
 }
 
-/** Refinement messages the schema complained about; empty when parsing succeeded. */
-function refinementMessages(result: ReturnType<typeof persistedCartSchema.safeParse>) {
-  return result.success ? [] : result.error.issues.map((issue) => issue.message);
-}
-
 /**
  * The canonical line the app actually persists: variantId + the SORTED
  * optionValueIds (oat milk's sorts before size's), joined with "|" — exactly
- * what deriveLineId produces from these fields. H-F01 hardened this contract:
- * a merely non-empty unique lineId no longer parses, so the fixture carries the
- * real full-uuid derivation instead of the old truncated shorthand.
+ * what deriveLineId produces from these fields.
  */
 const validLine = {
   lineId:
@@ -72,8 +65,7 @@ const validPlainLine = {
 
 /**
  * The same selection as validLine with every uuid field spelled in UPPERCASE
- * hex — PostgreSQL accepts either spelling at the parse boundary. Only the
- * lineId decides whether the payload is canonical or malformed.
+ * hex — PostgreSQL accepts either spelling at the parse boundary.
  */
 function uppercaseCappuccinoLine(lineId: string) {
   return {
@@ -131,88 +123,39 @@ describe("persisted-cart schema", () => {
     expect(issuePaths(result)).toContainEqual(["lines", 0, "quantity"]);
   });
 
-  it("rejects a payload whose lines share a lineId", () => {
-    const duplicate = persistedCartSchema.safeParse({
+  // --- Line identity is not trusted from storage ------------------------------
+  //
+  // The schema checks shape only. Line identities are re-derived (and duplicate
+  // selections merged) by the store on restore, so a stale, wrong or duplicated
+  // lineId is not a reason to throw the customer's cart away. The store tests
+  // pin the re-derivation; these pin that the schema lets such payloads through.
+
+  it("accepts lines that share a lineId — the store merges them on restore", () => {
+    const result = persistedCartSchema.safeParse({
       ...validCart,
       lines: [validLine, validLine],
-    });
-    expect(duplicate.success).toBe(false);
-    // Control: two distinct, semantically valid lines parse — so the rejection
-    // above is the uniqueness refinement, not another guard.
-    const distinct = persistedCartSchema.safeParse({
-      ...validCart,
-      lines: [validLine, validPlainLine],
-    });
-    expect(distinct.success).toBe(true);
-  });
-
-  // --- Semantic line identity (H-F01) ----------------------------------------
-  //
-  // A shape-valid payload is not a valid cart: each persisted line must carry
-  // EXACTLY the identity the domain derives from its own fields. A wrong
-  // (non-empty, unique) lineId restores a line the next addLine for the same
-  // selection can never merge with — the store would append a duplicate line
-  // for one selection instead. The invariant reuses deriveLineId, so there is
-  // exactly ONE identity algorithm in the feature.
-
-  it("rejects a line whose lineId is a wrong non-empty unique string (H-F01)", () => {
-    const result = persistedCartSchema.safeParse({
-      ...validCart,
-      lines: [{ ...validLine, lineId: "garbage-id" }],
-    });
-    expect(result.success).toBe(false);
-    expect(refinementMessages(result)).toContain(
-      "persisted cart lineId does not match its derived identity",
-    );
-  });
-
-  it("rejects two semantically identical selections carrying different fake lineIds", () => {
-    const result = persistedCartSchema.safeParse({
-      ...validCart,
-      lines: [
-        { ...validLine, lineId: "fake-line-id-a" },
-        { ...validLine, lineId: "fake-line-id-b" },
-      ],
-    });
-    expect(result.success).toBe(false);
-    // The two lineIds are distinct, so the uniqueness refinement passes — only
-    // the semantic identity refinement can be the rejector here.
-    expect(refinementMessages(result)).toContain(
-      "persisted cart lineId does not match its derived identity",
-    );
-  });
-
-  it("still accepts the canonical payload a real build writes (optioned + plain lines)", () => {
-    const result = persistedCartSchema.safeParse({
-      ...validCart,
-      lines: [validLine, validPlainLine],
     });
     expect(result.success).toBe(true);
   });
 
-  it("rejects an uppercase-spelled derivation — identity must be the canonical lowercase join", () => {
-    // Same selection as validLine, every uuid UPPERCASE, and the lineId the
-    // raw uppercase strings would produce. PostgreSQL treats either hex case
-    // as one uuid, but deriveLineId canonicalizes to lowercase — so the
-    // uppercase join is NOT the derived identity and must not restore.
+  it("accepts a lineId that is not the derived identity — the store re-derives it", () => {
     const result = persistedCartSchema.safeParse({
       ...validCart,
-      lines: [
-        uppercaseCappuccinoLine(
-          "3A7F2C1D-9B4E-4D6A-8F2C-7E1B5D9A4C3F|1A2B3C4D-5E6F-4A7B-8C9D-0E1F2A3B4C5D|E5D3C8A1-6F2B-4C9D-8A7E-3B1F4D6C8A2B",
-        ),
-      ],
+      lines: [{ ...validLine, lineId: "garbage-id" }, validPlainLine],
     });
-    expect(result.success).toBe(false);
-    expect(refinementMessages(result)).toContain(
-      "persisted cart lineId does not match its derived identity",
-    );
+    expect(result.success).toBe(true);
   });
 
-  it("accepts uppercase uuid FIELDS when the lineId is the canonical lowercase derivation", () => {
-    // The parse boundary mirrors PostgreSQL's case-insensitive uuid acceptance
-    // (postgresUuidSchema is deliberately unchanged); identity is canonical.
-    // Uppercase fields with the canonical lowercase lineId are legitimate data.
+  it("still rejects an empty lineId", () => {
+    const result = persistedCartSchema.safeParse({
+      ...validCart,
+      lines: [{ ...validLine, lineId: "" }],
+    });
+    expect(result.success).toBe(false);
+    expect(issuePaths(result)).toContainEqual(["lines", 0, "lineId"]);
+  });
+
+  it("accepts uppercase uuid fields (PostgreSQL accepts either hex case)", () => {
     const result = persistedCartSchema.safeParse({
       ...validCart,
       lines: [uppercaseCappuccinoLine(validLine.lineId)],

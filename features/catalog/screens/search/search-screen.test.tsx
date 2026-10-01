@@ -1,8 +1,12 @@
 import { AppError } from "@/core/errors";
-import { act, renderWithProviders, screen, userEvent, waitFor } from "@/core/testing";
+import { resetLogging, setLogSink } from "@/core/logging";
+import { act, fireEvent, renderWithProviders, screen, userEvent, waitFor } from "@/core/testing";
 
 import { fetchCatalog } from "../../api/fetch-catalog";
-import { createCatalogSnapshotFixture } from "../../model/catalog-snapshot.fixture";
+import {
+  catalogFixtureIds,
+  createCatalogSnapshotFixture,
+} from "../../model/catalog-snapshot.fixture";
 import type {
   CatalogProduct,
   CatalogSnapshot,
@@ -12,23 +16,20 @@ import { catalogKeys } from "../../queries/keys";
 import { SearchScreen } from "./search-screen";
 
 /**
- * Screen behaviour for local Catalog Search (AC-06).
+ * Screen behaviour for Search (AC-06).
  *
  * The screen must not know Supabase exists: the feature's own `api/` module is
- * the seam, mocked exactly as `queries/use-catalog.test.tsx` and the Home and
- * Products screen tests do. Navigation is asserted against a mocked
- * `expo-router` `useRouter` (push/replace spies) — the tests pin destinations
- * and semantics, not navigation.
+ * the seam. Navigation is asserted against a mocked `expo-router` `useRouter`
+ * (push/replace spies); `useFocusEffect` runs as a plain effect because the
+ * screen is focused for as long as it is mounted here.
  *
- * The search layer is a pure local projection of a successful snapshot: idle,
- * too-short, no-match and results are asserted with distinct copy, and every
- * snapshot-layer state (cold loading, error without data, whole-catalog empty)
- * is asserted to replace the search surface entirely — search chrome never
- * pretends to have its own network states.
+ * Results only render once their container has been measured (the grid
+ * derives its columns from the width it is given), so every test that reaches
+ * results delivers that layout pass with `measureLayout()`.
  *
- * Fake timers follow the Products screen test (and CatalogGrid's own test):
- * this screen renders FlashList for its results, whose deferred layout work
- * fires real timers that escape `act` under real timers.
+ * Fake timers: FlashList's deferred layout work fires timers that would escape
+ * `act` under real timers, and TanStack's batched observer notification is a
+ * `setTimeout(0)` that only lands once timers advance.
  */
 jest.mock("../../api/fetch-catalog", () => ({
   fetchCatalog: jest.fn(),
@@ -37,40 +38,60 @@ jest.mock("../../api/fetch-catalog", () => ({
 const mockRouterPush = jest.fn();
 const mockRouterReplace = jest.fn();
 
-jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace }),
-}));
-
-jest.mock("lucide-react-native", () => {
-  const createMockIcon = (name: string) => {
-    const MockIcon = () => null;
-    MockIcon.displayName = name;
-    return MockIcon;
-  };
-
-  return new Proxy(
-    { __esModule: true },
-    {
-      get: (target: any, prop: string | symbol) => {
-        if (prop in target) return target[prop];
-        if (typeof prop === "string") {
-          target[prop] = createMockIcon(prop);
-          return target[prop];
-        }
-        return undefined;
-      },
+jest.mock("expo-router", () => {
+  const { useEffect } = jest.requireActual<typeof import("react")>("react");
+  return {
+    useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace }),
+    useFocusEffect: (effect: () => void | (() => void)) => {
+      useEffect(effect, [effect]);
     },
-  );
+  };
 });
 
 jest.useFakeTimers();
+
+type HostNode = {
+  props: Record<string, unknown>;
+  children: readonly (HostNode | string)[];
+};
+
+/**
+ * Deliver a layout pass to every container that renders nothing until it has
+ * been measured (the browse results, then the grid inside them).
+ */
+async function measureLayout(width = 1200) {
+  const measured = new Set<HostNode>();
+  for (let pass = 0; pass < 5; pass += 1) {
+    const pending: HostNode[] = [];
+    const visit = (node: HostNode) => {
+      if (
+        typeof node.props.onLayout === "function" &&
+        node.children.length === 0 &&
+        !measured.has(node)
+      ) {
+        pending.push(node);
+      }
+      node.children.forEach((child) => {
+        if (typeof child !== "string") visit(child);
+      });
+    };
+    visit(screen.container as unknown as HostNode);
+    if (pending.length === 0) return;
+    for (const node of pending) {
+      measured.add(node);
+      await fireEvent(node as never, "layout", {
+        nativeEvent: { layout: { x: 0, y: 0, width, height: 900 } },
+      });
+    }
+  }
+}
 
 const mockFetchCatalog = fetchCatalog as jest.MockedFunction<typeof fetchCatalog>;
 
 const retryableCatalogError = new AppError({
   kind: "server",
   userMessage: "We couldn't load the catalog. Please try again.",
-  technicalMessage: "get_customer_catalog rpc failed",
+  technicalMessage: "get_customer_catalog_v2 rpc failed",
 });
 
 const nonRetryableCatalogError = new AppError({
@@ -83,9 +104,9 @@ const nonRetryableCatalogError = new AppError({
  * The distinct search-state copy. Declared once so the tests assert the four
  * states by DIFFERENT text, never by one message doubling for another.
  */
-const IDLE_PROMPT = "Search products, brands, categories, or options.";
+const IDLE_PROMPT = "Search by product name, brand, category, or an option such as a flavor.";
 const TOO_SHORT_HINT = "Enter at least 2 characters to search.";
-const noMatchMessage = (query: string) => `No matches for "${query}".`;
+const noMatchTitle = (query: string) => `No matches for “${query}”`;
 
 /** Ids for the products the searchable fixture appends past the base 3. */
 const extraProductIds = {
@@ -163,6 +184,7 @@ function snapshotWithSearchableProducts(): CatalogSnapshot {
       search_keywords: null,
       display_order: 10,
       is_available: true,
+      available_quantity: 8,
     },
     {
       id: "49494949-4949-4499-8499-494949494949",
@@ -173,6 +195,7 @@ function snapshotWithSearchableProducts(): CatalogSnapshot {
       search_keywords: null,
       display_order: 10,
       is_available: false,
+      available_quantity: 0,
     },
     {
       id: "51515151-5151-4551-8551-515151515151",
@@ -183,6 +206,7 @@ function snapshotWithSearchableProducts(): CatalogSnapshot {
       search_keywords: null,
       display_order: 10,
       is_available: true,
+      available_quantity: 8,
     },
   ];
 
@@ -203,272 +227,281 @@ function emptyCatalogSnapshot(): CatalogSnapshot {
   });
 }
 
+/** The first accessible name at or below `node` — a cell's product card. */
+function firstLabelWithin(node: HostNode): string | undefined {
+  if (typeof node.props.accessibilityLabel === "string") return node.props.accessibilityLabel;
+  for (const child of node.children) {
+    if (typeof child === "string") continue;
+    const label = firstLabelWithin(child);
+    if (label !== undefined) return label;
+  }
+  return undefined;
+}
+
+/**
+ * The result cards' accessible names in the order the grid presents them.
+ * FlashList recycles cells, so host-tree order is not presentation order;
+ * each cell's `index` is. Empty when no results grid is on screen.
+ */
+function resultCardLabels(): string[] {
+  const grid = screen.queryByTestId("search-results-grid");
+  if (grid === null) return [];
+  const cells: { index: number; label: string }[] = [];
+  const visit = (node: HostNode) => {
+    if (typeof node.props.index === "number") {
+      cells.push({ index: node.props.index, label: firstLabelWithin(node) ?? "" });
+      return;
+    }
+    node.children.forEach((child) => {
+      if (typeof child !== "string") visit(child);
+    });
+  };
+  visit(grid as unknown as HostNode);
+  return cells.sort((left, right) => left.index - right.index).map((cell) => cell.label);
+}
+
+async function renderSearch(
+  snapshot: CatalogSnapshot = snapshotWithSearchableProducts(),
+  initialQuery?: string,
+) {
+  mockFetchCatalog.mockResolvedValue(snapshot);
+  const result = await renderWithProviders(<SearchScreen initialQuery={initialQuery} />);
+  await waitFor(() => expect(screen.getByRole("header", { name: "Search" })).toBeOnTheScreen());
+  await measureLayout();
+  return result;
+}
+
+/** Replace the query, then measure any results container that appeared. */
+async function search(user: ReturnType<typeof userEvent.setup>, query: string) {
+  const input = screen.getByLabelText("Search catalog");
+  await user.clear(input);
+  if (query.length > 0) await user.type(input, query);
+  await measureLayout();
+}
+
 beforeEach(() => {
   mockRouterPush.mockClear();
   mockRouterReplace.mockClear();
+  // Fixture media carry stored public ids that differ from their delivery
+  // paths, which the Cloudinary helper reports at debug level.
+  setLogSink(() => {});
 });
 
 afterEach(() => {
   mockFetchCatalog.mockReset();
+  resetLogging();
 });
 
 describe("SearchScreen", () => {
-  // The generated baseline's mount-without-throwing intent survives here: this
-  // is the first render of the real screen in the real providers.
-  it("mounts from one successful snapshot and shows the idle prompt", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithSearchableProducts());
+  it("mounts from one successful snapshot and offers somewhere to start", async () => {
+    await renderSearch();
 
-    await renderWithProviders(<SearchScreen />);
-
-    await waitFor(() => expect(screen.getByRole("header", { name: "Search" })).toBeOnTheScreen());
-
-    // The accessibly labelled search input is present and still empty.
-    const input = screen.getByLabelText("Search catalog");
-    expect(input).toHaveDisplayValue("");
-
-    // Idle is a distinct inviting prompt — not the too-short hint, not the
-    // no-match message, and no result cards.
     expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen();
+    expect(screen.getByLabelText("Search catalog")).toBeOnTheScreen();
+
+    // Starting points instead of an empty page: root categories and brands.
+    expect(screen.getByRole("header", { name: "Start with a category" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Drínks" })).toBeOnTheScreen();
+    expect(screen.getByRole("header", { name: "Or a brand you know" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Maison Élite" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "KISOK Basics" })).toBeOnTheScreen();
+
+    // No results before a query.
+    expect(resultCardLabels()).toEqual([]);
     expect(screen.queryByText(TOO_SHORT_HINT)).toBeNull();
-    expect(screen.queryByText(/No products match/)).toBeNull();
-    expect(screen.queryByTestId("search-results-grid")).toBeNull();
-    expect(screen.queryByRole("button", { name: /Alpine/ })).toBeNull();
 
-    // Root navigation is present with Search selected.
-    expect(screen.getByRole("button", { name: "Search", selected: true })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Home", selected: false })).toBeOnTheScreen();
-
+    // Search is not a browse tab: none is selected here.
+    for (const tab of ["Explore", "Products", "Categories", "Brands"]) {
+      expect(screen.getByRole("tab", { name: tab, selected: false })).toBeOnTheScreen();
+    }
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
   });
 
   it("treats a whitespace-only query as idle, not too-short", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithSearchableProducts());
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderSearch();
 
-    await renderWithProviders(<SearchScreen />);
+    await search(user, "   ");
 
-    await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search catalog");
-
-    await user.type(input, "   ");
-
-    // The input holds the typed whitespace, but the trimmed query is empty:
-    // the state stays idle.
-    expect(input).toHaveDisplayValue("   ");
     expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen();
     expect(screen.queryByText(TOO_SHORT_HINT)).toBeNull();
-    expect(screen.queryByText(/No products match/)).toBeNull();
-    expect(screen.queryByTestId("search-results-grid")).toBeNull();
   });
 
   it("shows the too-short hint below two non-whitespace characters", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithSearchableProducts());
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderSearch();
 
-    await renderWithProviders(<SearchScreen />);
+    await search(user, "a");
 
-    await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search catalog");
-
-    await user.type(input, "a");
-
-    // One character is a distinct hint, not the idle prompt and not no-match.
     expect(screen.getByText(TOO_SHORT_HINT)).toBeOnTheScreen();
     expect(screen.queryByText(IDLE_PROMPT)).toBeNull();
-    expect(screen.queryByText(/No matches/)).toBeNull();
-    expect(screen.queryByTestId("search-results-grid")).toBeNull();
+    expect(resultCardLabels()).toEqual([]);
 
-    // A single accented character normalizes to one character — still too short.
-    await user.clear(input);
-    await user.type(input, "é");
+    // One accented character is still one character.
+    await search(user, "é");
 
     expect(screen.getByText(TOO_SHORT_HINT)).toBeOnTheScreen();
-    expect(input).toHaveDisplayValue("é");
   });
 
   it("renders every matching product in backend order for a product-name query", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithSearchableProducts());
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderSearch();
 
-    await renderWithProviders(<SearchScreen />);
+    await search(user, "alpine");
 
-    await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search catalog");
-    await user.type(input, "alpine");
-
-    await waitFor(() => expect(screen.getByText("3 products found")).toBeOnTheScreen());
-
-    // Every match exactly once, in backend display order (the query's tree
-    // order follows the data order FlashList renders).
-    const resultCards = screen.getAllByRole("button", { name: /^Alpine/ });
-    expect(resultCards.map((card) => card.props.accessibilityLabel)).toEqual([
-      ...alpineResultLabels,
-    ]);
-
-    // Results state messaging replaces the other three states' copy.
-    expect(screen.queryByText(IDLE_PROMPT)).toBeNull();
-    expect(screen.queryByText(TOO_SHORT_HINT)).toBeNull();
-    expect(screen.queryByText(/No matches/)).toBeNull();
-
-    // Non-matching products are not rendered at all.
-    expect(screen.queryByText("Café Crème")).toBeNull();
-    expect(screen.queryByText("Everyday Tote")).toBeNull();
-    expect(screen.queryByText("Pocket Notebook")).toBeNull();
-    expect(screen.getByTestId("search-results-grid")).toBeOnTheScreen();
+    expect(screen.getByRole("header", { name: "“alpine”" })).toBeOnTheScreen();
+    expect(
+      screen.getByText("3 matching products. Each card shows why it matched."),
+    ).toBeOnTheScreen();
+    expect(resultCardLabels()).toEqual([...alpineResultLabels]);
+    // A name match needs no explanation.
+    expect(screen.queryByText("Matched")).toBeNull();
   });
 
   it("matches case- and diacritic-insensitively through the screen", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithSearchableProducts());
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderSearch();
 
-    await renderWithProviders(<SearchScreen />);
+    await search(user, "ALPINÉ");
 
-    await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search catalog");
-
-    // An uppercase, accented query against plain product names.
-    await user.type(input, "ALPINÉ");
-
-    await waitFor(() => expect(screen.getByText("3 products found")).toBeOnTheScreen());
-    expect(screen.getByRole("button", { name: "Alpine Mug, Available" })).toBeOnTheScreen();
-    expect(
-      screen.getByRole("button", { name: "Alpine Blanket, Currently unavailable" }),
-    ).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Alpine Lantern, Available" })).toBeOnTheScreen();
+    expect(resultCardLabels()).toEqual([...alpineResultLabels]);
   });
 
-  it("matches through associated category names, not only product names", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithSearchableProducts());
+  it("matches through associated category names and says why each card matched", async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderSearch();
 
-    await renderWithProviders(<SearchScreen />);
+    await search(user, "top");
 
-    await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search catalog");
-
-    // "Tóp Picks" is a category name — no product name contains "top".
-    await user.type(input, "top");
-
-    await waitFor(() => expect(screen.getByText("2 products found")).toBeOnTheScreen());
-    const resultCards = screen.getAllByRole("button", {
-      name: /, (Available|Options available|Currently unavailable)$/,
-    });
-    expect(resultCards.map((card) => card.props.accessibilityLabel)).toEqual([
+    // Both products in Tóp Picks, and nothing else.
+    expect(resultCardLabels()).toEqual([
       "Café Crème, by Maison Élite, Options available",
       "Everyday Tote, Currently unavailable",
     ]);
-    expect(screen.queryByRole("button", { name: /Pocket Notebook/ })).toBeNull();
+    expect(screen.getAllByText("Category · Tóp Picks")).toHaveLength(2);
   });
 
-  it("shows a distinct no-match message that keeps the query editable", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithSearchableProducts());
+  it("shows a distinct no-match state that clears back to idle and keeps the query editable", async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderSearch();
 
-    await renderWithProviders(<SearchScreen />);
+    await search(user, "zzz");
 
-    await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search catalog");
+    expect(screen.getByRole("header", { name: noMatchTitle("zzz") })).toBeOnTheScreen();
+    expect(resultCardLabels()).toEqual([]);
+    expect(screen.getByLabelText("Search catalog")).toHaveDisplayValue("zzz");
 
-    await user.type(input, "zzz");
+    // Two ways to clear: the field's own control, and the no-match state's
+    // action (after the field in reading order).
+    const clearControls = screen.getAllByRole("button", { name: "Clear search" });
+    expect(clearControls).toHaveLength(2);
+    await user.press(clearControls[1] as (typeof clearControls)[number]);
 
-    // No-match is a distinct message naming the query and honest that search
-    // never left the loaded catalog.
-    expect(screen.getByText(noMatchMessage("zzz"))).toBeOnTheScreen();
-    expect(screen.queryByText(IDLE_PROMPT)).toBeNull();
-    expect(screen.queryByText(TOO_SHORT_HINT)).toBeNull();
-    expect(screen.queryByTestId("search-results-grid")).toBeNull();
-    expect(screen.queryByRole("button", { name: /Alpine/ })).toBeNull();
+    expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen();
+    expect(screen.getByLabelText("Search catalog")).toHaveDisplayValue("");
 
-    // The input stays rendered with the query so the customer can edit it
-    // (the screen never unmounts or blurs it between search states).
-    expect(input).toHaveDisplayValue("zzz");
-    expect(screen.getByLabelText("Search catalog")).toBeOnTheScreen();
+    await search(user, "alpine");
 
-    // Editing the query recovers to results without leaving the screen.
-    await user.clear(input);
-    await user.type(input, "alpine");
-
-    await waitFor(() => expect(screen.getByText("3 products found")).toBeOnTheScreen());
-
-    expect(mockRouterPush).not.toHaveBeenCalled();
-    expect(mockRouterReplace).not.toHaveBeenCalled();
+    expect(resultCardLabels()).toEqual([...alpineResultLabels]);
   });
 
   it("never searches SKU or barcode fields", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithSearchableProducts());
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderSearch();
 
-    await renderWithProviders(<SearchScreen />);
+    await search(user, "SECRET-SKU");
+    expect(screen.getByRole("header", { name: noMatchTitle("SECRET-SKU") })).toBeOnTheScreen();
 
-    await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search catalog");
-
-    // A base-fixture SKU: identifiers are not customer search fields (AC-06).
-    await user.type(input, "SECRET-SKU");
-    expect(screen.getByText(noMatchMessage("SECRET-SKU"))).toBeOnTheScreen();
-
-    // A base-fixture barcode: same rule.
-    await user.clear(input);
-    await user.type(input, "990000000001");
-    expect(screen.getByText(noMatchMessage("990000000001"))).toBeOnTheScreen();
-
-    expect(screen.queryByTestId("search-results-grid")).toBeNull();
+    await search(user, "990000000001");
+    expect(screen.getByRole("header", { name: noMatchTitle("990000000001") })).toBeOnTheScreen();
+    expect(resultCardLabels()).toEqual([]);
   });
 
-  it("pushes the matching product detail when a result card is pressed", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithSearchableProducts());
+  it("pushes the matching product detail, named for the way back, when a result card is pressed", async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderSearch();
+    await search(user, "alpine");
 
-    await renderWithProviders(<SearchScreen />);
-
-    await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    const input = screen.getByLabelText("Search catalog");
-    await user.type(input, "alpine");
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Alpine Mug, Available" })).toBeOnTheScreen(),
-    );
-
-    // An available and an unavailable result both open their Product Detail —
-    // unavailable products stay discoverable and pressable.
     await user.press(screen.getByRole("button", { name: "Alpine Mug, Available" }));
     await user.press(screen.getByRole("button", { name: "Alpine Blanket, Currently unavailable" }));
 
-    expect(mockRouterPush).toHaveBeenCalledTimes(2);
-    expect(mockRouterPush).toHaveBeenNthCalledWith(1, {
-      pathname: "/product-detail",
-      params: { productId: extraProductIds.alpineMug },
-    });
-    expect(mockRouterPush).toHaveBeenNthCalledWith(2, {
-      pathname: "/product-detail",
-      params: { productId: extraProductIds.alpineBlanket },
-    });
+    expect(mockRouterPush.mock.calls).toEqual([
+      [
+        {
+          pathname: "/product-detail",
+          params: { productId: extraProductIds.alpineMug, backLabel: "Back to search results" },
+        },
+      ],
+      [
+        {
+          pathname: "/product-detail",
+          params: { productId: extraProductIds.alpineBlanket, backLabel: "Back to search results" },
+        },
+      ],
+    ]);
     expect(mockRouterReplace).not.toHaveBeenCalled();
   });
 
-  it("replaces root destinations and never pushes them", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithSearchableProducts());
+  it("pushes a suggested category or brand, and replaces to the browse destinations", async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderSearch();
 
-    await renderWithProviders(<SearchScreen />);
+    await user.press(screen.getByRole("button", { name: "Drínks" }));
+    await user.press(screen.getByRole("button", { name: "KISOK Basics" }));
+    await user.press(screen.getByRole("link", { name: "All brands" }));
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Home", selected: false })).toBeOnTheScreen(),
-    );
+    expect(mockRouterPush.mock.calls).toEqual([
+      [
+        {
+          pathname: "/category-detail",
+          params: { categoryId: catalogFixtureIds.categories.drinks },
+        },
+      ],
+      [{ pathname: "/brand-detail", params: { brandId: catalogFixtureIds.brands.basics } }],
+    ]);
+    expect(mockRouterReplace.mock.calls).toEqual([["/brands"]]);
 
-    // Re-selecting the current destination replaces rather than stacks, too.
-    await user.press(screen.getByRole("button", { name: "Home" }));
-    await user.press(screen.getByRole("button", { name: "Products" }));
-    await user.press(screen.getByRole("button", { name: "Brands" }));
-    await user.press(screen.getByRole("button", { name: "Categories" }));
-    await user.press(screen.getByRole("button", { name: "Search" }));
+    // From results and from no-match, too.
+    await search(user, "alpine");
+    await user.press(screen.getByRole("link", { name: "Categories" }));
+    await user.press(screen.getByRole("link", { name: "Brands" }));
+    await search(user, "zzz");
+    await user.press(screen.getByRole("button", { name: "Browse categories" }));
 
-    expect(mockRouterReplace).toHaveBeenCalledTimes(5);
-    expect(mockRouterReplace).toHaveBeenNthCalledWith(1, "/");
-    expect(mockRouterReplace).toHaveBeenNthCalledWith(2, "/products");
-    expect(mockRouterReplace).toHaveBeenNthCalledWith(3, "/brands");
-    expect(mockRouterReplace).toHaveBeenNthCalledWith(4, "/categories");
-    expect(mockRouterReplace).toHaveBeenNthCalledWith(5, "/search");
+    expect(mockRouterReplace.mock.calls).toEqual([
+      ["/brands"],
+      ["/categories"],
+      ["/brands"],
+      ["/categories"],
+    ]);
+  });
+
+  it("starts from an initial query handed to it", async () => {
+    await renderSearch(snapshotWithSearchableProducts(), "alpine");
+
+    expect(screen.getByLabelText("Search catalog")).toHaveDisplayValue("alpine");
+    expect(resultCardLabels()).toEqual([...alpineResultLabels]);
+  });
+
+  it("replaces root destinations and never pushes them", async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderSearch();
+
+    await user.press(screen.getByRole("tab", { name: "Explore" }));
+    await user.press(screen.getByRole("tab", { name: "Products" }));
+    await user.press(screen.getByRole("tab", { name: "Brands" }));
+    await user.press(screen.getByRole("tab", { name: "Categories" }));
+    await user.press(screen.getByRole("search", { name: "Search the store" }));
+    await user.press(screen.getByRole("link", { name: "Explore" }));
+
+    expect(mockRouterReplace.mock.calls).toEqual([
+      ["/"],
+      ["/products"],
+      ["/brands"],
+      ["/categories"],
+      ["/search"],
+      ["/"],
+    ]);
     expect(mockRouterPush).not.toHaveBeenCalled();
   });
 
@@ -478,7 +511,6 @@ describe("SearchScreen", () => {
     await renderWithProviders(<SearchScreen />);
 
     expect(screen.getByLabelText("Loading the catalog…")).toBeOnTheScreen();
-    // No search chrome pretending to be data while pending.
     expect(screen.queryByRole("header", { name: "Search" })).toBeNull();
     expect(screen.queryByLabelText("Search catalog")).toBeNull();
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
@@ -490,13 +522,10 @@ describe("SearchScreen", () => {
 
     await renderWithProviders(<SearchScreen />);
 
-    // ErrorState's View is not queryable by role "alert"; assert the standard
-    // error surface by its visible title and the error's safe user message.
-    await waitFor(() => expect(screen.getByText("Something went wrong")).toBeOnTheScreen());
-
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: "The catalog could not load" })).toBeOnTheScreen(),
+    );
     expect(screen.getByText("We couldn't load the catalog. Please try again.")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Try again" })).toBeOnTheScreen();
-    expect(screen.queryByLabelText("Search catalog")).toBeNull();
 
     await user.press(screen.getByRole("button", { name: "Try again" }));
 
@@ -508,8 +537,9 @@ describe("SearchScreen", () => {
 
     await renderWithProviders(<SearchScreen />);
 
-    await waitFor(() => expect(screen.getByText("Something went wrong")).toBeOnTheScreen());
-
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: "The catalog could not load" })).toBeOnTheScreen(),
+    );
     expect(screen.getByText("You don't have access to browse this catalog.")).toBeOnTheScreen();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
@@ -520,51 +550,35 @@ describe("SearchScreen", () => {
 
     await renderWithProviders(<SearchScreen />);
 
-    await waitFor(() => expect(screen.getByText("The catalog is empty")).toBeOnTheScreen());
-
-    // An empty catalog is a snapshot-layer state: the search surface never
-    // renders — search chrome must not pretend to have its own states.
-    expect(screen.queryByLabelText("Search catalog")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: "The catalog is empty" })).toBeOnTheScreen(),
+    );
     expect(screen.queryByRole("header", { name: "Search" })).toBeNull();
-    expect(screen.queryByTestId("search-results-grid")).toBeNull();
+    expect(screen.queryByLabelText("Search catalog")).toBeNull();
 
-    // The empty state offers a way forward: refetch the snapshot.
     await user.press(screen.getByRole("button", { name: "Try again" }));
 
     await waitFor(() => expect(mockFetchCatalog).toHaveBeenCalledTimes(2));
   });
 
   it("keeps the search results on screen when a background refetch fails while a snapshot is present", async () => {
-    // TanStack keeps `data` across a failed background refetch, and the shared
-    // QueryClient refetches on focus/reconnect for long-lived kiosk sessions —
-    // so a network blip mid-search must not blank the still-valid results.
-    // Only a failure with NO snapshot may render the full-screen ErrorState
-    // (the T04-R03 stated rule).
     mockFetchCatalog
       .mockResolvedValueOnce(snapshotWithSearchableProducts())
       .mockRejectedValueOnce(retryableCatalogError);
-
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
     const { queryClient } = await renderWithProviders(<SearchScreen />);
+    await waitFor(() => expect(screen.getByRole("header", { name: "Search" })).toBeOnTheScreen());
+    await search(user, "alpine");
 
-    await waitFor(() => expect(screen.getByText(IDLE_PROMPT)).toBeOnTheScreen());
-    await user.type(screen.getByLabelText("Search catalog"), "alpine");
-    await waitFor(() => expect(screen.getByText("3 products found")).toBeOnTheScreen());
-
-    // The same background refetch the shared QueryClient triggers on
-    // focus/reconnect; fake timers (see the file header) let TanStack's
-    // batched observer notification land inside act.
     await act(async () => {
       await queryClient.refetchQueries({ queryKey: catalogKeys.all });
       await jest.advanceTimersByTimeAsync(0);
     });
 
-    // The results, count and input stay on screen…
-    expect(screen.getByText("3 products found")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Alpine Mug, Available" })).toBeOnTheScreen();
-    expect(screen.getByLabelText("Search catalog")).toBeOnTheScreen();
-    // …and the full-screen error state does not replace them.
-    expect(screen.queryByText("Something went wrong")).toBeNull();
-    expect(screen.queryByText("We couldn't load the catalog. Please try again.")).toBeNull();
+    expect(mockFetchCatalog).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText("Search catalog")).toHaveDisplayValue("alpine");
+    expect(resultCardLabels()).toEqual([...alpineResultLabels]);
+    expect(screen.queryByRole("header", { name: "The catalog could not load" })).toBeNull();
   });
 });

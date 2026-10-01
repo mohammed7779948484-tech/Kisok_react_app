@@ -122,9 +122,8 @@ architecture), `composites`, `feedback` (the shared UX states), `layout`,
 
 ### `components/app/` — app-level gates
 
-The environment gate and error boundary the root layout needs. The files left in
-`components/ui/`, and `core/theme.ts` / `core/responsive`, are temporary
-re-exports kept for existing test imports only.
+The environment gate and error boundary the root layout needs. Shared UI has one
+entry point, `@/design-system`; there are no compatibility re-exports.
 
 ## The boundary rules
 

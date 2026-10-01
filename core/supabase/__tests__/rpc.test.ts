@@ -105,6 +105,67 @@ describe("callRpc", () => {
     supabase.restore();
   });
 
+  it("hands the caller's abort signal to the request for a zero-argument RPC", async () => {
+    const seen: (AbortSignal | undefined)[] = [];
+    const supabase = installMockSupabase({
+      rpc: {
+        get_customer_catalog_v2: (_args, { signal }) => {
+          seen.push(signal);
+          return { data: VALID, error: null };
+        },
+      },
+    });
+    const controller = new AbortController();
+
+    await expect(
+      callRpc("get_customer_catalog_v2", schema, { signal: controller.signal }),
+    ).resolves.toEqual(VALID);
+
+    expect(seen).toEqual([controller.signal]);
+    supabase.restore();
+  });
+
+  it("hands the caller's abort signal to the request when the RPC takes arguments", async () => {
+    const seen: (AbortSignal | undefined)[] = [];
+    const supabase = installMockSupabase({
+      rpc: {
+        create_order: (_args, { signal }) => {
+          seen.push(signal);
+          return { data: VALID, error: null };
+        },
+      },
+    });
+    const controller = new AbortController();
+
+    await callRpc("create_order", { client_request_id: "abc", items: [] }, schema, {
+      signal: controller.signal,
+    });
+
+    expect(seen).toEqual([controller.signal]);
+    expect(supabase.callsTo("create_order")[0]?.args).toEqual({
+      client_request_id: "abc",
+      items: [],
+    });
+    supabase.restore();
+  });
+
+  it("sends no abort signal when the caller passes none", async () => {
+    const seen: (AbortSignal | undefined)[] = [];
+    const supabase = installMockSupabase({
+      rpc: {
+        current_active_profile: (_args, { signal }) => {
+          seen.push(signal);
+          return { data: VALID, error: null };
+        },
+      },
+    });
+
+    await callRpc("current_active_profile", schema);
+
+    expect(seen).toEqual([undefined]);
+    supabase.restore();
+  });
+
   it("keeps the schema-mismatch detail out of the customer-facing message", async () => {
     const supabase = installMockSupabase({
       rpc: { get_customer_catalog: () => ({ data: "nonsense", error: null }) },
@@ -165,23 +226,28 @@ type Equals<A, B> =
   (<G>() => G extends A ? 1 : 2) extends <G>() => G extends B ? 1 : 2 ? true : false;
 type Expect<T extends true> = T;
 
-// The surface is EXACTLY these four. Adding or losing one fails to compile,
+// The surface is EXACTLY these five. Adding or losing one fails to compile,
 // which is the point: the mobile RPC surface changes only when the backend
 // contract does, and that should be a deliberate edit here.
-type SurfaceIsExactlyTheMobileFour = Expect<
+type SurfaceIsExactlyTheMobileFive = Expect<
   Equals<
     keyof DbFunctions,
-    "current_active_profile" | "get_customer_catalog" | "create_order" | "update_order_status"
+    | "current_active_profile"
+    | "get_customer_catalog"
+    | "get_customer_catalog_v2"
+    | "create_order"
+    | "update_order_status"
   >
 >;
-const surfaceIsExactlyTheMobileFour: SurfaceIsExactlyTheMobileFour = true;
+const surfaceIsExactlyTheMobileFive: SurfaceIsExactlyTheMobileFive = true;
 
 function mobileRpcSurfaceIsRestricted() {
   const anySchema = z.unknown();
 
-  // The four the mobile client is built against.
+  // The five the mobile client is built against.
   void callRpc("current_active_profile", anySchema);
   void callRpc("get_customer_catalog", anySchema);
+  void callRpc("get_customer_catalog_v2", anySchema);
   void callRpc("create_order", { client_request_id: "", items: [] }, anySchema);
   void callRpc("update_order_status", { order_id: "", target_status: "ready" }, anySchema);
 
@@ -202,15 +268,16 @@ function mobileRpcSurfaceIsRestricted() {
 void mobileRpcSurfaceIsRestricted;
 
 describe("the mobile RPC surface", () => {
-  it("is exactly the four RPCs a tablet may call", () => {
+  it("is exactly the five RPCs a tablet may call", () => {
     // The type assertion above is what enforces this at compile time; asserting
     // the value here keeps the runtime list and the type from drifting apart,
     // and gives the failure a readable message rather than a TS error code.
-    expect(surfaceIsExactlyTheMobileFour).toBe(true);
+    expect(surfaceIsExactlyTheMobileFive).toBe(true);
     expect([...MOBILE_RPC_NAMES].sort()).toEqual([
       "create_order",
       "current_active_profile",
       "get_customer_catalog",
+      "get_customer_catalog_v2",
       "update_order_status",
     ]);
   });

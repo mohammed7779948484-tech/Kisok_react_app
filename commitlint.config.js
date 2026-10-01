@@ -63,6 +63,11 @@ module.exports = {
      * project's workflow explicitly forbids (no rebase/squash/force-push of a
      * preserved merge). `merge` is added, not substituted, so every other type
      * still means what config-conventional says it means.
+     *
+     * `release` is the same kind of commit: the owner's reviewed promotion of
+     * develop to main ("release: KISOK 1.1.3 …"), a two-parent merge on main
+     * that later reaches develop when main is reconciled back — at which point
+     * every PR whose range contains it would fail with no permitted fix.
      */
     "type-enum": [
       2,
@@ -77,6 +82,7 @@ module.exports = {
         "merge",
         "perf",
         "refactor",
+        "release",
         "revert",
         "style",
         "test",

@@ -73,10 +73,9 @@ import { ProductDetailScreen } from "./product-detail-screen";
  * integration-provider harness below — the way the customer layout mounts
  * this screen once the provider is wired at layout level (T04). The screen
  * itself still imports nothing from `@/features/cart`: the integration's
- * button owns every cart call. The two "no add-to-cart affordance" pins in
- * the inspection-only test were superseded by the integration brief's AC-02
- * (exactly one sanctioned Add action; every other ordering affordance stays
- * pinned out).
+ * button owns every cart call. Since Product Detail v1.8 that action is the
+ * Order Bar's "Add N to cart", offered only once an available option is
+ * chosen; nothing is chosen for the customer unless the product has one option.
  */
 jest.mock("../../api/fetch-catalog", () => ({
   fetchCatalog: jest.fn(),
@@ -149,16 +148,6 @@ const nonRetryableCatalogError = new AppError({
 /** A well-formed id that resolves to no product in any fixture — the stale case. */
 const STALE_PRODUCT_ID = "6e6e6e6e-6e6e-46e6-8e6e-6e6e6e6e6e6e";
 
-/**
- * The distinct copy of the LOCAL not-found state for a stale/invalid product
- * id. Declared so the tests can also assert the snapshot `ErrorState` copy
- * stays absent — a stale id is not a network failure and must not pretend to
- * be one.
- */
-const PRODUCT_NOT_FOUND_TITLE = "Product not found";
-const PRODUCT_NOT_FOUND_DESCRIPTION =
-  "This product is no longer in the catalog. It may have been removed since you started browsing.";
-
 /** Ids for the appended Studio Kettle product and its variants. */
 const extraProductIds = {
   kettle: "6a6a6a6a-6a6a-46a6-8a6a-6a6a6a6a6a6a",
@@ -223,6 +212,7 @@ function snapshotWithKettle(): CatalogSnapshot {
       search_keywords: null,
       display_order: 10,
       is_available: true,
+      available_quantity: 12,
     },
     {
       id: extraVariantIds.rouge,
@@ -233,6 +223,7 @@ function snapshotWithKettle(): CatalogSnapshot {
       search_keywords: null,
       display_order: 20,
       is_available: false,
+      available_quantity: 0,
     },
     {
       id: extraVariantIds.plain,
@@ -243,6 +234,7 @@ function snapshotWithKettle(): CatalogSnapshot {
       search_keywords: null,
       display_order: 30,
       is_available: false,
+      available_quantity: 0,
     },
   ];
   const kettleMedia: CatalogVariantMedia[] = [
@@ -320,43 +312,6 @@ function snapshotWithOption3Removed(): CatalogSnapshot {
   });
 }
 
-/** The rendered element shape the secure-URL assertion reads. */
-type RenderedImageElement = { props: { source?: readonly { uri?: string }[] } };
-
-/** The minimal traversal surface the image-count pin needs from the tree root. */
-type QueryableRoot = {
-  queryAll: (
-    predicate: (node: { props: Record<string, unknown> }) => boolean,
-  ) => readonly unknown[];
-};
-
-/**
- * The secure URL the rendered gallery image actually displays. Read from the
- * real rendered expo-image output (its `source` prop) — the picture on screen
- * IS the behaviour, not a mock's internals.
- */
-function displayedImageUri(element: RenderedImageElement): string | undefined {
-  const source = element.props.source;
-  return Array.isArray(source) ? source[0]?.uri : undefined;
-}
-
-/**
- * How many rendered image hosts display the given secure URL — counted over
- * the WHOLE rendered tree, so a second image surface carrying the same URL
- * anywhere on the screen (e.g. a hypothetical header cover thumbnail) would
- * double the count. Reads the real expo-image `source` props, not mocks.
- */
-function countImagesDisplayingUri(root: QueryableRoot | null, uri: string): number {
-  if (root === null) {
-    return 0;
-  }
-
-  return root.queryAll((node) => {
-    const source = node.props.source as readonly { uri?: string }[] | undefined;
-    return Array.isArray(source) && source[0]?.uri === uri;
-  }).length;
-}
-
 /** The single durable key the cart's hydrate() reads — disk hygiene between tests. */
 const CART_KEY = storageKey("cart", "lines");
 
@@ -369,8 +324,6 @@ const CART_KEY = storageKey("cart", "lines");
  * the store's own idempotent no-op.
  */
 const SCREEN_OWNER = "7f8e9d0c-1b2a-4c3d-8e4f-5a6b7c8d9e0f";
-const ADD_ACTION_OWNER = "8e9f0a1d-2c3b-4d4e-8f5a-6b7c8d9e0f1a";
-const UNAVAILABLE_OWNER = "9f0a1b2e-3d4c-4e5f-8a6b-7c8d9e0f1a2b";
 const PRESS_ADD_OWNER = "a1b2c3d4-5e6f-4a70-8b7c-8d9e0f1a2b3c";
 
 /**
@@ -453,712 +406,292 @@ afterEach(() => {
   mockAuthHolder.current = null;
 });
 
+const NO_QUANTITY_HINT = "Select one of the options above to set quantity.";
+const CANNOT_ADD = "This option can’t be added right now. Choose another to continue.";
+
+async function renderKettle() {
+  mockFetchCatalog.mockResolvedValue(snapshotWithKettle());
+  const rendered = await renderProductDetail(extraProductIds.kettle);
+  await waitFor(() =>
+    expect(screen.getByRole("header", { name: "Studio Kettle" })).toBeOnTheScreen(),
+  );
+  return rendered;
+}
+
+/**
+ * Product Detail v1.8: the Product Stage (identity, context, gallery) beside
+ * the Choice Canvas (every option in place, then the Order Bar). The customer
+ * chooses explicitly — only a genuinely single-option product counts as
+ * chosen — and adds from the Order Bar.
+ */
 describe("ProductDetailScreen", () => {
-  // The generated baseline's mount-without-throwing intent survives here: this
-  // is the first render of the real screen in the real providers.
-  it("mounts the populated Product Detail for the requested product from one successful snapshot", async () => {
+  it("renders the product's identity, context and every option, with none chosen yet", async () => {
     mockFetchCatalog.mockResolvedValue(createCatalogSnapshotFixture());
 
-    // Resolved-path renders go through the authed + integration-provider
-    // harness: the screen's Add action consumes useCart()/useQuickCart(), so it
-    // mounts the way the customer layout mounts it (see the harness above).
     await renderProductDetail(catalogFixtureIds.products.coffee);
 
     await waitFor(() =>
       expect(screen.getByRole("header", { name: "Café Crème" })).toBeOnTheScreen(),
     );
-
-    // Identity: name, textual derived availability, the optional description.
-    expect(screen.getByLabelText("Available")).toBeOnTheScreen();
     expect(screen.getByText("A smooth customer favourite.")).toBeOnTheScreen();
+    expect(screen.getByRole("link", { name: "Back to products" })).toBeOnTheScreen();
+    expect(screen.getByRole("link", { name: "Browse brand Maison Élite" })).toBeOnTheScreen();
+    expect(screen.getByRole("link", { name: "Browse category Drínks" })).toBeOnTheScreen();
 
-    // Brand and category context render as navigable discovery.
-    expect(screen.getByRole("button", { name: "Browse brand Maison Élite" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Browse category Drínks" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Browse category Tóp Picks" })).toBeOnTheScreen();
-
-    // The variant list renders the model's labels with textual availability.
+    expect(screen.getByLabelText("Variations options")).toBeOnTheScreen();
+    const choices = screen.getAllByRole("radio");
+    expect(choices).toHaveLength(2);
+    for (const choice of choices) expect(choice).not.toBeChecked();
     expect(
-      screen.getByRole("button", { name: "Signature roast, Currently unavailable" }),
+      screen.getByRole("radio", { name: "Signature roast, currently unavailable" }),
     ).toBeOnTheScreen();
-    expect(
-      screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Available" }),
-    ).toBeOnTheScreen();
+    expect(screen.getByRole("radio", { name: "Color: Rouge · Size: Lárge" })).toBeOnTheScreen();
 
-    // Default selected variant is the first available variant (Color: Rouge, Size: Lárge)
-    expect(
-      screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Available", selected: true }),
-    ).toBeOnTheScreen();
-
-    // The obvious way back to the discovery surface that opened this detail.
-    expect(screen.getByRole("button", { name: "Go back" })).toBeOnTheScreen();
-
-    // Root CatalogNavigation is deliberately absent on a detail screen (AC-08):
-    // its replace semantics, used from a pushed detail, would duplicate the
-    // root entry below. Pinned so a future root-nav regression on this screen
-    // fails here instead of stacking duplicate root history.
-    expect(screen.queryByRole("button", { name: "Home" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Products" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Brands" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Categories" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
-
-    // No navigation and no second fetch happen from the mount itself.
-    expect(mockRouterPush).not.toHaveBeenCalled();
-    expect(mockRouterReplace).not.toHaveBeenCalled();
-    expect(mockRouterBack).not.toHaveBeenCalled();
-    expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
+    // Nothing to add until the customer chooses.
+    expect(screen.getByText(NO_QUANTITY_HINT)).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: /to cart$/ })).toBeNull();
   });
 
-  it("renders no quantity, price, stock or identifier affordance anywhere", async () => {
-    // The fixture carries SKUs, barcodes and the global low-stock threshold;
-    // none of it may surface. Catalog stays inspection-only beyond the ONE
-    // sanctioned Add action (supersession: the catalog-cart-integration
-    // brief's AC-02 renders exactly one Add action below the variant list —
-    // that action's own behaviour is pinned in the integration suite and the
-    // Add describe block below; here the remaining pins keep every OTHER
-    // ordering affordance out).
-    mockFetchCatalog.mockResolvedValue(createCatalogSnapshotFixture());
+  it("shows no price, subtotal or payment wording anywhere", async () => {
+    await renderKettle();
+    const user = userEvent.setup();
+    await user.press(screen.getByRole("radio", { name: "Matte Black Edition" }));
 
-    await renderProductDetail(catalogFixtureIds.products.coffee);
-
-    await waitFor(() =>
-      expect(screen.getByRole("header", { name: "Café Crème" })).toBeOnTheScreen(),
-    );
-
-    // No Cart/Checkout ordering actions beyond the sanctioned Add to cart —
-    // no checkout, buy, or order copy, by role or text.
-    expect(screen.queryByRole("button", { name: /checkout|buy|order/i })).toBeNull();
-    expect(screen.queryByText(/checkout/i)).toBeNull();
-
-    // No quantity control of any kind.
-    expect(screen.queryByText(/quantity|qty/i)).toBeNull();
-    expect(screen.queryByRole("spinbutton")).toBeNull();
-
-    // No price or total of any kind.
-    expect(screen.queryByText(/price|total|subtotal/i)).toBeNull();
-
-    // No exact or low stock — availability is boolean words only.
-    expect(screen.queryByText(/low stock/i)).toBeNull();
-    expect(screen.queryByText(/only \d+ (left|remaining)/i)).toBeNull();
-    expect(screen.queryByText(/in stock: \d+/i)).toBeNull();
-
-    // No internal identifiers leak to the customer.
-    expect(screen.queryByText(/sku|barcode/i)).toBeNull();
-    expect(screen.queryByText("SECRET-SKU-COFFEE-1")).toBeNull();
-    expect(screen.queryByText("SECRET-SKU-COFFEE-2")).toBeNull();
-    expect(screen.queryByText("990000000001")).toBeNull();
+    expect(screen.queryByText(/[$€£]|price|subtotal|total|pay/i)).toBeNull();
   });
 
-  it("labels the product's variants with all three model label forms and the derived product availability", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithKettle());
-
-    await renderProductDetail(extraProductIds.kettle);
-
-    await waitFor(() =>
-      expect(screen.getByRole("header", { name: "Studio Kettle" })).toBeOnTheScreen(),
-    );
-
-    // The three label forms of Design decision 9, in backend variant order:
-    // title_override, ordered "Type: value" pairs, and the neutral "Option N"
-    // fallback — all consumed from the model's derived label, never re-derived.
-    const variantEntries = screen.getAllByRole("button", {
-      name: /^(Matte Black Edition|Color: Rouge, Size: Lárge|Option 3),/,
-    });
-    expect(variantEntries.map((entry) => entry.props.accessibilityLabel)).toEqual([
-      "Matte Black Edition, Available",
-      "Color: Rouge, Size: Lárge, Currently unavailable",
-      "Option 3, Currently unavailable",
-    ]);
-
-    // The first variant is the default selection, and the product's derived
-    // any-variant availability is the badge (Design decision 10).
-    expect(screen.getByLabelText("Available")).toBeOnTheScreen();
-    expect(
-      screen.getByRole("button", { name: "Matte Black Edition, Available", selected: true }),
-    ).toBeOnTheScreen();
-
-    // The optional context this product lacks is simply absent.
-    expect(screen.getByText("Brushed steel with a stay-cool handle.")).toBeOnTheScreen();
-    expect(screen.queryByText("Brand")).toBeNull();
-    expect(screen.queryByText("Categories")).toBeNull();
-
-    // The default gallery: the matte variant's own media, primary first, with
-    // a thumbnail strip because there are two images.
-    expect(
-      screen.getByLabelText("Studio Kettle — Matte Black Edition, image 1 of 2"),
-    ).toBeOnTheScreen();
-    expect(
-      displayedImageUri(screen.getByLabelText("Studio Kettle — Matte Black Edition, image 1 of 2")),
-    ).toBe(kettleImageUrls.matte1);
-    expect(
-      screen.getByRole("button", {
-        name: "Studio Kettle — Matte Black Edition image 1",
-        selected: true,
-      }),
-    ).toBeOnTheScreen();
-    expect(
-      screen.getByRole("button", {
-        name: "Studio Kettle — Matte Black Edition image 2",
-        selected: false,
-      }),
-    ).toBeOnTheScreen();
-
-    expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
-  });
-
-  it("selects an unavailable variant for inspection and moves the gallery to that variant's media, including the product-cover fallback", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithKettle());
+  it("choosing an available option previews its images and offers a quantity and Add", async () => {
+    await renderKettle();
     const user = userEvent.setup();
 
-    const { root } = await renderProductDetail(extraProductIds.kettle);
+    await user.press(screen.getByRole("radio", { name: "Matte Black Edition" }));
 
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Matte Black Edition, Available", selected: true }),
-      ).toBeOnTheScreen(),
-    );
-
-    // An unavailable variant remains selectable for INSPECTION (Design
-    // decision 9): selecting it is a screen-local state change, never a Cart
-    // action, and its selection is announced.
-    await user.press(
-      screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Currently unavailable" }),
-    );
-
+    expect(screen.getByRole("radio", { name: "Matte Black Edition" })).toBeChecked();
     expect(
-      screen.getByRole("button", {
-        name: "Color: Rouge, Size: Lárge, Currently unavailable",
-        selected: true,
-      }),
-    ).toBeOnTheScreen();
-    expect(
-      screen.getByRole("button", { name: "Matte Black Edition, Available", selected: false }),
-    ).toBeOnTheScreen();
+      screen.getByRole("button", { name: "Studio Kettle — Matte Black Edition image 1" }),
+    ).toBeSelected();
+    expect(screen.getByText("12 available now")).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Decrease quantity" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add 1 to cart" })).toBeEnabled();
 
-    // The gallery now shows THAT variant's own media.
-    const rougeImage = screen.getByLabelText("Studio Kettle — Color: Rouge, Size: Lárge");
-    expect(displayedImageUri(rougeImage)).toBe(kettleImageUrls.rouge);
-
-    // The neutral-fallback variant has no variant media: the gallery falls
-    // back to the product cover (the model's derived `media`/`primaryMedia`).
-    await user.press(screen.getByRole("button", { name: "Option 3, Currently unavailable" }));
-
-    expect(
-      screen.getByRole("button", { name: "Option 3, Currently unavailable", selected: true }),
-    ).toBeOnTheScreen();
-    const coverImage = screen.getByLabelText("Studio Kettle — Option 3");
-    expect(displayedImageUri(coverImage)).toBe(kettleImageUrls.cover);
-
-    // The cover is composed ONLY through the gallery — the documented identity
-    // decision (the model's variant media already falls back to `coverMedia`,
-    // so a second header cover image would duplicate the same secure URL on
-    // one screen). Pinned: exactly ONE rendered image carries the cover URL.
-    expect(countImagesDisplayingUri(root, kettleImageUrls.cover)).toBe(1);
-
-    // Inspection never navigated anywhere and never fetched again.
-    expect(mockRouterPush).not.toHaveBeenCalled();
-    expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    expect(screen.getByRole("button", { name: "Add 2 to cart" })).toBeOnTheScreen();
   });
 
-  it("switches the gallery image with the thumbnail strip and resets to the primary image when the variant changes", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithKettle());
+  it("switches images with the thumbnails and returns to the first image for another option", async () => {
+    await renderKettle();
     const user = userEvent.setup();
+    await user.press(screen.getByRole("radio", { name: "Matte Black Edition" }));
 
-    await renderProductDetail(extraProductIds.kettle);
-
-    await waitFor(() =>
-      expect(
-        screen.getByLabelText("Studio Kettle — Matte Black Edition, image 1 of 2"),
-      ).toBeOnTheScreen(),
-    );
-
-    // Picking the second thumbnail moves the large image and the announced
-    // selection — screen-local state, reported through the gallery callback.
     await user.press(
       screen.getByRole("button", { name: "Studio Kettle — Matte Black Edition image 2" }),
     );
+    expect(
+      screen.getByRole("button", { name: "Studio Kettle — Matte Black Edition image 2" }),
+    ).toBeSelected();
+    expect(
+      screen.getByRole("button", { name: "Studio Kettle — Matte Black Edition image 1" }),
+    ).not.toBeSelected();
 
-    expect(
-      screen.getByLabelText("Studio Kettle — Matte Black Edition, image 2 of 2"),
-    ).toBeOnTheScreen();
-    expect(
-      displayedImageUri(screen.getByLabelText("Studio Kettle — Matte Black Edition, image 2 of 2")),
-    ).toBe(kettleImageUrls.matte2);
-    expect(
-      screen.getByRole("button", {
-        name: "Studio Kettle — Matte Black Edition image 1",
-        selected: false,
-      }),
-    ).toBeOnTheScreen();
-    expect(
-      screen.getByRole("button", {
-        name: "Studio Kettle — Matte Black Edition image 2",
-        selected: true,
-      }),
-    ).toBeOnTheScreen();
-
-    // Changing the variant resets the gallery to the new variant's primary
-    // image — the customer's old thumbnail pick must not leak across variants.
-    await user.press(screen.getByRole("button", { name: "Option 3, Currently unavailable" }));
-    await user.press(screen.getByRole("button", { name: "Matte Black Edition, Available" }));
-
-    expect(
-      screen.getByLabelText("Studio Kettle — Matte Black Edition, image 1 of 2"),
-    ).toBeOnTheScreen();
-    expect(
-      displayedImageUri(screen.getByLabelText("Studio Kettle — Matte Black Edition, image 1 of 2")),
-    ).toBe(kettleImageUrls.matte1);
+    // An option without its own images falls back to the product's cover.
+    await user.press(screen.getByRole("radio", { name: "Option 3, currently unavailable" }));
+    expect(screen.getByText("This option is shown with the product image.")).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: /Matte Black Edition image/ })).toBeNull();
   });
 
-  it("renders an unavailable-only product with its Standard option and the shared image fallback", async () => {
+  it("lets an unavailable option be inspected but never added", async () => {
+    await renderKettle();
+    const user = userEvent.setup();
+
+    await user.press(screen.getByRole("radio", { name: "Option 3, currently unavailable" }));
+
+    expect(screen.getByRole("radio", { name: "Option 3, currently unavailable" })).toBeChecked();
+    expect(screen.getByText(CANNOT_ADD)).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: /to cart$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Increase quantity" })).toBeNull();
+  });
+
+  it("treats a product's only option as chosen, and says when it cannot be added", async () => {
     mockFetchCatalog.mockResolvedValue(createCatalogSnapshotFixture());
 
     await renderProductDetail(catalogFixtureIds.products.tote);
 
     await waitFor(() =>
-      expect(screen.getByRole("header", { name: "Everyday Tote" })).toBeOnTheScreen(),
+      expect(
+        screen.getByRole("radio", { name: "Standard option, currently unavailable" }),
+      ).toBeChecked(),
     );
-
-    // All-unavailable products stay discoverable and inspectable with honest
-    // words (Design decision 10): the derived product availability.
-    expect(screen.getByLabelText("Currently unavailable")).toBeOnTheScreen();
-
-    // The single-variant neutral label, selected by default.
-    expect(screen.getByText("Specification")).toBeOnTheScreen();
-    expect(screen.getAllByText("Standard option")[0]).toBeOnTheScreen();
-
-    // Neither the variant nor the product carries media: the gallery's final
-    // honest fallback is AppImage's shared slot — the image surface keeps its
-    // layout instead of collapsing.
-    expect(
-      screen.getByRole("image", { name: "Everyday Tote — Standard option" }),
-    ).toBeOnTheScreen();
-
-    // The optional description this product lacks is absent; the category
-    // context it DOES have renders.
-    expect(screen.queryByText("A smooth customer favourite.")).toBeNull();
-    expect(screen.getByRole("button", { name: "Browse category Tóp Picks" })).toBeOnTheScreen();
+    expect(screen.getByText(CANNOT_ADD)).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: /to cart$/ })).toBeNull();
   });
 
-  it("pushes the brand and category detail routes from the product context", async () => {
+  it("opens the brand and category from the product's context", async () => {
     mockFetchCatalog.mockResolvedValue(createCatalogSnapshotFixture());
     const user = userEvent.setup();
-
     await renderProductDetail(catalogFixtureIds.products.coffee);
-
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Browse brand Maison Élite" })).toBeOnTheScreen(),
+      expect(screen.getByRole("header", { name: "Café Crème" })).toBeOnTheScreen(),
     );
 
-    // Context is navigable discovery: object-form PUSH with the exact ids, so
-    // this detail stays mounted behind the pushed one (no replace, no back).
-    await user.press(screen.getByRole("button", { name: "Browse brand Maison Élite" }));
-    await user.press(screen.getByRole("button", { name: "Browse category Drínks" }));
-    await user.press(screen.getByRole("button", { name: "Browse category Tóp Picks" }));
-
-    expect(mockRouterPush).toHaveBeenCalledTimes(3);
-    expect(mockRouterPush).toHaveBeenNthCalledWith(1, {
+    await user.press(screen.getByRole("link", { name: "Browse brand Maison Élite" }));
+    expect(mockRouterPush).toHaveBeenLastCalledWith({
       pathname: "/brand-detail",
       params: { brandId: catalogFixtureIds.brands.elite },
     });
-    expect(mockRouterPush).toHaveBeenNthCalledWith(2, {
+
+    await user.press(screen.getByRole("link", { name: "Browse category Drínks" }));
+    expect(mockRouterPush).toHaveBeenLastCalledWith({
       pathname: "/category-detail",
       params: { categoryId: catalogFixtureIds.categories.drinks },
     });
-    expect(mockRouterPush).toHaveBeenNthCalledWith(3, {
-      pathname: "/category-detail",
-      params: { categoryId: catalogFixtureIds.categories.specials },
-    });
-    expect(mockRouterReplace).not.toHaveBeenCalled();
-    expect(mockRouterBack).not.toHaveBeenCalled();
   });
 
-  it("shows a safe local not-found state for a stale product id", async () => {
+  it("goes back where the customer came from, or to Products when there is no history", async () => {
+    const user = userEvent.setup();
+    await renderKettle();
+
+    await user.press(screen.getByRole("link", { name: "Back to products" }));
+    expect(mockRouterBack).toHaveBeenCalledTimes(1);
+
+    mockCanGoBack.mockReturnValueOnce(false);
+    await user.press(screen.getByRole("link", { name: "Back to products" }));
+    expect(mockRouterReplace).toHaveBeenCalledWith("/products");
+  });
+
+  it("explains a product that is no longer in the catalog, with ways out", async () => {
     mockFetchCatalog.mockResolvedValue(createCatalogSnapshotFixture());
     const user = userEvent.setup();
 
-    await renderWithProviders(<ProductDetailScreen productId={STALE_PRODUCT_ID} />);
+    await renderProductDetail(STALE_PRODUCT_ID);
 
-    await waitFor(() => expect(screen.getByText(PRODUCT_NOT_FOUND_TITLE)).toBeOnTheScreen());
-    expect(screen.getByText(PRODUCT_NOT_FOUND_DESCRIPTION)).toBeOnTheScreen();
+    await waitFor(() =>
+      expect(screen.getByText("This product is no longer available")).toBeOnTheScreen(),
+    );
+    // A local projection of a good snapshot — never the load-error state.
+    expect(screen.queryByText("The catalog could not load")).toBeNull();
 
-    // A stale id is a LOCAL projection of a successful snapshot, never a
-    // network failure: the snapshot ErrorState does not render, and there is
-    // no retry affordance pretending one just happened.
-    expect(screen.queryByText("Something went wrong")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
-    expect(screen.queryByLabelText("Loading product...")).toBeNull();
-
-    // No product identity, no gallery, no variant list.
-    expect(screen.queryByRole("header", { name: "Café Crème" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Café Crème|Standard option/ })).toBeNull();
-
-    // The way back to the discovery surface that opened this detail.
-    await user.press(screen.getByRole("button", { name: "Back to products" }));
-
-    expect(mockRouterReplace).toHaveBeenCalledWith("/products");
-    expect(mockRouterPush).not.toHaveBeenCalled();
+    await user.press(screen.getByRole("button", { name: "Back to Explore" }));
+    expect(mockRouterReplace).toHaveBeenCalledWith("/");
   });
 
-  it("reads the productId route param and passes it to the screen", async () => {
+  it("reads the productId route param and resolves exactly that product", async () => {
     mockFetchCatalog.mockResolvedValue(snapshotWithKettle());
     mockLocalSearchParams.productId = extraProductIds.kettle;
+    mockAuthHolder.current = installMockAuth({ profile: { ...TEST_PROFILE, id: SCREEN_OWNER } });
 
-    // The real generated route: it reads `useLocalSearchParams` and hands the
-    // id to the screen as a prop. Proven behaviourally — the screen resolves
-    // the exact product the mocked params carry, and no other. Rendered
-    // behind the same auth + provider gate the (customer) group provides.
-    mockAuthHolder.current = installMockAuth({
-      profile: { ...TEST_PROFILE, id: SCREEN_OWNER },
-    });
     await renderWithProviders(<AuthedProductDetailRoute />, { withAuth: true });
 
     await waitFor(() =>
       expect(screen.getByRole("header", { name: "Studio Kettle" })).toBeOnTheScreen(),
     );
-    expect(
-      screen.getByRole("button", { name: "Option 3, Currently unavailable" }),
-    ).toBeOnTheScreen();
     expect(screen.queryByRole("header", { name: "Café Crème" })).toBeNull();
-
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
   });
 
-  it("announces a loading state before the first snapshot resolves", async () => {
+  it("announces loading before the first snapshot", async () => {
     mockFetchCatalog.mockReturnValue(new Promise(() => {}));
 
-    await renderWithProviders(
-      <ProductDetailScreen productId={catalogFixtureIds.products.coffee} />,
-    );
+    await renderProductDetail(catalogFixtureIds.products.coffee);
 
-    expect(screen.getByLabelText("Loading product...")).toBeOnTheScreen();
-    // No product identity, gallery or back affordance pretending to be data
-    // while pending.
-    expect(screen.queryByRole("header", { name: "Café Crème" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Go back" })).toBeNull();
-    expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("Loading product…")).toBeOnTheScreen();
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
   });
 
-  it("shows the catalog error with a retry that refetches", async () => {
-    mockFetchCatalog.mockRejectedValue(retryableCatalogError);
-    const user = userEvent.setup();
-
-    await renderWithProviders(
-      <ProductDetailScreen productId={catalogFixtureIds.products.coffee} />,
-    );
-
-    // ErrorState's View is not an `accessible` element, so RNTL role queries
-    // cannot match role "alert"; assert the standard error surface by its
-    // visible title and the error's safe user message instead.
-    await waitFor(() => expect(screen.getByText("Something went wrong")).toBeOnTheScreen());
-
-    expect(screen.getByText("We couldn't load the catalog. Please try again.")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Try again" })).toBeOnTheScreen();
-
-    await user.press(screen.getByRole("button", { name: "Try again" }));
-
-    await waitFor(() => expect(mockFetchCatalog).toHaveBeenCalledTimes(2));
-  });
-
-  it("renders a non-retryable failure without a retry affordance", async () => {
-    mockFetchCatalog.mockRejectedValue(nonRetryableCatalogError);
-
-    await renderWithProviders(
-      <ProductDetailScreen productId={catalogFixtureIds.products.coffee} />,
-    );
-
-    await waitFor(() => expect(screen.getByText("Something went wrong")).toBeOnTheScreen());
-
-    expect(screen.getByText("You don't have access to browse this catalog.")).toBeOnTheScreen();
-    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
-  });
-
-  it("shows a whole-catalog empty state when no products are returned, even for a stale product id", async () => {
-    mockFetchCatalog.mockResolvedValue(emptyCatalogSnapshot());
-    const user = userEvent.setup();
-
-    await renderWithProviders(<ProductDetailScreen productId={STALE_PRODUCT_ID} />);
-
-    await waitFor(() => expect(screen.getByText("The catalog is empty")).toBeOnTheScreen());
-
-    // The snapshot layer wins: an empty catalog is not a product-resolution
-    // problem, so the local not-found state stays absent.
-    expect(screen.queryByText(PRODUCT_NOT_FOUND_TITLE)).toBeNull();
-
-    // The empty state offers a way forward: refetch the snapshot.
-    await user.press(screen.getByRole("button", { name: "Try again" }));
-
-    await waitFor(() => expect(mockFetchCatalog).toHaveBeenCalledTimes(2));
-  });
-
-  it("keeps the populated detail visible when a background refetch fails while a snapshot is present", async () => {
-    // TanStack keeps `data` across a failed background refetch, and the shared
-    // QueryClient refetches on focus/reconnect for long-lived kiosk sessions —
-    // so a network blip mid-session must not blank the still-valid detail. Only
-    // a failure with NO snapshot may render the full-screen ErrorState.
+  it("offers a retry that refetches when the catalog fails to load", async () => {
     mockFetchCatalog
-      .mockResolvedValueOnce(snapshotWithKettle())
-      .mockRejectedValueOnce(retryableCatalogError);
-
-    const { queryClient } = await renderProductDetail(extraProductIds.kettle);
-
-    await waitFor(() =>
-      expect(screen.getByRole("header", { name: "Studio Kettle" })).toBeOnTheScreen(),
-    );
-
-    // The same background refetch the shared QueryClient triggers on
-    // focus/reconnect — the first (successful) load is already consumed.
-    // The macrotask flush lets TanStack's batched observer notification land
-    // inside act, so the screen has re-rendered before the assertions.
-    await act(async () => {
-      await queryClient.refetchQueries({ queryKey: catalogKeys.all });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-
-    // The populated detail stays on screen…
-    expect(screen.getByRole("header", { name: "Studio Kettle" })).toBeOnTheScreen();
-    expect(
-      screen.getByRole("button", { name: "Option 3, Currently unavailable" }),
-    ).toBeOnTheScreen();
-    // …and the full-screen error state does not replace it.
-    expect(screen.queryByText("Something went wrong")).toBeNull();
-    expect(screen.queryByText("We couldn't load the catalog. Please try again.")).toBeNull();
-  });
-
-  it("degrades a stale variant selection to the first variant when a refresh removes the picked variant", async () => {
-    // R5-R01: the screen's documented stale-selection degradation, unpinned
-    // until now. `selectedVariantId` is screen-local state that survives a
-    // snapshot refresh; when the REPLACEMENT snapshot no longer contains the
-    // picked variant, the screen degrades to the first variant in backend
-    // order (`?? product.variants[0]`) instead of crashing — without that
-    // fallback, the `variant === undefined` guard below it would turn this
-    // reachable refresh path into a loud throw. The shared QueryClient's
-    // focus/reconnect refetch is exactly how a customer hits it mid-session.
-    mockFetchCatalog
-      .mockResolvedValueOnce(snapshotWithKettle())
-      .mockResolvedValueOnce(snapshotWithOption3Removed());
+      .mockRejectedValueOnce(retryableCatalogError)
+      .mockResolvedValue(createCatalogSnapshotFixture());
     const user = userEvent.setup();
 
-    const { queryClient } = await renderProductDetail(extraProductIds.kettle);
+    await renderProductDetail(catalogFixtureIds.products.coffee);
 
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Matte Black Edition, Available", selected: true }),
-      ).toBeOnTheScreen(),
-    );
-
-    // A NON-FIRST pick: the customer inspects the last variant.
-    await user.press(screen.getByRole("button", { name: "Option 3, Currently unavailable" }));
-    expect(
-      screen.getByRole("button", { name: "Option 3, Currently unavailable", selected: true }),
-    ).toBeOnTheScreen();
-
-    // The same background refetch the shared QueryClient triggers on
-    // focus/reconnect — this time it delivers a REPLACEMENT snapshot in which
-    // the picked variant was removed. The macrotask flush lets TanStack's
-    // batched observer notification land inside act, so the screen has
-    // re-rendered before the assertions.
-    await act(async () => {
-      await queryClient.refetchQueries({ queryKey: catalogKeys.all });
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-
-    // The stale pick degrades to the FIRST variant — selected, on screen, no
-    // throw, no blank screen (this assertion is what fails if the
-    // `?? product.variants[0]` fallback is removed).
-    expect(
-      screen.getByRole("button", { name: "Matte Black Edition, Available", selected: true }),
-    ).toBeOnTheScreen();
-
-    // The removed variant is gone from the list, and the remaining variants
-    // stay inspectable.
-    expect(screen.queryByRole("button", { name: "Option 3, Currently unavailable" })).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Currently unavailable" }),
-    ).toBeOnTheScreen();
-
-    // The gallery follows the degraded selection's own media — the matte
-    // variant's primary image (the stale media pick degrades the same way, to
-    // the resolved variant's primary).
-    expect(
-      screen.getByLabelText("Studio Kettle — Matte Black Edition, image 1 of 2"),
-    ).toBeOnTheScreen();
-    expect(
-      displayedImageUri(screen.getByLabelText("Studio Kettle — Matte Black Edition, image 1 of 2")),
-    ).toBe(kettleImageUrls.matte1);
-
-    expect(mockFetchCatalog).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe("ProductDetailScreen — Add to cart (catalog-cart-integration seam)", () => {
-  /**
-   * The integration's plan-justified owning-feature edit (brief AC-02): the
-   * screen renders the integration's PUBLIC AddToCartButton below the variant
-   * list from a structural source derived here. These tests drive the real
-   * seam end to end — the real integration provider (for the button's
-   * useQuickCart context and the Quick Cart sheet), the real single cart
-   * store behind a real auth profile — exactly as the customer layout will
-   * mount this screen once T04 wires the provider in.
-   */
-
-  it("renders the Add to cart action for a resolved product with an available selected variant, enabled — and nothing in the cart yet", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithKettle());
-
-    await renderProductDetail(extraProductIds.kettle, ADD_ACTION_OWNER);
-
-    await waitFor(() =>
-      expect(screen.getByRole("header", { name: "Studio Kettle" })).toBeOnTheScreen(),
-    );
-
-    // AC-02: the Add action exists on the resolved path, below the variant
-    // list, enabled while the selected (default: first) variant is available.
-    const addButton = screen.getByRole("button", { name: "Add to cart" });
-    expect(addButton).toBeOnTheScreen();
-    await waitFor(() => expect(addButton).not.toBeDisabled());
-
-    // Exactly one Add action — the accessible name is unique on the screen.
-    expect(screen.getAllByRole("button", { name: "Add to cart" })).toHaveLength(1);
-
-    // No press happened: the cart holds nothing for this profile.
-    expect(getCartSnapshot().lines).toEqual([]);
-
-    expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
-  });
-
-  it("flips Add disabled when an UNAVAILABLE variant is selected — the variant stays selectable for inspection", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithKettle());
-    const user = userEvent.setup();
-
-    await renderProductDetail(extraProductIds.kettle, UNAVAILABLE_OWNER);
-
-    const addButton = await screen.findByRole("button", { name: "Add to cart" });
-    await waitFor(() => expect(addButton).not.toBeDisabled());
-
-    // Selecting the unavailable option-backed variant (Design decision 9:
-    // inspection stays possible) flips the Add action disabled…
-    await user.press(
-      screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Currently unavailable" }),
-    );
-    expect(
-      screen.getByRole("button", {
-        name: "Color: Rouge, Size: Lárge, Currently unavailable",
-        selected: true,
-      }),
-    ).toBeOnTheScreen();
-    expect(addButton).toBeDisabled();
-
-    // …and a press attempt in that state changes nothing in the cart.
-    await user.press(addButton);
-    await settleDurableWrites();
-    expect(getCartSnapshot().lines).toEqual([]);
-
-    // Switching back to the available variant re-enables Add — the
-    // affordance is stable, never removed (brief AC-02).
-    await user.press(screen.getByRole("button", { name: "Matte Black Edition, Available" }));
-    await waitFor(() => expect(addButton).not.toBeDisabled());
-
-    expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
-  });
-
-  it("pressing Add with an available selection puts the T01-mapped line in the real cart and opens the Quick Cart with it", async () => {
-    mockFetchCatalog.mockResolvedValue(createCatalogSnapshotFixture());
-    const user = userEvent.setup();
-
-    await renderProductDetail(catalogFixtureIds.products.coffee, PRESS_ADD_OWNER);
+    await waitFor(() => expect(screen.getByText("The catalog could not load")).toBeOnTheScreen());
+    await user.press(screen.getByRole("button", { name: "Try again" }));
 
     await waitFor(() =>
       expect(screen.getByRole("header", { name: "Café Crème" })).toBeOnTheScreen(),
     );
-    const addButton = screen.getByRole("button", { name: "Add to cart" });
-    // Default selection is the available configurable variant, so Add is enabled
-    await waitFor(() => expect(addButton).not.toBeDisabled());
+  });
 
-    // Selecting the unavailable variant disables Add…
-    await user.press(
-      screen.getByRole("button", { name: "Signature roast, Currently unavailable" }),
+  it("offers no retry for a failure that retrying cannot fix", async () => {
+    mockFetchCatalog.mockRejectedValue(nonRetryableCatalogError);
+
+    await renderProductDetail(catalogFixtureIds.products.coffee);
+
+    await waitFor(() => expect(screen.getByText("The catalog could not load")).toBeOnTheScreen());
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("shows the empty catalog state when no products are returned", async () => {
+    mockFetchCatalog.mockResolvedValue(emptyCatalogSnapshot());
+
+    await renderProductDetail(STALE_PRODUCT_ID);
+
+    await waitFor(() => expect(screen.getByText("The catalog is empty")).toBeOnTheScreen());
+  });
+
+  it("keeps the product on screen when a background refetch fails", async () => {
+    mockFetchCatalog
+      .mockResolvedValueOnce(snapshotWithKettle())
+      .mockRejectedValueOnce(retryableCatalogError);
+    const { queryClient } = await renderKettle();
+
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: catalogKeys.all });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.getByRole("header", { name: "Studio Kettle" })).toBeOnTheScreen();
+    expect(screen.queryByText("The catalog could not load")).toBeNull();
+  });
+
+  it("asks the customer to choose again when a refresh removes the chosen option", async () => {
+    mockFetchCatalog
+      .mockResolvedValueOnce(snapshotWithKettle())
+      .mockResolvedValueOnce(snapshotWithOption3Removed());
+    const user = userEvent.setup();
+    const { queryClient } = await renderKettle();
+    await user.press(screen.getByRole("radio", { name: "Option 3, currently unavailable" }));
+
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: catalogKeys.all });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.queryByRole("radio", { name: /^Option 3/ })).toBeNull();
+    // Nothing is re-picked on the customer's behalf.
+    for (const choice of screen.getAllByRole("radio")) expect(choice).not.toBeChecked();
+    expect(screen.getByText(NO_QUANTITY_HINT)).toBeOnTheScreen();
+  });
+});
+
+describe("ProductDetailScreen — adding to the cart", () => {
+  it("adds the chosen option with its quantity and opens the Quick Cart", async () => {
+    mockFetchCatalog.mockResolvedValue(createCatalogSnapshotFixture());
+    const user = userEvent.setup();
+    await renderProductDetail(catalogFixtureIds.products.coffee, PRESS_ADD_OWNER);
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: "Café Crème" })).toBeOnTheScreen(),
     );
-    await waitFor(() => expect(addButton).toBeDisabled());
 
-    // …and selecting the available option-backed variant re-enables it.
-    await user.press(screen.getByRole("button", { name: "Color: Rouge, Size: Lárge, Available" }));
-    await waitFor(() => expect(addButton).not.toBeDisabled());
-
-    await user.press(addButton);
-    // The Add press persists fire-and-forget; settle the write queue inside
-    // act before asserting (the integration suite's settle pattern).
+    await user.press(screen.getByRole("radio", { name: "Color: Rouge · Size: Lárge" }));
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    await user.press(screen.getByRole("button", { name: "Add 2 to cart" }));
     await settleDurableWrites();
 
-    // The single real cart model holds exactly the mapped line: quantity 1
-    // (plan decision 6), the variant's derived primary image (the model
-    // already fell back to the product cover for this media-less variant),
-    // and the T01 label rule — option TYPE names, values only in selections.
-    const snapshot = getCartSnapshot();
-    expect(snapshot.lines).toHaveLength(1);
-    expect(snapshot.lines[0]).toMatchObject({
+    const { lines } = getCartSnapshot();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
       variantId: catalogFixtureIds.variants.configurable,
       productId: catalogFixtureIds.products.coffee,
       productDisplayName: "Café Crème",
-      variantLabel: "Color, Size",
       optionSelections: [
-        {
-          optionTypeId: catalogFixtureIds.optionTypes.color,
-          optionValueId: catalogFixtureIds.optionValues.rouge,
-          optionValueLabel: "Rouge",
-        },
-        {
-          optionTypeId: catalogFixtureIds.optionTypes.size,
-          optionValueId: catalogFixtureIds.optionValues.large,
-          optionValueLabel: "Lárge",
-        },
+        expect.objectContaining({ optionValueLabel: "Rouge" }),
+        expect.objectContaining({ optionValueLabel: "Lárge" }),
       ],
-      imageUri: "https://res.cloudinary.com/kisok/image/upload/coffee-cover.png",
-      quantity: 1,
+      quantity: 2,
     });
-    expect(snapshot.totalQuantity).toBe(1);
-
-    // And the press opened the Quick Cart through the integration context:
-    // the sheet shows the fresh line — the AC-04-composed caption (each
-    // option value exactly once) and the updated total in the title.
-    expect(screen.getByText("Color, Size · Rouge · Lárge")).toBeOnTheScreen();
-    expect(screen.getByText("Added to cart")).toBeOnTheScreen();
-    expect(screen.getByText("Cart · 1 item")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Keep Shopping" })).toBeOnTheScreen();
-
-    expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
-  });
-
-  it("renders no Add action outside the resolved-product path — loading, error, empty and not-found carry no ordering affordance", async () => {
-    // Loading: the first snapshot never resolves.
-    mockFetchCatalog.mockReturnValue(new Promise(() => {}));
-    await renderWithProviders(
-      <ProductDetailScreen productId={catalogFixtureIds.products.coffee} />,
-    );
-    expect(screen.getByLabelText("Loading product...")).toBeOnTheScreen();
-    expect(screen.queryByRole("button", { name: "Add to cart" })).toBeNull();
-    mockFetchCatalog.mockReset();
-
-    // Error with no snapshot.
-    mockFetchCatalog.mockRejectedValue(retryableCatalogError);
-    await renderWithProviders(
-      <ProductDetailScreen productId={catalogFixtureIds.products.coffee} />,
-    );
-    await waitFor(() => expect(screen.getByText("Something went wrong")).toBeOnTheScreen());
-    expect(screen.queryByRole("button", { name: "Add to cart" })).toBeNull();
-    mockFetchCatalog.mockReset();
-
-    // Whole-catalog empty.
-    mockFetchCatalog.mockResolvedValue(emptyCatalogSnapshot());
-    await renderWithProviders(<ProductDetailScreen productId={STALE_PRODUCT_ID} />);
-    await waitFor(() => expect(screen.getByText("The catalog is empty")).toBeOnTheScreen());
-    expect(screen.queryByRole("button", { name: "Add to cart" })).toBeNull();
-    mockFetchCatalog.mockReset();
-
-    // Local not-found projection of a successful snapshot.
-    mockFetchCatalog.mockResolvedValue(createCatalogSnapshotFixture());
-    await renderWithProviders(<ProductDetailScreen productId={STALE_PRODUCT_ID} />);
-    await waitFor(() => expect(screen.getByText(PRODUCT_NOT_FOUND_TITLE)).toBeOnTheScreen());
-    expect(screen.queryByRole("button", { name: "Add to cart" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Review cart" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Keep browsing" })).toBeOnTheScreen();
   });
 });

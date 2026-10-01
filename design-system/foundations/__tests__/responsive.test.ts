@@ -1,4 +1,4 @@
-import { BREAKPOINTS, layoutSizeForWidth } from "@/core/responsive";
+import { BREAKPOINTS, layoutSizeForWidth } from "@/design-system";
 
 describe("layoutSizeForWidth", () => {
   it.each([

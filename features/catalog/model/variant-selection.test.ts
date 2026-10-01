@@ -29,6 +29,7 @@ function makeMockVariant(
     display_order: 1,
     title_override: titleOverride,
     is_available: isAvailable,
+    available_quantity: isAvailable ? 10 : 0,
     label: `Variant ${id}`,
     media: [],
     primaryMedia: null,

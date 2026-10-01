@@ -1,10 +1,9 @@
 import { useRouter } from "expo-router";
 import { type QueryClient } from "@tanstack/react-query";
+import { useWindowDimensions } from "react-native";
 
 import { AppError } from "@/core/errors";
-import { runSignOutGuards } from "@/core/auth";
 import { resetLogging, setLogSink } from "@/core/logging";
-import { useLayout, type LayoutSize } from "@/core/responsive";
 import {
   act,
   createTestQueryClient,
@@ -13,12 +12,10 @@ import {
   screen,
   userEvent,
   waitFor,
-  within,
 } from "@/core/testing";
-// In production the route graph can load Checkout before a preparation sign-out.
-import "@/features/checkout";
 
 import { fetchActiveOrders, type ActiveOrderRow } from "../../api/fetch-active-orders";
+import { fetchOrderDetail } from "../../api/fetch-order-detail";
 import { fetchStoreSettings, type StoreSettingsRow } from "../../api/fetch-store-settings";
 import { updateOrderStatus } from "../../api/update-order-status";
 import { type OrderStatusUpdate } from "../../model/order-status-update.schema";
@@ -26,63 +23,64 @@ import { type OrderStatusUpdate } from "../../model/order-status-update.schema";
 import { ANNOUNCEMENT_CLEAR_MILLIS, WorkspaceScreen } from "./workspace-screen";
 
 /**
- * The workspace board's observable contract (AC-01/02/04/05/10, plan decisions
- * 3, 5, 6, 8, 9, 10):
+ * The workspace board's observable contract (AC-01/02/04/05/09/10):
  *
- * - the three groups with one count per group, tabs on compact/medium and
- *   columns on expanded (mocked `useLayout` — the responsive layer's contract);
+ * - three status lanes — Incoming, In preparation, Ready for pickup — with one
+ *   count per lane, oldest first; side by side on a landscape tablet, one at a
+ *   time behind tabs in portrait. The layout is driven through the window
+ *   size the design system's `useLayout()` reads, not a mocked hook;
  * - the board read's reachable states: loading skeleton, empty state, error
- *   with retry that re-attempts;
- * - Start preparing / Mark ready driven through the real mutation hook, with
- *   the per-card pending disable and the repeat-press guard;
- * - rejected transitions surfaced as InlineError feedback near the card plus a
- *   screen-owned refresh (T05-R02: the hook invalidates on success ONLY), with
- *   the cancel-rejection flow given its own test (T10-R01: dialog closes,
- *   feedback near the card, then refetch). The feedback ALSO has a home when
- *   the errored order is no longer a VISIBLE card — it departed the board
- *   under the rejection refetch, or moved into an unmounted tab group (R2-01):
- *   the screen body beside the board, never nowhere;
- * - the polite live region announcing new-order arrivals (decision 9) and
- *   clearing again after a short delay (T11-R02, with fake timers), the
- *   sign-out and manual refresh affordances (decision 10), and the store
- *   timezone for created times degrading silently when settings are absent
- *   (decision 8), with midnight pinned to "00:00" — the h24-cycle ICU hour
- *   absorption the model documents (T11-R05);
- * - an inline notice when a refetch fails while the board still shows data
- *   (T11-R04: realtime multiplies background refetches, so this window is no
- *   longer rare);
- * - the realtime wiring (AC-09): while the screen is mounted it holds ONE
- *   orders channel (removed on unmount), and an incoming event invalidates
- *   the feature's queries so the refetched result — never the payload —
+ *   with retry that re-attempts, and a transient inline notice when a refetch
+ *   fails while the board still shows data (T11-R04);
+ * - Start preparing / Mark ready on the ticket, driven through the real
+ *   mutation hook, with the pending disable, one transition at a time, and the
+ *   repeat-press guard; Mark ready only for the actor's own order;
+ * - rejected transitions surfaced as InlineError feedback beside the order
+ *   plus a refresh of the board (the mutation invalidates on success ONLY).
+ *   The feedback keeps a home when the order is no longer a VISIBLE ticket —
+ *   it left the board under the rejection refetch, or moved into a hidden tab
+ *   (R2-01): the screen body beside the board, never nowhere;
+ * - on the widest landscape layout a ticket opens beside the board (the focus
+ *   panel), which is where cancelling lives — with a confirmation and an
+ *   optional reason; narrower layouts open the order's details screen;
+ * - the polite arrival announcement (decision 9) and its clearing (T11-R02),
+ *   refresh, history and sign-out affordances, and the store clock in the
+ *   store timezone with midnight pinned to "00:00" (T11-R05);
+ * - the realtime wiring (AC-09): one orders channel while mounted, removed on
+ *   unmount, and an event only INVALIDATES — the refetch, never the payload,
  *   re-renders the board.
  *
- * Two characterization pins guard behaviour that is correct by construction
- * today but unpinned (the R2-04/R2-05 findings): the announcement's no-ops
- * (a refresh returning the same orders, and a departure — neither is an
- *   arrival), and the pending action's derivation from the MUTATION's state
- * alone, which a mid-write realtime refetch must not disturb.
- *
- * Mocked at the feature's own `api/` boundary (plus `useLayout`, per the plan's
- * screen test strategy, and `expo-router` for the details navigation wiring) —
- * a screen test must not know Supabase exists. The realtime tests layer the
- * channel-recording spy of core/realtime's own tests onto `installMockAuth`'s
- * client, so the subscription can be asserted and a fake event FIRED at it.
+ * Mocked at the feature's own `api/` boundary (plus `expo-router` and the
+ * window size) — a screen test must not know Supabase exists. The realtime
+ * tests layer a channel-recording spy onto `installMockAuth`'s client so the
+ * subscription can be asserted and a fake event FIRED at it.
  */
 
 jest.mock("../../api/fetch-active-orders", () => ({ fetchActiveOrders: jest.fn() }));
+jest.mock("../../api/fetch-order-detail", () => ({ fetchOrderDetail: jest.fn() }));
 jest.mock("../../api/fetch-store-settings", () => ({ fetchStoreSettings: jest.fn() }));
 jest.mock("../../api/update-order-status", () => ({ updateOrderStatus: jest.fn() }));
 jest.mock("expo-router", () => ({ useRouter: jest.fn() }));
-jest.mock("@/core/responsive", () => ({
-  ...jest.requireActual("@/core/responsive"),
-  useLayout: jest.fn(),
+// FlashList commits its measured layout on a later frame, outside any act()
+// scope, so React intermittently warns under jest. FlatList takes the same
+// props this screen passes (data, renderItem, keyExtractor, numColumns,
+// extraData) and renders the same items, without the native measurement pass.
+jest.mock("@shopify/flash-list", () => ({
+  FlashList: jest.requireActual("react-native").FlatList,
+}));
+// `useLayout()` and `usePageGutter()` read the window size; driving that is
+// how a test picks a layout without reaching into the design system.
+jest.mock("react-native/Libraries/Utilities/useWindowDimensions", () => ({
+  __esModule: true,
+  default: jest.fn(),
 }));
 
 const fetchOrdersMock = fetchActiveOrders as jest.MockedFunction<typeof fetchActiveOrders>;
+const fetchDetailMock = fetchOrderDetail as jest.MockedFunction<typeof fetchOrderDetail>;
 const settingsMock = fetchStoreSettings as jest.MockedFunction<typeof fetchStoreSettings>;
 const updateMock = updateOrderStatus as jest.MockedFunction<typeof updateOrderStatus>;
 const useRouterMock = useRouter as jest.MockedFunction<typeof useRouter>;
-const useLayoutMock = useLayout as jest.MockedFunction<typeof useLayout>;
+const windowMock = useWindowDimensions as jest.MockedFunction<typeof useWindowDimensions>;
 
 /** The signed-in employee (the mock auth profile's id), and a colleague. */
 const ACTOR_ID = "3d0e9c14-64e8-4b6b-9d55-1f7d2a9c0e88";
@@ -99,6 +97,12 @@ const STORE_SETTINGS: StoreSettingsRow = {
   created_at: "2026-08-26T05:00:00.000000+00:00",
   updated_at: "2026-08-26T05:00:00.000000+00:00",
 };
+
+const REJECTED = "This order has already been updated.";
+
+function conflict() {
+  return new AppError({ kind: "state-conflict", userMessage: REJECTED, code: "K1004" });
+}
 
 /** One item row — the migration-07 snapshot shape. */
 function makeItem(id: string, variantSku: string): ActiveOrderRow["order_items"][number] {
@@ -119,8 +123,8 @@ function makeItem(id: string, variantSku: string): ActiveOrderRow["order_items"]
 }
 
 /**
- * A minimal board-shaped order row (the T09 fixture shape). Defaults to the
- * board's entry point: a NEW, unassigned order.
+ * A minimal board-shaped order row. Defaults to the board's entry point: a
+ * NEW, unassigned order.
  */
 function makeOrder(overrides: Partial<ActiveOrderRow> = {}): ActiveOrderRow {
   return {
@@ -136,7 +140,6 @@ function makeOrder(overrides: Partial<ActiveOrderRow> = {}): ActiveOrderRow {
     cancelled_by: null,
     cancelled_at: null,
     cancellation_reason: null,
-    // 05:00 UTC renders as 08:00 in Asia/Riyadh (UTC+3, no DST) — pinned below.
     created_at: "2026-08-26T05:00:08.123456+00:00",
     updated_at: "2026-08-26T05:01:41.000000+00:00",
     order_items: [makeItem("c7d8e9f0-1a2b-4c3d-8e5f-6a7b8c9d0e1f", "SO-250G-WB")],
@@ -144,8 +147,15 @@ function makeOrder(overrides: Partial<ActiveOrderRow> = {}): ActiveOrderRow {
   };
 }
 
-/** A validated `new → preparing` success projection (T01 shape). */
-function makePreparingUpdate(order: ActiveOrderRow): OrderStatusUpdate {
+const PREPARING_ID = "c3d4e5f6-7a8b-4c0d-9e2f-3a4b5c6d7e8f";
+const READY_ID = "d4e5f6a7-8b9c-4d0e-9f2a-3b4c5d6e7f8a";
+const SECOND_NEW_ID = "b2c3d4e5-6f7a-4b9c-8d1e-2f3a4b5c6d7e";
+
+/** A validated success projection for the given end state. */
+function makeUpdate(
+  order: ActiveOrderRow,
+  overrides: Partial<OrderStatusUpdate> = {},
+): OrderStatusUpdate {
   return {
     order_id: order.id,
     display_number: order.display_number,
@@ -155,13 +165,14 @@ function makePreparingUpdate(order: ActiveOrderRow): OrderStatusUpdate {
     cancelled_at: null,
     cancellation_reason: null,
     updated_at: "2026-08-26T05:05:00.000000+00:00",
+    ...overrides,
   };
 }
 
 /**
- * The shared test client plus mutation gcTime: Infinity (the T05 convention) —
- * a completed useMutation otherwise leaves a five-minute GC timer that keeps
- * jest from exiting.
+ * The shared test client plus mutation gcTime: Infinity — a completed
+ * useMutation otherwise leaves a five-minute GC timer that keeps jest from
+ * exiting.
  */
 function createMutationTestClient(): QueryClient {
   const client = createTestQueryClient();
@@ -172,18 +183,24 @@ function createMutationTestClient(): QueryClient {
   return client;
 }
 
-function setLayout(size: LayoutSize) {
-  const width = size === "expanded" ? 1280 : size === "medium" ? 800 : 480;
-  useLayoutMock.mockReturnValue({
-    width,
-    height: 800,
-    size,
-    isCompact: size === "compact",
-    isMedium: size === "medium",
-    isExpanded: size === "expanded",
-    isPortrait: true,
-    isLandscape: false,
-  });
+/**
+ * The three layouts the board actually has:
+ * - `canvas`: a wide landscape tablet — lanes side by side, and a ticket opens
+ *   beside the board;
+ * - `lanes`: a narrower landscape window — lanes side by side, a ticket opens
+ *   the details screen;
+ * - `tabs`: portrait — one lane at a time behind tabs.
+ */
+type BoardLayout = "canvas" | "lanes" | "tabs";
+
+const WINDOWS: Record<BoardLayout, { width: number; height: number }> = {
+  canvas: { width: 1280, height: 800 },
+  lanes: { width: 1000, height: 700 },
+  tabs: { width: 800, height: 1280 },
+};
+
+function setWindow(layout: BoardLayout) {
+  windowMock.mockReturnValue({ ...WINDOWS[layout], scale: 2, fontScale: 1 });
 }
 
 /** The router's push, captured through the expo-router mock. */
@@ -226,28 +243,40 @@ function spyOnChannels(client: unknown): ChannelSpy {
   return spy;
 }
 
+function ordersEvent(payload: Record<string, unknown>) {
+  return { schema: "public", table: "orders", eventType: "UPDATE", errors: null, ...payload };
+}
+
 type RenderOptions = {
   orders?: ActiveOrderRow[];
-  size?: LayoutSize;
+  layout?: BoardLayout;
   settings?: StoreSettingsRow | null;
   /** Makes the settings read reject (decision 8's failing-read case). */
   settingsFails?: boolean;
   /** Lets a test fail the first read, or swap the board between fetches. */
   fetchImpl?: () => Promise<ActiveOrderRow[]>;
+  /** The single-order read the focus panel makes; defaults to the board's row. */
+  detailImpl?: (orderId: string) => Promise<ActiveOrderRow | null>;
   /** Records the client's channel plumbing, for the realtime tests. */
   channelSpy?: boolean;
 };
 
 async function renderWorkspace({
   orders = [],
-  size = "expanded",
+  layout = "lanes",
   settings = STORE_SETTINGS,
   settingsFails = false,
   fetchImpl,
+  detailImpl,
   channelSpy = false,
 }: RenderOptions = {}) {
-  setLayout(size);
-  fetchOrdersMock.mockImplementation(fetchImpl ?? (() => Promise.resolve(orders)));
+  setWindow(layout);
+  const readBoard = fetchImpl ?? (() => Promise.resolve([...orders]));
+  fetchOrdersMock.mockImplementation(readBoard);
+  fetchDetailMock.mockImplementation(
+    detailImpl ??
+      (async (orderId) => (await readBoard()).find((order) => order.id === orderId) ?? null),
+  );
   if (settingsFails) settingsMock.mockRejectedValue(new Error("settings read failed"));
   else settingsMock.mockResolvedValue(settings);
   useRouterMock.mockReturnValue({ push: routerPush } as unknown as ReturnType<typeof useRouter>);
@@ -269,26 +298,45 @@ async function renderWorkspace({
   return { view, spy };
 }
 
+/** A lane's own count, announced on its header (side-by-side layouts). */
+function expectLaneCount(title: "Incoming" | "In preparation" | "Ready for pickup", n: number) {
+  expect(screen.getByLabelText(`${n} ${title}`)).toBeOnTheScreen();
+}
+
+/** A ticket's pressable body; its accessible name starts with the order number. */
+function ticket(displayNumber: string) {
+  return screen.getByRole("button", { name: new RegExp(`^Order ${displayNumber},`) });
+}
+
+function startPreparing(displayNumber: string) {
+  return screen.getByRole("button", { name: `Start preparing, order ${displayNumber}` });
+}
+
+function markReady(displayNumber: string) {
+  return screen.getByRole("button", { name: `Mark ready, order ${displayNumber}` });
+}
+
+/** The display numbers on screen, in tree order. */
+function renderedNumbers(pattern: RegExp) {
+  return screen.getAllByText(pattern).map((element) => element.props.children);
+}
+
 /**
- * The expanded (non-tab) layout's column header carries the group label and
- * its count as two separately-styled `Text` nodes (the redesign's badge
- * treatment — see `board-section.tsx`), not one combined string, so a plain
- * `getByText("New (1)")` can no longer find it. `within` the header's own
- * testID keeps the label and count assertions scoped to that one group.
+ * The destructive confirm inside the cancel dialog. The focus panel's own
+ * "Cancel order" opener stays mounted beneath the dialog, and the dialog
+ * renders into the portal host after the screen, so its confirm is the last.
  */
-function expectGroupHeading(status: "new" | "preparing" | "ready", label: string, count: number) {
-  const header = screen.getByTestId(`board-section-header-${status}`);
-  expect(within(header).getByText(label)).toBeOnTheScreen();
-  expect(within(header).getByText(String(count))).toBeOnTheScreen();
+function confirmCancelButton() {
+  const buttons = screen.getAllByRole("button", { name: "Cancel order" });
+  expect(buttons).toHaveLength(2);
+  return buttons[buttons.length - 1]!;
 }
 
 beforeEach(() => {
   // The real AuthProvider (withAuth: true) logs auth state changes by design —
   // a silent sink keeps this suite at zero console output.
   setLogSink(() => {});
-  // The default layout is expanded (three columns, everything visible); the
-  // tabs tests override to medium before rendering.
-  setLayout("expanded");
+  setWindow("lanes");
 });
 
 afterEach(() => {
@@ -296,44 +344,41 @@ afterEach(() => {
   mockSupabase?.restore();
   mockSupabase = undefined;
   fetchOrdersMock.mockReset();
+  fetchDetailMock.mockReset();
   settingsMock.mockReset();
   updateMock.mockReset();
   useRouterMock.mockReset();
-  useLayoutMock.mockReset();
+  windowMock.mockReset();
   routerPush.mockClear();
 });
 
 describe("WorkspaceScreen board read", () => {
   it("renders a loading skeleton while the first fetch is in flight", async () => {
-    await renderWorkspace({
-      orders: [makeOrder()],
-      fetchImpl: () => new Promise<ActiveOrderRow[]>(() => {}),
-    });
+    await renderWorkspace({ fetchImpl: () => new Promise<ActiveOrderRow[]>(() => {}) });
 
-    // SkeletonList's own loading affordance — the board's first-fetch state.
     expect(screen.getByLabelText("Loading content")).toBeOnTheScreen();
-    // No group content leaks out alongside the skeleton.
+    // No board content leaks out alongside the skeleton.
     expect(screen.queryByText("AB2CD4")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Start Preparing" })).toBeNull();
+    expect(screen.queryByText("All caught up")).toBeNull();
   });
 
   it("renders the empty state when there are no active orders", async () => {
     await renderWorkspace({ orders: [] });
 
-    expect(await screen.findByText("No active orders")).toBeOnTheScreen();
-    // The board itself renders nothing — no empty group headers.
-    expect(screen.queryByText(/New \(/)).toBeNull();
+    expect(await screen.findByText("All caught up")).toBeOnTheScreen();
+    // The board itself renders no lanes, while the header still counts zero.
+    expect(screen.queryByText("Incoming")).toBeNull();
+    expect(screen.getByLabelText("0 waiting")).toBeOnTheScreen();
   });
 
   it("renders an error state with retry when the read fails, and retry re-attempts it", async () => {
-    // A transport-level throw (T04 O-1: not an AppError at the screen).
-    const board = [makeOrder()];
+    // A transport-level throw (not an AppError at the screen).
     let failFirstRead = true;
     await renderWorkspace({
       fetchImpl: () =>
         failFirstRead
           ? Promise.reject(new Error("Network request failed"))
-          : Promise.resolve([...board]),
+          : Promise.resolve([makeOrder()]),
     });
 
     expect(await screen.findByText("Something went wrong")).toBeOnTheScreen();
@@ -344,26 +389,25 @@ describe("WorkspaceScreen board read", () => {
     failFirstRead = false;
     await userEvent.setup().press(screen.getByRole("button", { name: "Try again" }));
 
-    // Retry re-attempted the read and the board rendered.
     expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
     expect(fetchOrdersMock).toHaveBeenCalledTimes(2);
   });
 
   it("shows a transient inline notice when a refetch fails while the board still shows data", async () => {
-    // A transport-level throw (T04 O-1: not an AppError at the screen).
-    const order = makeOrder();
     let failReads = false;
     await renderWorkspace({
       fetchImpl: () =>
-        failReads ? Promise.reject(new Error("Network request failed")) : Promise.resolve([order]),
+        failReads
+          ? Promise.reject(new Error("Network request failed"))
+          : Promise.resolve([makeOrder()]),
     });
+    const user = userEvent.setup();
 
     expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
 
-    // T11-R04: the next read fails, but the board still has its (stale) data —
-    // full silence is wrong now that realtime multiplies background refetches.
+    // T11-R04: the next read fails, but the board still has its (stale) data.
     failReads = true;
-    await userEvent.setup().press(screen.getByRole("button", { name: "Refresh" }));
+    await user.press(screen.getByRole("button", { name: "Refresh orders" }));
 
     expect(
       await screen.findByText("We couldn't reach the network. Check the connection and try again."),
@@ -375,7 +419,7 @@ describe("WorkspaceScreen board read", () => {
 
     // Transient: the notice clears again on the next successful read.
     failReads = false;
-    await userEvent.setup().press(screen.getByRole("button", { name: "Refresh" }));
+    await user.press(screen.getByRole("button", { name: "Refresh orders" }));
     await waitFor(() =>
       expect(
         screen.queryByText("We couldn't reach the network. Check the connection and try again."),
@@ -384,75 +428,111 @@ describe("WorkspaceScreen board read", () => {
   });
 });
 
-describe("WorkspaceScreen grouping", () => {
-  it("groups active orders into New, Preparing and Ready with one count per group, as columns on expanded", async () => {
-    const newOrder = makeOrder();
-    const preparingOrder = makeOrder({
-      id: "c3d4e5f6-7a8b-9c0d-1e2f-3a4b5c6d7e8f",
-      display_number: "C5D6E7",
-      status: "preparing",
-      assigned_preparation_id: COLLEAGUE_ID,
+describe("WorkspaceScreen lanes", () => {
+  it("groups active orders into Incoming, In preparation and Ready for pickup side by side", async () => {
+    await renderWorkspace({
+      orders: [
+        makeOrder(),
+        makeOrder({
+          id: PREPARING_ID,
+          display_number: "C5D6E7",
+          status: "preparing",
+          assigned_preparation_id: COLLEAGUE_ID,
+        }),
+        makeOrder({
+          id: READY_ID,
+          display_number: "F6G7H8",
+          status: "ready",
+          assigned_preparation_id: ACTOR_ID,
+        }),
+      ],
     });
-    const readyOrder = makeOrder({
-      id: "d4e5f6a7-8b9c-9d0e-1f2a-3b4c5d6e7f8a",
-      display_number: "F6G7H8",
-      status: "ready",
-      assigned_preparation_id: ACTOR_ID,
-    });
-    await renderWorkspace({ orders: [newOrder, preparingOrder, readyOrder] });
 
-    // One count per group, and every active order sits in its own group.
-    await screen.findByTestId("board-section-header-new");
-    expectGroupHeading("new", "New", 1);
-    expectGroupHeading("preparing", "Preparing", 1);
-    expectGroupHeading("ready", "Ready", 1);
-    expect(screen.getByText("AB2CD4")).toBeOnTheScreen();
+    expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
+    // One count per lane, and every active order sits in its own lane…
+    expectLaneCount("Incoming", 1);
+    expectLaneCount("In preparation", 1);
+    expectLaneCount("Ready for pickup", 1);
     expect(screen.getByText("C5D6E7")).toBeOnTheScreen();
     expect(screen.getByText("F6G7H8")).toBeOnTheScreen();
-    // Columns, not tabs: all three groups are on screen at once, with no tablist.
+    // …the header states the shape of the shift…
+    expect(screen.getByLabelText("1 waiting")).toBeOnTheScreen();
+    expect(screen.getByLabelText("1 in preparation")).toBeOnTheScreen();
+    expect(screen.getByLabelText("1 ready")).toBeOnTheScreen();
+    // …and all three lanes are on screen at once, with no tablist.
     expect(screen.queryByRole("tab")).toBeNull();
   });
 
-  it("renders the three groups as tabs on a medium layout, one group visible at a time", async () => {
-    const newOrder = makeOrder();
-    const preparingOrder = makeOrder({
-      id: "c3d4e5f6-7a8b-9c0d-1e2f-3a4b5c6d7e8f",
-      display_number: "C5D6E7",
-      status: "preparing",
-      assigned_preparation_id: COLLEAGUE_ID,
+  it("orders each lane oldest first, whatever order the read returns", async () => {
+    await renderWorkspace({
+      orders: [
+        makeOrder({
+          id: SECOND_NEW_ID,
+          display_number: "NEW2ND",
+          created_at: "2026-08-26T05:10:00.000000+00:00",
+        }),
+        makeOrder({ display_number: "NEW1ST", created_at: "2026-08-26T05:00:00.000000+00:00" }),
+      ],
     });
-    await renderWorkspace({ orders: [newOrder, preparingOrder], size: "medium" });
 
-    // The counts stay visible on the triggers while only one group renders.
-    expect(await screen.findByRole("tab", { name: "New (1)" })).toBeOnTheScreen();
-    expect(screen.getByRole("tab", { name: "Preparing (1)" })).toBeOnTheScreen();
+    expect(await screen.findByText("NEW1ST")).toBeOnTheScreen();
+    // The order that has waited longest is the one to act on, so it leads.
+    expect(renderedNumbers(/^NEW(1ST|2ND)$/)).toEqual(["NEW1ST", "NEW2ND"]);
+  });
+
+  it("renders empty lanes in words within a populated board", async () => {
+    await renderWorkspace({ orders: [makeOrder()] });
+
+    expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
+    expectLaneCount("Incoming", 1);
+    expectLaneCount("In preparation", 0);
+    expectLaneCount("Ready for pickup", 0);
+    expect(screen.getByText("Nothing in progress")).toBeOnTheScreen();
+    expect(screen.getByText("Nothing waiting")).toBeOnTheScreen();
+  });
+
+  it("shows one lane at a time behind tabs in portrait, with every lane's count on its tab", async () => {
+    await renderWorkspace({
+      layout: "tabs",
+      orders: [
+        makeOrder(),
+        makeOrder({
+          id: PREPARING_ID,
+          display_number: "C5D6E7",
+          status: "preparing",
+          assigned_preparation_id: COLLEAGUE_ID,
+        }),
+      ],
+    });
+    const user = userEvent.setup();
+
+    const incoming = await screen.findByRole("tab", { name: "Incoming, 1" });
+    expect(incoming).toBeSelected();
+    expect(screen.getByRole("tab", { name: "In preparation, 1" })).not.toBeSelected();
+    expect(screen.getByRole("tab", { name: "Ready for pickup, 0" })).toBeOnTheScreen();
     expect(screen.getByText("AB2CD4")).toBeOnTheScreen();
     expect(screen.queryByText("C5D6E7")).toBeNull();
 
-    await userEvent.setup().press(screen.getByRole("tab", { name: "Preparing (1)" }));
+    await user.press(screen.getByRole("tab", { name: "In preparation, 1" }));
 
     expect(await screen.findByText("C5D6E7")).toBeOnTheScreen();
-  });
+    expect(screen.queryByText("AB2CD4")).toBeNull();
+    expect(screen.getByRole("tab", { name: "In preparation, 1" })).toBeSelected();
 
-  it("renders empty groups as No orders within a populated expanded board", async () => {
-    // A board where only New has work — Preparing and Ready are legitimately
-    // empty while their sibling is not.
-    await renderWorkspace({ orders: [makeOrder()] });
-
-    // T11-R03: the empty groups render words, not blank panels — pinned so
-    // the empty-within-populated state cannot regress silently.
-    await screen.findByTestId("board-section-header-new");
-    expectGroupHeading("new", "New", 1);
-    expectGroupHeading("preparing", "Preparing", 0);
-    expectGroupHeading("ready", "Ready", 0);
-    expect(screen.getAllByText("No orders")).toHaveLength(2);
+    await user.press(screen.getByRole("tab", { name: "Ready for pickup, 0" }));
+    expect(await screen.findByText("Nothing waiting")).toBeOnTheScreen();
   });
 });
 
 describe("WorkspaceScreen transitions", () => {
-  it("starts preparing an eligible new order, ignoring repeat presses while pending, then shows the claimed order", async () => {
+  it("starts preparing an eligible new order, one transition at a time, then shows it claimed", async () => {
     const newOrder = makeOrder();
-    let board = [newOrder];
+    const otherNew = makeOrder({
+      id: SECOND_NEW_ID,
+      display_number: "J4K5L6",
+      created_at: "2026-08-26T05:10:00.000000+00:00",
+    });
+    let board = [newOrder, otherNew];
     await renderWorkspace({ fetchImpl: () => Promise.resolve([...board]) });
 
     // The write stays in flight until the test resolves it, exactly like a
@@ -466,102 +546,125 @@ describe("WorkspaceScreen transitions", () => {
     );
 
     const user = userEvent.setup();
-    await user.press(await screen.findByRole("button", { name: "Start Preparing" }));
+    await screen.findByText("AB2CD4");
+    await user.press(startPreparing("AB2CD4"));
 
-    // Pending: the action is disabled with its label swapped, and a repeat
-    // press cannot fire a second write (decision 5's repeat guard).
-    const starting = await screen.findByRole("button", { name: "Starting…" });
-    expect(starting).toBeDisabled();
-    await user.press(starting);
+    // Pending: the action is disabled with its label swapped, the other
+    // ticket's action is locked (one transition at a time), and a repeat
+    // press cannot fire a second write.
+    expect(await screen.findByText("Starting…")).toBeOnTheScreen();
+    expect(startPreparing("AB2CD4")).toBeDisabled();
+    expect(startPreparing("J4K5L6")).toBeDisabled();
+    await user.press(startPreparing("AB2CD4"));
+    await user.press(startPreparing("J4K5L6"));
     expect(updateMock).toHaveBeenCalledTimes(1);
     expect(updateMock).toHaveBeenCalledWith({
       orderId: newOrder.id,
       targetStatus: "preparing",
+      reason: undefined,
     });
 
     // The board's data changes under the refetch the mutation's success
     // invalidation triggers: the order is now claimed to the actor.
-    board = [
-      makeOrder({
-        status: "preparing",
-        assigned_preparation_id: ACTOR_ID,
-      }),
-    ];
+    board = [makeOrder({ status: "preparing", assigned_preparation_id: ACTOR_ID }), otherNew];
     await act(async () => {
-      resolveUpdate(makePreparingUpdate(newOrder));
+      resolveUpdate(makeUpdate(newOrder));
     });
 
-    // The refetched board shows the order in Preparing, claimed to you.
-    await waitFor(() => expectGroupHeading("preparing", "Preparing", 1));
-    expect(screen.getByText("You")).toBeOnTheScreen();
+    await waitFor(() => expectLaneCount("In preparation", 1));
+    expectLaneCount("Incoming", 1);
+    expect(screen.getByText("Yours")).toBeOnTheScreen();
+    expect(screen.getByText("is yours")).toBeOnTheScreen();
+    expect(markReady("AB2CD4")).toBeEnabled();
+    expect(startPreparing("J4K5L6")).toBeEnabled();
     expect(fetchOrdersMock.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("offers Mark ready only for the actor's own preparing order; a colleague's shows the assignment and no action", async () => {
+  it("offers Mark ready only for the actor's own preparing order; a colleague's shows who has it and no action", async () => {
     const ownOrder = makeOrder({
-      id: "c3d4e5f6-7a8b-9c0d-1e2f-3a4b5c6d7e8f",
+      id: PREPARING_ID,
       display_number: "F6G7H8",
       status: "preparing",
       assigned_preparation_id: ACTOR_ID,
     });
     const colleagueOrder = makeOrder({
-      id: "d4e5f6a7-8b9c-9d0e-1f2a-3b4c5d6e7f8a",
+      id: READY_ID,
       display_number: "C5D6E7",
       status: "preparing",
       assigned_preparation_id: COLLEAGUE_ID,
     });
-    updateMock.mockResolvedValue({
-      order_id: ownOrder.id,
-      display_number: ownOrder.display_number,
-      status: "ready",
-      assigned_preparation_id: ACTOR_ID,
-      completed_at: null,
-      cancelled_at: null,
-      cancellation_reason: null,
-      updated_at: "2026-08-26T05:05:00.000000+00:00",
-    });
+    updateMock.mockResolvedValue(makeUpdate(ownOrder, { status: "ready" }));
     await renderWorkspace({ orders: [ownOrder, colleagueOrder] });
 
-    const colleagueCard = await screen.findByLabelText(
-      "Order C5D6E7, Preparing, assigned to another employee",
-    );
-    // AC-05: the colleague's order shows the assignment indicator…
-    expect(screen.getByText("Assigned to another employee")).toBeOnTheScreen();
-    // …and offers NO Mark ready action in its card body. The own card's Mark
-    // Ready is asserted by name below: the action footer renders as a SIBLING
-    // of the pressable card body (order-card: role=button maps to a native
-    // <button> on web, and buttons never nest), so the query is scoped by the
-    // test data instead — the colleague's preparing order renders no Mark
-    // Ready anywhere, and a second one would make the query ambiguous.
-    expect(within(colleagueCard).queryByRole("button", { name: "Mark Ready" })).toBeNull();
+    // AC-05: the colleague's order says who has it, in words and in its name…
+    expect(await screen.findByText("Taken by a colleague")).toBeOnTheScreen();
+    expect(ticket("C5D6E7")).toHaveAccessibleName(/taken by a colleague$/);
+    expect(ticket("F6G7H8")).toHaveAccessibleName(/yours$/);
+    // …and offers no transition at all.
+    expect(screen.queryByRole("button", { name: "Mark ready, order C5D6E7" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Start preparing/ })).toBeNull();
 
-    const markReady = screen.getByRole("button", { name: "Mark Ready" });
-    await userEvent.setup().press(markReady);
+    await userEvent.setup().press(markReady("F6G7H8"));
 
     await waitFor(() =>
       expect(updateMock).toHaveBeenCalledWith({
         orderId: ownOrder.id,
         targetStatus: "ready",
+        reason: undefined,
       }),
     );
   });
 
-  it("shows the created time in the store timezone", async () => {
-    await renderWorkspace({ orders: [makeOrder()] });
+  it("offers no transition on a ready order, only a way to open it", async () => {
+    const readyOrder = makeOrder({
+      id: READY_ID,
+      display_number: "F6G7H8",
+      status: "ready",
+      assigned_preparation_id: ACTOR_ID,
+    });
+    await renderWorkspace({ orders: [readyOrder] });
 
-    // 05:00 UTC renders as 08:00 in the settings row's Asia/Riyadh.
-    expect(await screen.findByText("08:00")).toBeOnTheScreen();
+    expect(await screen.findByText("Waiting for pickup")).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: /^(Start preparing|Mark ready)/ })).toBeNull();
+
+    await userEvent.setup().press(screen.getByRole("button", { name: "Open order F6G7H8" }));
+
+    expect(routerPush).toHaveBeenCalledWith({
+      pathname: "/order-details",
+      params: { orderId: READY_ID },
+    });
   });
 
-  it("renders a midnight order as 00:00, never 24:00", async () => {
-    // 21:00:08 UTC is 00:00:08 the next day in Asia/Riyadh — the hour an
-    // h24-cycle ICU build (Hermes tablets) would render as "24" with a
-    // 24-hour clock (T11-R05, the model's own % 24 absorption).
-    const midnightOrder = makeOrder({ created_at: "2026-08-26T21:00:08.123456+00:00" });
-    await renderWorkspace({ orders: [midnightOrder] });
+  it("shows the store clock and each order's wait in the store timezone", async () => {
+    // 05:07 UTC is 08:07 in Riyadh; the order was placed seven minutes earlier.
+    jest.useFakeTimers({ now: new Date("2026-08-26T05:07:30Z") });
+    try {
+      await renderWorkspace({
+        orders: [makeOrder({ created_at: "2026-08-26T05:00:08.123456+00:00" })],
+      });
 
-    expect(await screen.findByText("00:00")).toBeOnTheScreen();
-    expect(screen.queryByText("24:00")).toBeNull();
+      expect(await screen.findByText("Live · store time 08:07")).toBeOnTheScreen();
+      expect(ticket("AB2CD4")).toHaveAccessibleName("Order AB2CD4, Waiting 7 min, 1 line");
+      expect(screen.getByText("Waiting 7 min")).toBeOnTheScreen();
+      expect(screen.getByText("2 units · 1 line")).toBeOnTheScreen();
+      expect(screen.getByText("Single Origin Coffee ×2")).toBeOnTheScreen();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("renders the store clock at midnight as 00:00, never 24:00", async () => {
+    // 21:00 UTC is 00:00 the next day in Asia/Riyadh — the hour an h24-cycle
+    // ICU build (Hermes tablets) would render as "24" (T11-R05).
+    jest.useFakeTimers({ now: new Date("2026-08-26T21:00:08Z") });
+    try {
+      await renderWorkspace({ orders: [makeOrder()] });
+
+      expect(await screen.findByText("Live · store time 00:00")).toBeOnTheScreen();
+      expect(screen.queryByText("Live · store time 24:00")).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("keeps rendering the board when the settings row is absent", async () => {
@@ -576,216 +679,223 @@ describe("WorkspaceScreen transitions", () => {
   it("keeps rendering the board when the settings read fails", async () => {
     await renderWorkspace({ orders: [makeOrder()], settingsFails: true });
 
-    // The same degradation for a failing read: time display is a nicety, the
-    // operational board is the point.
     expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
     expect(screen.queryByText("Something went wrong")).toBeNull();
   });
 });
 
 describe("WorkspaceScreen rejected transitions", () => {
-  it("surfaces a rejected start-preparing transition near the card and refreshes the board", async () => {
-    const newOrder = makeOrder();
-    await renderWorkspace({ orders: [newOrder] });
+  it("surfaces a rejected start-preparing beside the ticket and refreshes the board", async () => {
+    await renderWorkspace({ orders: [makeOrder()] });
+    updateMock.mockRejectedValue(conflict());
 
-    // The K1004 the server answers a stale claim with.
-    updateMock.mockRejectedValue(
-      new AppError({
-        kind: "state-conflict",
-        userMessage: "This order has already been updated.",
-        code: "K1004",
-      }),
-    );
+    await screen.findByText("AB2CD4");
+    await userEvent.setup().press(startPreparing("AB2CD4"));
 
-    await userEvent.setup().press(await screen.findByRole("button", { name: "Start Preparing" }));
-
-    // Feedback NEAR the action (InlineError beside the card), never swallowed,
-    // never fabricated as a local transition — the order is still New.
-    expect(await screen.findByText("This order has already been updated.")).toBeOnTheScreen();
-    expectGroupHeading("new", "New", 1);
-    // T05-R02: the hook invalidates on success only, so the SCREEN refreshes
-    // the affected data on rejection.
-    await waitFor(() => expect(fetchOrdersMock.mock.calls.length).toBeGreaterThanOrEqual(2));
-  });
-
-  it("closes the cancel dialog, shows feedback near the card, and refreshes on a rejected cancel", async () => {
-    const newOrder = makeOrder();
-    await renderWorkspace({ orders: [newOrder] });
-
-    // A transport-level throw (T04 O-1: not an AppError at the screen).
-    updateMock.mockRejectedValue(new Error("rpc channel closed"));
-
-    const user = userEvent.setup();
-    await user.press(await screen.findByRole("button", { name: "Cancel" }));
-
-    // The destructive confirmation appeared, then was confirmed.
-    expect(screen.getByText("Cancel order AB2CD4?")).toBeOnTheScreen();
-    await user.press(screen.getByRole("button", { name: "Cancel order" }));
-
-    // T10-R01: dialog open=false FIRST (feedback behind an open modal is
-    // invisible), then feedback near the card, then the refresh.
-    await waitFor(() => expect(screen.queryByText("Cancel order AB2CD4?")).toBeNull());
-    expect(await screen.findByText("Something went wrong.")).toBeOnTheScreen();
-    // The order is still on the board — the client never fabricates the cancel.
-    expect(screen.getByText("AB2CD4")).toBeOnTheScreen();
+    // Feedback beside the order, never swallowed, never fabricated as a local
+    // transition — the order is still Incoming.
+    expect(await screen.findByText(REJECTED)).toBeOnTheScreen();
+    expect(screen.getAllByText(REJECTED)).toHaveLength(1);
+    expectLaneCount("Incoming", 1);
+    // The order actions refresh the board on rejection.
     await waitFor(() => expect(fetchOrdersMock.mock.calls.length).toBeGreaterThanOrEqual(2));
   });
 
   it("still shows the rejection feedback when the refetch removes the rejected order from the board", async () => {
-    // R2-01(a): employee A confirms Cancel while employee B's cancel lands
-    // first — A's RPC rejects with K1004, and the onError refetch returns a
-    // board the order has already left. Feedback attached to a card that no
-    // longer exists would render nowhere, making A's failure look like
-    // success; it must fall back to the screen body instead.
-    const newOrder = makeOrder();
-    let board = [newOrder];
+    // R2-01(a): a colleague's cancel lands first — the RPC rejects, and the
+    // refetch returns a board the order has already left. Feedback attached
+    // to a ticket that no longer exists would render nowhere.
+    let board = [makeOrder()];
     await renderWorkspace({ fetchImpl: () => Promise.resolve([...board]) });
-
     updateMock.mockImplementation(async () => {
-      // B's cancel already landed: the order is no longer active.
       board = [];
-      throw new AppError({
-        kind: "state-conflict",
-        userMessage: "This order has already been updated.",
-        code: "K1004",
-      });
+      throw conflict();
     });
 
-    const user = userEvent.setup();
-    await user.press(await screen.findByRole("button", { name: "Cancel" }));
-    await user.press(screen.getByRole("button", { name: "Cancel order" }));
+    await screen.findByText("AB2CD4");
+    await userEvent.setup().press(startPreparing("AB2CD4"));
 
-    // The dialog closed, the refetched board is empty, and the card is gone…
-    await waitFor(() => expect(screen.queryByText("Cancel order AB2CD4?")).toBeNull());
-    expect(await screen.findByText("No active orders")).toBeOnTheScreen();
+    expect(await screen.findByText("All caught up")).toBeOnTheScreen();
     expect(screen.queryByText("AB2CD4")).toBeNull();
-    // …and A's failure is STILL on screen — without its card, the feedback
-    // renders beside the board rather than nowhere.
-    expect(screen.getByText("This order has already been updated.")).toBeOnTheScreen();
+    expect(screen.getByText(REJECTED)).toBeOnTheScreen();
     await waitFor(() => expect(fetchOrdersMock.mock.calls.length).toBeGreaterThanOrEqual(2));
   });
 
-  it("still shows the rejection feedback on the tab layout when the rejected order moved to a hidden group", async () => {
+  it("still shows the rejection feedback in portrait when the rejected order moved to a hidden lane", async () => {
     // R2-01(b): the common claim race — a colleague claims the order first,
-    // so the K1004 refetch moves the card into Preparing. On the tab layout
-    // (portrait, the primary in-store orientation) that group's TabsContent
-    // is not mounted, so card-adjacent feedback would render nowhere the
-    // employee is looking. The feedback appears beside the board, without the
-    // employee having to switch tabs.
-    const contestedOrder = makeOrder();
+    // so the refetch moves it into In preparation, a tab that is not shown.
+    const contested = makeOrder();
     const claimedByColleague = makeOrder({
       status: "preparing",
       assigned_preparation_id: COLLEAGUE_ID,
     });
-    let board = [contestedOrder];
-    await renderWorkspace({ size: "medium", fetchImpl: () => Promise.resolve([...board]) });
-
+    let board = [contested];
+    await renderWorkspace({ layout: "tabs", fetchImpl: () => Promise.resolve([...board]) });
     updateMock.mockImplementation(async () => {
       board = [claimedByColleague];
-      throw new AppError({
-        kind: "state-conflict",
-        userMessage: "This order has already been updated.",
-        code: "K1004",
-      });
+      throw conflict();
     });
 
-    await userEvent.setup().press(await screen.findByRole("button", { name: "Start Preparing" }));
+    await screen.findByText("AB2CD4");
+    await userEvent.setup().press(startPreparing("AB2CD4"));
 
-    // The feedback is visible WITHOUT switching tabs…
-    expect(await screen.findByText("This order has already been updated.")).toBeOnTheScreen();
-    // …exactly once (the card-adjacent copy unmounts with its hidden group, so
-    // only the screen-body fallback renders)…
-    expect(screen.getAllByText("This order has already been updated.")).toHaveLength(1);
-    // …while the order itself has moved into the unmounted Preparing group and
-    // the active New tab is legitimately empty.
-    expect(screen.getByRole("tab", { name: "Preparing (1)" })).toBeOnTheScreen();
-    expect(screen.getByText("No orders")).toBeOnTheScreen();
+    // Visible WITHOUT switching tabs, exactly once…
+    expect(await screen.findByRole("tab", { name: "In preparation, 1" })).toBeOnTheScreen();
+    expect(screen.getAllByText(REJECTED)).toHaveLength(1);
+    // …while the active Incoming tab is legitimately empty.
+    expect(screen.getByText("No new orders")).toBeOnTheScreen();
     await waitFor(() => expect(fetchOrdersMock.mock.calls.length).toBeGreaterThanOrEqual(2));
   });
+});
 
-  it("cancels an order after destructive confirmation and removes it from the board", async () => {
-    const newOrder = makeOrder();
-    let board = [newOrder];
-    await renderWorkspace({ fetchImpl: () => Promise.resolve([...board]) });
+describe("WorkspaceScreen focus panel (wide landscape)", () => {
+  it("opens a ticket beside the board instead of navigating, and closes it again", async () => {
+    await renderWorkspace({ layout: "canvas", orders: [makeOrder()] });
+    const user = userEvent.setup();
 
+    await screen.findByText("AB2CD4");
+    await user.press(ticket("AB2CD4"));
+
+    // The whole order beside the board: its status, its items, its actions.
+    expect(await screen.findByRole("button", { name: "Close order" })).toBeOnTheScreen();
+    expect(ticket("AB2CD4")).toBeSelected();
+    expect(screen.getByLabelText("Order status: New")).toBeOnTheScreen();
+    expect(screen.getByText("SO-250G-WB")).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Cancel order" })).toBeOnTheScreen();
+    expect(routerPush).not.toHaveBeenCalled();
+
+    await user.press(screen.getByRole("button", { name: "Close order" }));
+    expect(screen.queryByRole("button", { name: "Close order" })).toBeNull();
+    expect(ticket("AB2CD4")).not.toBeSelected();
+
+    // Pressing the ticket toggles the panel.
+    await user.press(ticket("AB2CD4"));
+    expect(await screen.findByRole("button", { name: "Close order" })).toBeOnTheScreen();
+    await user.press(ticket("AB2CD4"));
+    expect(screen.queryByRole("button", { name: "Close order" })).toBeNull();
+  });
+
+  it("cancels an order with a reason after destructive confirmation, and the board drops it", async () => {
+    const order = makeOrder();
+    const cancelled = makeOrder({
+      status: "cancelled",
+      cancelled_by: ACTOR_ID,
+      cancelled_at: "2026-08-26T05:06:00.000000+00:00",
+      cancellation_reason: "Out of stock",
+    });
+    let board = [order];
+    let detail: ActiveOrderRow = order;
+    await renderWorkspace({
+      layout: "canvas",
+      fetchImpl: () => Promise.resolve([...board]),
+      detailImpl: () => Promise.resolve(detail),
+    });
     updateMock.mockImplementation(async () => {
-      // The cancelled order leaves the active board on the next read.
       board = [];
-      return {
-        order_id: newOrder.id,
-        display_number: newOrder.display_number,
+      detail = cancelled;
+      return makeUpdate(order, {
         status: "cancelled",
         assigned_preparation_id: null,
-        completed_at: null,
         cancelled_at: "2026-08-26T05:06:00.000000+00:00",
-        cancellation_reason: null,
-        updated_at: "2026-08-26T05:06:00.000000+00:00",
-      };
+        cancellation_reason: "Out of stock",
+      });
     });
-
     const user = userEvent.setup();
-    await user.press(await screen.findByRole("button", { name: "Cancel" }));
-    await user.press(screen.getByRole("button", { name: "Cancel order" }));
 
-    // The screen closes the dialog on success and the refetched board is empty.
+    await screen.findByText("AB2CD4");
+    await user.press(ticket("AB2CD4"));
+    await user.press(await screen.findByRole("button", { name: "Cancel order" }));
+
+    // The destructive confirmation, with an optional reason.
+    expect(screen.getByText("Cancel order AB2CD4?")).toBeOnTheScreen();
+    await user.press(screen.getByRole("radio", { name: "Out of stock" }));
+    await user.press(confirmCancelButton());
+
+    expect(updateMock).toHaveBeenCalledWith({
+      orderId: order.id,
+      targetStatus: "cancelled",
+      reason: "Out of stock",
+    });
+    // The dialog closes, and the refetched board no longer holds the order.
     await waitFor(() => expect(screen.queryByText("Cancel order AB2CD4?")).toBeNull());
-    expect(await screen.findByText("No active orders")).toBeOnTheScreen();
-    await waitFor(() =>
-      expect(updateMock).toHaveBeenCalledWith({
-        orderId: newOrder.id,
-        targetStatus: "cancelled",
-      }),
-    );
+    expect(await screen.findByText("All caught up")).toBeOnTheScreen();
+  });
+
+  it("closes the cancel dialog, shows feedback beside the order, and refreshes on a rejected cancel", async () => {
+    await renderWorkspace({ layout: "canvas", orders: [makeOrder()] });
+    // A transport-level throw (not an AppError at the screen).
+    updateMock.mockRejectedValue(new Error("rpc channel closed"));
+    const user = userEvent.setup();
+
+    await screen.findByText("AB2CD4");
+    await user.press(ticket("AB2CD4"));
+    await user.press(await screen.findByRole("button", { name: "Cancel order" }));
+    await user.press(confirmCancelButton());
+
+    // The dialog closes (feedback behind an open modal is invisible), the
+    // failure is shown beside the order, and the board refreshes.
+    await waitFor(() => expect(screen.queryByText("Cancel order AB2CD4?")).toBeNull());
+    expect((await screen.findAllByText("Something went wrong.")).length).toBeGreaterThan(0);
+    // The order is still on the board — the client never fabricates the cancel.
+    expect(ticket("AB2CD4")).toBeOnTheScreen();
+    expectLaneCount("Incoming", 1);
+    await waitFor(() => expect(fetchOrdersMock.mock.calls.length).toBeGreaterThanOrEqual(2));
   });
 });
 
 describe("WorkspaceScreen affordances", () => {
   it("announces a newly arrived order through a polite live region after a manual refresh", async () => {
     const firstOrder = makeOrder();
-    const secondOrder = makeOrder({
-      id: "b2c3d4e5-6f7a-8b9c-0d1e-2f3a4b5c6d7e",
-      display_number: "J4K5L6",
-    });
+    const secondOrder = makeOrder({ id: SECOND_NEW_ID, display_number: "J4K5L6" });
     let board = [firstOrder];
     await renderWorkspace({ fetchImpl: () => Promise.resolve([...board]) });
 
     expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
     expect(screen.queryByText(/New order/)).toBeNull();
 
-    // A new order arrives between reads; the refresh affordance pulls it in.
     board = [firstOrder, secondOrder];
-    await userEvent.setup().press(screen.getByRole("button", { name: "Refresh" }));
+    await userEvent.setup().press(screen.getByRole("button", { name: "Refresh orders" }));
 
-    // Decision 9: a polite live region (no toast, no sound) with the arrival
-    // as its accessible name.
+    // Decision 9: a polite live region (no toast, no sound).
     const announcement = await screen.findByText("New order J4K5L6");
     expect(announcement.props.accessibilityLiveRegion).toBe("polite");
     expect(fetchOrdersMock).toHaveBeenCalledTimes(2);
   });
 
-  it("clears the arrival announcement again after a short delay", async () => {
+  it("announces several arrivals at once as a count", async () => {
     const firstOrder = makeOrder();
-    const secondOrder = makeOrder({
-      id: "b2c3d4e5-6f7a-8b9c-0d1e-2f3a4b5c6d7e",
-      display_number: "J4K5L6",
-    });
     let board = [firstOrder];
     await renderWorkspace({ fetchImpl: () => Promise.resolve([...board]) });
 
     expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
 
-    // Fake timers from here on, so the delay can be advanced deterministically
-    // instead of slept out (the announcement's timer starts when the caption
-    // is set, i.e. after the refresh below).
+    board = [
+      firstOrder,
+      makeOrder({ id: SECOND_NEW_ID, display_number: "J4K5L6" }),
+      makeOrder({ id: PREPARING_ID, display_number: "M7N8P9" }),
+    ];
+    await userEvent.setup().press(screen.getByRole("button", { name: "Refresh orders" }));
+
+    expect(await screen.findByText("2 new orders")).toBeOnTheScreen();
+  });
+
+  it("clears the arrival announcement again after a short delay", async () => {
+    const firstOrder = makeOrder();
+    const secondOrder = makeOrder({ id: SECOND_NEW_ID, display_number: "J4K5L6" });
+    let board = [firstOrder];
+    await renderWorkspace({ fetchImpl: () => Promise.resolve([...board]) });
+
+    expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
+
+    // Fake timers from here on, so the delay can be advanced deterministically.
     jest.useFakeTimers();
     try {
       board = [firstOrder, secondOrder];
-      await userEvent.setup().press(screen.getByRole("button", { name: "Refresh" }));
+      await userEvent.setup().press(screen.getByRole("button", { name: "Refresh orders" }));
 
       expect(await screen.findByText("New order J4K5L6")).toBeOnTheScreen();
 
-      // T11-R02: an all-shift board must not keep a stale arrival caption on
-      // screen until the next arrival — it clears after a short delay.
+      // T11-R02: an all-shift board must not keep a stale arrival caption.
       await act(async () => {
         await jest.advanceTimersByTimeAsync(ANNOUNCEMENT_CLEAR_MILLIS);
       });
@@ -796,41 +906,31 @@ describe("WorkspaceScreen affordances", () => {
   });
 
   it("does not announce when a refresh returns the same orders", async () => {
-    // R2-04 (characterization): the announcement is an ARRIVALS diff — a
-    // refresh whose id diff is empty is not an arrival, so no caption.
-    const firstOrder = makeOrder();
-    const secondOrder = makeOrder({
-      id: "b2c3d4e5-6f7a-8b9c-0d1e-2f3a4b5c6d7e",
-      display_number: "J4K5L6",
+    // R2-04 (characterization): the announcement is an ARRIVALS diff.
+    await renderWorkspace({
+      orders: [makeOrder(), makeOrder({ id: SECOND_NEW_ID, display_number: "J4K5L6" })],
     });
-    await renderWorkspace({ orders: [firstOrder, secondOrder] });
 
     expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
 
-    await userEvent.setup().press(screen.getByRole("button", { name: "Refresh" }));
+    await userEvent.setup().press(screen.getByRole("button", { name: "Refresh orders" }));
     await waitFor(() => expect(fetchOrdersMock).toHaveBeenCalledTimes(2));
 
-    // Same board again: neither the singular nor the plural announcement.
     expect(screen.queryByText(/New order/)).toBeNull();
     expect(screen.queryByText(/new orders/)).toBeNull();
   });
 
   it("does not announce when an order departs between reads", async () => {
-    // R2-04 (characterization): a departure (a colleague's cancel) is not an
-    // arrival — the diff only counts APPEARING ids, so no caption either way.
+    // R2-04 (characterization): a departure is not an arrival.
     const firstOrder = makeOrder();
-    const departedOrder = makeOrder({
-      id: "b2c3d4e5-6f7a-8b9c-0d1e-2f3a4b5c6d7e",
-      display_number: "J4K5L6",
-    });
+    const departedOrder = makeOrder({ id: SECOND_NEW_ID, display_number: "J4K5L6" });
     let board = [firstOrder, departedOrder];
     await renderWorkspace({ fetchImpl: () => Promise.resolve([...board]) });
 
     expect(await screen.findByText("J4K5L6")).toBeOnTheScreen();
 
-    // The colleague's cancel removes the second order between reads.
     board = [firstOrder];
-    await userEvent.setup().press(screen.getByRole("button", { name: "Refresh" }));
+    await userEvent.setup().press(screen.getByRole("button", { name: "Refresh orders" }));
     await waitFor(() => expect(screen.queryByText("J4K5L6")).toBeNull());
 
     expect(screen.queryByText(/New order/)).toBeNull();
@@ -838,10 +938,9 @@ describe("WorkspaceScreen affordances", () => {
   });
 
   it("keeps the pending action across a mid-mutation realtime refetch, and clears it when the write settles", async () => {
-    // R2-05 (characterization): the per-card pending state derives from the
-    // MUTATION's state alone — a realtime-driven refetch around an in-flight
-    // write (board data unchanged) must not re-enable the action, and the
-    // repeat-press guard must hold until the RPC actually settles.
+    // R2-05 (characterization): the pending state derives from the MUTATION's
+    // state alone — a realtime-driven refetch around an in-flight write must
+    // not re-enable the action.
     const newOrder = makeOrder();
     const { spy } = await renderWorkspace({ orders: [newOrder], channelSpy: true });
     if (spy === null) throw new Error("channel spy was not installed");
@@ -855,78 +954,61 @@ describe("WorkspaceScreen affordances", () => {
     );
 
     const user = userEvent.setup();
-    await user.press(await screen.findByRole("button", { name: "Start Preparing" }));
-    expect(await screen.findByRole("button", { name: "Starting…" })).toBeDisabled();
+    await screen.findByText("AB2CD4");
+    await user.press(startPreparing("AB2CD4"));
+    expect(await screen.findByText("Starting…")).toBeOnTheScreen();
+    expect(startPreparing("AB2CD4")).toBeDisabled();
 
-    // An orders event lands while the write is still in flight: the board
-    // refetches (unchanged data) around the pending mutation.
+    // An orders event lands while the write is still in flight.
     await act(async () => {
-      spy.handlers[0]?.({
-        schema: "public",
-        table: "orders",
-        eventType: "UPDATE",
-        new: { id: newOrder.id, status: "new" },
-        old: { id: newOrder.id, status: "new" },
-        errors: null,
-      });
+      spy.handlers[0]?.(
+        ordersEvent({
+          new: { id: newOrder.id, status: "new" },
+          old: { id: newOrder.id, status: "new" },
+        }),
+      );
     });
     await waitFor(() => expect(fetchOrdersMock).toHaveBeenCalledTimes(2));
 
-    // The pending label survived the refetch…
-    const stillStarting = screen.getByRole("button", { name: "Starting…" });
-    expect(stillStarting).toBeDisabled();
-    // …and a repeat press is still ignored.
-    await user.press(stillStarting);
+    // The pending label survived the refetch, and a repeat press is ignored.
+    expect(screen.getByText("Starting…")).toBeOnTheScreen();
+    expect(startPreparing("AB2CD4")).toBeDisabled();
+    await user.press(startPreparing("AB2CD4"));
     expect(updateMock).toHaveBeenCalledTimes(1);
 
     // The write settles — the pending surface clears with it.
     await act(async () => {
-      resolveUpdate(makePreparingUpdate(newOrder));
+      resolveUpdate(makeUpdate(newOrder));
     });
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Starting…" })).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Starting…")).toBeNull());
   });
 
-  it("offers a sign-out affordance", async () => {
-    await renderWorkspace({ orders: [makeOrder()] });
-
-    // The sign-out control is present (its flow is core/auth's contract).
-    expect(await screen.findByRole("button", { name: "Sign out" })).toBeOnTheScreen();
-  });
-
-  it("signs out from the real workspace even while customer Checkout recovery is pending", async () => {
-    await expect(
-      runSignOutGuards({ sessionUserId: "customer", profileId: "customer", role: "customer" }),
-    ).resolves.toEqual({
-      status: "blocked",
-      reason: "We're still checking this tablet for an unfinished order submission.",
-    });
+  it("signs this device out from the workspace", async () => {
     await renderWorkspace({ orders: [] });
 
     await userEvent.setup().press(await screen.findByRole("button", { name: "Sign out" }));
 
     await waitFor(() => expect(mockSupabase?.signOutCalls).toEqual([{ scope: "local" }]));
-    expect(
-      screen.queryByText("We're still checking this tablet for an unfinished order submission."),
-    ).toBeNull();
   });
 
-  it("opens order details with the order's id when a card is pressed", async () => {
+  it("opens order details with the order's id when a ticket is pressed on a narrower layout", async () => {
     const newOrder = makeOrder();
     await renderWorkspace({ orders: [newOrder] });
 
-    await userEvent.setup().press(await screen.findByRole("button", { name: "Order AB2CD4, New" }));
+    await screen.findByText("AB2CD4");
+    await userEvent.setup().press(ticket("AB2CD4"));
 
-    // Plan decision 1: the static details route with orderId as a query param.
     expect(routerPush).toHaveBeenCalledWith({
       pathname: "/order-details",
       params: { orderId: newOrder.id },
     });
+    expect(screen.queryByRole("button", { name: "Close order" })).toBeNull();
   });
 
-  it("navigates to history when the History affordance is pressed", async () => {
+  it("navigates to today's history from the header", async () => {
     await renderWorkspace({ orders: [makeOrder()] });
 
-    await userEvent.setup().press(await screen.findByRole("button", { name: "History" }));
+    await userEvent.setup().press(await screen.findByRole("button", { name: "Today’s history" }));
 
     // AC-08: history is reached from the workspace's header affordance.
     expect(routerPush).toHaveBeenCalledWith("/history");
@@ -949,10 +1031,7 @@ describe("WorkspaceScreen realtime (AC-09)", () => {
 
   it("refetches the board when an orders event arrives; the rendered truth is the query result, never the payload", async () => {
     const newOrder = makeOrder();
-    const movedOrder = makeOrder({
-      status: "preparing",
-      assigned_preparation_id: COLLEAGUE_ID,
-    });
+    const movedOrder = makeOrder({ status: "preparing", assigned_preparation_id: COLLEAGUE_ID });
     let board = [newOrder];
     const { spy } = await renderWorkspace({
       fetchImpl: () => Promise.resolve([...board]),
@@ -960,34 +1039,27 @@ describe("WorkspaceScreen realtime (AC-09)", () => {
     });
     if (spy === null) throw new Error("channel spy was not installed");
 
-    await screen.findByTestId("board-section-header-new");
-    expectGroupHeading("new", "New", 1);
+    await screen.findByText("AB2CD4");
+    expectLaneCount("Incoming", 1);
     expect(fetchOrdersMock).toHaveBeenCalledTimes(1);
 
     // The order moves on the server while the board is open.
     board = [movedOrder];
 
-    // The realtime event fires — carrying row content the query never returns,
-    // to pin that the payload itself is never rendered.
+    // The event carries row content the query never returns, to pin that the
+    // payload itself is never rendered.
     await act(async () => {
-      spy.handlers[0]?.({
-        schema: "public",
-        table: "orders",
-        eventType: "UPDATE",
-        new: { id: movedOrder.id, display_number: "ZZ9Y8X", status: "preparing" },
-        old: { id: newOrder.id, status: "new" },
-        errors: null,
-      });
+      spy.handlers[0]?.(
+        ordersEvent({
+          new: { id: movedOrder.id, display_number: "ZZ9Y8X", status: "preparing" },
+          old: { id: newOrder.id, status: "new" },
+        }),
+      );
     });
 
-    // The event only INVALIDATED the feature's queries — the refetch re-called
-    // the api boundary and the refetched result re-rendered the board.
     await waitFor(() => expect(fetchOrdersMock).toHaveBeenCalledTimes(2));
-    await waitFor(() => expectGroupHeading("preparing", "Preparing", 1));
-    // The order moved OUT of New — the group still renders (always visible),
-    // now with a zero count, never the stale "New (1)" it carried before.
-    expectGroupHeading("new", "New", 0);
-    // AC-09's second half: the payload's own content never reaches the screen.
+    await waitFor(() => expectLaneCount("In preparation", 1));
+    expectLaneCount("Incoming", 0);
     expect(screen.queryByText("ZZ9Y8X")).toBeNull();
   });
 });

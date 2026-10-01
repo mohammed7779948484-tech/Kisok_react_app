@@ -1,27 +1,9 @@
 import { renderWithProviders, screen } from "@/core/testing";
 
+import { Text } from "@/design-system";
 import type { CartLine } from "@/features/cart";
 
 import { OrderLineRow } from "./order-line-row";
-
-/**
- * lucide-react-native resolves (via the `react-native` condition) to an
- * untransformed ESM entry under jest-expo, so no test in this repo can
- * value-import it without a jest-config change. The row's runtime graph needs
- * exactly one lucide icon — ImageOff, AppImage's null-uri fallback — so one
- * stand-in keeps this a test of the row contract, not of lucide's renderer
- * (cart-item-row.test.tsx's precedent; the `CartLine` import above is
- * TYPE-ONLY, so the cart feature's own lucide graph never loads here).
- */
-jest.mock("lucide-react-native", () => {
-  // Null-rendering stand-ins need no import at all — a component returning
-  // null references nothing from react or react-native — which keeps the
-  // factory free of `require()` (tests lint with --max-warnings=0).
-  const makeIcon = (name: string) => Object.assign(() => null, { displayName: name });
-  return {
-    ImageOff: makeIcon("ImageOff"),
-  };
-});
 
 const sizeSelection = {
   optionTypeId: "b2e1a4c3-8f7d-4a2b-9c6e-1d3f5a7b9c2d",
@@ -66,50 +48,55 @@ const waterLine: CartLine = {
 
 /**
  * Behaviour and accessibility, not styling: the row is the read-only line
- * presentation the Checkout surfaces share (T08: the Order Review screen; the
- * success items and conflict join consume it later), so the contract that
- * matters is what the line snapshot renders (AC-02) and what assistive
- * technology perceives — plus what it deliberately does NOT render: no
- * controls, no prices (CartLine carries none, and the row keeps it that way).
- *
- * The real AppImage, Button-less layout, and Text are driven unmocked; only
- * lucide's icon renderer is stubbed (see the mock above). Conventions follow
- * cart-item-row.test.tsx — the editable row this one mirrors.
+ * presentation the Checkout surfaces share (the conflict/failure status, the
+ * success summary), so the contract that matters is what the line snapshot
+ * renders and what assistive technology perceives — plus what it
+ * deliberately does NOT render: no controls, no prices.
  */
 describe("OrderLineRow", () => {
-  it("renders the line snapshot read-only: image alt, product name, variant/options caption, and no controls at all", async () => {
+  it("renders the line snapshot read-only: product name, variant/options caption, and no controls at all", async () => {
     await renderWithProviders(<OrderLineRow line={cappuccinoLine} />);
 
-    // AppImage renders the uri with the product name as its alt/label.
-    expect(screen.getByLabelText("Cappuccino")).toBeOnTheScreen();
     expect(screen.getByText("Cappuccino")).toBeOnTheScreen();
-    // The caption is composed exactly as CartItemRow composes it, so the
-    // review and the cart can never disagree about what a line is called:
+    // The caption is composed exactly as the cart composes it, so the order
+    // and the cart can never disagree about what a line is called:
     // variantLabel, then each selected option value label, dot-separated.
     expect(screen.getByText("Hot · Large · Oat Milk")).toBeOnTheScreen();
-    // Read-only: no stepper, no remove, nothing interactive in the row — the
-    // review must not grow a second editing surface next to the cart's.
+    // Read-only: nothing interactive in the row.
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("announces the quantity through the Quantity: N label convention", async () => {
+  it("keeps the product image decorative — the title beside it already names the line", async () => {
     await renderWithProviders(<OrderLineRow line={cappuccinoLine} />);
 
-    // The QuantityStepper precedent: an explicit `Quantity: N` label so a
-    // screen reader says what the number is, not just a bare digit — the
-    // review's rows stay as legible to assistive tech as the cart's.
-    expect(screen.getByLabelText("Quantity: 2")).toBeOnTheScreen();
+    // A labelled image would make a screen reader announce the product twice.
+    expect(screen.queryByRole("image", { name: "Cappuccino" })).toBeNull();
+    expect(screen.queryByLabelText("Cappuccino")).toBeNull();
   });
 
-  it("renders AppImage's fallback for a null imageUri: an accessible image labelled with the product name", async () => {
+  it("announces the quantity through an explicit 'Quantity N' label", async () => {
+    await renderWithProviders(<OrderLineRow line={cappuccinoLine} />);
+
+    // A screen reader says what the number is, not just a bare "×2".
+    expect(screen.getByLabelText("Quantity 2")).toBeOnTheScreen();
+  });
+
+  it("renders the image fallback for a null imageUri and a bare variant caption", async () => {
     await renderWithProviders(<OrderLineRow line={waterLine} />);
 
-    // AppImage's documented null-uri behaviour: instead of the remote image
-    // it renders a muted fallback tile with an explicit image role and the
-    // alt as its label. The caption degenerates to the bare variantLabel.
-    expect(screen.getByRole("image", { name: "Sparkling Water" })).toBeOnTheScreen();
-    expect(screen.getByText("Sparkling Water")).toBeOnTheScreen();
+    // The fallback tile captions itself with the product name, and the row
+    // title repeats it; the caption degenerates to the bare variantLabel.
+    expect(screen.getAllByText("Sparkling Water")).toHaveLength(2);
     expect(screen.getByText("500 ml Bottle")).toBeOnTheScreen();
-    expect(screen.getByLabelText("Quantity: 1")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Quantity 1")).toBeOnTheScreen();
+  });
+
+  it("replaces the quantity figure with the trailing content when given", async () => {
+    await renderWithProviders(
+      <OrderLineRow line={cappuccinoLine} trailing={<Text>1 available</Text>} />,
+    );
+
+    expect(screen.getByText("1 available")).toBeOnTheScreen();
+    expect(screen.queryByLabelText("Quantity 2")).toBeNull();
   });
 });

@@ -25,18 +25,18 @@ import { StoreDayHistoryScreen } from "./store-day-history-screen";
  *
  * - the composed read's reachable states: loading skeleton while settings gate
  *   the window, error state with retry that re-attempts the read, day-empty
- *   EmptyState, success — plus the workspace's stale-data policy (T11-R04):
- *   a failed refetch with retained data is a transient inline banner, never a
+ *   state, success — plus the workspace's stale-data policy (T11-R04):
+ *   a failed refetch with retained data is a transient inline notice, never a
  *   full error state over the day's orders;
  * - the day-boundary contract: only orders terminal INSIDE the current store
  *   day appear (fixed fake-timer fixtures spanning both boundaries, through
- *   the REAL hook + model), grouped Completed then Cancelled with one count
- *   per group, newest-terminal-first inside a group, under a date header
- *   derived from the window start rendered in the RESOLVED store timezone —
- *   a UTC-keyed header/day fails the pinned string;
- * - read-only cards: no action buttons, terminal-time captions in the store
- *   timezone, the assignment indicator by id comparison — and the card press
- *   still opens Order Details (AC-03: read-only hides ACTIONS, not the press);
+ *   the REAL hook + model), grouped into Completed and Cancelled with one
+ *   count per group (the outcome filter tabs), newest-terminal-first, under a
+ *   date header derived from the window start rendered in the RESOLVED store
+ *   timezone — a UTC-keyed header/day fails the pinned string;
+ * - read-only entries: no action buttons, terminal-time and created-time in
+ *   the store timezone — and the entry press still opens Order Details
+ *   (AC-03: read-only hides ACTIONS, not the press);
  * - the back action, and the R1-05 rollover decision: event-driven rollover
  *   (NO refetchInterval) — a screen parked across the store-day boundary with
  *   zero re-renders keeps the day it loaded under (the accepted,
@@ -54,6 +54,13 @@ import { StoreDayHistoryScreen } from "./store-day-history-screen";
 jest.mock("../../api/fetch-store-day-history", () => ({ fetchStoreDayHistory: jest.fn() }));
 jest.mock("../../api/fetch-store-settings", () => ({ fetchStoreSettings: jest.fn() }));
 jest.mock("expo-router", () => ({ useRouter: jest.fn() }));
+// FlashList commits its measured layout on a later frame, outside any act()
+// scope, so React intermittently warns under jest. FlatList takes the same
+// props this screen passes (data, renderItem, keyExtractor, numColumns,
+// extraData) and renders the same items, without the native measurement pass.
+jest.mock("@shopify/flash-list", () => ({
+  FlashList: jest.requireActual("react-native").FlatList,
+}));
 
 const historyMock = fetchStoreDayHistory as jest.MockedFunction<typeof fetchStoreDayHistory>;
 const settingsMock = fetchStoreSettings as jest.MockedFunction<typeof fetchStoreSettings>;
@@ -144,9 +151,11 @@ function relativeRows(specs: RelativeSpec[]) {
   };
 }
 
-/** The router's back and push, captured through the expo-router mock. */
+/** The router's navigation calls, captured through the expo-router mock. */
 const routerBack = jest.fn();
 const routerPush = jest.fn();
+const routerReplace = jest.fn();
+const routerCanGoBack = jest.fn(() => true);
 
 let mockSupabase: ReturnType<typeof installMockAuth> | undefined;
 
@@ -177,6 +186,8 @@ async function renderHistory({
   useRouterMock.mockReturnValue({
     back: routerBack,
     push: routerPush,
+    replace: routerReplace,
+    canGoBack: routerCanGoBack,
   } as unknown as ReturnType<typeof useRouter>);
   mockSupabase = installMockAuth({
     role: "preparation",
@@ -210,19 +221,26 @@ afterEach(() => {
   useRouterMock.mockReset();
   routerBack.mockClear();
   routerPush.mockClear();
+  routerReplace.mockClear();
+  routerCanGoBack.mockReset();
+  routerCanGoBack.mockReturnValue(true);
 });
 
 /**
- * A history group's header carries the group label and its count as two
- * separately-styled `Text` nodes (the redesign's badge treatment — see
- * `store-day-history-screen.tsx`'s `HistoryGroup`), not one combined string,
- * so a plain `getByText("Completed (1)")` can no longer find it. `within`
- * the group's own testID keeps the label and count assertions scoped to it.
+ * Each outcome group is a filter tab carrying its label and its count as two
+ * separate `Text` nodes. `within` the tab keeps the count scoped to it.
  */
-function expectGroupHeading(status: "completed" | "cancelled", label: string, count: number) {
-  const header = screen.getByTestId(`history-group-header-${status}`);
-  expect(within(header).getByText(label)).toBeOnTheScreen();
-  expect(within(header).getByText(String(count))).toBeOnTheScreen();
+function groupTab(label: "All" | "Completed" | "Cancelled") {
+  return screen.getByRole("tab", { name: new RegExp(`^${label}\\b`) });
+}
+
+function expectGroupCount(label: "All" | "Completed" | "Cancelled", count: number) {
+  expect(within(groupTab(label)).getByText(String(count))).toBeOnTheScreen();
+}
+
+/** The rendered order numbers, in on-screen order. */
+function renderedOrderNumbers(pattern: RegExp) {
+  return screen.getAllByText(pattern).map((element) => element.props.children);
 }
 
 describe("StoreDayHistoryScreen read states", () => {
@@ -233,7 +251,7 @@ describe("StoreDayHistoryScreen read states", () => {
     expect(screen.getByLabelText("Loading content")).toBeOnTheScreen();
     // No window without settings, so no read and no day content.
     expect(historyMock).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("history-group-header-completed")).toBeNull();
+    expect(screen.queryByRole("tab")).toBeNull();
   });
 
   it("renders an error state with retry when the read fails, and retry re-attempts it", async () => {
@@ -311,14 +329,14 @@ describe("StoreDayHistoryScreen read states", () => {
   it("renders the day's empty state when the store day has no terminal orders", async () => {
     await renderHistory({ orders: [] });
 
-    expect(await screen.findByText("No completed or cancelled orders yet")).toBeOnTheScreen();
-    // The day-level empty state REPLACES the groups — no empty group headers.
-    expect(screen.queryByTestId("history-group-header-completed")).toBeNull();
-    expect(screen.queryByTestId("history-group-header-cancelled")).toBeNull();
+    expect(await screen.findByText("Nothing finished yet today")).toBeOnTheScreen();
+    // The day-level empty state REPLACES the groups — no empty group tabs.
+    expect(screen.queryByRole("tab")).toBeNull();
     // The empty state is still grounded in the day it describes: the date
-    // header renders above it (shape-pinned; the exact string is pinned by the
-    // fake-timer day-boundary test).
-    expect(screen.getByText(/^[A-Z][a-z]+day, [A-Z][a-z]+ \d{1,2}, \d{4}$/)).toBeOnTheScreen();
+    // header and the zero counts render above it (shape-pinned; the exact
+    // date string is pinned by the fake-timer day-boundary test).
+    expect(screen.getByText(/^[A-Z][a-z]+day, [A-Z][a-z]+ \d{1,2}$/)).toBeOnTheScreen();
+    expect(screen.getByText("0 completed · 0 cancelled")).toBeOnTheScreen();
   });
 
   it("keeps rendering the day when the settings row is absent (decision 8)", async () => {
@@ -380,12 +398,14 @@ describe("StoreDayHistoryScreen groups (AC-08)", () => {
 
       // The date header: the window start rendered in the STORE timezone —
       // Riyadh's Aug 27, not UTC's Aug 26.
-      expect(await screen.findByText("Thursday, August 27, 2026")).toBeOnTheScreen();
+      expect(await screen.findByText("Thursday, August 27")).toBeOnTheScreen();
 
       // One count per group; exactly the two in-day rows survive the model's
       // client-side day filter.
-      expectGroupHeading("completed", "Completed", 1);
-      expectGroupHeading("cancelled", "Cancelled", 1);
+      expect(screen.getByText("1 completed · 1 cancelled")).toBeOnTheScreen();
+      expectGroupCount("All", 2);
+      expectGroupCount("Completed", 1);
+      expectGroupCount("Cancelled", 1);
       expect(screen.getByText("B3K9Z1")).toBeOnTheScreen();
       expect(screen.getByText("C7F2M8")).toBeOnTheScreen();
       expect(screen.queryByText("A1E5Y7")).toBeNull();
@@ -393,31 +413,24 @@ describe("StoreDayHistoryScreen groups (AC-08)", () => {
 
       // Read-only: no action buttons anywhere (the card press is the only
       // card-level affordance, plus the screen's own back button).
-      expect(screen.queryByRole("button", { name: "Start Preparing" })).toBeNull();
-      expect(screen.queryByRole("button", { name: "Mark Ready" })).toBeNull();
-      expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Start preparing" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Mark ready" })).toBeNull();
+      expect(screen.queryByRole("button", { name: /^Cancel/ })).toBeNull();
 
-      // The terminal instants as captions in the store timezone (22:30Z →
-      // 01:30 Riyadh; 23:45Z → 02:45 Riyadh)…
-      expect(screen.getByText("Completed 01:30")).toBeOnTheScreen();
-      expect(screen.getByText("Cancelled 02:45")).toBeOnTheScreen();
-      // …the created time keeps the card's created-time slot, per card
-      // (15:00Z → 18:00 Riyadh; 14:07Z → 17:07 Riyadh)…
-      expect(screen.getByText("18:00")).toBeOnTheScreen();
-      expect(screen.getByText("17:07")).toBeOnTheScreen();
-      // …and the lean read's placeholder item array never surfaces — the
-      // screen always supplies the caption.
-      expect(screen.queryByText("0 items")).toBeNull();
-
-      // The assignment indicator is words, compared by id (decision 3).
-      expect(screen.getByText("You")).toBeOnTheScreen();
-      expect(screen.getByText("Assigned to another employee")).toBeOnTheScreen();
-
-      // The cards are pressable display rows (AC-03: read-only hides ACTIONS,
-      // not the press) — the press behaviour itself has its own test below.
+      // The terminal instants in the store timezone (22:30Z → 01:30 Riyadh;
+      // 23:45Z → 02:45 Riyadh), carried by each entry's accessible name…
       expect(
-        screen.getByRole("button", { name: "Order B3K9Z1, Completed, assigned to you" }),
+        screen.getByRole("button", { name: "Order B3K9Z1, Completed at 01:30" }),
       ).toBeOnTheScreen();
+      expect(
+        screen.getByRole("button", { name: "Order C7F2M8, Cancelled at 02:45" }),
+      ).toBeOnTheScreen();
+      expect(screen.getByText("01:30")).toBeOnTheScreen();
+      expect(screen.getByText("02:45")).toBeOnTheScreen();
+      // …and the created time, per entry, in the same zone (15:00Z → 18:00
+      // Riyadh; 14:07Z → 17:07 Riyadh).
+      expect(screen.getByText("Completed · placed 18:00")).toBeOnTheScreen();
+      expect(screen.getByText("Cancelled · placed 17:07")).toBeOnTheScreen();
     } finally {
       jest.useRealTimers();
     }
@@ -442,13 +455,67 @@ describe("StoreDayHistoryScreen groups (AC-08)", () => {
       ]),
     });
 
-    // …and the group re-sorts by terminal instant through the model's helper.
-    await screen.findByTestId("history-group-header-completed");
-    expectGroupHeading("completed", "Completed", 2);
-    const treeOrder = screen
-      .getAllByText(/^(OLDCMP1|NEWCMP2)$/)
-      .map((element) => element.props.children);
-    expect(treeOrder).toEqual(["NEWCMP2", "OLDCMP1"]);
+    // …and the day re-sorts by terminal instant.
+    await screen.findByText("NEWCMP2");
+    expectGroupCount("Completed", 2);
+    expect(renderedOrderNumbers(/^(OLDCMP1|NEWCMP2)$/)).toEqual(["NEWCMP2", "OLDCMP1"]);
+  });
+
+  it("shows a cancellation's reason with the cancelled entry", async () => {
+    await renderHistory({
+      fetchImpl: relativeRows([
+        {
+          status: "cancelled",
+          offsetHours: 2,
+          displayNumber: "RSN0N1",
+          id: "1a2b3c4d-0007-4000-8000-000000000007",
+          overrides: { cancellation_reason: "Out of stock" },
+        },
+      ]),
+    });
+
+    expect(await screen.findByText("RSN0N1")).toBeOnTheScreen();
+    expect(screen.getByText(/^Cancelled · Out of stock · placed \d{2}:\d{2}$/)).toBeOnTheScreen();
+  });
+
+  it("filters the day by outcome, newest first within the chosen group", async () => {
+    await renderHistory({
+      fetchImpl: relativeRows([
+        {
+          status: "completed",
+          offsetHours: 1,
+          displayNumber: "CMPOLD1",
+          id: "1a2b3c4d-0008-4000-8000-000000000008",
+        },
+        {
+          status: "cancelled",
+          offsetHours: 2,
+          displayNumber: "CNCMID1",
+          id: "1a2b3c4d-0009-4000-8000-000000000009",
+        },
+        {
+          status: "completed",
+          offsetHours: 3,
+          displayNumber: "CMPNEW1",
+          id: "1a2b3c4d-0010-4000-8000-000000000010",
+        },
+      ]),
+    });
+    const user = userEvent.setup();
+    const ALL = /^(CMPOLD1|CNCMID1|CMPNEW1)$/;
+
+    // "All" is the default: every terminal order of the day, newest first.
+    await screen.findByText("CMPNEW1");
+    expect(groupTab("All")).toBeSelected();
+    expect(renderedOrderNumbers(ALL)).toEqual(["CMPNEW1", "CNCMID1", "CMPOLD1"]);
+
+    await user.press(groupTab("Completed"));
+    expect(groupTab("Completed")).toBeSelected();
+    expect(groupTab("All")).not.toBeSelected();
+    expect(renderedOrderNumbers(ALL)).toEqual(["CMPNEW1", "CMPOLD1"]);
+
+    await user.press(groupTab("Cancelled"));
+    expect(renderedOrderNumbers(ALL)).toEqual(["CNCMID1"]);
   });
 
   it("renders a per-section empty state for a group with no orders", async () => {
@@ -464,11 +531,15 @@ describe("StoreDayHistoryScreen groups (AC-08)", () => {
     });
 
     // A group can be legitimately empty while its sibling is not — words, not
-    // a blank panel (the board section's own convention).
-    await screen.findByTestId("history-group-header-completed");
-    expectGroupHeading("completed", "Completed", 1);
-    expectGroupHeading("cancelled", "Cancelled", 0);
-    expect(screen.getByText("No orders")).toBeOnTheScreen();
+    // a blank panel.
+    await screen.findByText("ONLY1C1");
+    expectGroupCount("Completed", 1);
+    expectGroupCount("Cancelled", 0);
+
+    await userEvent.setup().press(groupTab("Cancelled"));
+
+    expect(screen.getByText("No cancelled orders today.")).toBeOnTheScreen();
+    expect(screen.queryByText("ONLY1C1")).toBeNull();
   });
 });
 
@@ -488,7 +559,7 @@ describe("StoreDayHistoryScreen navigation", () => {
 
     await userEvent
       .setup()
-      .press(await screen.findByRole("button", { name: "Order PR3SSM1, Completed" }));
+      .press(await screen.findByRole("button", { name: /^Order PR3SSM1, Completed at / }));
 
     // Plan decision 1: the static details route with orderId as a query param.
     expect(routerPush).toHaveBeenCalledWith({
@@ -509,9 +580,20 @@ describe("StoreDayHistoryScreen navigation", () => {
       ]),
     });
 
-    await userEvent.setup().press(await screen.findByRole("button", { name: "Back" }));
+    await userEvent.setup().press(await screen.findByRole("button", { name: "Back to the board" }));
 
     expect(routerBack).toHaveBeenCalledTimes(1);
+    expect(routerReplace).not.toHaveBeenCalled();
+  });
+
+  it("returns to the board when there is no screen to go back to", async () => {
+    routerCanGoBack.mockReturnValue(false);
+    await renderHistory({ orders: [] });
+
+    await userEvent.setup().press(await screen.findByRole("button", { name: "Back to the board" }));
+
+    expect(routerBack).not.toHaveBeenCalled();
+    expect(routerReplace).toHaveBeenCalledWith("/(preparation)");
   });
 });
 
@@ -538,7 +620,7 @@ describe("StoreDayHistoryScreen store-day rollover (R1-05)", () => {
       });
 
       // Loaded under the Aug 26 UTC store day.
-      expect(await screen.findByText("Wednesday, August 26, 2026")).toBeOnTheScreen();
+      expect(await screen.findByText("Wednesday, August 26")).toBeOnTheScreen();
       expect(historyMock).toHaveBeenCalledTimes(1);
       expect(Date.parse(historyMock.mock.calls[0]?.[0]?.terminalSince ?? "")).toBe(
         Date.parse("2026-08-26T00:00:00.000Z"),
@@ -557,7 +639,7 @@ describe("StoreDayHistoryScreen store-day rollover (R1-05)", () => {
         jest.advanceTimersByTime(2 * HOUR_MILLIS);
       });
       expect(historyMock).toHaveBeenCalledTimes(1);
-      expect(screen.getByText("Wednesday, August 26, 2026")).toBeOnTheScreen();
+      expect(screen.getByText("Wednesday, August 26")).toBeOnTheScreen();
 
       // The next mount (the event that any navigation or re-render is)
       // recomputes the window: the day key rolls and the read re-runs under
@@ -569,7 +651,7 @@ describe("StoreDayHistoryScreen store-day rollover (R1-05)", () => {
         queryClient: first.queryClient,
       });
 
-      expect(await screen.findByText("Thursday, August 27, 2026")).toBeOnTheScreen();
+      expect(await screen.findByText("Thursday, August 27")).toBeOnTheScreen();
       expect(historyMock).toHaveBeenCalledTimes(2);
       expect(Date.parse(historyMock.mock.calls[1]?.[0]?.terminalSince ?? "")).toBe(
         Date.parse("2026-08-27T00:00:00.000Z"),

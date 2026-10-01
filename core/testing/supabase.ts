@@ -7,7 +7,10 @@ export type TableResponse = { data: unknown; error: unknown };
 
 export type MockSupabaseHandlers = {
   /** Keyed by Postgres function name, e.g. `get_customer_catalog`. */
-  rpc?: Record<string, (args: unknown) => RpcResponse | Promise<RpcResponse>>;
+  rpc?: Record<
+    string,
+    (args: unknown, options: { signal?: AbortSignal }) => RpcResponse | Promise<RpcResponse>
+  >;
   /**
    * Keyed by table name, for the direct reads Preparation is allowed:
    * `orders` and `order_items`. Customers can read no table.
@@ -80,15 +83,31 @@ export function installMockSupabase(handlers: MockSupabaseHandlers = {}) {
   }
 
   const client = {
-    rpc: async (name: string, args: unknown) => {
+    // Like supabase-js, `rpc()` returns an awaitable builder; `abortSignal`
+    // hands the signal to the handler so a test can model a cancelled call.
+    rpc: (name: string, args: unknown) => {
       calls.push({ name, args });
-      const handler = handlers.rpc?.[name];
-      if (!handler) {
-        throw new Error(
-          `No mock handler registered for rpc "${name}". Add one to installMockSupabase({ rpc: … }).`,
-        );
-      }
-      return handler(args);
+      let signal: AbortSignal | undefined;
+      const run = async () => {
+        const handler = handlers.rpc?.[name];
+        if (!handler) {
+          throw new Error(
+            `No mock handler registered for rpc "${name}". Add one to installMockSupabase({ rpc: … }).`,
+          );
+        }
+        return handler(args, { signal });
+      };
+      const builder = {
+        abortSignal: (next: AbortSignal) => {
+          signal = next;
+          return builder;
+        },
+        then: (
+          onFulfilled: (value: RpcResponse) => unknown,
+          onRejected?: (reason: unknown) => unknown,
+        ) => run().then(onFulfilled, onRejected),
+      };
+      return builder;
     },
     from: (table: string) => {
       calls.push({ name: table, args: undefined });

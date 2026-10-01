@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { NAV_THEME, radius, TOKENS } from "@/core/theme";
+import { cssRadius as radius, NAV_THEME, TOKENS } from "@/design-system";
 
 /**
- * `core/theme` restates colour tokens because React Navigation cannot read CSS
+ * The design-system navigation theme restates colour tokens because React Navigation cannot read CSS
  * variables. That is a second copy of the truth, and a second copy drifts — a
  * designer changes `--background` in `global.css` and the navigator keeps
  * painting the old colour behind every screen, which looks like a rendering bug
@@ -13,7 +13,10 @@ import { NAV_THEME, radius, TOKENS } from "@/core/theme";
  * This test reads `global.css` and fails the moment they disagree.
  */
 function cssTokens(selector: string): Record<string, string> {
-  const css = fs.readFileSync(path.join(process.cwd(), "global.css"), "utf8");
+  const css = fs.readFileSync(
+    path.join(process.cwd(), "design-system", "theme", "global.css"),
+    "utf8",
+  );
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const block = new RegExp(`${escaped}\\s*\\{([\\s\\S]*?)\\n {2}\\}`).exec(css);
   const body = block?.[1];

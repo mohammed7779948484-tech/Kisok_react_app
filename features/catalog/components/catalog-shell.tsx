@@ -88,6 +88,9 @@ export function CatalogShell({
             uri={cloudinaryImageUrl(logoUrl, "row")}
             alt=""
             contentFit="contain"
+            // A 40dp tile has no room for the fallback mark; a failed logo
+            // leaves the plain brand tile rather than a clipped broken glyph.
+            hideFallback
             className="h-full w-full"
           />
         ) : (
