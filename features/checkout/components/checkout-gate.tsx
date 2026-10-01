@@ -87,6 +87,7 @@ export function CheckoutGate({ children }: { children: ReactNode }) {
       <Screen edges={["top", "bottom", "left", "right"]}>
         <View
           className="flex-1 items-center justify-center gap-4 px-6"
+          accessible
           accessibilityRole="progressbar"
           accessibilityLabel="Restoring this customer session"
         >

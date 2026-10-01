@@ -44,7 +44,7 @@ export function createCatalogSnapshotFixture(
   const ids = catalogFixtureIds;
 
   return {
-    schema_version: "kiosk.catalog.lean.v1",
+    schema_version: "kiosk.catalog.lean.v2",
     settings: {
       store_name: "KISOK Test Store",
       global_low_stock_threshold: 5,
@@ -180,6 +180,7 @@ export function createCatalogSnapshotFixture(
         search_keywords: ["velvety"],
         display_order: 10,
         is_available: false,
+        available_quantity: 0,
       },
       {
         id: ids.variants.configurable,
@@ -190,6 +191,7 @@ export function createCatalogSnapshotFixture(
         search_keywords: null,
         display_order: 20,
         is_available: true,
+        available_quantity: 12,
       },
       {
         id: ids.variants.tote,
@@ -200,6 +202,7 @@ export function createCatalogSnapshotFixture(
         search_keywords: null,
         display_order: 10,
         is_available: false,
+        available_quantity: 0,
       },
       {
         id: ids.variants.notebookFirst,
@@ -210,6 +213,7 @@ export function createCatalogSnapshotFixture(
         search_keywords: null,
         display_order: 10,
         is_available: false,
+        available_quantity: 0,
       },
       {
         id: ids.variants.notebookSecond,
@@ -220,6 +224,7 @@ export function createCatalogSnapshotFixture(
         search_keywords: ["journal"],
         display_order: 20,
         is_available: false,
+        available_quantity: 0,
       },
     ],
     variant_option_values: [

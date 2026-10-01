@@ -14,13 +14,13 @@ primitive in every state, and it is faster than reading the source.
 
 ## What already exists
 
-| Where                 | What                                                                                                                    |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `@/design-system`     | `Button` `Text` `Card` `Input` `Badge` `Alert` `Dialog` `Tabs` `Progress` `Separator` `Skeleton` `Icon` `AdaptiveSheet` |
-| `@/design-system`     | `LoadingState` `EmptyState` `ErrorState` `SkeletonList` `ConfirmDialog` `BlockingOverlay` `OfflineNotice`               |
-| `@/components/layout` | `Screen` — safe-area aware page wrapper                                                                                 |
-| `@/components/media`  | `AppImage`                                                                                                              |
-| `@/design-system`     | `useLayout` `useResponsiveValue` `BREAKPOINTS` `CONTENT_MAX_WIDTH`                                                      |
+| Where             | What                                                                                                                    |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `@/design-system` | `Button` `Text` `Card` `Input` `Badge` `Alert` `Dialog` `Tabs` `Progress` `Separator` `Skeleton` `Icon` `AdaptiveSheet` |
+| `@/design-system` | `LoadingState` `EmptyState` `ErrorState` `SkeletonList` `ConfirmDialog` `BlockingOverlay` `OfflineNotice`               |
+| `@/design-system` | `Screen` — safe-area aware page wrapper                                                                                 |
+| `@/design-system` | `AppImage` `MediaFrame` — remote images with Cloudinary renditions and a neutral fallback                               |
+| `@/design-system` | `useLayout` `useResponsiveValue` `BREAKPOINTS` `CONTENT_MAX_WIDTH`                                                      |
 
 ## Colour and spacing come from tokens
 

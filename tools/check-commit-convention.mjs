@@ -39,6 +39,9 @@ const CASES = [
   // cannot be rewritten to another type once made (no rebase/squash of a
   // preserved merge). An arbitrary made-up type must still be rejected.
   { message: "merge: integrate redesign into develop", valid: true },
+  // `release` is the owner's promotion of develop to main — the same kind of
+  // preserved two-parent commit, reconciled back into develop afterwards.
+  { message: "release: KISOK 1.1.3 Android customer hotfix", valid: true },
   { message: "bogus: not a real type", valid: false },
   // A subject may start with a proper noun. config-conventional's default
   // rejects sentence-case, which made "Android ..." or "Supabase ..." fail and

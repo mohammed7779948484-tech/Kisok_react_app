@@ -25,9 +25,8 @@ import { SuccessCountdown } from "./success-countdown";
  * invokes it the way the OS would on background/resume.
  *
  * The countdown is deliberately driven through the public React surface only:
- * the label by `getByLabelText` (the Progress primitive's REQUIRED label — its
- * doc example "Order resets in 12 seconds" is the convention), the interaction
- * wrapper by its testID (the catalog-grid precedent for a non-interactive
+ * the label by `getByLabelText` (the Progress primitive's REQUIRED label,
+ * which the visible caption repeats word for word), the interaction wrapper by its testID (the catalog-grid precedent for a non-interactive
  * layout element), expiry through the `onExpire` callback the screen owns.
  */
 jest.useFakeTimers();
@@ -71,20 +70,20 @@ describe("SuccessCountdown", () => {
     await renderWithProviders(<SuccessCountdown seconds={3} onExpire={onExpire} />);
 
     // Armed at now + 3s: the label announces the full window.
-    expect(screen.getByLabelText("Order resets in 3 seconds")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Returning to the store in 3 seconds")).toBeOnTheScreen();
 
     // One second of wall clock: the deadline math says 2s left (NOT 3 − a
     // tick counter that drifted, and not a stale first-render frame).
     await advanceClock(1_000);
-    expect(screen.getByLabelText("Order resets in 2 seconds")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Returning to the store in 2 seconds")).toBeOnTheScreen();
 
     await advanceClock(1_000);
     // Singular copy at one second.
-    expect(screen.getByLabelText("Order resets in 1 second")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Returning to the store in 1 second")).toBeOnTheScreen();
 
     await advanceClock(1_000);
     // Clamped at zero at the deadline, with the expiry fired.
-    expect(screen.getByLabelText("Order resets in 0 seconds")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Returning to the store in 0 seconds")).toBeOnTheScreen();
     expect(onExpire).toHaveBeenCalledTimes(1);
   });
 
@@ -95,12 +94,12 @@ describe("SuccessCountdown", () => {
     // Ten seconds past a 2s window: one expiry, the label still 0.
     await advanceClock(10_000);
     expect(onExpire).toHaveBeenCalledTimes(1);
-    expect(screen.getByLabelText("Order resets in 0 seconds")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Returning to the store in 0 seconds")).toBeOnTheScreen();
 
     // Ten more: still one expiry, still clamped.
     await advanceClock(10_000);
     expect(onExpire).toHaveBeenCalledTimes(1);
-    expect(screen.getByLabelText("Order resets in 0 seconds")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Returning to the store in 0 seconds")).toBeOnTheScreen();
   });
 
   it("restarts the deadline on user interaction — the label goes back up, expiry follows the NEW deadline", async () => {
@@ -108,22 +107,22 @@ describe("SuccessCountdown", () => {
     await renderWithProviders(<SuccessCountdown seconds={5} onExpire={onExpire} />);
 
     await advanceClock(3_000);
-    expect(screen.getByLabelText("Order resets in 2 seconds")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Returning to the store in 2 seconds")).toBeOnTheScreen();
 
     // Any touch in the countdown's wrapper (the responder grant IS the touch
     // landing): the deadline resets to now + 5s and the label recomputes
     // immediately.
     await fireEvent(screen.getByTestId(COUNTDOWN_TEST_ID), "responderGrant");
-    expect(screen.getByLabelText("Order resets in 5 seconds")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Returning to the store in 5 seconds")).toBeOnTheScreen();
 
     // The OLD deadline (2s away) passes without expiring anything…
     await advanceClock(1_000);
     expect(onExpire).not.toHaveBeenCalled();
-    expect(screen.getByLabelText("Order resets in 4 seconds")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Returning to the store in 4 seconds")).toBeOnTheScreen();
 
     // …and the NEW deadline still owns the expiry.
     await advanceClock(4_000);
-    expect(screen.getByLabelText("Order resets in 0 seconds")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Returning to the store in 0 seconds")).toBeOnTheScreen();
     expect(onExpire).toHaveBeenCalledTimes(1);
   });
 
@@ -143,12 +142,12 @@ describe("SuccessCountdown", () => {
     // not on the next (drifted) tick — and the label is clamped at zero.
     await emitAppState("active");
     expect(onExpire).toHaveBeenCalledTimes(1);
-    expect(screen.getByLabelText("Order resets in 0 seconds")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Returning to the store in 0 seconds")).toBeOnTheScreen();
 
     // Still zero, still one expiry, after further ticks.
     await advanceClock(3_000);
     expect(onExpire).toHaveBeenCalledTimes(1);
-    expect(screen.getByLabelText("Order resets in 0 seconds")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Returning to the store in 0 seconds")).toBeOnTheScreen();
   });
 
   it("clears its interval on unmount — no further ticks fire after the countdown is gone", async () => {
@@ -184,14 +183,14 @@ it("publishes its re-arm to the screen's reArmRef — a content-root touch resta
   expect(typeof reArmRef.current).toBe("function");
 
   await advanceClock(3_000);
-  expect(screen.getByLabelText("Order resets in 2 seconds")).toBeOnTheScreen();
+  expect(screen.getByLabelText("Returning to the store in 2 seconds")).toBeOnTheScreen();
 
   // The screen-level interaction: the content root's onTouchStart calls the
   // published re-arm — the same restart as a touch inside the block.
   await act(async () => {
     reArmRef.current?.();
   });
-  expect(screen.getByLabelText("Order resets in 5 seconds")).toBeOnTheScreen();
+  expect(screen.getByLabelText("Returning to the store in 5 seconds")).toBeOnTheScreen();
 
   // The old deadline passes; the re-armed deadline owns the expiry.
   await advanceClock(1_000);

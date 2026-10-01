@@ -1,28 +1,19 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Text } from "react-native";
 
-import {
-  useAuth,
-  registerSignOutCleanup,
-  registerSignOutGuard,
-  clearSignOutTasks,
-} from "@/core/auth";
+import { useAuth, type SignOutOutcome } from "@/core/auth";
 import { resetLogging, setLogSink } from "@/core/logging";
-import { storageKey } from "@/core/storage";
-import { installMockAuth, renderWithProviders, screen, waitFor } from "@/core/testing";
 import { setSupabaseClient } from "@/core/supabase";
-
-import type { SignOutOutcome } from "../sign-out";
+import { installMockAuth, renderWithProviders, screen, waitFor } from "@/core/testing";
 
 /**
  * These cover the kiosk safety properties of sign-out, not its happy path:
  *   - it must sign out THIS device only,
  *   - it must never report success while the session may still be usable,
- *   - every guard must run before destructive cleanup,
- *   - and a signed-out tablet must never hand stale durable state to the next customer.
+ *   - nothing one account read may survive into the next account's cache,
+ *   - and a second press while one sign-out is in flight must not start another.
  */
 
-let outcome: SignOutOutcome | null = null;
+let outcomes: SignOutOutcome[] = [];
 
 function SignOutProbe() {
   const { signOut, status } = useAuth();
@@ -31,7 +22,7 @@ function SignOutProbe() {
       accessibilityRole="button"
       onPress={() => {
         void signOut().then((result) => {
-          outcome = result;
+          outcomes.push(result);
         });
       }}
     >
@@ -40,157 +31,65 @@ function SignOutProbe() {
   );
 }
 
-async function renderProbe() {
-  await renderWithProviders(<SignOutProbe />, { withAuth: true });
+async function renderReadyProbe() {
+  const rendered = await renderWithProviders(<SignOutProbe />, { withAuth: true });
   await waitFor(() => expect(screen.getByText("ready")).toBeOnTheScreen());
+  return rendered;
+}
+
+function pressSignOut() {
   screen.getByRole("button").props.onPress();
 }
 
-beforeEach(async () => {
-  outcome = null;
-  await AsyncStorage.clear();
+beforeEach(() => {
+  outcomes = [];
   setLogSink(() => {});
 });
 
-afterEach(async () => {
-  clearSignOutTasks();
+afterEach(() => {
   resetLogging();
   setSupabaseClient(null);
-  jest.restoreAllMocks();
-  await AsyncStorage.clear();
 });
 
 describe("signOut", () => {
   it("signs out only this device", async () => {
     const supabase = installMockAuth();
 
-    await renderProbe();
+    await renderReadyProbe();
+    pressSignOut();
 
-    await waitFor(() => expect(outcome).toEqual({ status: "ok" }));
+    await waitFor(() => expect(outcomes).toEqual([{ status: "ok" }]));
     expect(supabase.signOutCalls).toEqual([{ scope: "local" }]);
+    expect(await screen.findByText("signedOut")).toBeOnTheScreen();
     supabase.restore();
   });
 
-  it("reports failure when the session may still be usable", async () => {
+  it("reports failure, and keeps the account in control, when the session may still be usable", async () => {
     const supabase = installMockAuth({
       signOut: async () => ({ error: { message: "network down" } }),
       sessionAfterSignOut: { access_token: "still-here", user: { id: "u1" } },
     });
 
-    await renderProbe();
+    await renderReadyProbe();
+    pressSignOut();
 
-    await waitFor(() => expect(outcome?.status).toBe("failed"));
+    await waitFor(() => expect(outcomes).toHaveLength(1));
+    expect(outcomes[0]?.status).toBe("failed");
     expect(screen.getByText("ready")).toBeOnTheScreen();
     supabase.restore();
   });
 
-  it("reports success when only the server call failed", async () => {
+  it("reports success when only the server call failed but the local session is gone", async () => {
     const supabase = installMockAuth({
       signOut: async () => ({ error: { message: "504" } }),
       sessionAfterSignOut: null,
     });
 
-    await renderProbe();
+    await renderReadyProbe();
+    pressSignOut();
 
-    await waitFor(() => expect(outcome).toEqual({ status: "ok" }));
-    supabase.restore();
-  });
-
-  it("lets a safety task veto it before anything is torn down", async () => {
-    const supabase = installMockAuth();
-    registerSignOutGuard({
-      name: "checkout",
-      run: () => ({ status: "blocked", reason: "An order is still being confirmed." }),
-    });
-
-    await renderProbe();
-
-    await waitFor(() =>
-      expect(outcome).toEqual({
-        status: "blocked",
-        reason: "An order is still being confirmed.",
-      }),
-    );
-    expect(supabase.signOutCalls).toEqual([]);
-    supabase.restore();
-  });
-
-  it("never runs cleanup when a guard blocks", async () => {
-    const supabase = installMockAuth();
-    const cleaned: string[] = [];
-    registerSignOutGuard({
-      name: "checkout",
-      run: () => ({ status: "blocked", reason: "An order is still being confirmed." }),
-    });
-    registerSignOutCleanup({ name: "cart", run: () => void cleaned.push("cart") });
-
-    await renderProbe();
-
-    await waitFor(() => expect(outcome?.status).toBe("blocked"));
-    expect(cleaned).toEqual([]);
-    supabase.restore();
-  });
-
-  it("runs cleanup only after the session is actually gone", async () => {
-    const supabase = installMockAuth();
-    const cleaned: string[] = [];
-    registerSignOutCleanup({ name: "cart", run: () => void cleaned.push("cart") });
-
-    await renderProbe();
-
-    await waitFor(() => expect(outcome).toEqual({ status: "ok" }));
-    expect(cleaned).toEqual(["cart"]);
-    supabase.restore();
-  });
-
-  it("falls back to a KISOK-wide durable reset when a cleanup task throws", async () => {
-    const supabase = installMockAuth();
-    const staleCartKey = storageKey("cart", "lines");
-    await AsyncStorage.setItem(staleCartKey, JSON.stringify([{ variantId: "old" }]));
-    registerSignOutCleanup({
-      name: "cart",
-      run: () => {
-        throw new Error("storage full");
-      },
-    });
-
-    await renderProbe();
-
-    await waitFor(() => expect(outcome).toEqual({ status: "ok" }));
-    await expect(AsyncStorage.getItem(staleCartKey)).resolves.toBeNull();
-    supabase.restore();
-  });
-
-  it("reports unsafe when both feature cleanup and the emergency durable reset fail", async () => {
-    const supabase = installMockAuth();
-    registerSignOutCleanup({
-      name: "cart",
-      run: () => {
-        throw new Error("storage full");
-      },
-    });
-    jest.spyOn(AsyncStorage, "multiRemove").mockRejectedValueOnce(new Error("disk unavailable"));
-
-    await renderProbe();
-
-    await waitFor(() => expect(outcome?.status).toBe("unsafe"));
-    // The auth session really is gone, but the durable marker remains to block
-    // the next sign-in (including after a cold restart) until recovery succeeds.
-    await expect(
-      AsyncStorage.getItem(storageKey("auth", "handoff-pending")),
-    ).resolves.not.toBeNull();
-    supabase.restore();
-  });
-
-  it("fails before touching Supabase when the durable handoff marker cannot be written", async () => {
-    const supabase = installMockAuth();
-    jest.spyOn(AsyncStorage, "setItem").mockRejectedValueOnce(new Error("disk unavailable"));
-
-    await renderProbe();
-
-    await waitFor(() => expect(outcome?.status).toBe("failed"));
-    expect(supabase.signOutCalls).toEqual([]);
-    expect(screen.getByText("ready")).toBeOnTheScreen();
+    await waitFor(() => expect(outcomes).toEqual([{ status: "ok" }]));
+    expect(await screen.findByText("signedOut")).toBeOnTheScreen();
     supabase.restore();
   });
 
@@ -201,26 +100,67 @@ describe("signOut", () => {
       },
     });
 
-    await renderProbe();
+    await renderReadyProbe();
+    pressSignOut();
 
-    await waitFor(() => expect(outcome?.status).toBe("failed"));
+    await waitFor(() => expect(outcomes).toHaveLength(1));
+    expect(outcomes[0]?.status).toBe("failed");
     expect(screen.getByText("ready")).toBeOnTheScreen();
     supabase.restore();
   });
 
-  it("fails CLOSED — blocks, never proceeds — when a guard itself throws", async () => {
+  it("clears every cached server read once the session is gone", async () => {
     const supabase = installMockAuth();
-    registerSignOutGuard({
-      name: "checkout",
-      run: () => {
-        throw new Error("boom");
-      },
+    const { queryClient } = await renderReadyProbe();
+    queryClient.setQueryData(["previous-account", "orders"], [{ id: "order-1" }]);
+
+    pressSignOut();
+
+    await waitFor(() => expect(outcomes).toEqual([{ status: "ok" }]));
+    expect(queryClient.getQueryData(["previous-account", "orders"])).toBeUndefined();
+    supabase.restore();
+  });
+
+  it("keeps the cache when sign-out failed, because the same account stays in control", async () => {
+    const supabase = installMockAuth({
+      signOut: async () => ({ error: { message: "network down" } }),
+      sessionAfterSignOut: { access_token: "still-here", user: { id: "u1" } },
+    });
+    const { queryClient } = await renderReadyProbe();
+    queryClient.setQueryData(["current-account", "orders"], [{ id: "order-1" }]);
+
+    pressSignOut();
+
+    await waitFor(() => expect(outcomes).toHaveLength(1));
+    expect(outcomes[0]?.status).toBe("failed");
+    expect(queryClient.getQueryData(["current-account", "orders"])).toEqual([{ id: "order-1" }]);
+    supabase.restore();
+  });
+
+  it("refuses a second sign-out while the first is still in flight", async () => {
+    let finish: (result: { error: null }) => void = () => {};
+    const supabase = installMockAuth({
+      signOut: () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
     });
 
-    await renderProbe();
+    await renderReadyProbe();
+    pressSignOut();
+    pressSignOut();
 
-    await waitFor(() => expect(outcome?.status).toBe("blocked"));
-    expect(supabase.signOutCalls).toEqual([]);
+    // The second press settles immediately as failed, without a second call.
+    await waitFor(() => expect(outcomes).toHaveLength(1));
+    expect(outcomes[0]?.status).toBe("failed");
+    expect(supabase.signOutCalls).toHaveLength(1);
+
+    finish({ error: null });
+
+    await waitFor(() => expect(outcomes).toHaveLength(2));
+    expect(outcomes[1]).toEqual({ status: "ok" });
+    expect(supabase.signOutCalls).toHaveLength(1);
+    expect(await screen.findByText("signedOut")).toBeOnTheScreen();
     supabase.restore();
   });
 });

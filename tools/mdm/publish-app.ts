@@ -130,17 +130,23 @@ export interface ReleaseLabel {
   releaseLabelName: string | undefined;
 }
 
+export type StableSelection = { ok: true; label: ReleaseLabel } | { ok: false; reason: string };
+
 /**
- * One App Repository entry reduced to what addresses its Stable label.
+ * One App Repository entry reduced to what addresses its App Details.
  *
  * App Details is label-scoped — `GET /apps/{app_id}/labels/{release_label_id}`
- * — so the label id must be resolved from the LISTING before identity can be
- * read at all.
+ * — so a label id must be resolved from the LISTING before identity can be
+ * read at all. Identity (package, app type, platform) belongs to the app, not
+ * to a channel, so any of the app's labels addresses it. Which label a
+ * release is pushed to is decided separately, and only for our own entry.
  */
 export interface ListedCandidate {
   appId: number | string;
-  releaseLabelId: number | string;
-  releaseLabelName: string | undefined;
+  /** The label id that addresses this entry's App Details. */
+  addressLabelId: number | string;
+  /** The listing's Stable label, or why the listing alone cannot name it. */
+  stable: StableSelection;
 }
 
 /** The subset of App Details this pipeline reads. */
@@ -156,6 +162,8 @@ export interface AppDetails {
   bundleIdentifier: string | undefined;
   appType: number | undefined;
   platformType: number | undefined;
+  /** The body's own `release_labels`, unparsed — read only for our own entry. */
+  releaseLabels: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -358,14 +366,32 @@ function readInteger(value: unknown): number | undefined {
   return undefined;
 }
 
+const LABEL_FIELDS = ["release_label_id", "release_label_type", "release_label_name"] as const;
+
 /**
- * Find KISOK in an App Repository listing BY PACKAGE.
- *
- * `ambiguous` is the important outcome: an entry that carries the right
- * display name but no matching package identity is NOT this application as
- * far as this script is concerned, and updating it could overwrite an
- * unrelated app. The run stops and a human decides.
+ * A release label's SHAPE for a failure message: which documented fields it
+ * carries and their JSON types, never their values. Without it a run that
+ * stops on an unreadable label cannot say what the tenant actually sent.
  */
+export function describeLabelShape(raw: unknown): string {
+  if (!isRecord(raw)) return raw === null ? "null" : typeof raw;
+  const typeOf = (value: unknown) => (value === null ? "null" : typeof value);
+  const fields = LABEL_FIELDS.map((key) => {
+    if (!(key in raw)) return `${key}: missing`;
+    const readable =
+      key === "release_label_id"
+        ? readId(raw[key]) !== undefined
+        : key === "release_label_type"
+          ? readInteger(raw[key]) !== undefined
+          : typeof raw[key] === "string";
+    return `${key}: ${typeOf(raw[key])}${readable ? "" : " (unreadable)"}`;
+  });
+  const others = Object.keys(raw)
+    .filter((key) => !(LABEL_FIELDS as readonly string[]).includes(key))
+    .sort();
+  return `{${fields.join(", ")}${others.length > 0 ? `; other keys: ${others.join(", ")}` : ""}}`;
+}
+
 /**
  * Select the Stable release label of ONE listed entry.
  *
@@ -379,10 +405,7 @@ function readInteger(value: unknown): number | undefined {
  * ADDRESSES App Details — without it this entry's identity cannot be checked
  * at all, and an unidentifiable entry could be ours.
  */
-export function selectStableLabel(
-  rawLabels: unknown,
-  appId: number | string,
-): { ok: true; label: ReleaseLabel } | { ok: false; reason: string } {
+export function selectStableLabel(rawLabels: unknown, appId: number | string): StableSelection {
   if (!Array.isArray(rawLabels)) {
     return {
       ok: false,
@@ -391,15 +414,17 @@ export function selectStableLabel(
   }
 
   const stable: ReleaseLabel[] = [];
-  for (const raw of rawLabels) {
+  for (const [index, raw] of rawLabels.entries()) {
     const id = isRecord(raw) ? readId(raw.release_label_id) : undefined;
     const type = isRecord(raw) ? readInteger(raw.release_label_type) : undefined;
     // A label whose id or type cannot be read could be the Stable one, so it
-    // is not something to skip past — it makes the whole entry unreadable.
+    // is not something to skip past — no channel can be chosen from this list.
     if (id === undefined || type === undefined) {
       return {
         ok: false,
-        reason: `app_id ${appId} carried a release label with no readable id or type`,
+        reason:
+          `app_id ${appId} carried a release label with no readable id or type ` +
+          `(release_labels[${index}] ${describeLabelShape(raw)})`,
       };
     }
     if (type !== RELEASE_LABEL_TYPE_STABLE) continue;
@@ -430,7 +455,34 @@ export function selectStableLabel(
 }
 
 /**
- * Every listed entry reduced to an addressable (app_id, Stable label id) pair.
+ * The label id that addresses ONE listed entry's App Details: its Stable
+ * label when the listing names exactly one, otherwise the first label with a
+ * readable id. Only an entry with no readable label id at all cannot be
+ * addressed — and so cannot be identified.
+ */
+export function addressLabel(
+  rawLabels: unknown,
+  appId: number | string,
+): { ok: true; labelId: number | string } | { ok: false; reason: string } {
+  if (!Array.isArray(rawLabels)) {
+    return { ok: false, reason: `app_id ${appId} carried no readable release_labels array` };
+  }
+  const stable = selectStableLabel(rawLabels, appId);
+  if (stable.ok) return { ok: true, labelId: stable.label.releaseLabelId };
+  for (const raw of rawLabels) {
+    const id = isRecord(raw) ? readId(raw.release_label_id) : undefined;
+    if (id !== undefined) return { ok: true, labelId: id };
+  }
+  return {
+    ok: false,
+    reason:
+      `app_id ${appId} carried no release label with a readable id ` +
+      `(${rawLabels.length === 0 ? "no labels" : rawLabels.map(describeLabelShape).join(", ")})`,
+  };
+}
+
+/**
+ * Every listed entry reduced to an addressable (app_id, release_label_id) pair.
  *
  * Deliberately NOT filtered by display name. A previous version selected only
  * entries named exactly "KISOK", which meant an app sitting in the repository
@@ -463,16 +515,17 @@ export function listedCandidates(apps: readonly unknown[]): {
       reasons.push("an entry carried no usable app_id");
       continue;
     }
-    const label = selectStableLabel(isRecord(app) ? app.release_labels : undefined, appId);
-    if (!label.ok) {
+    const rawLabels = isRecord(app) ? app.release_labels : undefined;
+    const address = addressLabel(rawLabels, appId);
+    if (!address.ok) {
       unusable += 1;
-      reasons.push(label.reason);
+      reasons.push(address.reason);
       continue;
     }
     candidates.push({
       appId,
-      releaseLabelId: label.label.releaseLabelId,
-      releaseLabelName: label.label.releaseLabelName,
+      addressLabelId: address.labelId,
+      stable: selectStableLabel(rawLabels, appId),
     });
   }
   return { candidates, unusable, reasons };
@@ -513,6 +566,7 @@ export function parseAppDetails(body: unknown, appId: number | string): AppDetai
     bundleIdentifier: typeof bundle === "string" ? bundle : undefined,
     appType: readInteger(app.app_type),
     platformType: readInteger(app.platform_type),
+    releaseLabels: app.release_labels,
   };
 }
 
@@ -952,7 +1006,7 @@ async function verifyCandidates(
       status: "ambiguous",
       reason:
         `${listed.unusable} App Repository entr${listed.unusable === 1 ? "y" : "ies"} could not ` +
-        `be reduced to an addressable (app_id, Stable release_label_id) pair, so ` +
+        `be reduced to an addressable (app_id, release_label_id) pair, so ` +
         `${inputs.packageName} cannot be confirmed present or absent — one of them could be ` +
         `ours: ${listed.reasons.join("; ")}`,
     };
@@ -976,7 +1030,7 @@ async function verifyCandidates(
     // Both ids are spliced into an authenticated URL path, so both are checked.
     for (const [what, value] of [
       ["app_id", candidate.appId],
-      ["release_label_id", candidate.releaseLabelId],
+      ["release_label_id", candidate.addressLabelId],
     ] as const) {
       if (!isSafePathSegment(value)) {
         return {
@@ -987,8 +1041,8 @@ async function verifyCandidates(
     }
     const body = await request(
       deps,
-      `the App Details read for app_id ${candidate.appId} label ${candidate.releaseLabelId}`,
-      `${hosts.mdm}/api/v1/mdm/apps/${candidate.appId}/labels/${candidate.releaseLabelId}`,
+      `the App Details read for app_id ${candidate.appId} label ${candidate.addressLabelId}`,
+      `${hosts.mdm}/api/v1/mdm/apps/${candidate.appId}/labels/${candidate.addressLabelId}`,
       { method: "GET", headers: authHeaders(token) },
     );
     const details = parseAppDetails(body, candidate.appId);
@@ -1031,15 +1085,39 @@ async function verifyCandidates(
     };
   }
 
+  // Only now, for the entry proven to be ours, is the channel chosen — from
+  // the listing, or else from App Details' own labels, by the same strict
+  // rule: exactly one label of the documented Stable type, never by name.
+  let stable = candidate.stable;
+  if (!stable.ok) {
+    const fromDetails = selectStableLabel(details.releaseLabels, details.appId);
+    if (!fromDetails.ok) {
+      return {
+        status: "ambiguous",
+        reason:
+          `${inputs.packageName} is app_id ${details.appId}, but its Stable release label ` +
+          `cannot be chosen — listing: ${stable.reason}; App Details: ${fromDetails.reason}`,
+      };
+    }
+    stable = fromDetails;
+  }
+  const { label } = stable;
+  if (!isSafePathSegment(label.releaseLabelId)) {
+    return {
+      status: "ambiguous",
+      reason: `the Stable release_label_id is not a plain id: ${JSON.stringify(label.releaseLabelId)}`,
+    };
+  }
+
   deps.log(
     `identified ${inputs.packageName} as app_id ${details.appId} on Stable release label ` +
-      `${candidate.releaseLabelId}` +
-      (candidate.releaseLabelName === undefined ? "" : ` ("${candidate.releaseLabelName}")`),
+      `${label.releaseLabelId}` +
+      (label.releaseLabelName === undefined ? "" : ` ("${label.releaseLabelName}")`),
   );
   return {
     status: "found",
     appId: details.appId,
-    releaseLabelId: candidate.releaseLabelId,
+    releaseLabelId: label.releaseLabelId,
     appName: details.appName,
   };
 }

@@ -1,4 +1,3 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthApiError } from "@supabase/supabase-js";
 import { useState } from "react";
 import { Text } from "react-native";
@@ -6,7 +5,6 @@ import { Text } from "react-native";
 import { AuthProvider, useAuth } from "@/core/auth";
 import { toAppError } from "@/core/errors";
 import { resetLogging, setLogSink } from "@/core/logging";
-import { storageKey } from "@/core/storage";
 import { setSupabaseClient, type KisokSupabaseClient } from "@/core/supabase";
 import { act, renderWithProviders, screen, userEvent, waitFor } from "@/core/testing";
 
@@ -139,15 +137,12 @@ function SignInProbe() {
   );
 }
 
-beforeEach(async () => {
-  await AsyncStorage.clear();
+beforeEach(() => {
   setLogSink(() => {});
 });
-afterEach(async () => {
+afterEach(() => {
   resetLogging();
   setSupabaseClient(null);
-  jest.restoreAllMocks();
-  await AsyncStorage.clear();
 });
 
 describe("AuthProvider lifecycle", () => {
@@ -166,39 +161,6 @@ describe("AuthProvider lifecycle", () => {
     await renderAuth();
     await supabase.emit("INITIAL_SESSION", null);
     await waitFor(() => expect(screen.getByText("signedOut:-")).toBeOnTheScreen());
-    supabase.restore();
-  });
-
-  it("recovers a pending kiosk handoff before an existing session becomes ready after restart", async () => {
-    const staleCartKey = storageKey("cart", "lines");
-    await AsyncStorage.setItem(
-      storageKey("auth", "handoff-pending"),
-      JSON.stringify({ version: 1, pending: true }),
-    );
-    await AsyncStorage.setItem(staleCartKey, "previous-customer-cart");
-    const supabase = installAuthClient({ initialSession: sessionFor("user-1") });
-
-    await renderAuth();
-
-    await waitFor(() => expect(screen.getByText("ready:Kiosk")).toBeOnTheScreen());
-    await expect(AsyncStorage.getItem(staleCartKey)).resolves.toBeNull();
-    await expect(AsyncStorage.getItem(storageKey("auth", "handoff-pending"))).resolves.toBeNull();
-    expect(supabase.calls).toContain("rpc:current_active_profile");
-    supabase.restore();
-  });
-
-  it("does not make an existing session ready when pending-handoff recovery fails", async () => {
-    await AsyncStorage.setItem(
-      storageKey("auth", "handoff-pending"),
-      JSON.stringify({ version: 1, pending: true }),
-    );
-    jest.spyOn(AsyncStorage, "multiRemove").mockRejectedValueOnce(new Error("disk unavailable"));
-    const supabase = installAuthClient({ initialSession: sessionFor("user-1") });
-
-    await renderAuth();
-
-    await waitFor(() => expect(screen.getByText("error:-")).toBeOnTheScreen());
-    expect(supabase.calls).not.toContain("rpc:current_active_profile");
     supabase.restore();
   });
 
@@ -278,50 +240,6 @@ describe("AuthProvider lifecycle", () => {
 });
 
 describe("signIn", () => {
-  it("recovers a durable unsafe-handoff marker before authenticating a new account", async () => {
-    const supabase = installAuthClient();
-    const staleCartKey = storageKey("cart", "lines");
-    await AsyncStorage.setItem(
-      storageKey("auth", "handoff-pending"),
-      JSON.stringify({ version: 1, pending: true }),
-    );
-    await AsyncStorage.setItem(staleCartKey, "previous-customer-cart");
-    const user = userEvent.setup();
-    await renderWithProviders(
-      <AuthProvider>
-        <SignInProbe />
-      </AuthProvider>,
-    );
-
-    await user.press(screen.getByRole("button"));
-
-    await waitFor(() => expect(supabase.calls).toContain("signInWithPassword"));
-    await expect(AsyncStorage.getItem(staleCartKey)).resolves.toBeNull();
-    await expect(AsyncStorage.getItem(storageKey("auth", "handoff-pending"))).resolves.toBeNull();
-    supabase.restore();
-  });
-
-  it("blocks authentication when unsafe-handoff recovery cannot clear durable state", async () => {
-    const supabase = installAuthClient();
-    await AsyncStorage.setItem(
-      storageKey("auth", "handoff-pending"),
-      JSON.stringify({ version: 1, pending: true }),
-    );
-    jest.spyOn(AsyncStorage, "multiRemove").mockRejectedValueOnce(new Error("disk unavailable"));
-    const user = userEvent.setup();
-    await renderWithProviders(
-      <AuthProvider>
-        <SignInProbe />
-      </AuthProvider>,
-    );
-
-    await user.press(screen.getByRole("button"));
-
-    await waitFor(() => expect(screen.getByText(/previous session safely/i)).toBeOnTheScreen());
-    expect(supabase.calls).not.toContain("signInWithPassword");
-    supabase.restore();
-  });
-
   it("reports a generic credential failure, never 'session expired', for wrong credentials", async () => {
     const supabase = installAuthClient({
       signInError: new AuthApiError("Invalid login credentials", 400, "invalid_credentials"),

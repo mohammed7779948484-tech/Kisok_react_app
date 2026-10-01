@@ -4,8 +4,6 @@ import { renderWithProviders, screen } from "@/core/testing";
 
 import { AvailabilityBadge } from "./availability-badge";
 
-jest.mock("lucide-react-native", () => ({}));
-
 describe("AvailabilityBadge", () => {
   it("announces available products in words, not colour alone", async () => {
     await renderWithProviders(

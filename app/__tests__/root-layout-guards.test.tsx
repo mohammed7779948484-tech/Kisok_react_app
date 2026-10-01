@@ -4,7 +4,7 @@ import type { DeviceMode } from "@/features/device-mode";
 
 // `app/_layout.tsx` imports the Tailwind entry stylesheet for its side effect;
 // jest has no CSS transformer and does not need one to test routing.
-jest.mock("@/global.css", () => ({}));
+jest.mock("@/design-system/theme/global.css", () => ({}));
 
 /**
  * Which route groups the root navigator actually contains.

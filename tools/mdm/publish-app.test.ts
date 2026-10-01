@@ -187,15 +187,33 @@ describe("the Stable label is resolved from the LISTING, by type not by name", (
     expect(listed.unusable).toBe(1);
   });
 
-  it("counts an entry whose Stable label cannot be resolved as unusable, not as 'not ours'", () => {
-    // Without a Stable label id there is no way to READ this entry's identity,
-    // so it cannot be declared someone else's app.
+  it("addresses an entry through ANY readable label when the listing names no Stable one", () => {
+    // Identity is the app's, not a channel's: a Beta label reads the same
+    // App Details. Which channel to push to is decided later, and only for
+    // our own entry.
     const listed = listedCandidates([
       { app_id: 7, app_name: "Mystery", release_labels: [BETA_LABEL] },
+      { app_id: 8, release_labels: [{ release_label_id: 5, release_label_name: "Stable" }] },
+    ]);
+
+    expect(listed.unusable).toBe(0);
+    expect(listed.candidates.map((c) => [c.appId, c.addressLabelId, c.stable.ok])).toEqual([
+      [7, 8, false],
+      [8, 5, false],
+    ]);
+  });
+
+  it("counts an entry with no readable label id as unusable, and reports each label's shape", () => {
+    const listed = listedCandidates([
+      { app_id: 7, release_labels: [{ release_label_name: "Stable", release_label_type: 1 }] },
     ]);
 
     expect(listed.candidates).toHaveLength(0);
     expect(listed.unusable).toBe(1);
+    // Field names and JSON types only — never the values.
+    expect(listed.reasons[0]).toContain(
+      "{release_label_id: missing, release_label_type: number, release_label_name: string}",
+    );
   });
 
   it("rejects an id that could retarget an authenticated request", () => {
@@ -750,6 +768,13 @@ it("fails before any network call when the APK cannot be read", async () => {
 });
 
 describe("nothing is created or updated off something unverified", () => {
+  const OUR_DETAILS = {
+    app_id: 55,
+    app_name: "KISOK",
+    app_type: 2,
+    bundle_identifier: "com.kisok.kiosk",
+    platform_type: 2,
+  };
   const LISTING = { apps: [{ app_id: 55, app_name: "KISOK", release_labels: [STABLE_LABEL] }] };
 
   function mutations(calls: { method: string; url: string }[]) {
@@ -873,9 +898,9 @@ describe("nothing is created or updated off something unverified", () => {
     expect(mutations(calls)).toHaveLength(0);
   });
 
-  it("stops rather than pushing to the wrong channel when a release label is unreadable", async () => {
-    // The unreadable one could be the Stable label, and its id is what
-    // ADDRESSES App Details — so this entry's identity cannot be read at all.
+  it("stops rather than pushing to the wrong channel when OUR release label is unreadable", async () => {
+    // The unreadable one could be the Stable label, so no channel can be
+    // chosen — neither the listing nor App Details names exactly one.
     const { deps: d, calls } = deps({
       "GET /api/v1/mdm/apps": () => ({
         status: 200,
@@ -889,14 +914,83 @@ describe("nothing is created or updated off something unverified", () => {
           ],
         },
       }),
+      "GET /api/v1/mdm/apps/55/labels/9": () => ({ status: 200, body: OUR_DETAILS }),
     });
 
     const result = await publish(INPUTS, d);
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.failure).toContain("no readable id or type");
+    expect(result.failure).toContain("Stable release label cannot be chosen");
+    expect(result.failure).toContain("release_label_type: missing");
     expect(mutations(calls)).toHaveLength(0);
+  });
+
+  it("takes our Stable label from App Details when the listing's label carries no type", async () => {
+    const { deps: d, calls } = deps({
+      "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
+      "GET /api/v1/mdm/apps": () => ({
+        status: 200,
+        body: {
+          apps: [
+            {
+              app_id: 55,
+              app_name: "KISOK",
+              release_labels: [{ release_label_id: 9, release_label_name: "Stable" }],
+            },
+          ],
+        },
+      }),
+      "GET /api/v1/mdm/apps/55/labels/9": () => ({
+        status: 200,
+        body: { ...OUR_DETAILS, release_labels: [STABLE_LABEL, BETA_LABEL] },
+      }),
+      "PUT /api/v1/mdm/apps/55/labels/9": () => ({ status: 200, body: { status: "ok" } }),
+    });
+
+    const result = await publish(INPUTS, d);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.action).toBe("updated");
+    expect(calls.find((c) => c.method === "PUT")!.url).toMatch(/\/apps\/55\/labels\/9$/);
+  });
+
+  it("skips ANOTHER app whose labels name no channel, instead of blocking our release", async () => {
+    // The production failure: an unrelated repository entry whose label lacks
+    // a type. It is still addressable, so its identity can be read — and a
+    // positively different package is safely somebody else's.
+    const { deps: d, calls } = deps({
+      "POST /emsapi/files": () => ({ status: 200, body: { fileID: 7, fileStatus: 2 } }),
+      "GET /api/v1/mdm/apps": () => ({
+        status: 200,
+        body: {
+          apps: [
+            { app_id: 55, app_name: "KISOK", release_labels: [STABLE_LABEL] },
+            {
+              app_id: 77,
+              app_name: "Other",
+              release_labels: [{ release_label_id: 5, release_label_name: "Stable" }],
+            },
+          ],
+        },
+      }),
+      "GET /api/v1/mdm/apps/55/labels/9": () => ({ status: 200, body: OUR_DETAILS }),
+      "GET /api/v1/mdm/apps/77/labels/5": () => ({
+        status: 200,
+        body: { ...OUR_DETAILS, app_id: 77, bundle_identifier: "com.other.app" },
+      }),
+      "PUT /api/v1/mdm/apps/55/labels/9": () => ({ status: 200, body: { status: "ok" } }),
+    });
+
+    const result = await publish(INPUTS, d);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.action).toBe("updated");
+    expect(mutations(calls).map((c) => c.url)).not.toContainEqual(
+      expect.stringContaining("/apps/77"),
+    );
   });
 
   it("stops when an entry has SEVERAL Stable labels rather than guessing a channel", async () => {
@@ -913,6 +1007,7 @@ describe("nothing is created or updated off something unverified", () => {
           ],
         },
       }),
+      "GET /api/v1/mdm/apps/55/labels/9": () => ({ status: 200, body: OUR_DETAILS }),
     });
 
     const result = await publish(INPUTS, d);
@@ -923,14 +1018,15 @@ describe("nothing is created or updated off something unverified", () => {
     expect(mutations(calls)).toHaveLength(0);
   });
 
-  it("stops when a listed entry has only a Beta label, rather than calling it not-ours", async () => {
-    // Without a Stable label there is no way to READ this entry's identity.
-    // Treating it as somebody else's app would let `absent` create a duplicate.
+  it("stops when OUR entry has only a Beta label, rather than pushing to Beta", async () => {
+    // The Beta label still reads the identity; being ours, it needs a Stable
+    // channel to update, and there is none to choose.
     const { deps: d, calls } = deps({
       "GET /api/v1/mdm/apps": () => ({
         status: 200,
         body: { apps: [{ app_id: 55, app_name: "Mystery", release_labels: [BETA_LABEL] }] },
       }),
+      "GET /api/v1/mdm/apps/55/labels/8": () => ({ status: 200, body: OUR_DETAILS }),
     });
 
     const result = await publish(INPUTS, d);

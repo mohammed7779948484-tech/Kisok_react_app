@@ -19,6 +19,12 @@ export type RealtimeSubscriptionOptions = {
   /** Optional PostgREST filter, e.g. `status=eq.new`. */
   filter?: string;
   onChange: (payload: RealtimePayload) => void;
+  /**
+   * Called every time the channel is (re)joined. Events that happened while it
+   * was down — or before the first join — are never replayed, so this is the
+   * moment to catch up with the authoritative read.
+   */
+  onSubscribed?: () => void;
   enabled?: boolean;
 };
 
@@ -52,15 +58,18 @@ export function useRealtimeSubscription({
   event = "*",
   filter,
   onChange,
+  onSubscribed,
   enabled = true,
 }: RealtimeSubscriptionOptions) {
   const handlerRef = useRef(onChange);
+  const subscribedRef = useRef(onSubscribed);
 
   // Kept current on every render, so a re-subscribe is never needed just to see
   // a new closure.
   useEffect(() => {
     handlerRef.current = onChange;
-  }, [onChange]);
+    subscribedRef.current = onSubscribed;
+  }, [onChange, onSubscribed]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -75,6 +84,8 @@ export function useRealtimeSubscription({
       )
       .subscribe((status) => {
         log.debug("channel status", { channel, status });
+        // supabase-js reports SUBSCRIBED again after every automatic rejoin.
+        if (status === "SUBSCRIBED") subscribedRef.current?.();
       });
 
     // Always remove the channel. Without this, StrictMode's double-mount and
@@ -127,6 +138,11 @@ export function useRealtimeInvalidation({
     // handler in a ref, so this closure always sees the current queryKey without
     // the subscription depending on its identity.
     onChange: () => {
+      void queryClient.invalidateQueries({ queryKey });
+    },
+    // A (re)join means changes may have been missed: refetch rather than wait
+    // for the next event, which on a quiet board could be a long time.
+    onSubscribed: () => {
       void queryClient.invalidateQueries({ queryKey });
     },
   });

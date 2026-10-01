@@ -104,7 +104,7 @@ prevents. Our `Button` primitive already uses `Pressable`; prefer it over
 
 ## Images
 
-Use `AppImage` (`@/components/media`). Product images come from Cloudinary at
+Use `AppImage` (`@/design-system`). Product images come from Cloudinary at
 unpredictable sizes; it handles sizing, caching and the failure state. An
 unbounded remote image in a list is one of the easiest ways to exhaust memory
 on a tablet.

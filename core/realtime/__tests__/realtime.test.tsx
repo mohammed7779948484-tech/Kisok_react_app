@@ -1,5 +1,6 @@
 import { View } from "react-native";
 
+import { resetLogging, setLogSink } from "@/core/logging";
 import { useRealtimeInvalidation, useRealtimeSubscription } from "@/core/realtime";
 import { createTestQueryClient, installMockSupabase, renderWithProviders } from "@/core/testing";
 import { setSupabaseClient, type KisokSupabaseClient } from "@/core/supabase";
@@ -13,6 +14,7 @@ function installChannelSpy() {
   const created: string[] = [];
   const removed: unknown[] = [];
   const handlers: ((payload: unknown) => void)[] = [];
+  const statusCallbacks: ((status: string) => void)[] = [];
 
   const client = {
     channel: (name: string) => {
@@ -22,7 +24,10 @@ function installChannelSpy() {
           handlers.push(handler);
           return channel;
         },
-        subscribe: () => channel,
+        subscribe: (callback?: (status: string) => void) => {
+          if (callback) statusCallbacks.push(callback);
+          return channel;
+        },
       };
       return channel;
     },
@@ -32,7 +37,14 @@ function installChannelSpy() {
   } as unknown as KisokSupabaseClient;
 
   setSupabaseClient(client);
-  return { created, removed, handlers, restore: () => setSupabaseClient(null) };
+  return {
+    created,
+    removed,
+    handlers,
+    /** Report a channel status, as supabase-js does on every join and rejoin. */
+    status: (status: string) => statusCallbacks.forEach((callback) => callback(status)),
+    restore: () => setSupabaseClient(null),
+  };
 }
 
 describe("useRealtimeSubscription", () => {
@@ -138,8 +150,38 @@ describe("useRealtimeInvalidation", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["preparation"] });
     spy.restore();
   });
+
+  it("refetches each time the channel (re)subscribes, so events missed while it was down are caught up", async () => {
+    // Channel status changes are logged at debug level.
+    setLogSink(() => {});
+    const spy = installChannelSpy();
+    const queryClient = createTestQueryClient();
+    const invalidate = jest.spyOn(queryClient, "invalidateQueries");
+
+    function Subscriber() {
+      useRealtimeInvalidation({
+        channel: "preparation-orders",
+        table: "orders",
+        queryClient,
+        queryKey: ["preparation"],
+      });
+      return <View />;
+    }
+
+    await renderWithProviders(<Subscriber />, { queryClient });
+    spy.status("SUBSCRIBED");
+    expect(invalidate).toHaveBeenCalledTimes(1);
+
+    // The socket drops and supabase-js rejoins on its own.
+    spy.status("CHANNEL_ERROR");
+    spy.status("SUBSCRIBED");
+    expect(invalidate).toHaveBeenCalledTimes(2);
+    expect(invalidate).toHaveBeenLastCalledWith({ queryKey: ["preparation"] });
+    spy.restore();
+  });
 });
 
 afterEach(() => {
   installMockSupabase().restore();
+  resetLogging();
 });

@@ -1,5 +1,14 @@
 import { AppError } from "@/core/errors";
-import { act, renderWithProviders, screen, userEvent, waitFor } from "@/core/testing";
+import { resetLogging, setLogSink } from "@/core/logging";
+import {
+  act,
+  fireEvent,
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+  within,
+} from "@/core/testing";
 
 import { fetchCatalog } from "../../api/fetch-catalog";
 import {
@@ -19,23 +28,21 @@ import { BrandsScreen } from "./brands-screen";
  * Screen behaviour for All Brands (AC-04).
  *
  * The screen must not know Supabase exists: the feature's own `api/` module is
- * the seam, mocked exactly as `queries/use-catalog.test.tsx` and the Home,
- * Products and Search screen tests do. Navigation is asserted against a mocked
- * `expo-router` `useRouter` (push/replace spies) — the tests pin destinations
- * and semantics, not navigation.
+ * the seam. Navigation is asserted against a mocked `expo-router` `useRouter`
+ * (push/replace spies); `useFocusEffect` runs as a plain effect because the
+ * screen is focused for as long as it is mounted here.
  *
  * The whole-brand-collection behaviours are pinned on a multi-brand snapshot
- * (4 brands with distinct product sets — every brand carries ≥1 product, per
- * the snapshot contract) rather than the base fixture's 2, because derived
- * counts and whole-card navigation must be proven on data the base fixture
- * cannot express.
+ * (4 brands with distinct product sets) because derived counts and whole-card
+ * navigation must be proven on data the base fixture cannot express.
  *
- * Fake timers follow the Products and Search screen tests (and CatalogGrid's
- * own test): this screen renders FlashList, whose deferred layout work fires
- * real timers that escape `act` and print warnings under real timers. That is
- * also why the background-refetch macrotask flush becomes a fake-timer advance
- * — TanStack's batched observer notification is a `setTimeout(0)` that only
- * lands once timers advance.
+ * The grid only renders once it has been measured (it derives its columns
+ * from the width it is given), so every populated test delivers that layout
+ * pass with `measureLayout()`.
+ *
+ * Fake timers: FlashList's deferred layout work fires timers that would escape
+ * `act` under real timers, and TanStack's batched observer notification is a
+ * `setTimeout(0)` that only lands once timers advance.
  */
 jest.mock("../../api/fetch-catalog", () => ({
   fetchCatalog: jest.fn(),
@@ -44,40 +51,60 @@ jest.mock("../../api/fetch-catalog", () => ({
 const mockRouterPush = jest.fn();
 const mockRouterReplace = jest.fn();
 
-jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace }),
-}));
-
-jest.mock("lucide-react-native", () => {
-  const createMockIcon = (name: string) => {
-    const MockIcon = () => null;
-    MockIcon.displayName = name;
-    return MockIcon;
-  };
-
-  return new Proxy(
-    { __esModule: true },
-    {
-      get: (target: any, prop: string | symbol) => {
-        if (prop in target) return target[prop];
-        if (typeof prop === "string") {
-          target[prop] = createMockIcon(prop);
-          return target[prop];
-        }
-        return undefined;
-      },
+jest.mock("expo-router", () => {
+  const { useEffect } = jest.requireActual<typeof import("react")>("react");
+  return {
+    useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace }),
+    useFocusEffect: (effect: () => void | (() => void)) => {
+      useEffect(effect, [effect]);
     },
-  );
+  };
 });
 
 jest.useFakeTimers();
+
+type HostNode = {
+  props: Record<string, unknown>;
+  children: readonly (HostNode | string)[];
+};
+
+/**
+ * Deliver a layout pass to every container that renders nothing until it has
+ * been measured (the brands grid).
+ */
+async function measureLayout(width = 1200) {
+  const measured = new Set<HostNode>();
+  for (let pass = 0; pass < 5; pass += 1) {
+    const pending: HostNode[] = [];
+    const visit = (node: HostNode) => {
+      if (
+        typeof node.props.onLayout === "function" &&
+        node.children.length === 0 &&
+        !measured.has(node)
+      ) {
+        pending.push(node);
+      }
+      node.children.forEach((child) => {
+        if (typeof child !== "string") visit(child);
+      });
+    };
+    visit(screen.container as unknown as HostNode);
+    if (pending.length === 0) return;
+    for (const node of pending) {
+      measured.add(node);
+      await fireEvent(node as never, "layout", {
+        nativeEvent: { layout: { x: 0, y: 0, width, height: 900 } },
+      });
+    }
+  }
+}
 
 const mockFetchCatalog = fetchCatalog as jest.MockedFunction<typeof fetchCatalog>;
 
 const retryableCatalogError = new AppError({
   kind: "server",
   userMessage: "We couldn't load the catalog. Please try again.",
-  technicalMessage: "get_customer_catalog rpc failed",
+  technicalMessage: "get_customer_catalog_v2 rpc failed",
 });
 
 const nonRetryableCatalogError = new AppError({
@@ -112,8 +139,6 @@ const extraProductIds = {
  * desynchronize the assertions from the data.
  */
 const brandNames = ["Maison Élite", "KISOK Basics", "Atelier Céramique", "Alpine Works"] as const;
-
-const brandCountLabel = `${brandNames.length} brands`;
 
 /**
  * The distinct copy of the local empty-brand-collection state. The brief pins
@@ -238,6 +263,7 @@ function snapshotWithManyBrands(): CatalogSnapshot {
       search_keywords: null,
       display_order: 10,
       is_available: true,
+      available_quantity: 8,
     },
     {
       id: "83838383-8383-4838-8838-838383838383",
@@ -248,6 +274,7 @@ function snapshotWithManyBrands(): CatalogSnapshot {
       search_keywords: null,
       display_order: 10,
       is_available: true,
+      available_quantity: 8,
     },
     {
       id: "85858585-8585-4858-8858-858585858585",
@@ -258,6 +285,7 @@ function snapshotWithManyBrands(): CatalogSnapshot {
       search_keywords: null,
       display_order: 10,
       is_available: false,
+      available_quantity: 0,
     },
     {
       id: "87878787-8787-4878-8878-878787878787",
@@ -268,6 +296,7 @@ function snapshotWithManyBrands(): CatalogSnapshot {
       search_keywords: null,
       display_order: 10,
       is_available: true,
+      available_quantity: 8,
     },
     {
       id: "91919191-9191-4919-8919-919191919191",
@@ -278,6 +307,7 @@ function snapshotWithManyBrands(): CatalogSnapshot {
       search_keywords: null,
       display_order: 10,
       is_available: true,
+      available_quantity: 8,
     },
     {
       id: "93939393-9393-4939-8939-939393939393",
@@ -288,6 +318,7 @@ function snapshotWithManyBrands(): CatalogSnapshot {
       search_keywords: null,
       display_order: 10,
       is_available: false,
+      available_quantity: 0,
     },
   ];
 
@@ -324,73 +355,181 @@ function emptyCatalogSnapshot(): CatalogSnapshot {
   });
 }
 
+/**
+ * A directory long enough (more than six stocked brands) to offer the brand
+ * finder: the multi-brand snapshot plus three single-product brands.
+ */
+function snapshotWithLongBrandDirectory(): CatalogSnapshot {
+  const base = snapshotWithManyBrands();
+  const extras = [
+    {
+      name: "Nordic Linen",
+      brandId: "a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1",
+      productId: "a2a2a2a2-a2a2-4a2a-8a2a-a2a2a2a2a2a2",
+      variantId: "a3a3a3a3-a3a3-4a3a-8a3a-a3a3a3a3a3a3",
+    },
+    {
+      name: "Olivier & Fils",
+      brandId: "a4a4a4a4-a4a4-4a4a-8a4a-a4a4a4a4a4a4",
+      productId: "a5a5a5a5-a5a5-4a5a-8a5a-a5a5a5a5a5a5",
+      variantId: "a6a6a6a6-a6a6-4a6a-8a6a-a6a6a6a6a6a6",
+    },
+    {
+      name: "Ébène Studio",
+      brandId: "a7a7a7a7-a7a7-4a7a-8a7a-a7a7a7a7a7a7",
+      productId: "a8a8a8a8-a8a8-4a8a-8a8a-a8a8a8a8a8a8",
+      variantId: "a9a9a9a9-a9a9-4a9a-8a9a-a9a9a9a9a9a9",
+    },
+  ].map(({ name, brandId, productId, variantId }, index) => {
+    const brand: CatalogBrand = {
+      id: brandId,
+      name,
+      image_media_asset_id: null,
+      image_public_id: null,
+      image_secure_url: null,
+      display_order: 50 + index,
+    };
+    const product: CatalogProduct = {
+      id: productId,
+      name: `${name} Piece`,
+      brand_id: brandId,
+      cover_media_asset_id: null,
+      cover_public_id: null,
+      cover_secure_url: null,
+      short_description: null,
+      search_keywords: null,
+      display_order: 90 + index,
+      is_featured: false,
+    };
+    const variant: CatalogVariant = {
+      id: variantId,
+      product_id: productId,
+      sku: `EXTRA-SKU-BRAND-${index}`,
+      barcode: null,
+      title_override: null,
+      search_keywords: null,
+      display_order: 10,
+      is_available: true,
+      available_quantity: 3,
+    };
+    return { brand, product, variant };
+  });
+
+  return {
+    ...base,
+    brands: [...base.brands, ...extras.map((extra) => extra.brand)],
+    products: [...base.products, ...extras.map((extra) => extra.product)],
+    variants: [...base.variants, ...extras.map((extra) => extra.variant)],
+  };
+}
+
+/** The brand names the grid presents, in presentation order (cells carry their index). */
+function brandCardOrder(): string[] {
+  const cells: { index: number; name: string }[] = [];
+  const labelWithin = (node: HostNode): string | undefined => {
+    if (typeof node.props.accessibilityLabel === "string") return node.props.accessibilityLabel;
+    for (const child of node.children) {
+      if (typeof child === "string") continue;
+      const label = labelWithin(child);
+      if (label !== undefined) return label;
+    }
+    return undefined;
+  };
+  const visit = (node: HostNode) => {
+    if (typeof node.props.index === "number") {
+      const label = labelWithin(node) ?? "";
+      cells.push({ index: node.props.index, name: label.slice(0, label.lastIndexOf(",")) });
+      return;
+    }
+    node.children.forEach((child) => {
+      if (typeof child !== "string") visit(child);
+    });
+  };
+  visit(screen.getByTestId("brands-grid") as unknown as HostNode);
+  return cells.sort((left, right) => left.index - right.index).map((cell) => cell.name);
+}
+
+/** Wait for the snapshot to reach the chrome, then measure the grid. */
+async function settlePopulated() {
+  await waitFor(() =>
+    expect(
+      screen.getByRole("link", { name: "KISOK Test Store, explore the store" }),
+    ).toBeOnTheScreen(),
+  );
+  await measureLayout();
+  expect(screen.getByRole("header", { name: "Brands" })).toBeOnTheScreen();
+}
+
+async function renderPopulated(snapshot: CatalogSnapshot = snapshotWithManyBrands()) {
+  mockFetchCatalog.mockResolvedValue(snapshot);
+  const result = await renderWithProviders(<BrandsScreen />);
+  await settlePopulated();
+  return result;
+}
+
 beforeEach(() => {
   mockRouterPush.mockClear();
   mockRouterReplace.mockClear();
+  // Fixture media carry stored public ids that differ from their delivery
+  // paths, which the Cloudinary helper reports at debug level.
+  setLogSink(() => {});
 });
 
 afterEach(() => {
   mockFetchCatalog.mockReset();
+  resetLogging();
 });
 
 describe("BrandsScreen", () => {
-  // The generated baseline's mount-without-throwing intent survives here: this
-  // is the first render of the real screen in the real providers.
   it("mounts the populated All Brands grid from one successful snapshot", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithManyBrands());
+    await renderPopulated();
 
-    await renderWithProviders(<BrandsScreen />);
-
-    await waitFor(() =>
-      expect(screen.getByRole("header", { name: "All brands" })).toBeOnTheScreen(),
-    );
-
-    // The brand count is visible.
-    expect(screen.getByText(brandCountLabel)).toBeOnTheScreen();
-
-    // The complete brands collection is present in the scalable grid.
+    // The complete brands collection is present in the scalable grid, in
+    // backend display order.
     expect(screen.getByTestId("brands-grid")).toBeOnTheScreen();
-    for (const name of brandNames) {
-      expect(screen.getByText(name)).toBeOnTheScreen();
-    }
+    expect(brandCardOrder()).toEqual([...brandNames]);
 
-    // Root navigation is present with Brands selected.
-    expect(screen.getByRole("button", { name: "Brands", selected: true })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Home", selected: false })).toBeOnTheScreen();
+    // The catalog chrome is present with Brands selected.
+    expect(screen.getByRole("tab", { name: "Brands", selected: true })).toBeOnTheScreen();
+    expect(screen.getByRole("tab", { name: "Explore", selected: false })).toBeOnTheScreen();
+
+    // A short directory needs no brand finder.
+    expect(screen.queryByLabelText("Find a brand")).toBeNull();
 
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
   });
 
-  it("renders every brand card with its derived product count and imagery", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithManyBrands());
-
-    await renderWithProviders(<BrandsScreen />);
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Maison Élite, 2 products" })).toBeOnTheScreen(),
-    );
+  it("renders every brand card with its derived product and option counts", async () => {
+    await renderPopulated();
 
     // Each card's accessible name carries the view's DERIVED product count,
     // including the singular "1 product" form.
+    expect(screen.getByRole("button", { name: "Maison Élite, 2 products" })).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "KISOK Basics, 1 product" })).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Atelier Céramique, 3 products" })).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Alpine Works, 2 products" })).toBeOnTheScreen();
 
-    // Brand imagery renders through AppImage; missing media keeps the shared
-    // fallback slot instead of collapsing the card layout.
-    expect(screen.getByLabelText("Maison Élite")).toBeOnTheScreen();
-    expect(screen.getByRole("image", { name: "KISOK Basics" })).toBeOnTheScreen();
+    // Option totals are the sum of the brand's products' variants.
+    for (const [card, options] of [
+      ["Maison Élite, 2 products", "3 options"],
+      ["KISOK Basics, 1 product", "2 options"],
+      ["Atelier Céramique, 3 products", "3 options"],
+      ["Alpine Works, 2 products", "2 options"],
+    ] as const) {
+      expect(
+        within(screen.getByRole("button", { name: card })).getByText(options),
+      ).toBeOnTheScreen();
+    }
+
+    // A brand without a logo is set as a wordmark (plus its caption), never
+    // an empty frame; a brand with a logo names itself once.
+    expect(screen.getAllByText("KISOK Basics")).toHaveLength(2);
+    expect(screen.getAllByText("Maison Élite")).toHaveLength(1);
   });
 
   it("pushes the matching brand detail when a whole card is pressed", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithManyBrands());
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    await renderWithProviders(<BrandsScreen />);
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Maison Élite, 2 products" })).toBeOnTheScreen(),
-    );
+    await renderPopulated();
 
     // A multi-product brand, a single-product brand, and a fourth appended
     // brand: every whole-card press opens that brand's detail with its exact id.
@@ -398,46 +537,57 @@ describe("BrandsScreen", () => {
     await user.press(screen.getByRole("button", { name: "KISOK Basics, 1 product" }));
     await user.press(screen.getByRole("button", { name: "Alpine Works, 2 products" }));
 
-    expect(mockRouterPush).toHaveBeenCalledTimes(3);
-    expect(mockRouterPush).toHaveBeenNthCalledWith(1, {
-      pathname: "/brand-detail",
-      params: { brandId: catalogFixtureIds.brands.elite },
-    });
-    expect(mockRouterPush).toHaveBeenNthCalledWith(2, {
-      pathname: "/brand-detail",
-      params: { brandId: catalogFixtureIds.brands.basics },
-    });
-    expect(mockRouterPush).toHaveBeenNthCalledWith(3, {
-      pathname: "/brand-detail",
-      params: { brandId: extraBrandIds.alpine },
-    });
+    expect(mockRouterPush.mock.calls).toEqual([
+      [{ pathname: "/brand-detail", params: { brandId: catalogFixtureIds.brands.elite } }],
+      [{ pathname: "/brand-detail", params: { brandId: catalogFixtureIds.brands.basics } }],
+      [{ pathname: "/brand-detail", params: { brandId: extraBrandIds.alpine } }],
+    ]);
     expect(mockRouterReplace).not.toHaveBeenCalled();
   });
 
   it("replaces root destinations and never pushes them", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithManyBrands());
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    await renderWithProviders(<BrandsScreen />);
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Home", selected: false })).toBeOnTheScreen(),
-    );
+    await renderPopulated();
 
     // Re-selecting the current destination replaces rather than stacks, too.
-    await user.press(screen.getByRole("button", { name: "Home" }));
-    await user.press(screen.getByRole("button", { name: "Products" }));
-    await user.press(screen.getByRole("button", { name: "Brands" }));
-    await user.press(screen.getByRole("button", { name: "Categories" }));
-    await user.press(screen.getByRole("button", { name: "Search" }));
+    await user.press(screen.getByRole("tab", { name: "Explore" }));
+    await user.press(screen.getByRole("tab", { name: "Products" }));
+    await user.press(screen.getByRole("tab", { name: "Brands" }));
+    await user.press(screen.getByRole("tab", { name: "Categories" }));
+    await user.press(screen.getByRole("search", { name: "Search the store" }));
+    await user.press(screen.getByRole("link", { name: "Explore" }));
 
-    expect(mockRouterReplace).toHaveBeenCalledTimes(5);
-    expect(mockRouterReplace).toHaveBeenNthCalledWith(1, "/");
-    expect(mockRouterReplace).toHaveBeenNthCalledWith(2, "/products");
-    expect(mockRouterReplace).toHaveBeenNthCalledWith(3, "/brands");
-    expect(mockRouterReplace).toHaveBeenNthCalledWith(4, "/categories");
-    expect(mockRouterReplace).toHaveBeenNthCalledWith(5, "/search");
+    expect(mockRouterReplace.mock.calls).toEqual([
+      ["/"],
+      ["/products"],
+      ["/brands"],
+      ["/categories"],
+      ["/search"],
+      ["/"],
+    ]);
     expect(mockRouterPush).not.toHaveBeenCalled();
+  });
+
+  it("offers a brand finder for a long directory that matches names diacritic-insensitively", async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderPopulated(snapshotWithLongBrandDirectory());
+
+    expect(brandCardOrder()).toHaveLength(7);
+
+    await user.type(screen.getByLabelText("Find a brand"), "ebene");
+
+    expect(brandCardOrder()).toEqual(["Ébène Studio"]);
+
+    // A query that matches nothing says so and offers the way back.
+    await user.clear(screen.getByLabelText("Find a brand"));
+    await user.type(screen.getByLabelText("Find a brand"), "zzz");
+
+    expect(screen.getByRole("header", { name: "No brands match “zzz”" })).toBeOnTheScreen();
+    expect(brandCardOrder()).toEqual([]);
+
+    await user.press(screen.getByRole("button", { name: "Show all brands" }));
+
+    expect(brandCardOrder()).toHaveLength(7);
   });
 
   it("directs the customer to Products when the brand collection is empty", async () => {
@@ -446,21 +596,22 @@ describe("BrandsScreen", () => {
 
     await renderWithProviders(<BrandsScreen />);
 
-    await waitFor(() => expect(screen.getByText(NO_BRANDS_TITLE)).toBeOnTheScreen());
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: NO_BRANDS_TITLE })).toBeOnTheScreen(),
+    );
     expect(screen.getByText(NO_BRANDS_DESCRIPTION)).toBeOnTheScreen();
 
     // Products exist in the snapshot, so this is a LOCAL empty collection —
     // not the whole-catalog empty state and not an error.
     expect(screen.queryByText("The catalog is empty")).toBeNull();
-    expect(screen.queryByText("Something went wrong")).toBeNull();
+    expect(screen.queryByText("The catalog could not load")).toBeNull();
     expect(screen.queryByTestId("brands-grid")).toBeNull();
     expect(screen.queryByRole("button", { name: /Maison Élite/ })).toBeNull();
 
     // The way forward: an action that takes the customer to Products.
     await user.press(screen.getByRole("button", { name: "Browse all products" }));
 
-    expect(mockRouterReplace).toHaveBeenCalledTimes(1);
-    expect(mockRouterReplace).toHaveBeenCalledWith("/products");
+    expect(mockRouterReplace.mock.calls).toEqual([["/products"]]);
     expect(mockRouterPush).not.toHaveBeenCalled();
   });
 
@@ -470,9 +621,11 @@ describe("BrandsScreen", () => {
     await renderWithProviders(<BrandsScreen />);
 
     expect(screen.getByLabelText("Loading the catalog…")).toBeOnTheScreen();
-    // No grid, count or navigation chrome pretending to be data while pending.
-    expect(screen.queryByRole("header", { name: "All brands" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Brands" })).toBeNull();
+    // The chrome stays usable so the customer can leave, but no heading or
+    // grid pretends to be data while pending.
+    expect(screen.getByRole("tab", { name: "Brands", selected: true })).toBeOnTheScreen();
+    expect(screen.queryByRole("header", { name: "Brands" })).toBeNull();
+    expect(screen.queryByTestId("brands-grid")).toBeNull();
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
   });
 
@@ -482,13 +635,10 @@ describe("BrandsScreen", () => {
 
     await renderWithProviders(<BrandsScreen />);
 
-    // ErrorState's View is not an `accessible` element, so RNTL role queries
-    // cannot match role "alert"; assert the standard error surface by its
-    // visible title and the error's safe user message instead.
-    await waitFor(() => expect(screen.getByText("Something went wrong")).toBeOnTheScreen());
-
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: "The catalog could not load" })).toBeOnTheScreen(),
+    );
     expect(screen.getByText("We couldn't load the catalog. Please try again.")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Try again" })).toBeOnTheScreen();
 
     await user.press(screen.getByRole("button", { name: "Try again" }));
 
@@ -500,8 +650,9 @@ describe("BrandsScreen", () => {
 
     await renderWithProviders(<BrandsScreen />);
 
-    await waitFor(() => expect(screen.getByText("Something went wrong")).toBeOnTheScreen());
-
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: "The catalog could not load" })).toBeOnTheScreen(),
+    );
     expect(screen.getByText("You don't have access to browse this catalog.")).toBeOnTheScreen();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
@@ -509,32 +660,23 @@ describe("BrandsScreen", () => {
   it("keeps the populated grid visible when a background refetch fails while a snapshot is present", async () => {
     // TanStack keeps `data` across a failed background refetch, and the shared
     // QueryClient refetches on focus/reconnect for long-lived kiosk sessions —
-    // so a network blip mid-session must not blank the still-valid grid. Only
-    // a failure with NO snapshot may render the full-screen ErrorState.
+    // so a network blip mid-session must not blank the still-valid grid.
     mockFetchCatalog
       .mockResolvedValueOnce(snapshotWithManyBrands())
       .mockRejectedValueOnce(retryableCatalogError);
 
     const { queryClient } = await renderWithProviders(<BrandsScreen />);
+    await settlePopulated();
 
-    await waitFor(() => expect(screen.getByText(brandCountLabel)).toBeOnTheScreen());
-
-    // The same background refetch the shared QueryClient triggers on
-    // focus/reconnect — the first (successful) load is already consumed.
-    // Fake timers (see the file header) turn the Home test's macrotask flush
-    // into a timer advance so TanStack's batched observer notification lands
-    // inside act and the screen has re-rendered before the assertions.
     await act(async () => {
       await queryClient.refetchQueries({ queryKey: catalogKeys.all });
       await jest.advanceTimersByTimeAsync(0);
     });
 
-    // The populated grid stays on screen…
-    expect(screen.getByRole("header", { name: "All brands" })).toBeOnTheScreen();
+    expect(mockFetchCatalog).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("header", { name: "Brands" })).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Maison Élite, 2 products" })).toBeOnTheScreen();
-    // …and the full-screen error state does not replace it.
-    expect(screen.queryByText("Something went wrong")).toBeNull();
-    expect(screen.queryByText("We couldn't load the catalog. Please try again.")).toBeNull();
+    expect(screen.queryByRole("header", { name: "The catalog could not load" })).toBeNull();
   });
 
   it("shows a whole-catalog empty state instead of the brands grid when no products are returned", async () => {
@@ -543,18 +685,15 @@ describe("BrandsScreen", () => {
 
     await renderWithProviders(<BrandsScreen />);
 
-    await waitFor(() => expect(screen.getByText("The catalog is empty")).toBeOnTheScreen());
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: "The catalog is empty" })).toBeOnTheScreen(),
+    );
 
-    // No grid, no cards — brands exist in the snapshot, but this screen browses
-    // a catalog whose products are the reason to browse.
     expect(screen.queryByTestId("brands-grid")).toBeNull();
     expect(screen.queryByRole("button", { name: /Maison Élite/ })).toBeNull();
-
-    // A whole-catalog empty is not the local no-brands copy: there is nothing
-    // at all, so retry (not Products) is the way forward.
+    // A whole-catalog empty is not the local no-brands copy.
     expect(screen.queryByText(NO_BRANDS_TITLE)).toBeNull();
 
-    // The empty state offers a way forward: refetch the snapshot.
     await user.press(screen.getByRole("button", { name: "Try again" }));
 
     await waitFor(() => expect(mockFetchCatalog).toHaveBeenCalledTimes(2));

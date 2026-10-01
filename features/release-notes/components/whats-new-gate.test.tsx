@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { resetLogging, setLogSink } from "@/core/logging";
 import { renderWithProviders, screen, userEvent, waitFor } from "@/core/testing";
 
 import { LAST_SEEN_RELEASE_KEY } from "../model/release-notes";
@@ -16,8 +17,14 @@ const Constants = require("expo-constants").default as { expoConfig: unknown };
 const CURRENT = "1.1.0+4";
 
 beforeEach(async () => {
+  // A storage failure is logged by design; keep the run silent.
+  setLogSink(() => {});
   Constants.expoConfig = { version: "1.1.0", android: { versionCode: 4 } };
   await AsyncStorage.clear();
+});
+
+afterEach(() => {
+  resetLogging();
 });
 
 describe("WhatsNewGate", () => {

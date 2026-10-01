@@ -1,23 +1,11 @@
 import { resetLogging, setLogSink } from "@/core/logging";
-import {
-  createJsonStorage,
-  storage,
-  storageKey,
-  type KeyValueStore,
-  type StorageWriteResult,
-} from "@/core/storage";
+import { createJsonStorage, storageKey } from "@/core/storage";
 import { createMemoryStore } from "@/core/testing";
 
 import type { AddToCartInput, CartLine } from "../model/cart-line.schema";
 import { deriveLineId } from "../model/cart-rules";
 import { persistedCartSchema } from "../model/persisted-cart.schema";
-import {
-  createCartStore,
-  selectDistinctLineCount,
-  selectTotalQuantity,
-  useCartStore,
-} from "./cart-store";
-import { clearCartDurable } from "./use-cart";
+import { createCartStore, selectDistinctLineCount, selectTotalQuantity } from "./cart-store";
 
 const KEY = storageKey("cart", "lines");
 
@@ -58,11 +46,6 @@ const waterLine: CartLine = {
   quantity: 3,
 };
 
-/** The same cappuccino line with a different quantity — what a stepper edit produces. */
-function cappuccinoWithQuantity(quantity: number): CartLine {
-  return { ...espressoLine, quantity };
-}
-
 /** A line minus its derived identity — what an "Add to cart" caller passes. */
 function toInput(line: CartLine): AddToCartInput {
   const { lineId: _lineId, ...input } = line;
@@ -71,10 +54,7 @@ function toInput(line: CartLine): AddToCartInput {
 
 const espressoInput = toInput(espressoLine);
 const waterInput = toInput(waterLine);
-
-/** The ids the pure rules derive — what the store must attach to every line. */
 const espressoLineId = deriveLineId(espressoInput);
-const waterLineId = deriveLineId(waterInput);
 
 /** Same variant as espresso, a different size option VALUE: a distinct selection. */
 const smallOatInput: AddToCartInput = {
@@ -85,1347 +65,513 @@ const smallOatInput: AddToCartInput = {
       optionValueId: "d4c3b2a1-1234-4567-8901-234567890123",
       optionValueLabel: "Small",
     },
-    {
-      optionTypeId: "c9d8b1f2-4a6e-4c3b-8d9a-2e7f1c5b3a4d",
-      optionValueId: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
-      optionValueLabel: "Oat Milk",
-    },
+    espressoInput.optionSelections[1]!,
   ],
 };
 
+type RawStore = ReturnType<typeof createMemoryStore>;
+
+function seedCart(raw: RawStore, cart: unknown) {
+  raw.map.set(KEY, JSON.stringify(cart));
+}
+
+/** Parse whatever is durably under KEY back through the schema, like a cold start would. */
+function readPersistedCart(raw: RawStore) {
+  return persistedCartSchema.parse(JSON.parse(raw.map.get(KEY) ?? "null"));
+}
+
 /**
- * Poll until the condition holds — how a test awaits a fire-and-forget durable
- * op (clearCart) without calling anything that would change the outcome being
- * asserted on.
+ * A `createMemoryStore` instrumented for the store's fire-and-forget saves:
+ * it counts the writes and removes that reach the tablet, can hold writes in
+ * flight (`slowWrites`) so races are deterministic, can fail writes on demand
+ * (`control.failWrites`), and `idle()` waits until no storage operation is
+ * pending. The store chains its queue through microtasks only, so once a
+ * macrotask passes with nothing pending, the queue has drained.
  */
-async function until(condition: () => boolean, what: string): Promise<void> {
+function trackedStore(options: { failOn?: "removeItem" | "setItem"; slowWrites?: boolean } = {}) {
+  const raw = createMemoryStore(options.failOn ? { failOn: options.failOn } : undefined);
+  const { getItem, setItem, removeItem } = raw;
+  const ops = { reads: 0, writes: 0, removes: 0 };
+  const control = { failWrites: false };
+  let pending = 0;
+  let writesInFlight = 0;
+  let maxWritesInFlight = 0;
+
+  const track = async <T>(run: () => Promise<T>): Promise<T> => {
+    pending += 1;
+    try {
+      return await run();
+    } finally {
+      pending -= 1;
+    }
+  };
+
+  raw.getItem = (key) =>
+    track(async () => {
+      ops.reads += 1;
+      return getItem(key);
+    });
+  raw.setItem = (key, value) =>
+    track(async () => {
+      ops.writes += 1;
+      writesInFlight += 1;
+      maxWritesInFlight = Math.max(maxWritesInFlight, writesInFlight);
+      try {
+        if (options.slowWrites) await new Promise((resolve) => setTimeout(resolve, 10));
+        if (control.failWrites) throw new Error("disk full");
+        await setItem(key, value);
+      } finally {
+        writesInFlight -= 1;
+      }
+    });
+  raw.removeItem = (key) =>
+    track(async () => {
+      ops.removes += 1;
+      return removeItem(key);
+    });
+
+  return {
+    raw,
+    ops,
+    control,
+    maxWritesInFlight: () => maxWritesInFlight,
+    /** A write has started and is waiting on the (slow) tablet. */
+    writeInFlight: () => writesInFlight > 0,
+    idle: async () => {
+      do {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      } while (pending > 0);
+    },
+  };
+}
+
+async function until(condition: () => boolean, what: string) {
   for (let attempt = 0; !condition(); attempt += 1) {
     if (attempt > 500) throw new Error(`timed out waiting for ${what}`);
     await new Promise((resolve) => setTimeout(resolve, 1));
   }
 }
 
-/** Count the durable writes that actually reach the raw store. */
-function countWrites(raw: ReturnType<typeof createMemoryStore>) {
-  const baseSetItem = raw.setItem;
-  let writes = 0;
-  raw.setItem = async (key: string, value: string) => {
-    writes += 1;
-    return baseSetItem(key, value);
-  };
-  return {
-    count: () => writes,
-    reset: () => {
-      writes = 0;
-    },
-  };
-}
-
-function seedCart(raw: ReturnType<typeof createMemoryStore>, cart: unknown) {
-  raw.map.set(KEY, JSON.stringify(cart));
-}
-
-/** Parse whatever is durably under KEY back through the schema, like a cold start would. */
-function readPersistedCart(raw: ReturnType<typeof createMemoryStore>) {
-  return persistedCartSchema.parse(JSON.parse(raw.map.get(KEY) ?? "null"));
-}
-
-/**
- * Narrow a write result to its rejection and hand back the error (fails the
- * test if the write was not rejected). TS will not narrow through expect().
- */
-function rejectedError(result: StorageWriteResult): Error {
-  if (result.status === "rejected") return result.error;
-  throw new Error(`expected the write to be rejected, but it was ${result.status}`);
-}
-
-/**
- * A memory store whose writes are SLOW (they land after a fixed delay). This
- * holds a durable write in flight long enough to make write/clear/hydrate
- * races DETERMINISTIC instead of timing-dependent: every un-serialized
- * operation that races the write (a clear's remove, a restore's read and
- * discard) completes within microtasks — long before the delayed write lands
- * — so the interleaving is fixed, not a coin flip.
- */
-function slowWriteStore(options?: { failOn?: "removeItem" }) {
-  const raw = createMemoryStore(options);
-  const baseSetItem = raw.setItem;
-  let inFlight = 0;
-  let maxInFlight = 0;
-  raw.setItem = async (key, value) => {
-    inFlight += 1;
-    maxInFlight = Math.max(maxInFlight, inFlight);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      await baseSetItem(key, value);
-    } finally {
-      inFlight -= 1;
-    }
-  };
-  return { raw, maxInFlight: () => maxInFlight };
-}
-
-/**
- * A memory store whose reads are SLOW (they return after a fixed delay). This
- * holds a restore's `backend.read` in flight long enough to make the
- * read→discard window of a hydrate DETERMINISTIC: a write enqueued right
- * after `hydrate()` starts is guaranteed to run while the restore is still
- * between its read and its mismatch discard — the exact interleaving
- * R-T03R-01 pins.
- */
-function slowReadStore() {
-  const raw = createMemoryStore();
-  const baseGetItem = raw.getItem;
-  let reads = 0;
-  raw.getItem = async (key) => {
-    reads += 1;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    return baseGetItem(key);
-  };
-  return { raw, reads: () => reads };
-}
-
-// The failure paths below log by design (see the store's clear()/persist paths);
-// keep the suite silent so an expected failure does not look like a broken run.
+// Ignored edits log at debug, failed writes at warn/error, discards at info:
+// keep the suite silent so an expected path does not look like a broken run.
 beforeEach(() => setLogSink(() => {}));
 afterEach(resetLogging);
 
-describe("hydrate — owner-scoped restore (AC-01, AC-02)", () => {
-  it("restores the persisted cart when the payload's owner is the active profile", async () => {
-    const raw = createMemoryStore();
-    seedCart(raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine, waterLine] });
-    const useStore = createCartStore(createJsonStorage(raw));
+function storeOver(tracked: ReturnType<typeof trackedStore>) {
+  return createCartStore(createJsonStorage(tracked.raw));
+}
+
+async function hydratedStore(options?: Parameters<typeof trackedStore>[0]) {
+  const tracked = trackedStore(options);
+  const useStore = storeOver(tracked);
+  await useStore.getState().hydrate(OWNER_A);
+  return { ...tracked, useStore };
+}
+
+describe("hydrate — owner-scoped restore", () => {
+  it("restores the saved cart when the payload belongs to the customer", async () => {
+    const tracked = trackedStore();
+    seedCart(tracked.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine, waterLine] });
+    const useStore = storeOver(tracked);
 
     await useStore.getState().hydrate(OWNER_A);
 
-    expect(useStore.getState().lines).toEqual([espressoLine, waterLine]);
-    expect(useStore.getState().ownerId).toBe(OWNER_A);
-    expect(useStore.getState().persistence).toBe("persisted");
-    expect(useStore.getState().hydrated).toBe(true);
+    expect(useStore.getState()).toMatchObject({
+      lines: [espressoLine, waterLine],
+      ownerId: OWNER_A,
+      hydrated: true,
+      locked: false,
+      saveFailed: false,
+    });
+    // The customer's own cart stays on the tablet.
+    expect(tracked.ops.removes).toBe(0);
+    expect(readPersistedCart(tracked.raw).lines).toEqual([espressoLine, waterLine]);
   });
 
-  it("never surfaces another customer's cart: a mismatched owner is discarded and durably cleared", async () => {
-    const raw = createMemoryStore();
-    seedCart(raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
-    const useStore = createCartStore(createJsonStorage(raw));
+  it("never surfaces another customer's cart, and removes it from the tablet", async () => {
+    const tracked = trackedStore();
+    seedCart(tracked.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
+    const useStore = storeOver(tracked);
 
     await useStore.getState().hydrate(OWNER_B);
 
-    expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().ownerId).toBe(OWNER_B);
-    // The durable discard actually happened: the key is gone, not left for the
-    // next cold start to trip over.
-    expect(raw.map.has(KEY)).toBe(false);
-    expect(useStore.getState().persistence).toBe("persisted");
-    expect(useStore.getState().hydrated).toBe(true);
+    expect(useStore.getState()).toMatchObject({ lines: [], ownerId: OWNER_B, hydrated: true });
+    expect(tracked.raw.map.has(KEY)).toBe(false);
   });
 
-  it("reports clearFailed — never memoryOnly — when a mismatched payload cannot be durably discarded", async () => {
-    // removeItem AND the fallback write both fail: there is no way left to
-    // prove the other customer's cart left the disk.
-    const raw: KeyValueStore = {
-      getItem: async () => JSON.stringify({ version: 1, ownerId: OWNER_A, lines: [espressoLine] }),
-      setItem: async () => {
-        throw new Error("disk full");
-      },
-      removeItem: async () => {
-        throw new Error("disk full");
-      },
-    };
-    const useStore = createCartStore(createJsonStorage(raw));
-
-    await useStore.getState().hydrate(OWNER_B);
-
-    expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().ownerId).toBe(OWNER_B);
-    expect(useStore.getState().persistence).toBe("clearFailed");
-    expect(useStore.getState().hydrated).toBe(true);
-  });
-
-  it("starts empty and persisted when nothing was ever stored (fresh tablet)", async () => {
-    const useStore = createCartStore(createJsonStorage(createMemoryStore()));
+  it("starts empty on a fresh tablet without writing or removing anything", async () => {
+    const tracked = trackedStore();
+    const useStore = storeOver(tracked);
 
     await useStore.getState().hydrate(OWNER_A);
 
-    expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().ownerId).toBe(OWNER_A);
-    expect(useStore.getState().persistence).toBe("persisted");
-    expect(useStore.getState().hydrated).toBe(true);
+    expect(useStore.getState()).toMatchObject({ lines: [], ownerId: OWNER_A, hydrated: true });
+    expect(tracked.ops).toMatchObject({ writes: 0, removes: 0 });
   });
 
-  it("starts clean and durably clears an unreadable (corrupt JSON) payload", async () => {
-    const raw = createMemoryStore();
-    raw.map.set(KEY, "{not valid json");
-    const useStore = createCartStore(createJsonStorage(raw));
+  it.each([
+    ["unparseable JSON", "{not valid json"],
+    [
+      "an unknown payload version",
+      JSON.stringify({ version: 2, ownerId: OWNER_A, lines: [espressoLine] }),
+    ],
+    [
+      "a line the schema rejects",
+      JSON.stringify({ version: 1, ownerId: OWNER_A, lines: [{ ...espressoLine, quantity: 0 }] }),
+    ],
+  ])("starts empty and removes %s from the tablet", async (_label, payload) => {
+    const tracked = trackedStore();
+    tracked.raw.map.set(KEY, payload);
+    const useStore = storeOver(tracked);
 
     await useStore.getState().hydrate(OWNER_A);
 
-    expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().persistence).toBe("persisted");
-    expect(useStore.getState().hydrated).toBe(true);
-    // Shared-kiosk safety: the corrupt blob is removed, not left for the next
-    // cold start — it may be a previous customer's cart.
-    expect(raw.map.has(KEY)).toBe(false);
+    expect(useStore.getState()).toMatchObject({ lines: [], hydrated: true });
+    expect(tracked.raw.map.has(KEY)).toBe(false);
   });
 
-  it("treats a schema-invalid payload (wrong version) as corrupt: clean start + durable clear", async () => {
-    const raw = createMemoryStore();
-    seedCart(raw, { version: 2, ownerId: OWNER_A, lines: [espressoLine] });
-    const useStore = createCartStore(createJsonStorage(raw));
-
-    await useStore.getState().hydrate(OWNER_A);
-
-    expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().persistence).toBe("persisted");
-    expect(raw.map.has(KEY)).toBe(false);
-  });
-
-  it("treats duplicate lineIds as corrupt: clean start + durable clear", async () => {
-    const raw = createMemoryStore();
-    seedCart(raw, {
+  it("re-derives restored line identities and merges duplicate selections", async () => {
+    const tracked = trackedStore();
+    seedCart(tracked.raw, {
       version: 1,
       ownerId: OWNER_A,
-      lines: [espressoLine, cappuccinoWithQuantity(5)],
+      lines: [
+        { ...espressoLine, lineId: "stale-id-a" },
+        { ...espressoLine, lineId: "stale-id-b", quantity: 5 },
+        waterLine,
+      ],
     });
-    const useStore = createCartStore(createJsonStorage(raw));
+    const useStore = storeOver(tracked);
 
     await useStore.getState().hydrate(OWNER_A);
 
-    expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().persistence).toBe("persisted");
-    expect(raw.map.has(KEY)).toBe(false);
+    expect(useStore.getState().lines).toEqual([{ ...espressoLine, quantity: 7 }, waterLine]);
+
+    // A later add of the same selection merges with the restored line.
+    useStore.getState().addItem({ ...espressoInput, quantity: 1 });
+    expect(useStore.getState().lines).toEqual([{ ...espressoLine, quantity: 8 }, waterLine]);
   });
 
-  it("treats a semantically malformed lineId as corrupt: clean start + durable clear (H-T03b)", async () => {
-    // R1-02 convergence pin. The two halves were each already proven: the
-    // schema rejects a line whose lineId is not its derived identity
-    // (persisted-cart.schema.test.ts), and restore() durably clears OTHER
-    // corrupt shapes (the JSON and version tests above). This pins the
-    // COMPOSED path end-to-end at the store: the schema's semantic refine
-    // firing inside backend.read is what routes this payload down the corrupt
-    // path. The line is otherwise fully valid — only the lineId is wrong
-    // (H-F01's exact malformed shape: non-empty, unique, but not the derived
-    // identity) — because a line that restores with a wrong id can never merge
-    // with a later add of the same selection.
-    const raw = createMemoryStore();
-    seedCart(raw, {
-      version: 1,
-      ownerId: OWNER_A,
-      lines: [{ ...espressoLine, lineId: "garbage-id" }],
-    });
-    const useStore = createCartStore(createJsonStorage(raw));
-
-    await useStore.getState().hydrate(OWNER_A);
-
-    expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().persistence).toBe("persisted");
-    expect(useStore.getState().hydrated).toBe(true);
-    // Shared-kiosk safety: the corrupt blob is removed, not left for the next
-    // cold start — it may be a previous customer's cart.
-    expect(raw.map.has(KEY)).toBe(false);
-  });
-
-  it("reports clearFailed when a corrupt payload cannot be durably cleared", async () => {
-    const raw: KeyValueStore = {
-      getItem: async () => "{not valid json",
-      setItem: async () => {
-        throw new Error("disk full");
-      },
-      removeItem: async () => {
-        throw new Error("disk full");
-      },
-    };
-    const useStore = createCartStore(createJsonStorage(raw));
-
-    await useStore.getState().hydrate(OWNER_A);
-
-    expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().persistence).toBe("clearFailed");
-    expect(useStore.getState().hydrated).toBe(true);
-  });
-
-  it("is idempotent: hydrating again for the same owner reads storage once", async () => {
-    const raw = createMemoryStore();
-    seedCart(raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
-    const baseGetItem = raw.getItem;
-    let reads = 0;
-    raw.getItem = async (key) => {
-      reads += 1;
-      return baseGetItem(key);
-    };
-    const useStore = createCartStore(createJsonStorage(raw));
-
-    await useStore.getState().hydrate(OWNER_A);
-    await useStore.getState().hydrate(OWNER_A);
-
-    expect(reads).toBe(1);
-  });
-
-  it("concurrent hydrate calls for the same owner do not double-read", async () => {
-    const raw = createMemoryStore();
-    seedCart(raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
-    const baseGetItem = raw.getItem;
-    let reads = 0;
-    raw.getItem = async (key) => {
-      reads += 1;
-      return baseGetItem(key);
-    };
-    const useStore = createCartStore(createJsonStorage(raw));
+  it("reads storage once for repeated or concurrent hydrates of the same customer", async () => {
+    const tracked = trackedStore();
+    seedCart(tracked.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
+    const useStore = storeOver(tracked);
 
     await Promise.all([useStore.getState().hydrate(OWNER_A), useStore.getState().hydrate(OWNER_A)]);
+    await useStore.getState().hydrate(OWNER_A);
 
-    expect(reads).toBe(1);
+    expect(tracked.ops.reads).toBe(1);
     expect(useStore.getState().lines).toEqual([espressoLine]);
   });
 
-  it("discards the previous owner's in-memory cart when the profile switches", async () => {
-    const raw = createMemoryStore();
-    seedCart(raw, { version: 1, ownerId: OWNER_B, lines: [waterLine] });
-    const useStore = createCartStore(createJsonStorage(raw));
+  it("drops the previous customer's cart from memory and disk when the customer changes", async () => {
+    const tracked = trackedStore();
+    seedCart(tracked.raw, { version: 1, ownerId: OWNER_B, lines: [waterLine] });
+    const useStore = storeOver(tracked);
 
-    // B's session: their own cart is restored into memory and stays on disk.
     await useStore.getState().hydrate(OWNER_B);
     expect(useStore.getState().lines).toEqual([waterLine]);
-    expect(raw.map.has(KEY)).toBe(true);
 
-    // Session switch to A: B's lines must not survive into A's session —
-    // neither in memory nor on disk.
-    await useStore.getState().hydrate(OWNER_A);
+    const switching = useStore.getState().hydrate(OWNER_A);
+    // Synchronously: nothing of B's session is visible while A's restore runs.
+    expect(useStore.getState()).toMatchObject({ lines: [], ownerId: OWNER_A, hydrated: false });
+    await switching;
 
-    expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().ownerId).toBe(OWNER_A);
-    expect(raw.map.has(KEY)).toBe(false);
-    expect(useStore.getState().persistence).toBe("persisted");
-    expect(useStore.getState().hydrated).toBe(true);
+    expect(useStore.getState()).toMatchObject({ lines: [], ownerId: OWNER_A, hydrated: true });
+    expect(tracked.raw.map.has(KEY)).toBe(false);
   });
 
-  it("restores across a cold start: a fresh store on the same backend reads back what was persisted", async () => {
-    const raw = createMemoryStore();
-    const first = createCartStore(createJsonStorage(raw));
-    await first.getState().hydrate(OWNER_A);
-    first.setState({ lines: [espressoLine, waterLine] });
-    await first.getState().persistNow();
+  it("a superseded restore never applies: the latest customer wins", async () => {
+    const tracked = trackedStore();
+    seedCart(tracked.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
+    const useStore = storeOver(tracked);
 
-    const second = createCartStore(createJsonStorage(raw));
+    const first = useStore.getState().hydrate(OWNER_A);
+    const second = useStore.getState().hydrate(OWNER_B);
+    await Promise.all([first, second]);
+
+    expect(useStore.getState()).toMatchObject({ lines: [], ownerId: OWNER_B, hydrated: true });
+    expect(tracked.raw.map.has(KEY)).toBe(false);
+  });
+
+  it("restores across a cold start: a fresh store on the same tablet reads back the saved cart", async () => {
+    const first = await hydratedStore();
+    first.useStore.getState().addItem(espressoInput);
+    first.useStore.getState().addItem(waterInput);
+    await first.idle();
+
+    const second = createCartStore(createJsonStorage(first.raw));
     await second.getState().hydrate(OWNER_A);
 
     expect(second.getState().lines).toEqual([espressoLine, waterLine]);
-    expect(second.getState().ownerId).toBe(OWNER_A);
-    expect(second.getState().persistence).toBe("persisted");
   });
 });
 
-describe("persistNow — serialized, honest writes (AC-06)", () => {
-  it("never overlaps two durable writes and lands the final state when called rapidly", async () => {
-    const raw = createMemoryStore();
-    const baseSetItem = raw.setItem;
-    let writesStarted = 0;
-    let inFlight = 0;
-    let maxInFlight = 0;
-    raw.setItem = async (key, value) => {
-      writesStarted += 1;
-      inFlight += 1;
-      maxInFlight = Math.max(maxInFlight, inFlight);
-      try {
-        // A slow write is what exposes interleaving: overlapping writes would
-        // push the in-flight count past one.
-        await new Promise((resolve) => setTimeout(resolve, 10));
-        await baseSetItem(key, value);
-      } finally {
-        inFlight -= 1;
-      }
-    };
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-
-    // Simulate T04-style mutations: state changes, each followed by a
-    // fire-and-forget persist request.
-    const settled: Promise<StorageWriteResult>[] = [];
-    for (let quantity = 1; quantity <= 5; quantity += 1) {
-      useStore.setState({ lines: [cappuccinoWithQuantity(quantity)] });
-      settled.push(useStore.getState().persistNow());
-    }
-    const results = await Promise.all(settled);
-
-    // Every waiter resolves with the result of the actual write that flushed
-    // it — all five durable here.
-    expect(results).toHaveLength(5);
-    for (const result of results) {
-      expect(result.status).toBe("persisted");
-    }
-    expect(maxInFlight).toBe(1);
-    // Trailing coalescing (plan decision 8): five rapid requests produced
-    // fewer actual writes than requests — the queued ones collapsed into a
-    // trailing write of the LATEST state.
-    expect(writesStarted).toBeLessThan(5);
-    expect(useStore.getState().persistence).toBe("persisted");
-    expect(readPersistedCart(raw).lines).toEqual([cappuccinoWithQuantity(5)]);
-  });
-
-  it("reports memoryOnly after a failed write, then recovers to persisted on the next success", async () => {
-    const raw = createMemoryStore();
-    const baseSetItem = raw.setItem;
-    let failWrites = true;
-    raw.setItem = async (key, value) => {
-      if (failWrites) throw new Error("disk full");
-      await baseSetItem(key, value);
-    };
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-    useStore.setState({ lines: [espressoLine] });
-
-    const failed = await useStore.getState().persistNow();
-    expect(failed.status).toBe("rejected");
-    // The honest status: the edit only lives in memory. Never "persisted".
-    expect(useStore.getState().persistence).toBe("memoryOnly");
-
-    // The customer edits again and the disk recovers.
-    failWrites = false;
-    useStore.setState({ lines: [espressoLine, waterLine] });
-    const recovered = await useStore.getState().persistNow();
-    expect(recovered.status).toBe("persisted");
-    expect(useStore.getState().persistence).toBe("persisted");
-    expect(readPersistedCart(raw).lines).toEqual([espressoLine, waterLine]);
-  });
-
-  it("persists the full owner envelope: {version: 1, ownerId, lines} round-trips through the schema", async () => {
-    const raw = createMemoryStore();
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-    useStore.setState({ lines: [espressoLine, waterLine] });
-
-    const result = await useStore.getState().persistNow();
-
-    expect(result.status).toBe("persisted");
-    const persisted = readPersistedCart(raw);
-    expect(persisted.version).toBe(1);
-    expect(persisted.ownerId).toBe(OWNER_A);
-    expect(persisted.lines).toEqual([espressoLine, waterLine]);
-  });
-
-  it("persisting an empty cart writes the empty envelope — durable empty state, not nothing", async () => {
-    const raw = createMemoryStore();
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-    useStore.setState({ lines: [] });
-
-    const result = await useStore.getState().persistNow();
-
-    expect(result.status).toBe("persisted");
-    const persisted = readPersistedCart(raw);
-    expect(persisted.ownerId).toBe(OWNER_A);
-    expect(persisted.lines).toEqual([]);
-  });
-
-  it("skips the durable write entirely before an owner is resolved", async () => {
-    const raw = createMemoryStore();
-    const useStore = createCartStore(createJsonStorage(raw));
-    // Pre-hydrate state changes still happen (T04 mutations use the same
-    // seam), but nothing is attributable to a profile yet.
-    useStore.setState({ lines: [espressoLine] });
-
-    const result = await useStore.getState().persistNow();
-
-    expect(result.status).toBe("rejected");
-    expect(rejectedError(result).message).toBe("Cart owner is not resolved; nothing was persisted");
-    expect(raw.map.has(KEY)).toBe(false);
-    // The skip is not a storage failure: no memoryOnly claim, no persisted claim.
-    expect(useStore.getState().persistence).toBe("unknown");
-  });
-
-  it("keeps clearFailed sticky across a failed write; a later successful write honestly clears it", async () => {
-    const raw = createMemoryStore();
-    let failDurable = true;
-    const baseSetItem = raw.setItem;
-    const baseRemoveItem = raw.removeItem;
-    raw.setItem = async (key, value) => {
-      if (failDurable) throw new Error("disk full");
-      await baseSetItem(key, value);
-    };
-    raw.removeItem = async (key) => {
-      if (failDurable) throw new Error("disk full");
-      await baseRemoveItem(key);
-    };
-    seedCart(raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
-    const useStore = createCartStore(createJsonStorage(raw));
-
-    // Mismatched owner whose discard fails on BOTH paths → clearFailed.
-    await useStore.getState().hydrate(OWNER_B);
-    expect(useStore.getState().persistence).toBe("clearFailed");
-
-    // A failed write on top of an uncleared disk must not downgrade the
-    // safety warning to memoryOnly — the previous customer's data is still
-    // on disk, which is the bigger hazard.
-    useStore.setState({ lines: [waterLine] });
-    const failedWrite = await useStore.getState().persistNow();
-    expect(failedWrite.status).toBe("rejected");
-    expect(useStore.getState().persistence).toBe("clearFailed");
-
-    // A successful write physically replaces the stale payload, so the hazard
-    // is genuinely resolved and clearing the warning is honest.
-    failDurable = false;
-    useStore.setState({ lines: [waterLine, espressoLine] });
-    const recoveredWrite = await useStore.getState().persistNow();
-    expect(recoveredWrite.status).toBe("persisted");
-    expect(useStore.getState().persistence).toBe("persisted");
-    expect(readPersistedCart(raw).lines).toEqual([waterLine, espressoLine]);
-  });
-
-  it("resolves waiters with a rejection when a durable op itself throws, and the queue keeps working", async () => {
-    const raw = createMemoryStore();
-    const backend = createJsonStorage(raw);
-    const baseWrite = backend.write;
-    let throwWrites = true;
-    backend.write = async (key, value) => {
-      if (throwWrites) throw new Error("storage exploded");
-      return baseWrite(key, value);
-    };
-    const useStore = createCartStore(backend);
-    await useStore.getState().hydrate(OWNER_A);
-    useStore.setState({ lines: [espressoLine] });
-
-    // A throwing op must resolve its waiter honestly rather than strand it
-    // (or leak an unhandled rejection out of the fire-and-forget flush).
-    const failed = await Promise.race([
-      useStore.getState().persistNow(),
-      new Promise<StorageWriteResult>((resolve) =>
-        setTimeout(
-          () => resolve({ status: "rejected", error: new Error("waiter never settled") }),
-          250,
-        ),
-      ),
-    ]);
-    expect(rejectedError(failed).message).not.toBe("waiter never settled");
-    expect(failed.status).toBe("rejected");
-    expect(useStore.getState().persistence).toBe("memoryOnly");
-
-    // The serialized chain survived the throw: the next write goes through.
-    throwWrites = false;
-    useStore.setState({ lines: [espressoLine, waterLine] });
-    const recovered = await useStore.getState().persistNow();
-    expect(recovered.status).toBe("persisted");
-    expect(readPersistedCart(raw).lines).toEqual([espressoLine, waterLine]);
-  });
-});
-
-describe("durable-op serialization — clear and hydrate racing an in-flight write", () => {
-  it("a clear requested while a write is in flight runs after it: the cleared cart cannot resurrect", async () => {
-    const slow = slowWriteStore();
-    seedCart(slow.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
-    const useStore = createCartStore(createJsonStorage(slow.raw));
-    await useStore.getState().hydrate(OWNER_A);
-    useStore.setState({ lines: [espressoLine, waterLine] });
-
-    // The write is in flight (it lands after the delay); clear() races it.
-    const writePromise = useStore.getState().persistNow();
-    const clearPromise = useStore.getState().clear();
-    const [writeResult, clearResult] = await Promise.all([writePromise, clearPromise]);
-
-    expect(writeResult.status).toBe("persisted");
-    expect(clearResult.status).toBe("persisted");
-    expect(useStore.getState().persistence).toBe("persisted");
-    // Un-serialized, the clear removed the key while the write was still in
-    // flight, so the write landed afterwards and RESURRECTED the "cleared"
-    // cart. Serialized, the clear's remove runs after the write lands.
-    expect(slow.raw.map.has(KEY)).toBe(false);
-  });
-
-  it("a different-owner hydrate racing an in-flight write leaves nothing of the other customer on disk", async () => {
-    const slow = slowWriteStore();
-    seedCart(slow.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
-    const useStore = createCartStore(createJsonStorage(slow.raw));
-    await useStore.getState().hydrate(OWNER_A);
-    useStore.setState({ lines: [espressoLine, waterLine] });
-
-    const writePromise = useStore.getState().persistNow();
-    const hydratePromise = useStore.getState().hydrate(OWNER_B);
-    await Promise.all([writePromise, hydratePromise]);
-
-    // The other customer's lines never entered memory...
-    expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().ownerId).toBe(OWNER_B);
-    expect(useStore.getState().hydrated).toBe(true);
-    expect(useStore.getState().persistence).toBe("persisted");
-    // ...and the write that was in flight landed first, then the mismatch
-    // discard removed it: disk ends genuinely empty, not holding customer
-    // A's cart for the next cold start.
-    expect(slow.raw.map.has(KEY)).toBe(false);
-  });
-
-  it("a clear's fallback write never overlaps an in-flight queue write", async () => {
-    // removeItem fails, so clear() must take the overwrite fallback — the
-    // write that used to run OUTSIDE the queue and could sit in the backend
-    // at the same time as a queue write.
-    const slow = slowWriteStore({ failOn: "removeItem" });
-    seedCart(slow.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
-    const useStore = createCartStore(createJsonStorage(slow.raw));
-    await useStore.getState().hydrate(OWNER_A);
-    useStore.setState({ lines: [espressoLine, waterLine] });
-
-    const writePromise = useStore.getState().persistNow();
-    const clearPromise = useStore.getState().clear();
-    const [writeResult, clearResult] = await Promise.all([writePromise, clearPromise]);
-
-    expect(writeResult.status).toBe("persisted");
-    expect(clearResult.status).toBe("persisted");
-    // Queue write and clear-fallback write must never be inside the backend
-    // at the same time — un-serialized, they overlapped (max 2 in flight);
-    // serialization holds it to 1.
-    expect(slow.maxInFlight()).toBe(1);
-    // And the fallback landed LAST: durable empty state, not the cleared cart.
-    expect(readPersistedCart(slow.raw).lines).toEqual([]);
-  });
-
-  it("a write enqueued mid-restore survives the mismatch discard: the restore's read and discard are ONE op", async () => {
-    // R-T03R-01: restore() sets ownerId synchronously, so a mutation racing
-    // the read passes the pre-owner guard and enqueues a REAL write. With the
-    // read as one chain op and the discard enqueued in its continuation, that
-    // write landed BETWEEN them — and the discard then wiped it: memory held
-    // the cart, disk was empty, persistence said "persisted". Folding read and
-    // discard into one op makes the write land AFTER the whole restore, with
-    // the post-restore state.
-    const slow = slowReadStore();
-    seedCart(slow.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
-    const useStore = createCartStore(createJsonStorage(slow.raw));
-
-    // hydrate(B) while the disk holds A's cart → mismatch discard path. The
-    // read is gated (10ms); the "mutation" below lands inside that window.
-    const hydratePromise = useStore.getState().hydrate(OWNER_B);
-    // Let the restore START: restore() runs one microtask behind hydrate(),
-    // and sets ownerId synchronously before its first await — spin until the
-    // mid-restore window is open (owner set, gated read still in flight).
-    while (useStore.getState().ownerId !== OWNER_B) {
-      await Promise.resolve();
-    }
-    // Simulate the mid-restore mutation: the state seam T04 mutations use.
-    useStore.setState({ lines: [waterLine] });
-    const writePromise = useStore.getState().persistNow();
-    const [writeResult] = await Promise.all([writePromise, hydratePromise]);
-
-    expect(writeResult.status).toBe("persisted");
-    // The write survived the discard AND carried the post-restore owner: disk
-    // holds B's mutated cart, honestly reported.
-    expect(useStore.getState().persistence).toBe("persisted");
-    const persisted = readPersistedCart(slow.raw);
-    expect(persisted.ownerId).toBe(OWNER_B);
-    expect(persisted.lines).toEqual([waterLine]);
-  });
-});
-
-describe("clear — owner-aware template semantics", () => {
-  it("clears the in-memory lines immediately and the durable value, keeping the owner", async () => {
-    const raw = createMemoryStore();
-    seedCart(raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-
-    const result = await useStore.getState().clear();
-
-    expect(result.status).toBe("persisted");
-    expect(useStore.getState().lines).toEqual([]);
-    // Clearing the cart is not a profile switch — the owner stays.
-    expect(useStore.getState().ownerId).toBe(OWNER_A);
-    expect(useStore.getState().persistence).toBe("persisted");
-    expect(raw.map.has(KEY)).toBe(false);
-  });
-
-  it("recovers with the overwrite fallback when removeItem fails, so a cold start starts clean", async () => {
-    const raw = createMemoryStore({ failOn: "removeItem" });
-    seedCart(raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-
-    const result = await useStore.getState().clear();
-
-    // The fallback overwrite recovered: a genuine durable success — never
-    // memoryOnly, which would undersell what happened.
-    expect(result.status).toBe("persisted");
-    expect(useStore.getState().persistence).toBe("persisted");
-
-    // Simulate a COLD START: a fresh store reading the same backend.
-    const afterRestart = createCartStore(createJsonStorage(raw));
-    await afterRestart.getState().hydrate(OWNER_A);
-    expect(afterRestart.getState().lines).toEqual([]);
-  });
-
-  it("reports clearFailed — never persisted or memoryOnly — when nothing durable succeeds", async () => {
-    const raw: KeyValueStore = {
-      getItem: async () => null,
-      setItem: async () => {
-        throw new Error("disk full");
-      },
-      removeItem: async () => {
-        throw new Error("disk full");
-      },
-    };
-    const useStore = createCartStore(createJsonStorage(raw));
-
-    const result = await useStore.getState().clear();
-
-    expect(result.status).toBe("rejected");
-    expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().persistence).toBe("clearFailed");
-  });
-
-  it("resolves with a rejection — never rejects itself — when the backend remove THROWS", async () => {
-    // R-T03R-02: JsonStorage maps its own failures to results, so the throw
-    // must be at the JsonStorage seam itself (like the waiter-throw test
-    // patches backend.write). A throwing durable op still comes back as a
-    // result: clear() resolves, persistence lands on clearFailed, and T05's
-    // sign-out cleanup can branch on the outcome instead of catching.
-    const raw = createMemoryStore();
-    seedCart(raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
-    const backend = createJsonStorage(raw);
-    backend.remove = async () => {
-      throw new Error("removeItem exploded");
-    };
-    const useStore = createCartStore(backend);
-    await useStore.getState().hydrate(OWNER_A);
-
-    const result = await useStore.getState().clear();
-
-    expect(result.status).toBe("rejected");
-    expect(rejectedError(result).message).toBe("removeItem exploded");
-    expect(useStore.getState().persistence).toBe("clearFailed");
-    // The throw skipped the fallback: the previous customer's payload is
-    // still on disk — the honest unknown, for the auth emergency path to
-    // handle, never a fake "persisted".
-    expect(readPersistedCart(raw).lines).toEqual([espressoLine]);
-    // And the chain survived the throw — the next durable write goes through.
-    useStore.setState({ lines: [espressoLine] });
-    const write = await useStore.getState().persistNow();
-    expect(write.status).toBe("persisted");
-    expect(readPersistedCart(raw).lines).toEqual([espressoLine]);
-  });
-
-  it("never rejects hydrate when the read op THROWS: corrupt-payload handling, clean start", async () => {
-    // R-T03R-02's read half, at the JsonStorage seam (a throwing KeyValueStore
-    // getItem is already mapped to a rejected result by core/storage — that
-    // path is pinned by the corrupt-payload tests above; this one makes the
-    // READ OP itself throw, which only the store's own catch can absorb).
-    const raw = createMemoryStore();
-    seedCart(raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
-    const backend = createJsonStorage(raw);
-    backend.read = async () => {
-      throw new Error("read exploded");
-    };
-    const useStore = createCartStore(backend);
-
-    await expect(useStore.getState().hydrate(OWNER_A)).resolves.toBeUndefined();
-
-    expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().hydrated).toBe(true);
-    expect(useStore.getState().ownerId).toBe(OWNER_A);
-    expect(useStore.getState().persistence).toBe("persisted");
-    // The attempted durable clear still ran after the throwing read.
-    expect(raw.map.has(KEY)).toBe(false);
-  });
-
-  it("before an owner is resolved, clear() never writes an ownerless fallback envelope", async () => {
-    // R-T03R-03: pre-owner, a failed remove must NOT fall back to writing an
-    // empty envelope — `ownerId: null` fails the persisted-cart schema, so
-    // the "fallback" would leave a payload our own next restore rejects as
-    // corrupt. Failing closed (clearFailed) lets the auth emergency
-    // namespace reset handle the stale data instead.
-    const raw = createMemoryStore({ failOn: "removeItem" });
-    seedCart(raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
-    const useStore = createCartStore(createJsonStorage(raw));
-
-    const result = await useStore.getState().clear();
-
-    expect(result.status).toBe("rejected");
-    expect(rejectedError(result).message).toBe(
-      "durable remove failed and no owner is resolved to write an empty envelope",
-    );
-    expect(useStore.getState().persistence).toBe("clearFailed");
-    expect(useStore.getState().lines).toEqual([]);
-    // No fallback write happened: the previous (stale) payload is still the
-    // ONLY thing on disk, for the emergency reset to handle.
-    expect(JSON.parse(raw.map.get(KEY) ?? "null")).toEqual({
-      version: 1,
-      ownerId: OWNER_A,
-      lines: [espressoLine],
-    });
-  });
-});
-
-describe("addItem — add, merge, distinct lines (AC-03)", () => {
-  it("appends a line with the DERIVED lineId and persists the envelope", async () => {
-    const raw = createMemoryStore();
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-
-    useStore.getState().addItem(espressoInput);
-    await useStore.getState().persistNow();
-
-    const lines = useStore.getState().lines;
-    expect(lines).toEqual([{ ...espressoInput, lineId: espressoLineId }]);
-    const persisted = readPersistedCart(raw);
-    expect(persisted.ownerId).toBe(OWNER_A);
-    expect(persisted.lines).toEqual(lines);
-  });
-
-  it("re-adding the same selection merges by summing quantities (2+3→5): one line on disk", async () => {
-    const raw = createMemoryStore();
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-
-    useStore.getState().addItem(espressoInput);
-    useStore.getState().addItem({ ...espressoInput, quantity: 3 });
-    await useStore.getState().persistNow();
-
-    expect(useStore.getState().lines).toEqual([
-      { ...espressoInput, lineId: espressoLineId, quantity: 5 },
-    ]);
-    const persisted = readPersistedCart(raw);
-    expect(persisted.lines).toHaveLength(1);
-    expect(persisted.lines[0]?.quantity).toBe(5);
-  });
-
-  it("a different option selection or a different variant creates a distinct line", async () => {
-    const raw = createMemoryStore();
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-
-    useStore.getState().addItem(espressoInput);
-    useStore.getState().addItem(smallOatInput);
-    useStore.getState().addItem(waterInput);
-    await useStore.getState().persistNow();
-
-    const lines = useStore.getState().lines;
-    expect(lines).toHaveLength(3);
-    expect(new Set(lines.map((line) => line.lineId)).size).toBe(3);
-    expect(readPersistedCart(raw).lines).toHaveLength(3);
-  });
-
-  it("ignores schema-invalid input as a no-op: no line, no durable write", async () => {
-    const raw = createMemoryStore();
-    const writes = countWrites(raw);
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-
-    useStore.getState().addItem({ ...espressoInput, quantity: 0 });
-    useStore
-      .getState()
-      .addItem({ ...espressoInput, variantId: undefined } as unknown as AddToCartInput);
-    useStore.getState().addItem({ ...espressoInput, quantity: "2" } as unknown as AddToCartInput);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(useStore.getState().lines).toEqual([]);
-    expect(writes.count()).toBe(0);
-    expect(raw.map.has(KEY)).toBe(false);
-  });
-
-  it("never trusts a stray lineId on the input: the derived identity wins", async () => {
-    const raw = createMemoryStore();
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-
-    useStore
-      .getState()
-      .addItem({ ...espressoInput, lineId: "not-the-derived-id" } as AddToCartInput);
-    await useStore.getState().persistNow();
-
-    expect(useStore.getState().lines[0]?.lineId).toBe(espressoLineId);
-    expect(readPersistedCart(raw).lines[0]?.lineId).toBe(espressoLineId);
-  });
-
-  it("a failed durable write after addItem keeps the line in memory and reports memoryOnly", async () => {
-    // R-T04-02: the mutation-level half of AC-06 — a mutation whose write
-    // fails is kept in memory and honestly reported, never silently dropped
-    // and never claimed as persisted. (setLineQuantity/removeLine persist
-    // through the same queue seam, so one test pins the contract for all
-    // three.)
-    const raw = createMemoryStore();
-    const baseSetItem = raw.setItem;
-    let failWrites = true;
-    raw.setItem = async (key: string, value: string) => {
-      if (failWrites) throw new Error("disk full");
-      await baseSetItem(key, value);
-    };
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-
-    useStore.getState().addItem(espressoInput);
-    // Settle the queue: a persistNow covers the request and resolves with the
-    // actual (failed) write's result.
-    const failed = await useStore.getState().persistNow();
-
-    expect(failed.status).toBe("rejected");
-    // The line is KEPT — the edit happened; only the save failed.
-    expect(useStore.getState().lines).toEqual([{ ...espressoInput, lineId: espressoLineId }]);
-    expect(useStore.getState().persistence).toBe("memoryOnly");
-    expect(raw.map.has(KEY)).toBe(false);
-  });
-});
-
-describe("setLineQuantity / removeLine — quantity bounds and removal (AC-04)", () => {
-  it("updates the line and persists, clamping into 1..99; an unknown lineId is a no-op", async () => {
-    const raw = createMemoryStore();
-    const writes = countWrites(raw);
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-    useStore.getState().addItem(espressoInput);
-    await useStore.getState().persistNow();
-
-    const line = () => useStore.getState().lines[0];
-
-    useStore.getState().setLineQuantity(espressoLineId, 0);
-    expect(line()?.quantity).toBe(1);
-
-    useStore.getState().setLineQuantity(espressoLineId, 150);
-    expect(line()?.quantity).toBe(99);
-
-    useStore.getState().setLineQuantity(espressoLineId, 2.7);
-    expect(line()?.quantity).toBe(2);
-
-    // Settle the trailing writes from the clamp edits before taking the
-    // counter baseline, so the count below proves only the no-op's behavior.
-    await useStore.getState().persistNow();
-
-    // Unknown line: nothing changes in memory, and nothing is enqueued.
-    writes.reset();
-    useStore.getState().setLineQuantity("no-such-line", 5);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(line()?.quantity).toBe(2);
-    expect(writes.count()).toBe(0);
-
-    expect(readPersistedCart(raw).lines).toEqual([
-      { ...espressoInput, lineId: espressoLineId, quantity: 2 },
-    ]);
-  });
-
-  it("removes the line and persists; an unknown lineId is a no-op", async () => {
-    const raw = createMemoryStore();
-    const writes = countWrites(raw);
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-    useStore.getState().addItem(espressoInput);
-    useStore.getState().addItem(waterInput);
-    await useStore.getState().persistNow();
-
-    writes.reset();
-    useStore.getState().removeLine("no-such-line");
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(useStore.getState().lines).toHaveLength(2);
-    expect(writes.count()).toBe(0);
-
-    useStore.getState().removeLine(espressoLineId);
-    expect(useStore.getState().lines).toEqual([{ ...waterInput, lineId: waterLineId }]);
-    await useStore.getState().persistNow();
-    expect(readPersistedCart(raw).lines).toEqual([{ ...waterInput, lineId: waterLineId }]);
-  });
-});
-
-describe("lock — interaction lock for critical operations (AC-09)", () => {
-  it("while locked, user-driven mutations are no-ops and enqueue no durable write", async () => {
-    const raw = createMemoryStore();
-    const writes = countWrites(raw);
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-    useStore.getState().addItem(espressoInput);
-    await useStore.getState().persistNow();
-
-    useStore.getState().lock();
-    expect(useStore.getState().locked).toBe(true);
-
-    writes.reset();
-    useStore.getState().addItem(waterInput);
-    useStore.getState().setLineQuantity(espressoLineId, 50);
-    useStore.getState().removeLine(espressoLineId);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    // State unchanged — and no write was ever enqueued to the queue.
-    expect(useStore.getState().lines).toEqual([{ ...espressoInput, lineId: espressoLineId }]);
-    expect(writes.count()).toBe(0);
-  });
-
-  it("clearCart is NOT blocked by the lock: memory empties and the durable clear still runs", async () => {
-    const raw = createMemoryStore();
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-    useStore.getState().addItem(espressoInput);
-    await useStore.getState().persistNow();
-    expect(raw.map.has(KEY)).toBe(true);
-
-    useStore.getState().lock();
-    useStore.getState().clearCart();
-
-    // Memory is empty immediately; the durable clear ran despite the lock.
-    expect(useStore.getState().lines).toEqual([]);
-    await until(() => !raw.map.has(KEY), "the durable clear to remove the key");
-    expect(useStore.getState().persistence).toBe("persisted");
-    expect(useStore.getState().locked).toBe(true);
-  });
-
-  it("unlock() re-enables user mutations", async () => {
-    const raw = createMemoryStore();
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-
-    useStore.getState().lock();
-    useStore.getState().addItem(espressoInput);
-    expect(useStore.getState().lines).toEqual([]);
-
-    useStore.getState().unlock();
-    expect(useStore.getState().locked).toBe(false);
-    useStore.getState().addItem(espressoInput);
-    expect(useStore.getState().lines).toEqual([{ ...espressoInput, lineId: espressoLineId }]);
-    await useStore.getState().persistNow();
-    expect(readPersistedCart(raw).lines).toHaveLength(1);
-  });
-
-  it("a lock never survives an owner switch: the next customer's mutations are not silently blocked", async () => {
-    // R-T04-01: a lock belongs to ONE owner's critical operation. No sanctioned
-    // flow locks across an owner switch, and a stale lock would silently block
-    // the next customer's mutations with no unlock path they could reach.
-    const raw = createMemoryStore();
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-    useStore.getState().lock();
-    expect(useStore.getState().locked).toBe(true);
-
-    // The profile switches mid-session: the restore's reset must clear the
-    // previous customer's lock along with their lines.
-    await useStore.getState().hydrate(OWNER_B);
-
-    expect(useStore.getState().ownerId).toBe(OWNER_B);
-    expect(useStore.getState().locked).toBe(false);
-
-    // The next customer can actually use the cart — not a silent no-op.
-    useStore.getState().addItem(waterInput);
-    expect(useStore.getState().lines).toEqual([{ ...waterInput, lineId: waterLineId }]);
-    await useStore.getState().persistNow();
-    expect(readPersistedCart(raw).lines).toEqual([{ ...waterInput, lineId: waterLineId }]);
-  });
-
-  it("a lock survives a same-owner re-hydrate: the idempotent no-op never touches the lock", async () => {
-    // A legitimate checkout holds its lock across anything that does NOT switch
-    // the profile: the same-owner hydrate returns early and must not unlock.
-    const raw = createMemoryStore();
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-    useStore.getState().lock();
-
-    await useStore.getState().hydrate(OWNER_A);
-
-    expect(useStore.getState().locked).toBe(true);
-    useStore.getState().addItem(espressoInput);
-    expect(useStore.getState().lines).toEqual([]);
-  });
-});
-
-describe("hydration gate — user mutations wait for the restore (R-T03R2-01)", () => {
-  it("before the first hydrate, user mutations are no-ops: no memory change, no write", async () => {
-    const raw = createMemoryStore();
-    const writes = countWrites(raw);
-    const useStore = createCartStore(createJsonStorage(raw));
+describe("edits — gated on hydration and the lock", () => {
+  it("ignores every edit before the cart is restored, and touches no storage", async () => {
+    const tracked = trackedStore();
+    const useStore = storeOver(tracked);
 
     useStore.getState().addItem(espressoInput);
     useStore.getState().setLineQuantity(espressoLineId, 5);
     useStore.getState().removeLine(espressoLineId);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await useStore.getState().clear();
+    await tracked.idle();
 
     expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().ownerId).toBe(null);
-    expect(useStore.getState().hydrated).toBe(false);
-    expect(writes.count()).toBe(0);
-    expect(raw.map.has(KEY)).toBe(false);
-    expect(useStore.getState().persistence).toBe("unknown");
+    expect(tracked.ops).toEqual({ reads: 0, writes: 0, removes: 0 });
   });
 
-  it("locked AND not hydrated is still a no-op", async () => {
-    const raw = createMemoryStore();
-    const writes = countWrites(raw);
-    const useStore = createCartStore(createJsonStorage(raw));
+  it("an edit racing an in-flight restore is ignored: the restored lines win, on disk too", async () => {
+    const tracked = trackedStore();
+    seedCart(tracked.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
+    const useStore = storeOver(tracked);
+
+    const restoring = useStore.getState().hydrate(OWNER_A);
+    useStore.getState().addItem(waterInput);
+    await restoring;
+    await tracked.idle();
+
+    expect(useStore.getState().lines).toEqual([espressoLine]);
+    expect(readPersistedCart(tracked.raw).lines).toEqual([espressoLine]);
+  });
+
+  it("ignores user edits while locked and writes nothing; unlock re-enables them", async () => {
+    const tracked = trackedStore();
+    seedCart(tracked.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
+    const useStore = storeOver(tracked);
+    await useStore.getState().hydrate(OWNER_A);
 
     useStore.getState().lock();
-    useStore.getState().addItem(espressoInput);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    useStore.getState().addItem(waterInput);
+    useStore.getState().setLineQuantity(espressoLineId, 9);
+    useStore.getState().removeLine(espressoLineId);
+    await tracked.idle();
 
-    expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().locked).toBe(true);
-    expect(useStore.getState().hydrated).toBe(false);
-    expect(writes.count()).toBe(0);
+    expect(useStore.getState().lines).toEqual([espressoLine]);
+    expect(tracked.ops).toMatchObject({ writes: 0, removes: 0 });
+
+    useStore.getState().unlock();
+    useStore.getState().addItem(waterInput);
+    await tracked.idle();
+    expect(useStore.getState().lines).toEqual([espressoLine, waterLine]);
+    expect(readPersistedCart(tracked.raw).lines).toEqual([espressoLine, waterLine]);
   });
 
-  it("a mutation racing an in-flight restore is a no-op: the restore's lines win, on disk too", async () => {
-    // R-T03R2-01: without the hydrated gate, a mid-restore addItem enters
-    // memory, a write is enqueued (the ownerId is already set synchronously),
-    // the restore outcome then clobbers memory — and the eagerly-captured
-    // envelope lands the PRE-restore mutation on disk, so the next cold start
-    // restores the wrong cart.
-    const slow = slowReadStore();
-    seedCart(slow.raw, { version: 1, ownerId: OWNER_B, lines: [waterLine] });
-    const useStore = createCartStore(createJsonStorage(slow.raw));
+  it("clear works while locked: memory empties and the saved cart is removed", async () => {
+    const tracked = trackedStore();
+    seedCart(tracked.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
+    const useStore = storeOver(tracked);
+    await useStore.getState().hydrate(OWNER_A);
 
-    const hydratePromise = useStore.getState().hydrate(OWNER_B);
-    // Open the mid-restore window: ownerId set synchronously, read still gated.
-    while (useStore.getState().ownerId !== OWNER_B) {
-      await Promise.resolve();
-    }
-    expect(useStore.getState().hydrated).toBe(false);
+    useStore.getState().lock();
+    await useStore.getState().clear();
 
-    useStore.getState().addItem(espressoInput);
-    await hydratePromise;
-    // Let any (wrongly) enqueued trailing write settle before judging disk.
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(useStore.getState()).toMatchObject({ lines: [], ownerId: OWNER_A, locked: true });
+    expect(tracked.raw.map.has(KEY)).toBe(false);
+  });
 
+  it("a lock survives a same-customer hydrate but not a change of customer", async () => {
+    const { useStore } = await hydratedStore();
+
+    useStore.getState().lock();
+    await useStore.getState().hydrate(OWNER_A);
+    expect(useStore.getState().locked).toBe(true);
+
+    await useStore.getState().hydrate(OWNER_B);
+    expect(useStore.getState().locked).toBe(false);
+    useStore.getState().addItem(waterInput);
     expect(useStore.getState().lines).toEqual([waterLine]);
-    expect(readPersistedCart(slow.raw).lines).toEqual([waterLine]);
   });
 });
 
-describe("clearCart — the UI-facing clear (AC-05)", () => {
-  it("clears memory immediately and durably: the key is removed, the owner kept", async () => {
-    const raw = createMemoryStore();
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
+describe("addItem / setLineQuantity / removeLine", () => {
+  it("adds a line with the derived identity and saves the owner envelope", async () => {
+    const { raw, useStore, idle } = await hydratedStore();
+
+    // A stray lineId on the input never wins over the derived identity.
+    useStore.getState().addItem({ ...espressoInput, lineId: "stray" } as AddToCartInput);
+    await idle();
+
+    expect(useStore.getState().lines).toEqual([espressoLine]);
+    expect(readPersistedCart(raw)).toEqual({ version: 1, ownerId: OWNER_A, lines: [espressoLine] });
+  });
+
+  it("merges the same selection and keeps different selections distinct", async () => {
+    const { useStore } = await hydratedStore();
+
+    useStore.getState().addItem(espressoInput);
+    useStore.getState().addItem({ ...espressoInput, quantity: 3 });
+    useStore.getState().addItem(smallOatInput);
+    useStore.getState().addItem(waterInput);
+
+    const lines = useStore.getState().lines;
+    expect(lines.map((line) => line.quantity)).toEqual([5, 2, 3]);
+    expect(lines.map((line) => line.lineId)).toEqual([
+      espressoLineId,
+      deriveLineId(smallOatInput),
+      waterLine.lineId,
+    ]);
+  });
+
+  it("ignores an invalid selection", async () => {
+    const { ops, useStore, idle } = await hydratedStore();
+
+    useStore.getState().addItem({ ...espressoInput, quantity: 0 });
+    await idle();
+
+    expect(useStore.getState().lines).toEqual([]);
+    expect(ops.writes).toBe(0);
+  });
+
+  it("clamps a quantity change into 1..99 and ignores an unknown line", async () => {
+    const { raw, useStore, idle } = await hydratedStore();
+    useStore.getState().addItem(espressoInput);
+
+    useStore.getState().setLineQuantity(espressoLineId, 0);
+    expect(useStore.getState().lines[0]?.quantity).toBe(1);
+    useStore.getState().setLineQuantity(espressoLineId, 500);
+    expect(useStore.getState().lines[0]?.quantity).toBe(99);
+    useStore.getState().setLineQuantity("unknown", 4);
+    expect(useStore.getState().lines).toEqual([{ ...espressoLine, quantity: 99 }]);
+
+    await idle();
+    expect(readPersistedCart(raw).lines).toEqual([{ ...espressoLine, quantity: 99 }]);
+  });
+
+  it("removes a line; removing the last line removes the saved cart", async () => {
+    const { raw, useStore, idle } = await hydratedStore();
     useStore.getState().addItem(espressoInput);
     useStore.getState().addItem(waterInput);
-    await useStore.getState().persistNow();
-    expect(raw.map.has(KEY)).toBe(true);
 
-    useStore.getState().clearCart();
+    useStore.getState().removeLine("unknown");
+    useStore.getState().removeLine(espressoLineId);
+    await idle();
+    expect(readPersistedCart(raw).lines).toEqual([waterLine]);
 
+    useStore.getState().removeLine(waterLine.lineId);
+    await idle();
     expect(useStore.getState().lines).toEqual([]);
-    await until(() => !raw.map.has(KEY), "the durable clear to remove the key");
-    expect(useStore.getState().ownerId).toBe(OWNER_A);
-    expect(useStore.getState().persistence).toBe("persisted");
+    expect(raw.map.has(KEY)).toBe(false);
   });
 
-  it("remove-fails-but-overwrite-succeeds → durable empty envelope on disk, persisted (never memoryOnly)", async () => {
-    const raw = createMemoryStore({ failOn: "removeItem" });
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-    useStore.getState().addItem(espressoInput);
-    await useStore.getState().persistNow();
-    expect(readPersistedCart(raw).lines).toHaveLength(1);
-
-    useStore.getState().clearCart();
-    expect(useStore.getState().lines).toEqual([]);
-
-    await until(
-      () => raw.map.has(KEY) && readPersistedCart(raw).lines.length === 0,
-      "the fallback overwrite to land the empty envelope",
-    );
-    expect(useStore.getState().persistence).toBe("persisted");
-  });
-
-  it("both remove and overwrite fail → clearFailed, never memoryOnly", async () => {
-    const raw: KeyValueStore = {
-      getItem: async () => JSON.stringify({ version: 1, ownerId: OWNER_A, lines: [espressoLine] }),
-      setItem: async () => {
-        throw new Error("disk full");
-      },
-      removeItem: async () => {
-        throw new Error("disk full");
-      },
-    };
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-    expect(useStore.getState().lines).toEqual([espressoLine]);
-
-    useStore.getState().clearCart();
-    expect(useStore.getState().lines).toEqual([]);
-
-    await until(
-      () => useStore.getState().persistence === "clearFailed",
-      "clearFailed to be reported",
-    );
-    expect(useStore.getState().lines).toEqual([]);
-  });
-
-  it("before the first hydrate, clearCart is a no-op: no durable clear runs", async () => {
-    const raw = createMemoryStore();
-    seedCart(raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
-    const useStore = createCartStore(createJsonStorage(raw));
-
-    useStore.getState().clearCart();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().hydrated).toBe(false);
-    expect(useStore.getState().ownerId).toBe(null);
-    expect(useStore.getState().persistence).toBe("unknown");
-    // The durable clear never ran — pre-restore discards belong to hydrate().
-    expect(raw.map.has(KEY)).toBe(true);
-  });
-});
-
-describe("clearCartDurable — the awaitable durable clear (Checkout plan D5)", () => {
-  /**
-   * The delegate resolves the CURRENT store (getState() at call time), so
-   * these tests drive the REAL singleton `useCartStore` — the exact object
-   * production Checkout code reaches through `@/features/cart`. The
-   * singleton's backend is the AsyncStorage in-memory mock (reliable, but it
-   * cannot be told to fail), so the durable-FAILURE scenarios splice in the
-   * REAL clear of a factory-built store over `createMemoryStore({ failOn })`:
-   * `setState` can replace actions on a real zustand store (the
-   * sign-out-cleanup.test.ts pattern, no mock framework), and the clear the
-   * delegate then resolves is the production remove→fallback code bound to
-   * an injectable backend. That clear's memory writes address the FACTORY
-   * store it was created for, so memory assertions in the spliced scenarios
-   * read the factory store; the singleton's own memory-empty behavior is
-   * pinned end-to-end by the first test through the real storage paths.
-   */
-  const realSingletonClear = useCartStore.getState().clear;
-
-  /** Read the singleton's durable key back through the app's real storage API. */
-  function readSingletonCart() {
-    return storage.read(KEY, (raw) => persistedCartSchema.parse(raw));
-  }
-
-  beforeEach(async () => {
-    useCartStore.setState({
-      lines: [],
-      ownerId: null,
-      persistence: "unknown",
-      hydrated: false,
-      locked: false,
-      clear: realSingletonClear,
-    });
-    // Disk hygiene for the singleton's real backend: a previous test's
-    // envelope must not leak into this one's hydrate/clear.
-    await storage.remove(KEY);
-  });
-
-  it("resolves the store's honest persisted result, empties memory, and is not blocked by the lock", async () => {
-    // The production path end-to-end: hydrate, seed through the store's own
-    // write path, then lock — Checkout calls this after a confirmed order,
-    // while the cart is locked (plan decision 5).
-    await useCartStore.getState().hydrate(OWNER_A);
-    useCartStore.getState().addItem(espressoInput);
-    await expect(useCartStore.getState().persistNow()).resolves.toEqual({ status: "persisted" });
-    useCartStore.getState().lock();
-    // The seed really is on disk, or the post-clear miss would prove nothing.
-    expect((await readSingletonCart()).status).toBe("hit");
-
-    const result = await clearCartDurable();
-
-    // The whole point of the seam (D5): the durable clear's honest result is
-    // RESOLVED, not dropped the way the fire-and-forget clearCart() drops it
-    // — this is what lets Checkout prove AC-07/AC-11 before it treats local
-    // cleanup as safe.
-    expect(result).toEqual({ status: "persisted" });
-    expect(useCartStore.getState().lines).toEqual([]);
-    expect((await readSingletonCart()).status).toBe("miss");
-    // The owner is kept (clearing is not a profile switch), and the lock is
-    // neither an obstacle nor released — the caller owns releasing it.
-    expect(useCartStore.getState().ownerId).toBe(OWNER_A);
-    expect(useCartStore.getState().locked).toBe(true);
-    expect(useCartStore.getState().persistence).toBe("persisted");
-  });
-
-  it("remove fails → the fallback overwrite recovers: disk ends correctly empty and the clear resolves the overwrite's persisted", async () => {
-    const raw = createMemoryStore({ failOn: "removeItem" });
-    seedCart(raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-    expect(useStore.getState().lines).toEqual([espressoLine]);
-
-    // Point the delegate's `useCartStore.getState().clear()` at the factory
-    // store's REAL clear. This also pins the current-store mechanics: the
-    // delegate resolves whatever clear the singleton holds AT CALL TIME — a
-    // captured-at-module-load action reference would still run the
-    // singleton's own clear here and fail the disk assertion below.
-    useCartStore.setState({ clear: useStore.getState().clear });
-
-    const result = await clearCartDurable();
-
-    // The truth, stated precisely: the durable REMOVE failed, and the clear
-    // recovered through the fallback OVERWRITE — which SUCCEEDED. The store
-    // resolves the overwrite's result: a genuine durable success (disk
-    // provably empty), never memoryOnly and never a fabricated rejection.
-    expect(result.status).toBe("persisted");
-    expect(useStore.getState().persistence).toBe("persisted");
-    expect(useStore.getState().lines).toEqual([]);
-    // Disk is correctly empty — as an explicit empty envelope, not a missing
-    // key: a cold start restores this owner's empty cart, never the previous
-    // customer's lines.
-    expect(readPersistedCart(raw)).toEqual({ version: 1, ownerId: OWNER_A, lines: [] });
-  });
-
-  it("both the remove and the fallback overwrite fail → the clear resolves the honest rejected result (clearFailed)", async () => {
-    // The backend the clear suite above uses for "nothing durable succeeds":
-    // setItem and removeItem both throw.
-    const raw: KeyValueStore = {
-      getItem: async () => JSON.stringify({ version: 1, ownerId: OWNER_A, lines: [espressoLine] }),
-      setItem: async () => {
-        throw new Error("disk full");
-      },
-      removeItem: async () => {
-        throw new Error("disk full");
-      },
-    };
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-    expect(useStore.getState().lines).toEqual([espressoLine]);
-
-    useCartStore.setState({ clear: useStore.getState().clear });
-
-    const result = await clearCartDurable();
-
-    // AC-11's exact seam: the honest rejection is RESOLVED, never swallowed —
-    // the caller (Checkout) surfaces the unsafe local cleanup instead of
-    // believing the cart was cleared.
-    expect(result.status).toBe("rejected");
-    expect(rejectedError(result).message).toBe("disk full");
-    expect(useStore.getState().lines).toEqual([]);
-    expect(useStore.getState().persistence).toBe("clearFailed");
-  });
-
-  it("is not gated on hydration: before the first hydrate the durable clear still runs and removes a stale key", async () => {
-    // The deliberate D5 decision (see the delegate's doc comment): the UI
-    // clearCart() is a no-op pre-hydrate, but the AWAITABLE clear must not
-    // gate — a recovery flow can reach it before hydration completes, and a
-    // gate would have to silently skip the durable clear (leaving a previous
-    // customer's data on disk while the caller believes it gone) or
-    // fabricate a result.
-    await storage.write(KEY, { version: 1, ownerId: OWNER_B, lines: [waterLine] });
-
-    const result = await clearCartDurable();
-
-    expect(result.status).toBe("persisted");
-    expect((await readSingletonCart()).status).toBe("miss");
-    expect(useCartStore.getState().lines).toEqual([]);
-  });
-});
-
-describe("derived summaries — totalQuantity and distinctLineCount (AC-08)", () => {
-  it("recompute from state after add, merge, quantity change, remove, and clear", async () => {
-    const raw = createMemoryStore();
-    const useStore = createCartStore(createJsonStorage(raw));
-    await useStore.getState().hydrate(OWNER_A);
-
+  it("derived summaries follow add, merge, quantity change, remove and clear", async () => {
+    const { useStore } = await hydratedStore();
     const state = () => useStore.getState();
-    expect(selectTotalQuantity(state())).toBe(0);
-    expect(selectDistinctLineCount(state())).toBe(0);
+    const summary = () => [selectTotalQuantity(state()), selectDistinctLineCount(state())];
 
+    expect(summary()).toEqual([0, 0]);
     state().addItem(espressoInput);
-    expect(selectTotalQuantity(state())).toBe(2);
-    expect(selectDistinctLineCount(state())).toBe(1);
-
+    expect(summary()).toEqual([2, 1]);
     state().addItem({ ...espressoInput, quantity: 3 });
-    expect(selectTotalQuantity(state())).toBe(5);
-    expect(selectDistinctLineCount(state())).toBe(1);
-
+    expect(summary()).toEqual([5, 1]);
     state().addItem(waterInput);
-    expect(selectTotalQuantity(state())).toBe(8);
-    expect(selectDistinctLineCount(state())).toBe(2);
-
+    expect(summary()).toEqual([8, 2]);
     state().setLineQuantity(espressoLineId, 10);
-    expect(selectTotalQuantity(state())).toBe(13);
-    expect(selectDistinctLineCount(state())).toBe(2);
-
+    expect(summary()).toEqual([13, 2]);
     state().removeLine(espressoLineId);
-    expect(selectTotalQuantity(state())).toBe(3);
-    expect(selectDistinctLineCount(state())).toBe(1);
+    expect(summary()).toEqual([3, 1]);
+    await state().clear();
+    expect(summary()).toEqual([0, 0]);
+  });
+});
 
-    await useStore.getState().persistNow();
-    state().clearCart();
-    expect(selectTotalQuantity(state())).toBe(0);
-    expect(selectDistinctLineCount(state())).toBe(0);
-    await until(() => !raw.map.has(KEY), "the durable clear to remove the key");
+describe("saving — failures and ordering", () => {
+  it("a failed write keeps the cart in memory and reports saveFailed", async () => {
+    const { raw, useStore, idle } = await hydratedStore({ failOn: "setItem" });
+
+    useStore.getState().addItem(espressoInput);
+    await idle();
+
+    expect(useStore.getState().lines).toEqual([espressoLine]);
+    expect(useStore.getState().saveFailed).toBe(true);
+    expect(raw.map.has(KEY)).toBe(false);
+  });
+
+  it("saveFailed recovers to false on the next successful save", async () => {
+    const { raw, control, useStore, idle } = await hydratedStore();
+
+    control.failWrites = true;
+    useStore.getState().addItem(espressoInput);
+    await idle();
+    expect(useStore.getState().saveFailed).toBe(true);
+
+    control.failWrites = false;
+    useStore.getState().addItem(waterInput);
+    await idle();
+    expect(useStore.getState().saveFailed).toBe(false);
+    expect(readPersistedCart(raw).lines).toEqual([espressoLine, waterLine]);
+  });
+
+  it("a failed clear still empties memory and reports saveFailed", async () => {
+    const tracked = trackedStore({ failOn: "removeItem" });
+    seedCart(tracked.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
+    const useStore = storeOver(tracked);
+    await useStore.getState().hydrate(OWNER_A);
+
+    await useStore.getState().clear();
+
+    expect(useStore.getState().lines).toEqual([]);
+    expect(useStore.getState().saveFailed).toBe(true);
+  });
+
+  it("a new customer starts with saveFailed cleared", async () => {
+    const { useStore, idle } = await hydratedStore({ failOn: "setItem" });
+    useStore.getState().addItem(espressoInput);
+    await idle();
+    expect(useStore.getState().saveFailed).toBe(true);
+
+    await useStore.getState().hydrate(OWNER_B);
+    expect(useStore.getState().saveFailed).toBe(false);
+  });
+
+  it("rapid edits never overlap writes, coalesce, and land the final state", async () => {
+    const { raw, ops, useStore, idle, writeInFlight, maxWritesInFlight } = await hydratedStore({
+      slowWrites: true,
+    });
+
+    useStore.getState().addItem(espressoInput);
+    await until(writeInFlight, "the first write to start");
+    useStore.getState().addItem(waterInput); // queued behind the in-flight write
+    useStore.getState().setLineQuantity(espressoLineId, 7); // rides along with it
+    useStore.getState().removeLine(waterLine.lineId); // rides along with it
+    await idle();
+
+    expect(maxWritesInFlight()).toBe(1);
+    expect(ops.writes).toBe(2);
+    expect(readPersistedCart(raw).lines).toEqual([{ ...espressoLine, quantity: 7 }]);
+  });
+
+  it("a clear cannot be undone by a late earlier write", async () => {
+    const { raw, useStore, writeInFlight } = await hydratedStore({ slowWrites: true });
+
+    useStore.getState().addItem(espressoInput);
+    await until(writeInFlight, "the add's write to start");
+    await useStore.getState().clear();
+
+    expect(useStore.getState().lines).toEqual([]);
+    expect(raw.map.has(KEY)).toBe(false);
+  });
+
+  it("a clear issued behind a queued save resolves only once the tablet is empty", async () => {
+    const { raw, useStore, writeInFlight } = await hydratedStore({ slowWrites: true });
+
+    useStore.getState().addItem(espressoInput);
+    await until(writeInFlight, "the first write to start");
+    useStore.getState().addItem(waterInput); // a second save waits its turn
+    await useStore.getState().clear(); // rides along with it, and it now saves []
+
+    expect(raw.map.has(KEY)).toBe(false);
+  });
+
+  it("a customer change while a save is in flight leaves nothing of the previous customer on disk", async () => {
+    const { raw, useStore, writeInFlight } = await hydratedStore({ slowWrites: true });
+
+    useStore.getState().addItem(espressoInput);
+    await until(writeInFlight, "the add's write to start");
+    await useStore.getState().hydrate(OWNER_B);
+
+    expect(useStore.getState()).toMatchObject({ lines: [], ownerId: OWNER_B, hydrated: true });
+    expect(raw.map.has(KEY)).toBe(false);
   });
 });

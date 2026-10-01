@@ -43,16 +43,30 @@ export type SubmitOrderInput = {
   items: NormalizedOrderItem[];
 };
 
+/**
+ * How long an order request may go unanswered. React Native's Android HTTP
+ * client never times out on its own, so a connection that silently died would
+ * leave the customer on "Sending…" forever. Past this, the request is
+ * cancelled and its outcome is unknown: checkout re-sends the SAME request,
+ * which the server deduplicates.
+ */
+export const SUBMIT_ORDER_TIMEOUT_MS = 30_000;
+
 export async function submitOrder(input: SubmitOrderInput): Promise<CreateOrderResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SUBMIT_ORDER_TIMEOUT_MS);
   try {
     return await callRpc(
       "create_order",
       { client_request_id: input.clientRequestId, items: input.items },
       createOrderResponseSchema,
+      { signal: controller.signal },
     );
   } catch (error) {
     // An AppError (RPC error response or schema mismatch, already mapped by
     // callRpc) passes through unchanged; everything else becomes one.
     throw toAppError(error, "We couldn't submit your order.");
+  } finally {
+    clearTimeout(timer);
   }
 }

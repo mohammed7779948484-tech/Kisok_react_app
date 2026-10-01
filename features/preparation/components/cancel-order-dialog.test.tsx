@@ -1,17 +1,16 @@
-import { CancelOrderDialog } from "./cancel-order-dialog";
-
 import { renderWithProviders, screen, userEvent } from "@/core/testing";
+
+import { CancelOrderDialog } from "./cancel-order-dialog";
 
 /**
  * AC-06's confirmation half: cancelling an order asks a destructive question
- * first, states what cancelling does, and hands the decision to the screen.
+ * first, states what cancelling does, offers an optional one-tap reason, and
+ * hands the decision to the screen.
  *
- * The dialog is presentational (the repo's component convention — plan
- * decision 4 governs the copy): it composes the shared
- * ConfirmDialog, never calls the mutation itself, and never renders error
- * state — the screen (T11/T13) owns the mutation, `open`, and the
- * rejected-transition refresh (T05-R02). What this test pins is the callback
- * contract, the destructive copy, and the busy pass-through.
+ * The dialog is presentational: it never calls the mutation itself and never
+ * renders error state — the screen owns the mutation, `open`, and the
+ * rejected-transition refresh. What this test pins is the callback contract
+ * (with or without a reason), the destructive copy, and the busy pass-through.
  */
 
 /** The minimal target shape — a board order is structurally this. */
@@ -26,9 +25,7 @@ describe("CancelOrderDialog", () => {
 
       expect(screen.getByText("Cancel order AB2CD4?")).toBeOnTheScreen();
       expect(
-        screen.getByText(
-          "This cancels the order and returns its items to stock. This cannot be undone.",
-        ),
+        screen.getByText("Its items go back to stock. This can’t be undone."),
       ).toBeOnTheScreen();
       expect(screen.getByRole("button", { name: "Cancel order" })).toBeOnTheScreen();
       // "Keep order", not "Cancel" — a Cancel button inside a cancel dialog is
@@ -38,7 +35,7 @@ describe("CancelOrderDialog", () => {
   });
 
   describe("the decision", () => {
-    it("reports a confirm press with the order and leaves closing to the screen", async () => {
+    it("reports a confirm press with no reason and leaves closing to the screen", async () => {
       const onCancelOrder = jest.fn();
       const onOpenChange = jest.fn();
       const user = userEvent.setup();
@@ -54,12 +51,81 @@ describe("CancelOrderDialog", () => {
 
       await user.press(screen.getByRole("button", { name: "Cancel order" }));
 
-      // The ORDER, never the press event — the screen calls the mutation.
+      // No reason was chosen — and never the press event leaking through.
       expect(onCancelOrder).toHaveBeenCalledTimes(1);
-      expect(onCancelOrder).toHaveBeenCalledWith(ORDER);
+      expect(onCancelOrder).toHaveBeenCalledWith(undefined);
       // Confirm does not close the dialog: the pending state must stay
       // visible until the mutation settles and the screen closes on success.
       expect(onOpenChange).not.toHaveBeenCalled();
+    });
+
+    it("passes the chosen reason with the confirm press", async () => {
+      const onCancelOrder = jest.fn();
+      const user = userEvent.setup();
+
+      await renderWithProviders(
+        <CancelOrderDialog
+          open
+          order={ORDER}
+          onOpenChange={jest.fn()}
+          onCancelOrder={onCancelOrder}
+        />,
+      );
+
+      const outOfStock = screen.getByRole("radio", { name: "Out of stock" });
+      expect(outOfStock).not.toBeChecked();
+      await user.press(outOfStock);
+      expect(screen.getByRole("radio", { name: "Out of stock" })).toBeChecked();
+
+      await user.press(screen.getByRole("button", { name: "Cancel order" }));
+
+      expect(onCancelOrder).toHaveBeenCalledTimes(1);
+      expect(onCancelOrder).toHaveBeenCalledWith("Out of stock");
+    });
+
+    it("offers the reasons as a single choice that can be changed or cleared", async () => {
+      const onCancelOrder = jest.fn();
+      const user = userEvent.setup();
+
+      await renderWithProviders(
+        <CancelOrderDialog
+          open
+          order={ORDER}
+          onOpenChange={jest.fn()}
+          onCancelOrder={onCancelOrder}
+        />,
+      );
+
+      for (const reason of ["Out of stock", "Customer left", "Duplicate order", "Damaged item"]) {
+        expect(screen.getByRole("radio", { name: reason })).toBeOnTheScreen();
+      }
+
+      await user.press(screen.getByRole("radio", { name: "Customer left" }));
+      await user.press(screen.getByRole("radio", { name: "Damaged item" }));
+      expect(screen.getByRole("radio", { name: "Customer left" })).not.toBeChecked();
+      expect(screen.getByRole("radio", { name: "Damaged item" })).toBeChecked();
+
+      // Pressing the chosen reason again clears it — the reason is optional.
+      await user.press(screen.getByRole("radio", { name: "Damaged item" }));
+      expect(screen.getByRole("radio", { name: "Damaged item" })).not.toBeChecked();
+
+      await user.press(screen.getByRole("button", { name: "Cancel order" }));
+      expect(onCancelOrder).toHaveBeenCalledWith(undefined);
+    });
+
+    it("forgets a previous reason when the dialog is opened again", async () => {
+      const onCancelOrder = jest.fn();
+      const user = userEvent.setup();
+      const props = { order: ORDER, onOpenChange: jest.fn(), onCancelOrder };
+
+      const view = await renderWithProviders(<CancelOrderDialog open {...props} />);
+      await user.press(screen.getByRole("radio", { name: "Duplicate order" }));
+      expect(screen.getByRole("radio", { name: "Duplicate order" })).toBeChecked();
+
+      await view.rerender(<CancelOrderDialog open={false} {...props} />);
+      await view.rerender(<CancelOrderDialog open {...props} />);
+
+      expect(screen.getByRole("radio", { name: "Duplicate order" })).not.toBeChecked();
     });
 
     it("dismisses through Keep order without cancelling", async () => {
@@ -85,7 +151,7 @@ describe("CancelOrderDialog", () => {
   });
 
   describe("pending cancel", () => {
-    it("disables both buttons, swaps the confirm label to Working…, and ignores presses", async () => {
+    it("disables every control, swaps the confirm label to Cancelling…, and ignores presses", async () => {
       const onCancelOrder = jest.fn();
       const user = userEvent.setup();
 
@@ -100,11 +166,12 @@ describe("CancelOrderDialog", () => {
       );
 
       // The label is SWAPPED, not duplicated — while busy the confirm button's
-      // accessible name is the pending one (ConfirmDialog's busy convention).
-      const confirm = screen.getByRole("button", { name: "Working…" });
+      // accessible name is the pending one.
+      const confirm = screen.getByRole("button", { name: "Cancelling…" });
       expect(confirm).toBeDisabled();
       expect(screen.queryByRole("button", { name: "Cancel order" })).toBeNull();
       expect(screen.getByRole("button", { name: "Keep order" })).toBeDisabled();
+      expect(screen.getByRole("radio", { name: "Out of stock" })).toBeDisabled();
 
       await user.press(confirm);
       expect(onCancelOrder).not.toHaveBeenCalled();

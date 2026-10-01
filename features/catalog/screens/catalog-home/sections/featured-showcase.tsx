@@ -72,7 +72,10 @@ export function FeaturedShowcase({
             contentFit="cover"
             transition={0}
             hideFallback
-            className="h-full w-full opacity-40"
+            className="h-full w-full"
+            // Inline: expo-image is not a NativeWind interop component, so an
+            // opacity class would be dropped on Android.
+            style={{ opacity: 0.4 }}
           />
           <View aria-hidden className="absolute inset-0 bg-primary/60" />
         </Animated.View>
