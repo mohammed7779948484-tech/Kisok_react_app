@@ -86,15 +86,18 @@ describe("catalog-snapshot schema", () => {
     );
   });
 
-  it("rejects the wrong schema version exactly", () => {
-    expectRejectedAt(
-      {
-        ...createCatalogSnapshotFixture(),
-        schema_version: "kiosk.catalog.lean.v2",
-      },
-      "schema_version",
-    );
-  });
+  it.each(["kiosk.catalog.lean.v1", "kiosk.catalog.lean.v3"])(
+    "rejects any schema version other than v2 exactly: %s",
+    (schemaVersion) => {
+      expectRejectedAt(
+        {
+          ...createCatalogSnapshotFixture(),
+          schema_version: schemaVersion,
+        },
+        "schema_version",
+      );
+    },
+  );
 
   it.each([
     [
@@ -114,6 +117,29 @@ describe("catalog-snapshot schema", () => {
         ],
       },
       "variants.0.is_available",
+    ],
+    [
+      "v1 variant without available_quantity",
+      {
+        variants: createCatalogSnapshotFixture().variants.map(
+          ({ available_quantity: _availableQuantity, ...variant }) => variant,
+        ),
+      },
+      "variants.0.available_quantity",
+    ],
+    [
+      "negative available_quantity",
+      {
+        variants: [{ ...createCatalogSnapshotFixture().variants[0], available_quantity: -1 }],
+      },
+      "variants.0.available_quantity",
+    ],
+    [
+      "fractional available_quantity",
+      {
+        variants: [{ ...createCatalogSnapshotFixture().variants[0], available_quantity: 1.5 }],
+      },
+      "variants.0.available_quantity",
     ],
     [
       "nullable-only media field omitted",

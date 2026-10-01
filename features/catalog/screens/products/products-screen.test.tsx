@@ -1,5 +1,6 @@
 import { AppError } from "@/core/errors";
-import { act, renderWithProviders, screen, userEvent, waitFor } from "@/core/testing";
+import { resetLogging, setLogSink } from "@/core/logging";
+import { act, fireEvent, renderWithProviders, screen, userEvent, waitFor } from "@/core/testing";
 
 import { fetchCatalog } from "../../api/fetch-catalog";
 import {
@@ -18,18 +19,17 @@ import { ProductsScreen } from "./products-screen";
  * Screen behaviour for All Products (AC-03).
  *
  * The screen must not know Supabase exists: the feature's own `api/` module is
- * the seam, mocked exactly as `queries/use-catalog.test.tsx` and the Home
- * screen test do. Navigation is asserted against a mocked `expo-router`
- * `useRouter` (push/replace spies) because the detail/root routes this screen
- * targets do not all exist until T07–T09 — the tests pin destinations and
- * semantics, not navigation.
+ * the seam. Navigation is asserted against a mocked `expo-router` `useRouter`
+ * (push/replace spies); `useFocusEffect` runs as a plain effect because the
+ * screen is focused for as long as it is mounted here.
  *
- * Fake timers follow the CatalogGrid test, not the Home screen test: this
- * screen renders FlashList, whose deferred layout work fires real timers that
- * escape `act` and print warnings under real timers. That is also why the
- * background-refetch macrotask flush from the Home test becomes a fake-timer
- * advance here — TanStack's batched observer notification is a `setTimeout(0)`
- * that only lands once timers advance.
+ * The results only render once their container has been measured (the grid
+ * derives its columns from the width it is given), so every populated test
+ * delivers that layout pass with `measureLayout()`.
+ *
+ * Fake timers: FlashList's deferred layout work fires timers that would escape
+ * `act` under real timers, and TanStack's batched observer notification is a
+ * `setTimeout(0)` that only lands once timers advance.
  */
 jest.mock("../../api/fetch-catalog", () => ({
   fetchCatalog: jest.fn(),
@@ -38,41 +38,60 @@ jest.mock("../../api/fetch-catalog", () => ({
 const mockRouterPush = jest.fn();
 const mockRouterReplace = jest.fn();
 
-jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace }),
-}));
-
-// AppImage's fallback icon renders a lucide icon; stub it so card fallback
-// paths render without the SVG machinery.
-jest.mock("lucide-react-native", () => {
-  const createMockIcon = (name: string) => {
-    const MockIcon = () => null;
-    MockIcon.displayName = name;
-    return MockIcon;
-  };
-  return new Proxy(
-    { __esModule: true },
-    {
-      get: (target: any, prop: string | symbol) => {
-        if (prop in target) return target[prop];
-        if (typeof prop === "string") {
-          target[prop] = createMockIcon(prop);
-          return target[prop];
-        }
-        return undefined;
-      },
+jest.mock("expo-router", () => {
+  const { useEffect } = jest.requireActual<typeof import("react")>("react");
+  return {
+    useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace }),
+    useFocusEffect: (effect: () => void | (() => void)) => {
+      useEffect(effect, [effect]);
     },
-  );
+  };
 });
 
 jest.useFakeTimers();
+
+type HostNode = {
+  props: Record<string, unknown>;
+  children: readonly (HostNode | string)[];
+};
+
+/**
+ * Deliver a layout pass to every container that renders nothing until it has
+ * been measured (the browse results, then the grid inside them).
+ */
+async function measureLayout(width = 1200) {
+  const measured = new Set<HostNode>();
+  for (let pass = 0; pass < 5; pass += 1) {
+    const pending: HostNode[] = [];
+    const visit = (node: HostNode) => {
+      if (
+        typeof node.props.onLayout === "function" &&
+        node.children.length === 0 &&
+        !measured.has(node)
+      ) {
+        pending.push(node);
+      }
+      node.children.forEach((child) => {
+        if (typeof child !== "string") visit(child);
+      });
+    };
+    visit(screen.container as unknown as HostNode);
+    if (pending.length === 0) return;
+    for (const node of pending) {
+      measured.add(node);
+      await fireEvent(node as never, "layout", {
+        nativeEvent: { layout: { x: 0, y: 0, width, height: 900 } },
+      });
+    }
+  }
+}
 
 const mockFetchCatalog = fetchCatalog as jest.MockedFunction<typeof fetchCatalog>;
 
 const retryableCatalogError = new AppError({
   kind: "server",
   userMessage: "We couldn't load the catalog. Please try again.",
-  technicalMessage: "get_customer_catalog rpc failed",
+  technicalMessage: "get_customer_catalog_v2 rpc failed",
 });
 
 const nonRetryableCatalogError = new AppError({
@@ -175,6 +194,7 @@ function snapshotWithManyProducts(): CatalogSnapshot {
       search_keywords: null,
       display_order: 10,
       is_available: true,
+      available_quantity: 8,
     },
     {
       id: "35353535-3535-4353-8353-353535353535",
@@ -185,6 +205,7 @@ function snapshotWithManyProducts(): CatalogSnapshot {
       search_keywords: null,
       display_order: 10,
       is_available: false,
+      available_quantity: 0,
     },
     {
       id: "37373737-3737-4373-8737-373737373737",
@@ -195,6 +216,7 @@ function snapshotWithManyProducts(): CatalogSnapshot {
       search_keywords: null,
       display_order: 10,
       is_available: true,
+      available_quantity: 8,
     },
     {
       id: "39393939-3939-4393-8393-393939393939",
@@ -205,6 +227,7 @@ function snapshotWithManyProducts(): CatalogSnapshot {
       search_keywords: null,
       display_order: 10,
       is_available: false,
+      available_quantity: 0,
     },
   ];
 
@@ -239,55 +262,110 @@ function emptyCatalogSnapshot(): CatalogSnapshot {
   });
 }
 
+/** The product cards on screen, in grid order, by their accessible names. */
+function productCardNames(): string[] {
+  return screen
+    .getAllByRole("button")
+    .map((element) => element.props.accessibilityLabel as string | undefined)
+    .filter((label): label is string =>
+      manyProductNames.some((name) => label?.startsWith(`${name},`) === true),
+    );
+}
+
+/** The first accessible name at or below `node` — a cell's product card. */
+function firstLabelWithin(node: HostNode): string | undefined {
+  if (typeof node.props.accessibilityLabel === "string") return node.props.accessibilityLabel;
+  for (const child of node.children) {
+    if (typeof child === "string") continue;
+    const label = firstLabelWithin(child);
+    if (label !== undefined) return label;
+  }
+  return undefined;
+}
+
+/**
+ * The product names in the order the grid presents them. FlashList recycles
+ * cells, so host-tree order is not presentation order; each cell's `index` is.
+ */
+function productCardOrder(): string[] {
+  const cells: { index: number; name: string }[] = [];
+  const visit = (node: HostNode) => {
+    if (typeof node.props.index === "number") {
+      cells.push({
+        index: node.props.index,
+        name: (firstLabelWithin(node) ?? "").split(",")[0] ?? "",
+      });
+      return;
+    }
+    node.children.forEach((child) => {
+      if (typeof child !== "string") visit(child);
+    });
+  };
+  visit(screen.getByTestId("products-grid") as unknown as HostNode);
+  return cells.sort((left, right) => left.index - right.index).map((cell) => cell.name);
+}
+
+/** Wait for the snapshot to reach the chrome, then measure the results. */
+async function settlePopulated() {
+  await waitFor(() =>
+    expect(
+      screen.getByRole("link", { name: "KISOK Test Store, explore the store" }),
+    ).toBeOnTheScreen(),
+  );
+  await measureLayout();
+  expect(screen.getByRole("header", { name: "Products" })).toBeOnTheScreen();
+}
+
+async function renderPopulated(snapshot: CatalogSnapshot = snapshotWithManyProducts()) {
+  mockFetchCatalog.mockResolvedValue(snapshot);
+  const result = await renderWithProviders(<ProductsScreen />);
+  await settlePopulated();
+  return result;
+}
+
 beforeEach(() => {
   mockRouterPush.mockClear();
   mockRouterReplace.mockClear();
+  // Fixture media carry stored public ids that differ from their delivery
+  // paths, which the Cloudinary helper reports at debug level.
+  setLogSink(() => {});
 });
 
 afterEach(() => {
   mockFetchCatalog.mockReset();
+  resetLogging();
 });
 
 describe("ProductsScreen", () => {
-  // The generated baseline's mount-without-throwing intent survives here: this
-  // is the first render of the real screen in the real providers.
   it("mounts the populated All Products grid from one successful snapshot", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithManyProducts());
+    await renderPopulated();
 
-    await renderWithProviders(<ProductsScreen />);
-
-    await waitFor(() =>
-      expect(screen.getByRole("header", { name: "All products" })).toBeOnTheScreen(),
-    );
-
-    // The product count is visible.
+    // The product count is stated in the heading and in the result toolbar.
+    expect(
+      screen.getByLabelText(`${manyProductNames.length} products in the store`),
+    ).toBeOnTheScreen();
     expect(screen.getByText(manyProductCountLabel)).toBeOnTheScreen();
+    expect(screen.getByText("All catalog products")).toBeOnTheScreen();
 
     // The complete products collection is present in the scalable grid.
     expect(screen.getByTestId("products-grid")).toBeOnTheScreen();
-    for (const name of manyProductNames) {
-      expect(screen.getByText(name)).toBeOnTheScreen();
-    }
+    expect(productCardOrder()).toEqual([...manyProductNames]);
+    expect(productCardNames()).toHaveLength(manyProductNames.length);
 
-    // Root navigation is present with Products selected.
-    expect(screen.getByRole("button", { name: "Products", selected: true })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Home", selected: false })).toBeOnTheScreen();
+    // The catalog chrome is present with Products selected.
+    expect(screen.getByRole("tab", { name: "Products", selected: true })).toBeOnTheScreen();
+    expect(screen.getByRole("tab", { name: "Explore", selected: false })).toBeOnTheScreen();
 
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
   });
 
   it("renders identity, image/fallback and textual derived availability from the card", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithManyProducts());
-
-    await renderWithProviders(<ProductsScreen />);
-
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
-      ).toBeOnTheScreen(),
-    );
+    await renderPopulated();
 
     // Available products say so in words.
+    expect(
+      screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
+    ).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Trail Bottle, Available" })).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Herbal Tea Tin, Available" })).toBeOnTheScreen();
 
@@ -304,18 +382,13 @@ describe("ProductsScreen", () => {
       screen.getByRole("button", { name: "Cotton Scarf, Currently unavailable" }),
     ).toBeOnTheScreen();
 
-    // Cover imagery renders through AppImage; missing media keeps the shared
-    // fallback slot instead of collapsing the card layout.
-    expect(screen.getByLabelText("Café Crème")).toBeOnTheScreen();
-    expect(screen.getByRole("image", { name: "Everyday Tote" })).toBeOnTheScreen();
+    // A product without a cover keeps its image slot with a named fallback:
+    // its name shows on the fallback surface and as the card title.
+    expect(screen.getAllByText("Trail Bottle")).toHaveLength(2);
   });
 
   it("keeps every product discoverable when all products are unavailable", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithAllProductsUnavailable());
-
-    await renderWithProviders(<ProductsScreen />);
-
-    await waitFor(() => expect(screen.getByText(manyProductCountLabel)).toBeOnTheScreen());
+    await renderPopulated(snapshotWithAllProductsUnavailable());
 
     // Nothing is filtered out of the grid: every product is still browsable,
     // each carrying its textual Currently unavailable status.
@@ -332,17 +405,9 @@ describe("ProductsScreen", () => {
     expect(screen.queryByRole("button", { name: /, (Available|Options available)$/ })).toBeNull();
   });
 
-  it("pushes the matching product detail when a card is pressed", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithManyProducts());
+  it("pushes the matching product detail, named for the way back, when a card is pressed", async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-
-    await renderWithProviders(<ProductsScreen />);
-
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
-      ).toBeOnTheScreen(),
-    );
+    await renderPopulated();
 
     // An available product, an unavailable one, and one past the base fixture.
     await user.press(
@@ -354,42 +419,65 @@ describe("ProductsScreen", () => {
     expect(mockRouterPush).toHaveBeenCalledTimes(3);
     expect(mockRouterPush).toHaveBeenNthCalledWith(1, {
       pathname: "/product-detail",
-      params: { productId: catalogFixtureIds.products.coffee },
+      params: { productId: catalogFixtureIds.products.coffee, backLabel: "Back to products" },
     });
     expect(mockRouterPush).toHaveBeenNthCalledWith(2, {
       pathname: "/product-detail",
-      params: { productId: catalogFixtureIds.products.tote },
+      params: { productId: catalogFixtureIds.products.tote, backLabel: "Back to products" },
     });
     expect(mockRouterPush).toHaveBeenNthCalledWith(3, {
       pathname: "/product-detail",
-      params: { productId: extraProductIds.trailBottle },
+      params: { productId: extraProductIds.trailBottle, backLabel: "Back to products" },
     });
     expect(mockRouterReplace).not.toHaveBeenCalled();
   });
 
-  it("replaces root destinations and never pushes them", async () => {
-    mockFetchCatalog.mockResolvedValue(snapshotWithManyProducts());
+  it("re-orders the grid A–Z and back to store order", async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderPopulated();
 
-    await renderWithProviders(<ProductsScreen />);
+    expect(screen.getByRole("radio", { name: "Store order", checked: true })).toBeOnTheScreen();
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Home", selected: false })).toBeOnTheScreen(),
-    );
+    await user.press(screen.getByRole("radio", { name: "A–Z" }));
+
+    expect(screen.getByRole("radio", { name: "A–Z", checked: true })).toBeOnTheScreen();
+    expect(productCardOrder()).toEqual([
+      "Bamboo Cutlery Set",
+      "Café Crème",
+      "Cotton Scarf",
+      "Everyday Tote",
+      "Herbal Tea Tin",
+      "Pocket Notebook",
+      "Trail Bottle",
+    ]);
+
+    await user.press(screen.getByRole("radio", { name: "Store order" }));
+
+    expect(productCardOrder()).toEqual([...manyProductNames]);
+  });
+
+  it("replaces root destinations and never pushes them", async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderPopulated();
 
     // Re-selecting the current destination replaces rather than stacks, too.
-    await user.press(screen.getByRole("button", { name: "Home" }));
-    await user.press(screen.getByRole("button", { name: "Products" }));
-    await user.press(screen.getByRole("button", { name: "Brands" }));
-    await user.press(screen.getByRole("button", { name: "Categories" }));
-    await user.press(screen.getByRole("button", { name: "Search" }));
+    await user.press(screen.getByRole("tab", { name: "Explore" }));
+    await user.press(screen.getByRole("tab", { name: "Products" }));
+    await user.press(screen.getByRole("tab", { name: "Brands" }));
+    await user.press(screen.getByRole("tab", { name: "Categories" }));
+    await user.press(screen.getByRole("search", { name: "Search the store" }));
+    await user.press(screen.getByRole("link", { name: "KISOK Test Store, explore the store" }));
+    await user.press(screen.getByRole("link", { name: "Explore" }));
 
-    expect(mockRouterReplace).toHaveBeenCalledTimes(5);
-    expect(mockRouterReplace).toHaveBeenNthCalledWith(1, "/");
-    expect(mockRouterReplace).toHaveBeenNthCalledWith(2, "/products");
-    expect(mockRouterReplace).toHaveBeenNthCalledWith(3, "/brands");
-    expect(mockRouterReplace).toHaveBeenNthCalledWith(4, "/categories");
-    expect(mockRouterReplace).toHaveBeenNthCalledWith(5, "/search");
+    expect(mockRouterReplace.mock.calls).toEqual([
+      ["/"],
+      ["/products"],
+      ["/brands"],
+      ["/categories"],
+      ["/search"],
+      ["/"],
+      ["/"],
+    ]);
     expect(mockRouterPush).not.toHaveBeenCalled();
   });
 
@@ -399,9 +487,11 @@ describe("ProductsScreen", () => {
     await renderWithProviders(<ProductsScreen />);
 
     expect(screen.getByLabelText("Loading the catalog…")).toBeOnTheScreen();
-    // No grid, count or navigation chrome pretending to be data while pending.
-    expect(screen.queryByRole("header", { name: "All products" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Products" })).toBeNull();
+    // The chrome stays usable so the customer can leave, but no heading, count
+    // or grid pretends to be data while pending.
+    expect(screen.getByRole("tab", { name: "Products", selected: true })).toBeOnTheScreen();
+    expect(screen.queryByRole("header", { name: "Products" })).toBeNull();
+    expect(screen.queryByTestId("products-grid")).toBeNull();
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
   });
 
@@ -411,13 +501,11 @@ describe("ProductsScreen", () => {
 
     await renderWithProviders(<ProductsScreen />);
 
-    // ErrorState's View is not an `accessible` element, so RNTL role queries
-    // cannot match role "alert"; assert the standard error surface by its
-    // visible title and the error's safe user message instead.
-    await waitFor(() => expect(screen.getByText("Something went wrong")).toBeOnTheScreen());
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: "The catalog could not load" })).toBeOnTheScreen(),
+    );
 
     expect(screen.getByText("We couldn't load the catalog. Please try again.")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Try again" })).toBeOnTheScreen();
 
     await user.press(screen.getByRole("button", { name: "Try again" }));
 
@@ -429,7 +517,9 @@ describe("ProductsScreen", () => {
 
     await renderWithProviders(<ProductsScreen />);
 
-    await waitFor(() => expect(screen.getByText("Something went wrong")).toBeOnTheScreen());
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: "The catalog could not load" })).toBeOnTheScreen(),
+    );
 
     expect(screen.getByText("You don't have access to browse this catalog.")).toBeOnTheScreen();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
@@ -439,32 +529,25 @@ describe("ProductsScreen", () => {
     // TanStack keeps `data` across a failed background refetch, and the shared
     // QueryClient refetches on focus/reconnect for long-lived kiosk sessions —
     // so a network blip mid-session must not blank the still-valid grid. Only
-    // a failure with NO snapshot may render the full-screen ErrorState.
+    // a failure with NO snapshot may render the full-screen error state.
     mockFetchCatalog
       .mockResolvedValueOnce(snapshotWithManyProducts())
       .mockRejectedValueOnce(retryableCatalogError);
 
     const { queryClient } = await renderWithProviders(<ProductsScreen />);
+    await settlePopulated();
 
-    await waitFor(() => expect(screen.getByText(manyProductCountLabel)).toBeOnTheScreen());
-
-    // The same background refetch the shared QueryClient triggers on
-    // focus/reconnect — the first (successful) load is already consumed.
-    // Fake timers (see the file header) turn the Home test's macrotask flush
-    // into a timer advance so TanStack's batched observer notification lands
-    // inside act and the screen has re-rendered before the assertions.
     await act(async () => {
       await queryClient.refetchQueries({ queryKey: catalogKeys.all });
       await jest.advanceTimersByTimeAsync(0);
     });
 
-    // The populated grid stays on screen…
-    expect(screen.getByRole("header", { name: "All products" })).toBeOnTheScreen();
+    expect(mockFetchCatalog).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("header", { name: "Products" })).toBeOnTheScreen();
     expect(
       screen.getByRole("button", { name: "Café Crème, by Maison Élite, Options available" }),
     ).toBeOnTheScreen();
-    // …and the full-screen error state does not replace it.
-    expect(screen.queryByText("Something went wrong")).toBeNull();
+    expect(screen.queryByRole("header", { name: "The catalog could not load" })).toBeNull();
     expect(screen.queryByText("We couldn't load the catalog. Please try again.")).toBeNull();
   });
 
@@ -474,10 +557,10 @@ describe("ProductsScreen", () => {
 
     await renderWithProviders(<ProductsScreen />);
 
-    await waitFor(() => expect(screen.getByText("The catalog is empty")).toBeOnTheScreen());
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: "The catalog is empty" })).toBeOnTheScreen(),
+    );
 
-    // No grid, no cards — brands and categories exist in the snapshot, but
-    // this screen browses products only.
     expect(screen.queryByTestId("products-grid")).toBeNull();
     expect(screen.queryByRole("button", { name: /Café Crème/ })).toBeNull();
 

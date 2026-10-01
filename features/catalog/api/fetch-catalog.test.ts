@@ -19,26 +19,26 @@ afterEach(() => {
 });
 
 describe("fetchCatalog", () => {
-  it("calls the zero-argument customer Catalog RPC exactly once and returns its validated snapshot", async () => {
+  it("calls the zero-argument customer Catalog v2 RPC exactly once and returns its validated snapshot", async () => {
     const snapshot = createCatalogSnapshotFixture();
     supabase = installMockSupabase({
       rpc: {
-        get_customer_catalog: () => ({ data: snapshot, error: null }),
+        get_customer_catalog_v2: () => ({ data: snapshot, error: null }),
       },
     });
 
     await expect(fetchCatalog()).resolves.toEqual(snapshot);
-    expect(supabase.calls).toEqual([{ name: "get_customer_catalog", args: undefined }]);
+    expect(supabase.calls).toEqual([{ name: "get_customer_catalog_v2", args: undefined }]);
   });
 
   it("rejects a malformed Catalog payload as an AppError", async () => {
     const malformedSnapshot = {
       ...createCatalogSnapshotFixture(),
-      schema_version: "kiosk.catalog.lean.v0",
+      schema_version: "kiosk.catalog.lean.v1",
     };
     supabase = installMockSupabase({
       rpc: {
-        get_customer_catalog: () => ({ data: malformedSnapshot, error: null }),
+        get_customer_catalog_v2: () => ({ data: malformedSnapshot, error: null }),
       },
     });
 
@@ -51,7 +51,7 @@ describe("fetchCatalog", () => {
   it("propagates the AppError normalized by callRpc for an RPC failure", async () => {
     supabase = installMockSupabase({
       rpc: {
-        get_customer_catalog: () => ({
+        get_customer_catalog_v2: () => ({
           data: null,
           error: {
             code: "42501",

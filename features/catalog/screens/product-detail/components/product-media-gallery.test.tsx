@@ -4,13 +4,6 @@ import type { CatalogMedia } from "../../../model/catalog-view";
 
 import { ProductMediaGallery } from "./product-media-gallery";
 
-// AppImage's fallback icon renders a lucide icon; stub it so the empty-media
-// fallback path renders without the SVG machinery.
-jest.mock("lucide-react-native", () => ({
-  __esModule: true,
-  ImageOff: () => null,
-}));
-
 /**
  * Behaviour for the screen-local Product Media Gallery (AC-07, Design
  * decisions 9 and 12).
@@ -32,17 +25,20 @@ const mediaSet = [
   {
     mediaAssetId: "b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1",
     publicId: "products/kettle-matte-1",
-    secureUrl: "https://res.cloudinary.com/kisok/image/upload/kettle-matte-1.png",
+    secureUrl:
+      "https://res.cloudinary.com/kisok/image/upload/v1712000000/products/kettle-matte-1.png",
   },
   {
     mediaAssetId: "b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2",
     publicId: "products/kettle-matte-2",
-    secureUrl: "https://res.cloudinary.com/kisok/image/upload/kettle-matte-2.png",
+    secureUrl:
+      "https://res.cloudinary.com/kisok/image/upload/v1712000000/products/kettle-matte-2.png",
   },
   {
     mediaAssetId: "b3b3b3b3-b3b3-4b3b-8b3b-b3b3b3b3b3b3",
     publicId: "products/kettle-matte-3",
-    secureUrl: "https://res.cloudinary.com/kisok/image/upload/kettle-matte-3.png",
+    secureUrl:
+      "https://res.cloudinary.com/kisok/image/upload/v1712000000/products/kettle-matte-3.png",
   },
 ] as const satisfies readonly CatalogMedia[];
 
@@ -50,17 +46,54 @@ const singleMedia = [
   {
     mediaAssetId: "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1",
     publicId: "products/kettle-rouge",
-    secureUrl: "https://res.cloudinary.com/kisok/image/upload/kettle-rouge.png",
+    secureUrl:
+      "https://res.cloudinary.com/kisok/image/upload/v1712000000/products/kettle-rouge.png",
   },
 ] as const satisfies readonly CatalogMedia[];
+
+/**
+ * The Product Detail delivery policy: the stored `secure_url` path is
+ * re-requested through the `detail` preset — `c_limit` (fit inside, never
+ * crop) at 1400×1400 with automatic quality and format — keeping the upload
+ * version so a replaced asset busts the CDN cache.
+ */
+function detailUrl(publicId: string): string {
+  return `https://res.cloudinary.com/kisok/image/upload/c_limit,h_1400,w_1400/q_auto/f_auto/v1712000000/${publicId}`;
+}
+
+/** Thumbnails use the small `row` preset — also `c_limit`, never cropped. */
+function thumbnailUrl(publicId: string): string {
+  return `https://res.cloudinary.com/kisok/image/upload/c_limit,h_240,w_240/q_auto/f_auto/v1712000000/${publicId}`;
+}
 
 /** The rendered element shape the secure-URL and latch assertions read. */
 type RenderedImageElement = {
   props: {
     source?: readonly { uri?: string }[];
+    contentFit?: string;
     onError?: (event: { nativeEvent: { error?: unknown } }) => void;
   };
 };
+
+type RenderedNode = {
+  props: { source?: unknown };
+  children: readonly (RenderedNode | string)[];
+};
+
+/** Every image URI rendered inside `element` (thumbnails carry `alt=""`). */
+function imageUrisWithin(element: RenderedNode): string[] {
+  const own = Array.isArray(element.props.source)
+    ? (element.props.source as readonly { uri?: string }[]).flatMap((entry) =>
+        entry.uri === undefined ? [] : [entry.uri],
+      )
+    : [];
+  return [
+    ...own,
+    ...element.children.flatMap((child) =>
+      typeof child === "string" ? [] : imageUrisWithin(child),
+    ),
+  ];
+}
 
 /**
  * The secure URL the rendered gallery image actually displays. Read from the
@@ -84,8 +117,10 @@ describe("ProductMediaGallery", () => {
     );
 
     // One large image, named for what it shows; a single image needs no strip.
-    const image = screen.getByLabelText(galleryAlt);
-    expect(displayedImageUri(image)).toBe(singleMedia[0].secureUrl);
+    const image = screen.getByLabelText(galleryAlt) as RenderedImageElement;
+    expect(displayedImageUri(image)).toBe(detailUrl(singleMedia[0].publicId));
+    // Packaging is contained, never cropped to fill the stage.
+    expect(image.props.contentFit).toBe("contain");
     expect(screen.queryByRole("button")).toBeNull();
   });
 
@@ -102,7 +137,7 @@ describe("ProductMediaGallery", () => {
     // The large image announces its position in the set…
     expect(screen.getByLabelText(`${galleryAlt}, image 1 of 3`)).toBeOnTheScreen();
     expect(displayedImageUri(screen.getByLabelText(`${galleryAlt}, image 1 of 3`))).toBe(
-      mediaSet[0].secureUrl,
+      detailUrl(mediaSet[0].publicId),
     );
 
     // …and every image is reachable as a named, touch-sized thumbnail button
@@ -116,6 +151,14 @@ describe("ProductMediaGallery", () => {
     expect(
       screen.getByRole("button", { name: `${galleryAlt} image 3`, selected: false }),
     ).toBeOnTheScreen();
+
+    // Each thumbnail requests the small contained rendition of its own image.
+    mediaSet.forEach((item, index) => {
+      const thumbnail = screen.getByRole("button", { name: `${galleryAlt} image ${index + 1}` });
+      expect(imageUrisWithin(thumbnail as unknown as RenderedNode)).toEqual([
+        thumbnailUrl(item.publicId),
+      ]);
+    });
   });
 
   it("reports the pressed thumbnail and follows the new active id on re-render", async () => {
@@ -149,7 +192,7 @@ describe("ProductMediaGallery", () => {
 
     expect(screen.getByLabelText(`${galleryAlt}, image 3 of 3`)).toBeOnTheScreen();
     expect(displayedImageUri(screen.getByLabelText(`${galleryAlt}, image 3 of 3`))).toBe(
-      mediaSet[2].secureUrl,
+      detailUrl(mediaSet[2].publicId),
     );
     expect(
       screen.getByRole("button", { name: `${galleryAlt} image 1`, selected: false }),
@@ -189,7 +232,7 @@ describe("ProductMediaGallery", () => {
     // first media of the set rather than to nothing.
     expect(screen.getByLabelText(`${galleryAlt}, image 1 of 3`)).toBeOnTheScreen();
     expect(displayedImageUri(screen.getByLabelText(`${galleryAlt}, image 1 of 3`))).toBe(
-      mediaSet[0].secureUrl,
+      detailUrl(mediaSet[0].publicId),
     );
   });
 
@@ -242,7 +285,7 @@ describe("ProductMediaGallery", () => {
     // worklog remediation entry).
     expect(screen.getByLabelText(`${galleryAlt}, image 2 of 3`)).toBeOnTheScreen();
     expect(displayedImageUri(screen.getByLabelText(`${galleryAlt}, image 2 of 3`))).toBe(
-      mediaSet[1].secureUrl,
+      detailUrl(mediaSet[1].publicId),
     );
   });
 
@@ -272,7 +315,9 @@ describe("ProductMediaGallery", () => {
     );
 
     expect(screen.getByLabelText(otherAlt)).toBeOnTheScreen();
-    expect(displayedImageUri(screen.getByLabelText(otherAlt))).toBe(singleMedia[0].secureUrl);
+    expect(displayedImageUri(screen.getByLabelText(otherAlt))).toBe(
+      detailUrl(singleMedia[0].publicId),
+    );
     expect(screen.queryByLabelText(`${galleryAlt}, image 1 of 3`)).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
   });
