@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { StyleSheet, View, type ViewProps } from "react-native";
+import type { ViewProps } from "react-native";
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
@@ -26,19 +26,12 @@ export function Skeleton({ className, style, ...props }: ViewProps) {
   }, [opacity, reduceMotion]);
 
   const animatedStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
-  // NativeWind applies `className` only to interop components such as View;
-  // on Android a Reanimated view drops it. So the size and shape live on a
-  // plain View, and only the opacity pulse is animated inside it.
   return (
-    <View
+    <Animated.View
       aria-hidden
-      style={style}
-      className={cn("overflow-hidden rounded-md", className)}
+      style={[animatedStyle, style]}
+      className={cn("rounded-md bg-muted", className)}
       {...props}
-    >
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, animatedStyle]}>
-        <View className="flex-1 bg-muted" />
-      </Animated.View>
-    </View>
+    />
   );
 }

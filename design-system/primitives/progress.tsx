@@ -34,13 +34,12 @@ function Indicator({ value, className }: { value: number | undefined | null; cla
     );
   }
 
-  // A Reanimated view drops `className` on Android, so it carries only the
-  // animated width; the colour lives on a plain View inside it.
   return (
     <ProgressPrimitive.Indicator asChild>
-      <Animated.View style={[{ height: "100%" }, indicator]}>
-        <View className={cn("flex-1 bg-primary", className)} />
-      </Animated.View>
+      <Animated.View
+        style={[{ height: "100%" }, indicator]}
+        className={cn("h-full bg-primary", className)}
+      />
     </ProgressPrimitive.Indicator>
   );
 }
