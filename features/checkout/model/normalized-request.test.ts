@@ -1,35 +1,24 @@
 import type { CartLine } from "@/features/cart";
 
-import {
-  MAX_NORMALIZED_ITEMS,
-  deriveRequestFingerprint,
-  normalizeCartLines,
-} from "./normalized-request";
+import { MAX_NORMALIZED_ITEMS, MAX_RPC_QUANTITY, normalizeCartLines } from "./normalized-request";
 
 /**
  * Behavior tests for the pure checkout normalization rules (AC-05): cart
  * lines → the exact `create_order` items payload — unique `variant_id`
  * entries with positive integer quantities, deterministic for the same
- * logical cart — plus the client-side fingerprint that binds an idempotency
- * identity to the logical request.
+ * logical cart.
  *
  * Every case traces to
  * `supabase/migrations/20260826050007_lean_create_order.sql`: at most 100
  * entries (lines 46–50), exactly the two keys per item with an integer
  * quantity 1..2147483647 (lines 56–93), duplicate `variant_id`s rejected
- * (K1001, lines 95–105), and the server fingerprint
- * `'kiosk.checkout.lean.v1' || E'\n' || string_agg(variant_id || ':' ||
- * quantity, E'\n' order by r.variant_id)` (lines 107–114). Fixtures reuse the
+ * (K1001, lines 95–105). Fixtures reuse the
  * cart feature's cappuccino/water pair: one variant with option selections,
  * one plain variant with none.
  */
 
 const CAPPUCCINO_VARIANT_ID = "3a7f2c1d-9b4e-4d6a-8f2c-7e1b5d9a4c3f";
 const WATER_VARIANT_ID = "9c2d5e1a-3f4b-4a8c-b7d6-8e9f0a1b2c3d";
-// A third distinct variant for the fingerprint-binding case: swapping water
-// for tea changes ONLY the variant identity (quantities held identical).
-const TEA_VARIANT_ID = "d4e5f6a7-b8c9-4d0e-9f1a-2b3c4d5e6f7a";
-
 const SIZE_OPTION_TYPE_ID = "b2e1a4c3-8f7d-4a2b-9c6e-1d3f5a7b9c2d";
 const SIZE_OPTION_VALUE_ID = "e5d3c8a1-6f2b-4c9d-8a7e-3b1f4d6c8a2b";
 const REGULAR_OPTION_VALUE_ID = "77b1e2c4-9d3a-4e5f-b0a1-2c3d4e5f6a7b";
@@ -126,7 +115,7 @@ describe("normalizeCartLines", () => {
       // Quantities 3 + 2 → 5: a normal sum stays well inside the RPC range.
       const request = normalizeCartLines([cappuccinoLine(3), regularCappuccinoLine(2)]);
 
-      expect(request.items).toEqual([{ variant_id: CAPPUCCINO_VARIANT_ID, quantity: 5 }]);
+      expect(request).toEqual([{ variant_id: CAPPUCCINO_VARIANT_ID, quantity: 5 }]);
     });
 
     it("merges the same variantId spelled with different hex casing into one identity", () => {
@@ -148,13 +137,13 @@ describe("normalizeCartLines", () => {
         upperCased,
       ]);
 
-      expect(request.items).toEqual([{ variant_id: CAPPUCCINO_VARIANT_ID, quantity: 5 }]);
+      expect(request).toEqual([{ variant_id: CAPPUCCINO_VARIANT_ID, quantity: 5 }]);
     });
 
     it("keeps distinct variants as separate items with their own quantities", () => {
       const request = normalizeCartLines([cappuccinoLine(2), waterLine(4)]);
 
-      expect(request.items).toEqual([
+      expect(request).toEqual([
         { variant_id: CAPPUCCINO_VARIANT_ID, quantity: 2 },
         { variant_id: WATER_VARIANT_ID, quantity: 4 },
       ]);
@@ -163,12 +152,12 @@ describe("normalizeCartLines", () => {
     it("passes a single plain line through as one item", () => {
       const request = normalizeCartLines([waterLine(4)]);
 
-      expect(request.items).toEqual([{ variant_id: WATER_VARIANT_ID, quantity: 4 }]);
+      expect(request).toEqual([{ variant_id: WATER_VARIANT_ID, quantity: 4 }]);
     });
   });
 
   describe("determinism and output shape", () => {
-    it("produces byte-identical items and fingerprint for differently-ordered line arrays", () => {
+    it("produces identical items for differently-ordered line arrays", () => {
       const logicalCart = () => [cappuccinoLine(3), waterLine(1), regularCappuccinoLine(2)];
       const original = logicalCart();
       const snapshot = JSON.parse(JSON.stringify(original)) as CartLine[];
@@ -180,8 +169,6 @@ describe("normalizeCartLines", () => {
       const reversed = normalizeCartLines(logicalCart().reverse());
 
       expect(reversed).toEqual(forward);
-      expect(reversed.items).toEqual(forward.items);
-      expect(reversed.fingerprint).toBe(forward.fingerprint);
 
       // Pure function: the input lines are never mutated (cart-rules
       // convention) — the caller's cart is read, not rewritten.
@@ -191,8 +178,8 @@ describe("normalizeCartLines", () => {
     it("emits items with exactly the two RPC keys and no more", () => {
       const request = normalizeCartLines([cappuccinoLine(2), waterLine(1)]);
 
-      expect(request.items).toHaveLength(2);
-      for (const item of request.items) {
+      expect(request).toHaveLength(2);
+      for (const item of request) {
         expect(Object.keys(item)).toEqual(["variant_id", "quantity"]);
       }
     });
@@ -202,63 +189,17 @@ describe("normalizeCartLines", () => {
         makeLine({ variantId: CAPPUCCINO_VARIANT_ID.toUpperCase(), quantity: 1 }),
       ]);
 
-      expect(request.items[0]?.variant_id).toBe(CAPPUCCINO_VARIANT_ID);
+      expect(request[0]?.variant_id).toBe(CAPPUCCINO_VARIANT_ID);
     });
 
     it("sorts items by variant_id regardless of input order", () => {
       // Given in reverse: water ("9c2d…") precedes cappuccino ("3a7f…").
       const request = normalizeCartLines([waterLine(1), cappuccinoLine(2)]);
 
-      expect(request.items.map((item) => item.variant_id)).toEqual([
+      expect(request.map((item) => item.variant_id)).toEqual([
         CAPPUCCINO_VARIANT_ID,
         WATER_VARIANT_ID,
       ]);
-    });
-
-    it("pins the exact fingerprint format for a known small input", () => {
-      const request = normalizeCartLines([
-        cappuccinoLine(3),
-        regularCappuccinoLine(2),
-        waterLine(1),
-      ]);
-
-      // Mirrors the server's canonical form (migration lines 107–114): the
-      // leading domain tag, `variant_id:quantity` rows joined by `\n`, in
-      // variant_id order — and no trailing separator.
-      expect(request.fingerprint).toBe(
-        "kiosk.checkout.lean.v1\n" + `${CAPPUCCINO_VARIANT_ID}:5\n` + `${WATER_VARIANT_ID}:1`,
-      );
-      expect(request.fingerprint.endsWith("\n")).toBe(false);
-    });
-
-    it("exposes the fingerprint derivation as ONE canonical export shared with the attempt record schema (F-08)", () => {
-      // The attempt record's restore boundary re-derives the fingerprint from
-      // the stored items to reject a tampered binding (F-08); this pins that
-      // the export IS the derivation the normalizer stamps, so a record the
-      // store writes satisfies its own restore invariant by construction.
-      const request = normalizeCartLines([cappuccinoLine(2), waterLine(1)]);
-
-      expect(deriveRequestFingerprint(request.items)).toBe(request.fingerprint);
-    });
-
-    it("changes the fingerprint when the logical request changes (D2 binding)", () => {
-      // The flip side of determinism, and the property the module doc
-      // claims: the fingerprint binds a persisted client_request_id to the
-      // logical request, so a changed cart MUST produce a different
-      // fingerprint — otherwise a stale identity could be silently reused
-      // for a different order (R-T02-03).
-      const request = normalizeCartLines([cappuccinoLine(3), waterLine(1)]);
-
-      // (a) a changed summed quantity, same variants
-      const changedQuantity = normalizeCartLines([cappuccinoLine(4), waterLine(1)]);
-      expect(changedQuantity.fingerprint).not.toBe(request.fingerprint);
-
-      // (b) a changed variant set, quantities held identical
-      const changedVariantSet = normalizeCartLines([
-        cappuccinoLine(3),
-        makeLine({ variantId: TEA_VARIANT_ID, quantity: 1 }),
-      ]);
-      expect(changedVariantSet.fingerprint).not.toBe(request.fingerprint);
     });
   });
 
@@ -274,7 +215,7 @@ describe("normalizeCartLines", () => {
 
       const request = normalizeCartLines(lines);
 
-      expect(request.items).toHaveLength(MAX_NORMALIZED_ITEMS);
+      expect(request).toHaveLength(MAX_NORMALIZED_ITEMS);
     });
 
     it("throws on more than 100 distinct variants — the server's K1001 cap", () => {
@@ -287,21 +228,20 @@ describe("normalizeCartLines", () => {
 
     it.each([
       [
-        "the summed quantity overflows the RPC cap",
+        "caps a summed quantity above the RPC integer range",
         [cappuccinoLine(1073741824), cappuccinoLine(1073741824)],
+        MAX_RPC_QUANTITY,
       ],
-      ["the summed quantity is below 1", [cappuccinoLine(0)]],
-      ["the summed quantity is not an integer", [cappuccinoLine(2.5)]],
-    ])("throws when %s (defensive invariant)", (_caseName: string, lines: CartLine[]) => {
-      // Unreachable through the real cart — each line is bounded 1..99, and
-      // although one variant can span many lines (the per-variant line count
-      // has no cart-level cap), reaching 2147483647 would take over 21
-      // million max-quantity lines of a single variant — but these rules
-      // must not assume their caller's schema (the CartLine TYPE widens
-      // quantity to plain `number`), so the invariant fails loudly instead
-      // of shipping a payload the server would reject with K1001 after a
-      // network round trip.
-      expect(() => normalizeCartLines(lines)).toThrow("between 1 and 2147483647");
+      ["raises a quantity below 1 to 1", [cappuccinoLine(0)], 1],
+      ["floors a fractional quantity", [cappuccinoLine(2.5)], 2],
+    ])("%s (defensive clamp)", (_caseName: string, lines: CartLine[], expected: number) => {
+      // Unreachable through the real cart — each line is bounded 1..99 — but
+      // the CartLine TYPE widens quantity to plain `number`, so the payload
+      // is kept inside the RPC's integer 1..2147483647 range rather than
+      // shipping a value the server would reject with K1001.
+      expect(normalizeCartLines(lines)).toEqual([
+        { variant_id: CAPPUCCINO_VARIANT_ID, quantity: expected },
+      ]);
     });
   });
 });
