@@ -12,22 +12,20 @@
  *   label, options, brand, quantity prominent, image with alt when captured
  *   and a placeholder when not — in the deterministic client-side
  *   `variant_sku` order, never the server's embed order;
- * - order metadata: display number, status badge, created time in the store
+ * - order metadata: display number, status badge, placed time in the store
  *   timezone (silent degrade to the device zone when settings are absent or
- *   failing — decision 8), and the assignment indicator by id comparison;
+ *   failing — decision 8), and the assignment line by id comparison;
  * - the allowed actions for the order's CURRENT state through the real
  *   mutation hook, with the per-action pending disable + repeat guard
  *   (decision 5), the destructive cancel confirmation, and terminal orders
  *   inspection-only;
  * - rejected transitions (AC-10) surfaced as InlineError feedback near the
- *   actions plus a screen-owned refresh (T05-R02: the hook invalidates on
- *   success ONLY), with the cancel-rejection flow given its own test
- *   (T10-R01's T13 half: dialog closes first, feedback, then refetch). The
- *   feedback ALSO has a home when the actions row is gone or the read failed
- *   (R2-01): the screen body beside the order, never nowhere — and it
- *   persists until the NEXT action dispatch (R2-06, the workspace lifetime
- *   agreement);
- * - the back action.
+ *   actions plus a refresh of the order (the mutation invalidates on success
+ *   ONLY; the order actions refresh on rejection), with the cancel-rejection
+ *   flow given its own test (dialog closes, feedback, then refetch). The
+ *   feedback keeps its home when the refetched order is terminal and offers
+ *   no action (R2-01) — never nowhere;
+ * - the back action, falling back to the board when there is no history.
  *
  * Mocked at the feature's own `api/` boundary (plus `expo-router` for the
  * back wiring) — a screen test must not know Supabase exists. lucide-react-native
@@ -46,7 +44,6 @@ import {
   screen,
   userEvent,
   waitFor,
-  within,
 } from "@/core/testing";
 
 import { type ActiveOrderRow } from "../../api/fetch-active-orders";
@@ -163,8 +160,10 @@ function createMutationTestClient(): QueryClient {
   return client;
 }
 
-/** The router's back, captured through the expo-router mock. */
+/** The router's navigation calls, captured through the expo-router mock. */
 const routerBack = jest.fn();
+const routerReplace = jest.fn();
+const routerCanGoBack = jest.fn(() => true);
 
 type RenderOptions = {
   /** The route param under test; `null` forces the absent-param branch (an explicit `undefined` would fall through to the ORDER_ID default). */
@@ -187,7 +186,11 @@ async function renderDetails({
   fetchOrderMock.mockImplementation(fetchImpl ?? (() => Promise.resolve(order)));
   if (settingsFails) settingsMock.mockRejectedValue(new Error("settings read failed"));
   else settingsMock.mockResolvedValue(settings);
-  useRouterMock.mockReturnValue({ back: routerBack } as unknown as ReturnType<typeof useRouter>);
+  useRouterMock.mockReturnValue({
+    back: routerBack,
+    replace: routerReplace,
+    canGoBack: routerCanGoBack,
+  } as unknown as ReturnType<typeof useRouter>);
   mockSupabase = installMockAuth({
     role: "preparation",
     profile: {
@@ -225,7 +228,32 @@ afterEach(() => {
   updateMock.mockReset();
   useRouterMock.mockReset();
   routerBack.mockClear();
+  routerReplace.mockClear();
+  routerCanGoBack.mockReset();
+  routerCanGoBack.mockReturnValue(true);
 });
+
+/**
+ * The destructive confirm inside the cancel dialog. While the dialog is open
+ * the screen's own "Cancel order" opener is still mounted, so there are two
+ * buttons of that name; the dialog renders into the portal host after the
+ * screen, so its confirm is the last one.
+ */
+function confirmCancelButton() {
+  const buttons = screen.getAllByRole("button", { name: "Cancel order" });
+  expect(buttons).toHaveLength(2);
+  return buttons[buttons.length - 1]!;
+}
+
+/** The order's current status, as announced by the status timeline. */
+function expectStatus(label: string) {
+  expect(screen.getByLabelText(`Order status: ${label}`)).toBeOnTheScreen();
+}
+
+/** The item's product name (also the image placeholder's caption). */
+function expectProductName(name: string) {
+  expect(screen.getAllByText(name)[0]).toBeOnTheScreen();
+}
 
 describe("OrderDetailsScreen param and read states", () => {
   it("renders the unavailable state without fetching when the orderId param is absent", async () => {
@@ -254,7 +282,7 @@ describe("OrderDetailsScreen param and read states", () => {
     expect(screen.getByLabelText("Loading content")).toBeOnTheScreen();
     // No order content leaks out alongside the skeleton.
     expect(screen.queryByText("AB2CD4")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Start Preparing" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Start preparing" })).toBeNull();
   });
 
   it("renders the unavailable state with retry when the fetch fails, and retry re-attempts it", async () => {
@@ -321,15 +349,12 @@ describe("OrderDetailsScreen snapshot (AC-07)", () => {
     await renderDetails({ order: preparingOrder });
 
     expect(await screen.findByText("AB2CD4")).toBeOnTheScreen();
-    // The status in words, through the badge's own label source.
-    expect(screen.getByText("Preparing")).toBeOnTheScreen();
-    // 05:00 UTC renders as 08:00 in the settings row's Asia/Riyadh. The
-    // "Created" caption and the formatted time are two separately-styled
-    // Text nodes (the redesign's field treatment), not one combined string.
-    expect(within(screen.getByTestId("order-created-at")).getByText("Created")).toBeOnTheScreen();
-    expect(within(screen.getByTestId("order-created-at")).getByText("08:00")).toBeOnTheScreen();
-    // Decision 3: the assignment indicator compares ids — "you", not a name.
-    expect(screen.getByText("You")).toBeOnTheScreen();
+    // The status in words, announced by the status timeline.
+    expectStatus("Preparing");
+    // 05:00 UTC renders as 08:00 in the settings row's Asia/Riyadh.
+    expect(screen.getByText("Placed 08:00")).toBeOnTheScreen();
+    // Decision 3: the assignment line compares ids — "you", not a name.
+    expect(screen.getByText("You’re preparing this order")).toBeOnTheScreen();
   });
 
   it("renders the immutable item snapshot fields as stored, with the quantity prominent", async () => {
@@ -337,13 +362,16 @@ describe("OrderDetailsScreen snapshot (AC-07)", () => {
 
     // The snapshot fields exactly as captured when the order was placed —
     // never rebuilt from the catalog.
-    expect(await screen.findByText("Single Origin Coffee")).toBeOnTheScreen();
+    await screen.findByText("SO-250G-WB");
+    expectProductName("Single Origin Coffee");
     expect(screen.getByText("250g · Whole Bean")).toBeOnTheScreen();
     expect(screen.getByText("Grind: Whole bean")).toBeOnTheScreen();
     expect(screen.getByText("Kisok Roasters")).toBeOnTheScreen();
     expect(screen.getByText("SO-250G-WB")).toBeOnTheScreen();
     // The quantity is its own prominent label, not buried in a sentence.
     expect(screen.getByText("×2")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Quantity 2")).toBeOnTheScreen();
+    expect(screen.getByText("2 units · 1 line")).toBeOnTheScreen();
   });
 
   it("renders item images with alt text, and a placeholder for items without one", async () => {
@@ -399,9 +427,8 @@ describe("OrderDetailsScreen snapshot (AC-07)", () => {
     const midnightOrder = makeOrder({ created_at: "2026-08-26T21:00:08.123456+00:00" });
     await renderDetails({ order: midnightOrder });
 
-    await screen.findByTestId("order-created-at");
-    expect(within(screen.getByTestId("order-created-at")).getByText("00:00")).toBeOnTheScreen();
-    expect(within(screen.getByTestId("order-created-at")).queryByText("24:00")).toBeNull();
+    expect(await screen.findByText("Placed 00:00")).toBeOnTheScreen();
+    expect(screen.queryByText("Placed 24:00")).toBeNull();
   });
 
   it("keeps rendering the order when the settings row is absent", async () => {
@@ -424,34 +451,34 @@ describe("OrderDetailsScreen snapshot (AC-07)", () => {
 });
 
 describe("OrderDetailsScreen actions per state", () => {
-  it("offers Start Preparing and Cancel for a new unassigned order", async () => {
+  it("offers Start preparing and Cancel order for a new unassigned order", async () => {
     await renderDetails();
 
-    expect(await screen.findByRole("button", { name: "Start Preparing" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeOnTheScreen();
-    expect(screen.queryByRole("button", { name: "Mark Ready" })).toBeNull();
+    expect(await screen.findByRole("button", { name: "Start preparing" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Cancel order" })).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Mark ready" })).toBeNull();
   });
 
-  it("offers Mark Ready and Cancel for the actor's own preparing order", async () => {
+  it("offers Mark ready and Cancel order for the actor's own preparing order", async () => {
     await renderDetails({
       order: makeOrder({ status: "preparing", assigned_preparation_id: ACTOR_ID }),
     });
 
-    expect(await screen.findByRole("button", { name: "Mark Ready" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeOnTheScreen();
-    expect(screen.queryByRole("button", { name: "Start Preparing" })).toBeNull();
+    expect(await screen.findByRole("button", { name: "Mark ready" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Cancel order" })).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Start preparing" })).toBeNull();
   });
 
-  it("shows the assignment and offers Cancel — not Mark Ready — for a colleague's preparing order", async () => {
+  it("shows the assignment and offers Cancel order — not Mark ready — for a colleague's preparing order", async () => {
     await renderDetails({
       order: makeOrder({ status: "preparing", assigned_preparation_id: COLLEAGUE_ID }),
     });
 
-    // AC-05: mark-ready is assignee-only; the assignment indicator is words.
-    expect(await screen.findByText("Assigned to another employee")).toBeOnTheScreen();
-    expect(screen.queryByRole("button", { name: "Mark Ready" })).toBeNull();
+    // AC-05: mark-ready is assignee-only; the assignment is told in words.
+    expect(await screen.findByText("A colleague is preparing this order")).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Mark ready" })).toBeNull();
     // Cancel is the one transition with no assignee check — still offered.
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Cancel order" })).toBeOnTheScreen();
   });
 
   it("renders inspection-only for a completed order — no action buttons", async () => {
@@ -464,12 +491,14 @@ describe("OrderDetailsScreen actions per state", () => {
       }),
     });
 
-    expect(await screen.findByText("Completed")).toBeOnTheScreen();
+    expect(await screen.findByLabelText("Order status: Completed")).toBeOnTheScreen();
+    // 05:10 UTC is 08:10 in Riyadh — when it finished, in the store zone.
+    expect(screen.getByText("Completed at 08:10")).toBeOnTheScreen();
     // Terminal: the snapshot stays inspectable, the actions are gone.
-    expect(screen.getByText("Single Origin Coffee")).toBeOnTheScreen();
-    expect(screen.queryByRole("button", { name: "Start Preparing" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Mark Ready" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expectProductName("Single Origin Coffee");
+    expect(screen.queryByRole("button", { name: "Start preparing" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Mark ready" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel order" })).toBeNull();
     // The back action survives — inspection still needs a way out.
     expect(screen.getByRole("button", { name: "Back" })).toBeOnTheScreen();
   });
@@ -496,17 +525,20 @@ describe("OrderDetailsScreen transitions", () => {
     );
 
     const user = userEvent.setup();
-    await user.press(await screen.findByRole("button", { name: "Start Preparing" }));
+    await user.press(await screen.findByRole("button", { name: "Start preparing" }));
 
     // Pending: the action is disabled with its label swapped, and a repeat
-    // press cannot fire a second write (decision 5's repeat guard).
+    // press cannot fire a second write (decision 5's repeat guard). Cancel is
+    // disabled too — one transition at a time.
     const starting = await screen.findByRole("button", { name: "Starting…" });
     expect(starting).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel order" })).toBeDisabled();
     await user.press(starting);
     expect(updateMock).toHaveBeenCalledTimes(1);
     expect(updateMock).toHaveBeenCalledWith({
       orderId: order.id,
       targetStatus: "preparing",
+      reason: undefined,
     });
 
     // The read's data changes under the refetch the mutation's success
@@ -516,11 +548,11 @@ describe("OrderDetailsScreen transitions", () => {
       resolveUpdate(makeUpdate(order));
     });
 
-    // The refetched order shows Preparing, claimed to you, with Mark Ready
+    // The refetched order shows Preparing, claimed to you, with Mark ready
     // now the offered action.
-    await screen.findByText("Preparing");
-    expect(screen.getByText("You")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Mark Ready" })).toBeOnTheScreen();
+    expect(await screen.findByText("You’re preparing this order")).toBeOnTheScreen();
+    expectStatus("Preparing");
+    expect(screen.getByRole("button", { name: "Mark ready" })).toBeOnTheScreen();
     expect(screen.queryByRole("button", { name: "Starting…" })).toBeNull();
     expect(fetchOrderMock.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
@@ -545,14 +577,14 @@ describe("OrderDetailsScreen transitions", () => {
       });
     });
 
-    await userEvent.setup().press(await screen.findByRole("button", { name: "Mark Ready" }));
+    await userEvent.setup().press(await screen.findByRole("button", { name: "Mark ready" }));
 
     // The refetched order is Ready — visible on the board, but no preparation
     // action is the tablet's to take.
-    expect(await screen.findByText("Ready")).toBeOnTheScreen();
-    expect(screen.queryByRole("button", { name: "Start Preparing" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Mark Ready" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(await screen.findByLabelText("Order status: Ready")).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Start preparing" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Mark ready" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel order" })).toBeNull();
   });
 
   it("cancels the order after destructive confirmation and renders it inspection-only", async () => {
@@ -576,25 +608,96 @@ describe("OrderDetailsScreen transitions", () => {
     });
 
     const user = userEvent.setup();
-    await user.press(await screen.findByRole("button", { name: "Cancel" }));
+    await user.press(await screen.findByRole("button", { name: "Cancel order" }));
 
     // The destructive confirmation appeared, then was confirmed.
     expect(screen.getByText("Cancel order AB2CD4?")).toBeOnTheScreen();
-    await user.press(screen.getByRole("button", { name: "Cancel order" }));
+    await user.press(confirmCancelButton());
 
-    // The screen closes the dialog on success and the refetched order is
+    // The dialog closes once the write settles and the refetched order is
     // terminal — inspection-only, snapshot still visible.
     await waitFor(() => expect(screen.queryByText("Cancel order AB2CD4?")).toBeNull());
-    expect(await screen.findByText("Cancelled")).toBeOnTheScreen();
-    expect(screen.getByText("Single Origin Coffee")).toBeOnTheScreen();
-    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Start Preparing" })).toBeNull();
+    expect(await screen.findByLabelText("Order status: Cancelled")).toBeOnTheScreen();
+    expectProductName("Single Origin Coffee");
+    expect(screen.queryByRole("button", { name: "Cancel order" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Start preparing" })).toBeNull();
     await waitFor(() =>
       expect(updateMock).toHaveBeenCalledWith({
         orderId: order.id,
         targetStatus: "cancelled",
+        reason: undefined,
       }),
     );
+  });
+
+  it("sends the chosen cancellation reason and shows it on the cancelled order", async () => {
+    const order = makeOrder();
+    const cancelledOrder = makeOrder({
+      status: "cancelled",
+      cancelled_by: ACTOR_ID,
+      cancelled_at: "2026-08-26T05:06:00.000000+00:00",
+      cancellation_reason: "Customer left",
+    });
+    let current = order;
+    await renderDetails({ fetchImpl: () => Promise.resolve(current) });
+
+    updateMock.mockImplementation(async () => {
+      current = cancelledOrder;
+      return makeUpdate(order, {
+        status: "cancelled",
+        assigned_preparation_id: null,
+        cancelled_at: "2026-08-26T05:06:00.000000+00:00",
+        cancellation_reason: "Customer left",
+        updated_at: "2026-08-26T05:06:00.000000+00:00",
+      });
+    });
+
+    const user = userEvent.setup();
+    await user.press(await screen.findByRole("button", { name: "Cancel order" }));
+    await user.press(screen.getByRole("radio", { name: "Customer left" }));
+    await user.press(confirmCancelButton());
+
+    expect(updateMock).toHaveBeenCalledWith({
+      orderId: order.id,
+      targetStatus: "cancelled",
+      reason: "Customer left",
+    });
+    expect(await screen.findByText("Reason: Customer left")).toBeOnTheScreen();
+    // 05:06 UTC is 08:06 in Riyadh — the terminal instant in the store zone.
+    expect(screen.getByText("Cancelled at 08:06")).toBeOnTheScreen();
+  });
+
+  it("keeps the dialog open and busy while the cancel is in flight", async () => {
+    const order = makeOrder();
+    await renderDetails({ order });
+
+    let resolveUpdate!: (value: OrderStatusUpdate) => void;
+    updateMock.mockImplementation(
+      () =>
+        new Promise<OrderStatusUpdate>((resolve) => {
+          resolveUpdate = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+    await user.press(await screen.findByRole("button", { name: "Cancel order" }));
+    await user.press(confirmCancelButton());
+
+    // Pending: the dialog stays up with its confirm swapped and disabled (the
+    // screen's opener shows the same pending label), and a repeat press
+    // cannot fire a second write.
+    expect(screen.getByText("Cancel order AB2CD4?")).toBeOnTheScreen();
+    const cancelling = screen.getAllByRole("button", { name: "Cancelling…" });
+    expect(cancelling).toHaveLength(2);
+    for (const button of cancelling) expect(button).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Keep order" })).toBeDisabled();
+    await user.press(cancelling[cancelling.length - 1]!);
+    expect(updateMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveUpdate(makeUpdate(order, { status: "cancelled", assigned_preparation_id: null }));
+    });
+    await waitFor(() => expect(screen.queryByText("Cancel order AB2CD4?")).toBeNull());
   });
 });
 
@@ -612,12 +715,12 @@ describe("OrderDetailsScreen rejected transitions (AC-10)", () => {
       }),
     );
 
-    await userEvent.setup().press(await screen.findByRole("button", { name: "Start Preparing" }));
+    await userEvent.setup().press(await screen.findByRole("button", { name: "Start preparing" }));
 
     // Feedback NEAR the action, never swallowed, never fabricated as a local
     // transition — the order is still New.
     expect(await screen.findByText("This order has already been updated.")).toBeOnTheScreen();
-    expect(screen.getByText("New")).toBeOnTheScreen();
+    expectStatus("New");
     // T05-R02: the hook invalidates on success only, so the SCREEN refreshes
     // the affected data on rejection.
     await waitFor(() => expect(fetchOrderMock.mock.calls.length).toBeGreaterThanOrEqual(2));
@@ -633,19 +736,19 @@ describe("OrderDetailsScreen rejected transitions (AC-10)", () => {
     updateMock.mockRejectedValue(new Error("rpc channel closed"));
 
     const user = userEvent.setup();
-    await user.press(await screen.findByRole("button", { name: "Cancel" }));
+    await user.press(await screen.findByRole("button", { name: "Cancel order" }));
 
     // The destructive confirmation appeared, then was confirmed.
     expect(screen.getByText("Cancel order AB2CD4?")).toBeOnTheScreen();
-    await user.press(screen.getByRole("button", { name: "Cancel order" }));
+    await user.press(confirmCancelButton());
 
-    // Dialog open=false FIRST (feedback behind an open modal is invisible),
-    // then feedback near the actions, then the refresh.
+    // The dialog closes once the write settles (feedback behind an open modal
+    // is invisible), then feedback near the actions, then the refresh.
     await waitFor(() => expect(screen.queryByText("Cancel order AB2CD4?")).toBeNull());
     expect(await screen.findByText("Something went wrong.")).toBeOnTheScreen();
     // The order is still on screen — the client never fabricates the cancel.
     expect(screen.getByText("AB2CD4")).toBeOnTheScreen();
-    expect(screen.getByText("New")).toBeOnTheScreen();
+    expectStatus("New");
     await waitFor(() => expect(fetchOrderMock.mock.calls.length).toBeGreaterThanOrEqual(2));
   });
 
@@ -676,13 +779,13 @@ describe("OrderDetailsScreen rejected transitions (AC-10)", () => {
     });
 
     const user = userEvent.setup();
-    await user.press(await screen.findByRole("button", { name: "Cancel" }));
-    await user.press(screen.getByRole("button", { name: "Cancel order" }));
+    await user.press(await screen.findByRole("button", { name: "Cancel order" }));
+    await user.press(confirmCancelButton());
 
     // The dialog closed, the refetched order is terminal…
     await waitFor(() => expect(screen.queryByText("Cancel order AB2CD4?")).toBeNull());
-    expect(await screen.findByText("Cancelled")).toBeOnTheScreen();
-    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(await screen.findByLabelText("Order status: Cancelled")).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Cancel order" })).toBeNull();
     // …and A's failure is STILL on screen — without an actions row, the
     // feedback renders beside the order body rather than nowhere, exactly once.
     expect(screen.getAllByText("This order has already been updated.")).toHaveLength(1);
@@ -690,9 +793,9 @@ describe("OrderDetailsScreen rejected transitions (AC-10)", () => {
   });
 
   it("still shows the rejection feedback when the post-rejection refetch fails", async () => {
-    // R2-01's data-independence clause: the feedback must not depend on the
-    // order being rendered. A rejection whose invalidation refetch FAILS puts
-    // the screen into its error state — the feedback survives it.
+    // A rejection whose invalidation refetch FAILS: the read keeps the order
+    // it already had (a failed refetch never blanks loaded data), and the
+    // rejection feedback stays beside it rather than disappearing.
     const order = makeOrder();
     let failReads = false;
     await renderDetails({
@@ -709,14 +812,14 @@ describe("OrderDetailsScreen rejected transitions (AC-10)", () => {
     );
 
     failReads = true;
-    await userEvent.setup().press(await screen.findByRole("button", { name: "Start Preparing" }));
+    await userEvent.setup().press(await screen.findByRole("button", { name: "Start preparing" }));
 
-    // The error state replaced the content (no stale order)…
-    expect(await screen.findByText("Order unavailable")).toBeOnTheScreen();
-    expect(screen.queryByText("AB2CD4")).toBeNull();
-    // …and the rejection feedback is still visible beside it.
-    expect(screen.getByText("This order has already been updated.")).toBeOnTheScreen();
+    expect(await screen.findByText("This order has already been updated.")).toBeOnTheScreen();
     await waitFor(() => expect(fetchOrderMock.mock.calls.length).toBeGreaterThanOrEqual(2));
+    // The order is still on screen and still New — nothing was fabricated.
+    expect(screen.getByText("AB2CD4")).toBeOnTheScreen();
+    expectStatus("New");
+    expect(screen.getByText("This order has already been updated.")).toBeOnTheScreen();
   });
 });
 
@@ -727,5 +830,16 @@ describe("OrderDetailsScreen navigation", () => {
     await userEvent.setup().press(await screen.findByRole("button", { name: "Back" }));
 
     expect(routerBack).toHaveBeenCalledTimes(1);
+    expect(routerReplace).not.toHaveBeenCalled();
+  });
+
+  it("returns to the board when there is no screen to go back to", async () => {
+    routerCanGoBack.mockReturnValue(false);
+    await renderDetails();
+
+    await userEvent.setup().press(await screen.findByRole("button", { name: "Back" }));
+
+    expect(routerBack).not.toHaveBeenCalled();
+    expect(routerReplace).toHaveBeenCalledWith("/(preparation)");
   });
 });
