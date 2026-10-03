@@ -12,11 +12,11 @@ defeats its only purpose.
 ## Current checkpoint
 
 ```
-Current round     : 2 (of 2)
-Current task      : — (delivery complete)
-Last gate         : FEATURE GATE: PASS (final review SHIP-READY 0/0/3 + quality audit CLEAN-WITH-OBSERVATIONS — all closure items applied)
-Next legal action : HUMAN_HANDOFF — the Draft PR #11 (4f7eed3 + this gate record) stays DRAFT and UNMERGED; a human reviews and decides the merge
-Blocked by        : —
+Current round     : Android Review Cart hotfix
+Current task      : HF01 / HF02 (CI and independent review)
+Last gate         : Hotfix FEATURE GATE: PENDING
+Next legal action : WAIT_FOR_CI_AND_REVIEW — Draft PR #40 remains unmerged
+Blocked by        : HF03 native release journey/logcat evidence unavailable
 ```
 
 ## Rules
@@ -165,7 +165,7 @@ cart-access-button`
 
 ## Android Review Cart hotfix (2026-10-03)
 
-- HF01 (bug): regression RED pending in CI; Android implementation not applied.
-- HF02 (config): release identity bump pending; fast checks and review pending.
+- HF01 (bug): regression RED observed in CI; Android fix applied; GREEN pending.
+- HF02 (config): 1.1.4 / code 6 applied; fast checks and independent review pending.
 - HF03: native release journey/logcat UNVERIFIED under the revised CI scope.
 - Hotfix FEATURE GATE: PENDING. Earlier feature gates do not certify this hotfix.

@@ -253,3 +253,22 @@ jobs:
 
       - name: Run expo-doctor
         run: pnpm run doctor
+
+      - name: Validate release identity
+        run: |
+          pnpm exec expo config --json > "$RUNNER_TEMP/quick-cart-app-config.json"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const config = JSON.parse(
+            fs.readFileSync(process.env.RUNNER_TEMP + "/quick-cart-app-config.json", "utf8"),
+          );
+          const pkg = require("./package.json");
+          if (config.version !== "1.1.4" || pkg.version !== config.version ||
+              config.android.versionCode !== 6) {
+            throw new Error("Expected KISOK 1.1.4 / Android versionCode 6");
+          }
+          console.log("Release identity verified: KISOK 1.1.4 / Android versionCode 6");
+          NODE
+
+      - name: Export Android production JavaScript
+        run: pnpm exec expo export --platform android --output-dir dist-android-hotfix

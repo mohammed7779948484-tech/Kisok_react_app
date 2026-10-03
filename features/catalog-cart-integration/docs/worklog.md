@@ -405,3 +405,33 @@ Native release reproduction, Android production bundle/build, Full Cart runtime
 contents, Keep browsing and reopening on a device: UNVERIFIED.
 Scope excludes Checkout, Supabase, MDM and Device Mode.
 Hotfix FEATURE GATE: PENDING.
+
+### HF01 regression RED and implementation
+
+[CI run 37159256040](https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37159256040)
+tested original Dialog at test-only head f1f9552a3ad865926ba8b324172e8c4b56c8a01a.
+
+Actual output from the focused Jest invocation:
+
+```text
+FAIL design-system/composites/dialog.test.tsx
+Dialog portal lifecycle on android: Dialog and AdaptiveSheet
+expect(received).toBeUndefined()
+Received: {}
+Test Suites: 1 failed, 5 passed, 6 total
+Tests:       2 failed, 61 passed, 63 total
+Time:        24.623 s
+```
+
+Both failures are the intended existing Android exit registration, not an
+import or rendering failure. The unchanged iOS policy and the five existing
+affected suites passed. The mock exposes actual props forwarded from the real
+NativeOnlyAnimatedView; it does not reproduce Android drawing/native-stack.
+
+Implementation: set exiting to undefined on Android on both DialogOverlay
+wrappers; preserve entering and non-Android exit behavior. Correct the provider
+comment; keep navigation and route-derived dismissal intact.
+
+HF02: package/app version 1.1.4, Android versionCode 6. CI additionally evaluates
+Expo release identity and exports Android production JavaScript, without Gradle
+or an emulator. GREEN and independent review pending.
