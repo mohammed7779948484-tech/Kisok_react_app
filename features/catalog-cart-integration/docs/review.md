@@ -192,3 +192,41 @@ observations closed), genuine UNVERIFIED items explicit (native tier,
 OS 200% scaling, second-customer runtime, badge corner geometry beyond
 the 48×48 measurement). The Integration PR remains DRAFT and UNMERGED —
 HUMAN_HANDOFF.
+
+## Android Review Cart hotfix independent review (2026-10-03)
+
+Reviewed head: a9c9c6a25d946f8021bc6be617e4501d71059b0a.
+Reviewer: fresh-context hotfix_review agent using kisok-code-review.
+
+Result: 0 blocking, 0 major, 0 minor findings. Safe to retain as a draft candidate.
+Examined briefs/plans, tests before implementation, CI scope and all shared
+Dialog consumers. Both Android wrappers omit exits; entering/iOS policy and
+primitive signatures remain intact. No consumer depends on animation completion.
+Navigation, cart state, contracts, dependencies, Checkout, Supabase, MDM and
+Device Mode are unchanged.
+
+RED was independently verified from CI job 111309047099. The subsequent job
+111309445626 passed 63 tests, full TypeScript, lint, formatting, Expo Doctor,
+release identity, and Android JS export. Native jobs were skipped.
+
+HF-AC-03 is unverified. The upstream reproduction supports the candidate but
+does not prove KISOK's native exception, process survival or Full Cart contents.
+The hotfix FEATURE GATE remains PENDING; PR #40 stays draft.
+
+## Android Review Cart hotfix quality audit (2026-10-03)
+
+Audited source head: a9c9c6a25d946f8021bc6be617e4501d71059b0a.
+Auditor: fresh-context hotfix_audit using quality-audit.
+
+Result: source candidate and requested short CI evidenced; full delivery PENDING.
+Plan READY at the RED commit, scoped diff matches the plan, and GREEN output
+confirms 6 suites / 63 tests, TypeScript, lint, formatting, Doctor 18/18,
+evaluated 1.1.4 / code 6 and Android JS export (4067 modules).
+
+Record corrections dispositioned: PR shared paths enumerated; final worklog
+explicitly supersedes pending JS bundle evidence with export PASS while native
+APK/runtime remains UNVERIFIED. Historical feature gates do not certify this
+hotfix. Final documentation-head CI is linked from PR #40 after completion.
+
+No additional scope/evidence defect within the authorized short tier.
+HF-AC-03 and hotfix FEATURE GATE remain PENDING; keep PR #40 draft.

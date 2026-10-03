@@ -415,7 +415,6 @@ Actual output from the focused Jest invocation:
 
 ```text
 FAIL design-system/composites/dialog.test.tsx
-Dialog portal lifecycle on android: Dialog and AdaptiveSheet
 expect(received).toBeUndefined()
 Received: {}
 Test Suites: 1 failed, 5 passed, 6 total
@@ -435,3 +434,44 @@ comment; keep navigation and route-derived dismissal intact.
 HF02: package/app version 1.1.4, Android versionCode 6. CI additionally evaluates
 Expo release identity and exports Android production JavaScript, without Gradle
 or an emulator. GREEN and independent review pending.
+
+### HF01/HF02 GREEN and independent review
+
+[CI run 37159386352](https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37159386352)
+passed on implementation head a9c9c6a25d946f8021bc6be617e4501d71059b0a.
+Job 111309445626 completed in about 2 minutes 17 seconds.
+
+```text
+Test Suites: 6 passed, 6 total
+Tests:       63 passed, 63 total
+Time:        34.753 s
+18/18 checks passed. No issues detected!
+Release identity verified: KISOK 1.1.4 / Android versionCode 6
+Android Bundled 43780ms node_modules/expo-router/entry.js (4067 modules)
+Exported: dist-android-hotfix
+```
+
+The job also passed full TypeScript, lint and repository formatting.
+Normal verify/web jobs and native APK/E2E workflows were explicitly skipped.
+No full Jest suite, Gradle build, emulator or native journey is claimed.
+
+Independent review at a9c9c6a: 0 blocking, 0 major, 0 minor findings.
+Both wrapper guards and the consumer audit were reviewed; no consumer depends
+on animation completion. Candidate safe to retain as a draft. HF-AC-03 remains
+unverified; the hotfix FEATURE GATE remains PENDING. The final documentation
+commit receives another short CI run, whose final-head result is linked in PR #40.
+
+### HF01/HF02 quality audit
+
+Fresh-context hotfix_audit independently checked the plan, scoped diff, RED and
+GREEN logs. The source candidate and short CI are evidenced; full delivery is
+PENDING because HF-AC-03 has no native release journey or logcat evidence.
+
+This entry supersedes the initial pending bundle/build record above:
+Android production JavaScript export PASS; native APK build/runtime UNVERIFIED.
+Full pnpm verify, the full Jest suite and a fresh browser journey were not run.
+The final documentation-head CI result is recorded in PR #40 after it completes.
+
+Audit record corrections: the PR enumerates every shared path, and current
+hotfix records distinguish historical feature PASS from this pending hotfix.
+No additional source defect was found within the authorized short tier.

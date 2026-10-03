@@ -13,9 +13,9 @@ defeats its only purpose.
 
 ```
 Current round     : Android Review Cart hotfix
-Current task      : HF01 / HF02 (CI and independent review)
+Current task      : HF03 (native verification pending)
 Last gate         : Hotfix FEATURE GATE: PENDING
-Next legal action : WAIT_FOR_CI_AND_REVIEW — Draft PR #40 remains unmerged
+Next legal action : RECORD_FINAL_CI — Draft PR #40 stays draft and unmerged
 Blocked by        : HF03 native release journey/logcat evidence unavailable
 ```
 
@@ -165,7 +165,7 @@ cart-access-button`
 
 ## Android Review Cart hotfix (2026-10-03)
 
-- HF01 (bug): regression RED observed in CI; Android fix applied; GREEN pending.
-- HF02 (config): 1.1.4 / code 6 applied; fast checks and independent review pending.
+- HF01 (bug): RED observed; candidate implementation and 63 focused tests GREEN.
+- HF02 (config): 1.1.4 / code 6 evaluated; short checks GREEN; independent review clean; quality audit recorded.
 - HF03: native release journey/logcat UNVERIFIED under the revised CI scope.
 - Hotfix FEATURE GATE: PENDING. Earlier feature gates do not certify this hotfix.
