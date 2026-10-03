@@ -382,3 +382,26 @@ cross-owner leak (one Customer test account — jest-covered by the cart
 suite and re-verified through the convergence net); the live badge
 corner-inset geometry beyond the class pin + the 48×48 box measurement
 above.
+
+## Android Review Cart hotfix (2026-10-03)
+
+MODE: bug (HF01), config (HF02).
+SCAFFOLD: N/A, existing shared primitive/config and integration tests.
+Manual regression: design-system/composites/dialog.test.tsx.
+
+Repository fetched through GitHub at develop
+252796384270dd0375d3f3cb391c74067f65c06d. No terminal, local clone, adb,
+emulator or build runner is exposed in this session; no local execution is claimed.
+The user requested GitHub CI execution and a short tier without native builds.
+
+Source confirms route-derived dismissal and two native exit animations.
+Upstream issue 8422 and PR 9072 identify the draw-pass hierarchy mutation defect;
+the maintainer reproduced the overlay/navigation crash on Reanimated 4.1.6.
+KISOK's own native exception and process/activity restart remain UNVERIFIED.
+
+RED: pending, test-only PR commit will run against the original Dialog.
+GREEN/affected checks: pending.
+Native release reproduction, Android production bundle/build, Full Cart runtime
+contents, Keep browsing and reopening on a device: UNVERIFIED.
+Scope excludes Checkout, Supabase, MDM and Device Mode.
+Hotfix FEATURE GATE: PENDING.

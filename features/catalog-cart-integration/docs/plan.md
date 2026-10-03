@@ -347,3 +347,38 @@ T03 Product Detail edit and T04 layout edit use no generator.
 - [x] Route mappings known (none created; `/cart` reused via public push)
 - [x] Files changing outside the feature listed and justified (exactly two)
 - [x] No unnecessary capability or folder planned
+
+## Android Review Cart hotfix (2026-10-03)
+
+Hotfix plan status: READY for implementation; native acceptance remains pending.
+
+Start: remote develop 252796384270dd0375d3f3cb391c74067f65c06d.
+The lockfile resolves Reanimated 4.1.6, Router 6.0.24, Screens 4.16.0,
+React Native 0.81.5, and Worklets 0.5.1 with Fabric enabled.
+
+Upstream issue [8422](https://github.com/software-mansion/react-native-reanimated/issues/8422)
+includes the overlay-dismissal/native-stack crash and maintainer reproduction on
+4.1.6. Reanimated can flush view mutations while Android traverses the display
+list. The draw-pass fix later shipped in 4.1.7. KISOK's matching code path is
+Review Cart navigation, followed by `open && browsing` becoming false at
+`/cart`, plus pathname cleanup, while both Dialog wrappers have FadeOut exits.
+This is evidence for the candidate fix, not KISOK logcat confirmation.
+
+- HF01 (bug; HF-AC-01/02): Add a colocated Dialog/AdaptiveSheet regression at the
+  real animation seam and extend the provider navigation lifecycle test. Observe
+  RED in GitHub CI before removing only Android exits from both Dialog wrappers.
+  Keep entering animations, iOS/web behavior, routing, and primitive signatures.
+- HF02 (config; supporting HF-AC-02): Bump package/app versions to 1.1.4 and
+  Android versionCode to 6. Run short CI and obtain independent review.
+- HF03 (verification; HF-AC-03): Native release journey and before/after logcat
+  remain pending; the user's revised short-CI scope excludes APK/emulator jobs.
+
+Shared change justification: exit configuration belongs to DialogOverlay, which
+owns both wrappers. Consumer audit: QuickCartSheet, CompactRefine, WhatsNewGate,
+BlockingOverlay and UI Lab. AlertDialog has a separate overlay and is untouched.
+No data contracts, state stores, routes or new runtime components are needed.
+Scaffold: N/A, existing components/config edited in place. Manual artifact:
+`design-system/composites/dialog.test.tsx`, a behavior regression with no matching
+generator capability. Allowed edits also include the existing provider test and
+comment, these control documents, package/app config, and `.github/workflows/ci.yml`.
+CI is scoped to this exact hotfix branch; normal policy remains for other refs.

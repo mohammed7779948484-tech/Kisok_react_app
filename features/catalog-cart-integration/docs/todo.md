@@ -162,3 +162,10 @@ cart-access-button`
 ## Blocked
 
 - —
+
+## Android Review Cart hotfix (2026-10-03)
+
+- HF01 (bug): regression RED pending in CI; Android implementation not applied.
+- HF02 (config): release identity bump pending; fast checks and review pending.
+- HF03: native release journey/logcat UNVERIFIED under the revised CI scope.
+- Hotfix FEATURE GATE: PENDING. Earlier feature gates do not certify this hotfix.
