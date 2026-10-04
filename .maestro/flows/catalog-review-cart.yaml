@@ -140,7 +140,7 @@ name: Catalog — review cart and reopen without losing selections
           commands:
             - assertVisible:
                 id: "full-cart-total-quantity"
-                text: "^1 items$"
+                text: "^1 item$"
             - assertVisible:
                 id: "full-cart-selection-count"
                 text: "^1 selection$"

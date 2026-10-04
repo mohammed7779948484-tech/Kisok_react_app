@@ -170,7 +170,7 @@ export function FullCartScreen({
           <Text
             testID="full-cart-total-quantity"
             className="font-display text-display-lg text-foreground"
-            accessibilityLabel={`${totalQuantity} items`}
+            accessibilityLabel={`${totalQuantity} ${totalQuantity === 1 ? "item" : "items"}`}
           >
             {totalQuantity}
           </Text>

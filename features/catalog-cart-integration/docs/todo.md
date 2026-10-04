@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : Android Review Cart hotfix
-Current task      : HF06 (final checks/review); HF07 (production attribution)
-Last gate         : Hotfix FEATURE GATE: PENDING
-Next legal action : Finish final CI/review; obtain customer-tablet crash evidence
-Blocked by        : Production mechanism unconfirmed; final cleanup-head checks pending
+Current task      : HF07 (production attribution)
+Last gate         : HF06 source review complete; hotfix FEATURE GATE: PENDING
+Next legal action : Obtain customer-tablet model/OS and crash stack; verify causal fix
+Blocked by        : Production mechanism unconfirmed; original Dialog also passed CI
 ```
 
 ## Rules
@@ -177,8 +177,10 @@ cart-access-button`
   contents, browse/reopen, both review cycles and process continuity verified.
 - Comparison cleanup: original-Dialog build, pinned ref, baseline env/runner and
   one-off API36 target removed in the final candidate. Generic native coverage stays.
-- HF06: full CodeRabbit review at c397bd87 completed; minor TODO finding corrected
-  and resolved. Final-candidate full review, normal/native CI and audit pending.
+- HF06: full CodeRabbit reviews at c397bd87 and 703c8d29 completed. TODO finding
+  resolved; the final minor singular-item accessibility finding is corrected.
+  Normal/generic-native CI and fresh source review/audit passed at 703c8d29.
+  Post-review candidate check results and final review are tracked in PR #40.
 - HF07 / HF-AC-04: BLOCKED — original Dialog also passed both platforms; no
   KISOK production exception captured. Tablet model/OS/crash stack requested.
 - Hotfix FEATURE GATE: PENDING. Do not mark ready or merge until causal proof exists.

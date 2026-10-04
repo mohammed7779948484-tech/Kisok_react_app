@@ -459,3 +459,12 @@ smoke-flow comment; no feature generator capability fits these instructions.
 
 HF07 scaffold: N/A, evidence collection only. Completion plan remains READY;
 the hotfix FEATURE GATE remains PENDING until HF-AC-04 and final checks pass.
+
+### HF06 full-review minor correction
+
+Full review at 703c8d29 found the existing singular accessibility label was
+"1 items"; the new flow asserted that label. Correct only its grammar and the
+matching assertion. This is a presentation/test correction within the existing
+FullCartScreen and Maestro scope, with no cart or Checkout behavior change.
+MODE: copy/config. SCAFFOLD: N/A, existing label and flow assertion.
+Normal final-head CI, native journey and full review are recorded in PR #40.

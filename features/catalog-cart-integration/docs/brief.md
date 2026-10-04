@@ -214,3 +214,10 @@ addresses that mechanism. This records the original user's explicit proof
 requirement; it introduces no new product behavior or architecture.
 HF-AC-04 remains UNVERIFIED: the original Dialog also passed both CI platforms.
 Passing candidates do not prove the reported production cause or a causal fix.
+
+### Final generic workflow acceptance
+
+The cleaned API34 native workflow at 703c8d29 also passed the two-cycle journey
+with preserved contents and one continuous PID4997. Release identity is
+1.1.4 / code 6 with New Architecture and animations enabled. HF-AC-04 remains
+UNVERIFIED; this additional acceptance does not establish the production cause.
