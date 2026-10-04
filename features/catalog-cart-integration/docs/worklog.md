@@ -564,3 +564,18 @@ final UI diagnostics to failure output so the next CI run can identify the
 startup blocker without changing application behavior or adding retries.
 
 Native acceptance, original-Dialog attribution and final cleanup remain pending.
+
+### HF05 startup diagnostics / authenticated-flow correction
+
+[Run 37171423858](https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37171423858)
+at 786cb749 passed the release Sign In smoke in 7s with one continuous package
+process. Both cart attempts progressed through email entry, then failed to
+locate the password control while changing focus. The final Android hierarchy
+contains sign-in-password and sign-in-submit; email is filled and focused.
+No JavaScript exception, package crash or foreign ANR was captured.
+
+Add hideKeyboard after email entry before selecting the password, retaining the
+existing dismissal after password entry. This is a test-only user action; no
+sleep, retry or app behavior change. Independent native reviewer confirmed it
+is the smallest reasonable correction. Both Review Cart cycles remain unrun.
+Normal CI at 786cb749 passed all jobs (97 suites / 1241 tests).
