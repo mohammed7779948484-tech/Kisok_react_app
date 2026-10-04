@@ -28,7 +28,6 @@ env:
 
 jobs:
   verify:
-    if: github.head_ref != 'hotfix/android-quick-cart-exit-lifecycle'
     name: Verify (typecheck, lint, format, tests, guards, db, generator)
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -148,7 +147,6 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   web-export:
-    if: github.head_ref != 'hotfix/android-quick-cart-exit-lifecycle'
     name: Web bundle
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -181,7 +179,6 @@ jobs:
           if-no-files-found: error
 
   doctor:
-    if: github.head_ref != 'hotfix/android-quick-cart-exit-lifecycle'
     name: Expo doctor
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -209,66 +206,3 @@ jobs:
         # pnpm's own installation and exited 0 without ever running
         # tools/doctor.mjs. `pnpm check:ci-scripts` now fails on that mistake.
         run: pnpm run doctor
-
-  quick-cart-hotfix:
-    name: Quick Cart hotfix checks
-    # This one hotfix PR uses the requested short tier. Other PRs and pushes
-    # keep the normal checks above. Native jobs remain separately label-gated.
-    if: github.head_ref == 'hotfix/android-quick-cart-exit-lifecycle'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Lifecycle regression and affected suites
-        run: >-
-          pnpm test:ci --runInBand --runTestsByPath
-          design-system/composites/dialog.test.tsx
-          features/catalog-cart-integration/components/catalog-cart-provider.test.tsx
-          features/catalog-cart-integration/convergence.test.tsx
-          features/cart/components/quick-cart-sheet.test.tsx
-          features/cart/screens/full-cart/full-cart-screen.test.tsx
-          features/release-notes/components/whats-new-gate.test.tsx
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Check formatting
-        run: pnpm format:check
-
-      - name: Run expo-doctor
-        run: pnpm run doctor
-
-      - name: Validate release identity
-        run: |
-          pnpm exec expo config --json > "$RUNNER_TEMP/quick-cart-app-config.json"
-          node <<'NODE'
-          const fs = require("node:fs");
-          const config = JSON.parse(
-            fs.readFileSync(process.env.RUNNER_TEMP + "/quick-cart-app-config.json", "utf8"),
-          );
-          const pkg = require("./package.json");
-          if (config.version !== "1.1.4" || pkg.version !== config.version ||
-              config.android.versionCode !== 6) {
-            throw new Error("Expected KISOK 1.1.4 / Android versionCode 6");
-          }
-          console.log("Release identity verified: KISOK 1.1.4 / Android versionCode 6");
-          NODE
-
-      - name: Export Android production JavaScript
-        run: pnpm exec expo export --platform android --output-dir dist-android-hotfix

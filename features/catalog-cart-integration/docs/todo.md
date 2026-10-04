@@ -13,10 +13,10 @@ defeats its only purpose.
 
 ```
 Current round     : Android Review Cart hotfix
-Current task      : HF03 (native verification pending)
+Current task      : HF04 (restore normal CI)
 Last gate         : Hotfix FEATURE GATE: PENDING
-Next legal action : RECORD_FINAL_CI — Draft PR #40 stays draft and unmerged
-Blocked by        : HF03 native release journey/logcat evidence unavailable
+Next legal action : Restore CI; collect native release evidence and full review
+Blocked by        : Native acceptance and normal final-head CI pending
 ```
 
 ## Rules
@@ -169,3 +169,9 @@ cart-access-button`
 - HF02 (config): 1.1.4 / code 6 evaluated; short checks GREEN; independent review clean; quality audit recorded.
 - HF03: native release journey/logcat UNVERIFIED under the revised CI scope.
 - Hotfix FEATURE GATE: PENDING. Earlier feature gates do not certify this hotfix.
+
+### Completion revision (2026-10-04)
+
+- HF04: normal CI restoration staged; verification pending.
+- HF05: native flow/selector research in progress; runtime gate pending.
+- HF06: manual full CodeRabbit review requested while draft.

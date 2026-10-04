@@ -382,3 +382,25 @@ Scaffold: N/A, existing components/config edited in place. Manual artifact:
 generator capability. Allowed edits also include the existing provider test and
 comment, these control documents, package/app config, and `.github/workflows/ci.yml`.
 CI is scoped to this exact hotfix branch; normal policy remains for other refs.
+
+## Hotfix completion revision (2026-10-04)
+
+Completion plan status: READY for HF04; HF05 scope is finalized after native
+selector research. This supersedes the October 3 short-tier-only policy.
+
+- HF04 (config; supporting HF-AC-03): Restore .github/workflows/ci.yml byte-for-byte
+  from current develop. No branch-specific job or bypass remains in the PR diff.
+  Verify using the normal Verify, Web bundle and Expo doctor jobs.
+- HF05 (config/test instrumentation; HF-AC-03): Reuse the label-gated release
+  Maestro workflow for the actual authenticated Catalog/Review Cart journey.
+  Enable animations, use the documented disposable TEST project, capture native
+  success/failure logs, and verify app liveness plus contents/browse/reopen.
+  No seeding, Checkout submission, production backend or new runtime harness.
+- HF06 (review/audit): Request manual full CodeRabbit review while draft.
+  Address real findings and obtain normal final-head CI/native evidence before
+  marking ready. Do not merge.
+
+HF04 scaffold: N/A, existing CI configuration restored. No generator capability
+fits CI, Maestro flows, diagnostic scripts or additive testID instrumentation.
+The feature shape, data contracts, dependencies and navigation remain unchanged.
+Allowed HF04 edits: .github/workflows/ci.yml and these control documents.

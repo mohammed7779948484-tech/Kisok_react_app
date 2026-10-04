@@ -194,3 +194,10 @@ Be explicit. This is what stops a feature growing while it is being built.
 HF-AC-03 requires native evidence and remains unverified. The user requested
 no local emulator/E2E and only short CI checks for this PR. No Checkout,
 Supabase, MDM, Device Mode, dependency, or Catalog UX changes are in scope.
+
+### Completion scope supersession (2026-10-04)
+
+The user now requires normal final CI, native Android runtime acceptance and a
+real full CodeRabbit review. This supersedes the earlier short-CI-only policy.
+HF-AC-01/02/03 retain their IDs. No local emulator/E2E is run; native execution
+uses GitHub CI. No new product behavior or backend/Checkout changes are allowed.

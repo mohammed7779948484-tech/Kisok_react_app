@@ -475,3 +475,16 @@ The final documentation-head CI result is recorded in PR #40 after it completes.
 Audit record corrections: the PR enumerates every shared path, and current
 hotfix records distinguish historical feature PASS from this pending hotfix.
 No additional source defect was found within the authorized short tier.
+
+## Hotfix completion continuation (2026-10-04)
+
+Fetched PR #40 and both remote refs before edits: open/draft/unmerged, branch
+01a5a6434ff8aa5bb61945c53b69dd5eab9c1d81, develop unchanged at
+252796384270dd0375d3f3cb391c74067f65c06d. No full CodeRabbit review existed;
+a manual full review was requested. Shell/adb remain unavailable locally.
+
+HF04 MODE: config. SCAFFOLD: N/A, restore an existing configuration.
+Implementation: restore ci.yml exactly from fetched develop. Normal CI is the
+verification authority; no RED is appropriate for a configuration restoration.
+Native research found placeholders and disabled animations in the current E2E
+job; its sign-in smoke cannot satisfy HF-AC-03. No native PASS is claimed.
