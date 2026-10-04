@@ -404,3 +404,33 @@ HF04 scaffold: N/A, existing CI configuration restored. No generator capability
 fits CI, Maestro flows, diagnostic scripts or additive testID instrumentation.
 The feature shape, data contracts, dependencies and navigation remain unchanged.
 Allowed HF04 edits: .github/workflows/ci.yml and these control documents.
+
+### HF05 finalized scope
+
+HF05 completion plan status: READY. Entry evidence: HF04 normal CI GREEN
+(97 suites / 1241 tests). Config verification runs the actual label-gated native
+job; no string-matching unit test is manufactured for workflow configuration.
+
+Manual artifact: .maestro/flows/catalog-review-cart.yaml; no generator capability
+covers E2E flows. Existing owners receive only additive testIDs:
+features/catalog/components/{catalog-navigation,product-card}.tsx,
+features/catalog/screens/product-detail/components/{option-rack,option-rack-item}.tsx,
+features/catalog-cart-integration/components/{add-to-cart-button,cart-access-button}.tsx,
+features/cart/components/{quick-cart-sheet,cart-line-card}.tsx, and
+features/cart/screens/full-cart/full-cart-screen.tsx.
+
+Shared verification files: .github/workflows/android-e2e.yml and
+.github/scripts/run-maestro.sh. Use TEST .env and documented Customer credentials
+injected as masked MAESTRO_* variables; flow YAML contains no account.
+Maestro 2.11.0 is pinned to the official release archive/digest. Animations stay
+enabled, native process events and final PID must prove one continuous process.
+Compare the actual Quick Cart line title/caption/count with Full Cart twice,
+with Keep browsing/reopen between; never submit an order.
+
+Temporary verification only: build an original-Dialog APK from the fetched
+develop blob with all E2E instrumentation retained. The same toolchain/emulator
+executes original and candidate independently. Before readiness, remove the
+pinned comparison build step, baseline environment variable and runner branch.
+This does not become permanent repository CI. Baseline failure proves a native
+cause only if Android logs identify it; baseline PASS means not reproduced.
+No new app state, route, persistence, library, backend or test-mode component.

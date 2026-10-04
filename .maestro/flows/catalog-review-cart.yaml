@@ -1,0 +1,171 @@
+appId: com.kisok.kiosk
+name: Catalog — review cart and reopen without losing selections
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: "sign-in-submit"
+    timeout: 30000
+- tapOn:
+    id: "sign-in-email"
+- inputText: ${MAESTRO_CUSTOMER_EMAIL}
+- tapOn:
+    id: "sign-in-password"
+- inputText: ${MAESTRO_CUSTOMER_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: "sign-in-submit"
+- extendedWaitUntil:
+    visible:
+      id: "catalog-nav-products"
+    timeout: 60000
+- tapOn:
+    id: "catalog-nav-products"
+- extendedWaitUntil:
+    visible:
+      id: "products-grid"
+    timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: "catalog-product-available-.*"
+      index: 0
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+- tapOn:
+    id: "catalog-product-available-.*"
+    index: 0
+- extendedWaitUntil:
+    visible:
+      id: "catalog-option-rack"
+    timeout: 60000
+- runFlow:
+    when:
+      visible:
+        id: "catalog-option-show-all"
+    commands:
+      - tapOn:
+          id: "catalog-option-show-all"
+- scrollUntilVisible:
+    element:
+      id: "catalog-option-available-.*"
+      index: 0
+    direction: DOWN
+    timeout: 60000
+    centerElement: true
+- tapOn:
+    id: "catalog-option-available-.*"
+    index: 0
+- scrollUntilVisible:
+    element:
+      id: "catalog-add-to-cart"
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn:
+    id: "catalog-add-to-cart"
+- extendedWaitUntil:
+    visible:
+      id: "quick-cart-review"
+    timeout: 30000
+- copyTextFrom:
+    id: "quick-cart-line-title"
+- evalScript: ${output.productTitle = maestro.copiedText}
+- evalScript: ${output.hasCaption = false}
+- runFlow:
+    when:
+      visible:
+        id: "quick-cart-line-caption"
+    commands:
+      - copyTextFrom:
+          id: "quick-cart-line-caption"
+      - evalScript: ${output.cartCaption = maestro.copiedText}
+      - evalScript: ${output.hasCaption = true}
+- takeScreenshot: catalog-review-cart-added
+- evalScript: ${output.reviewCycle = 0}
+- repeat:
+    times: 2
+    commands:
+      - evalScript: ${output.reviewCycle = output.reviewCycle + 1}
+      - copyTextFrom:
+          id: "quick-cart-line-title"
+      - assertTrue: ${maestro.copiedText === output.productTitle}
+      - assertVisible:
+          id: "quick-cart-summary"
+          text: "^1 item · 1 selection$"
+      - assertVisible:
+          id: "quick-cart-line-quantity"
+          text: "^Quantity 1$"
+      - runFlow:
+          when:
+            true: ${output.hasCaption}
+          commands:
+            - copyTextFrom:
+                id: "quick-cart-line-caption"
+            - assertTrue: ${maestro.copiedText === output.cartCaption}
+      - tapOn:
+          id: "quick-cart-review"
+      - extendedWaitUntil:
+          visible:
+            id: "full-cart-line-title"
+          timeout: 30000
+      - assertVisible:
+          id: "full-cart-title"
+      - assertNotVisible:
+          id: "quick-cart-sheet"
+      - copyTextFrom:
+          id: "full-cart-line-title"
+      - assertTrue: ${maestro.copiedText === output.productTitle}
+      - runFlow:
+          when:
+            true: ${output.hasCaption}
+          commands:
+            - copyTextFrom:
+                id: "full-cart-line-caption"
+            - assertTrue: ${maestro.copiedText === output.cartCaption}
+      - runFlow:
+          when:
+            true: ${!output.hasCaption}
+          commands:
+            - assertNotVisible:
+                id: "full-cart-line-caption"
+      - assertVisible:
+          id: "full-cart-(summary|total-quantity)"
+      - runFlow:
+          when:
+            visible:
+              id: "full-cart-total-quantity"
+          commands:
+            - assertVisible:
+                id: "full-cart-total-quantity"
+                text: "^1 items$"
+            - assertVisible:
+                id: "full-cart-selection-count"
+                text: "^1 selection$"
+      - runFlow:
+          when:
+            visible:
+              id: "full-cart-summary"
+          commands:
+            - assertVisible:
+                id: "full-cart-summary"
+                text: "^1 item · 1 selection$"
+      - takeScreenshot: catalog-review-cart-full-${output.reviewCycle}
+      - runFlow:
+          when:
+            true: ${output.reviewCycle < 2}
+          commands:
+            - tapOn:
+                id: "full-cart-keep-browsing"
+            - extendedWaitUntil:
+                visible:
+                  id: "catalog-cart-access"
+                timeout: 30000
+            - tapOn:
+                id: "catalog-cart-access"
+            - extendedWaitUntil:
+                visible:
+                  id: "quick-cart-review"
+                timeout: 30000
+            - takeScreenshot: catalog-review-cart-reopened

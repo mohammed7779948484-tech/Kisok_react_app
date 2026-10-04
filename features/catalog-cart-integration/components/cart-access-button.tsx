@@ -11,7 +11,12 @@ export function CartAccessButton() {
   const { openQuickCart } = useQuickCart();
   const label = `Open cart${totalQuantity > 0 ? `, ${totalQuantity} items` : ""}`;
   return (
-    <Button accessibilityLabel={label} onPress={() => openQuickCart()} className="px-5">
+    <Button
+      testID="catalog-cart-access"
+      accessibilityLabel={label}
+      onPress={() => openQuickCart()}
+      className="px-5"
+    >
       <Icon as={ShoppingCart} size={20} className="text-primary-foreground" />
       <Text>Cart</Text>
       {totalQuantity > 0 ? (

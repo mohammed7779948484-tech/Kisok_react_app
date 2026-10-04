@@ -1,120 +1,140 @@
 #!/usr/bin/env bash
-# Run the Maestro flows and, on failure, capture what the screen actually showed.
-#
-# This lives in a file rather than inline in the workflow for a reason that cost
-# a full CI cycle to find: reactivecircus/android-emulator-runner executes the
-# `script:` input ONE LINE AT A TIME, each in its own `sh -c`. So `set +e` had
-# no effect on the next line, `status=$?` read a different shell's exit code,
-# and the action aborted at the first failing command — meaning the failure
-# diagnostics never ran at all. One script, one shell, one exit code.
-set -uo pipefail
+# Native journeys run once, with animations enabled and isolated process logs.
+set -euo pipefail
 
+APP_ID=com.kisok.kiosk
 APK=android/app/build/outputs/apk/release/app-release.apk
-DISMISSED_FOREIGN_ANR=0
+EVIDENCE=android-runtime-evidence
+mkdir -p "$EVIDENCE"
 
-# The device's ABI order decides which lib/<abi> the system extracts. If it
-# disagrees with what the APK contains, the app dies in Application.onCreate
-# with SoLoaderDSONotFoundError and Maestro only sees a timeout.
+# Only the disposable TEST login documented by the project owner is used.
+mapfile -t customer_login < <(node <<'NODE'
+const fs = require("node:fs");
+const docs = fs.readFileSync("docs/environment.md", "utf8");
+const row = docs.match(/\|\s*Customer\s*\|\s*\x60([^\x60\r\n]+)\x60\s*\|\s*\x60([^\x60\r\n]+)\x60/);
+if (!row) throw new Error("Documented disposable Customer login is missing");
+process.stdout.write(row[1] + "\n" + row[2] + "\n");
+NODE
+)
+if [ "${#customer_login[@]}" -ne 2 ]; then
+  echo "::error::Could not read the documented TEST Customer login"
+  exit 1
+fi
+export MAESTRO_CUSTOMER_EMAIL="${customer_login[0]}"
+export MAESTRO_CUSTOMER_PASSWORD="${customer_login[1]}"
+echo "::add-mask::$MAESTRO_CUSTOMER_EMAIL"
+echo "::add-mask::${MAESTRO_CUSTOMER_EMAIL,,}"
+echo "::add-mask::$MAESTRO_CUSTOMER_PASSWORD"
+
 echo "device ABIs: $(adb shell getprop ro.product.cpu.abilist | tr -d '\r')"
+for setting in window_animation_scale transition_animation_scale animator_duration_scale; do
+  adb shell settings put global "$setting" 1
+  scale=$(adb shell settings get global "$setting" | tr -d '\r')
+  echo "$setting=$scale"
+  if [ "$scale" != "1.0" ] && [ "$scale" != "1" ]; then
+    echo "::error::Animations must be enabled for native transition acceptance"
+    exit 1
+  fi
+done
 
-adb install -r "$APK"
+run_flow() {
+  local label="$1" apk="$2" flow="$3"
+  local name dir flow_status process_status final_pid log_pid events_pid
+  name=$(basename "$flow" .yaml)
+  dir="$EVIDENCE/$label/$name"
+  mkdir -p "$dir"
+  adb install -r "$apk" || return 1
+  adb shell am force-stop "$APP_ID" || return 1
+  adb logcat -b all -c || return 1
+  adb logcat -b all -v threadtime > "$dir/logcat.log" &
+  log_pid=$!
+  adb logcat -b events -v threadtime > "$dir/events.log" &
+  events_pid=$!
 
-# Clear the log first so what follows is only this run.
-adb logcat -c || true
+  flow_status=0
+  maestro test "$flow" --format junit --output "$dir/report.xml" \
+    --debug-output "$dir/maestro" || flow_status=$?
+  final_pid=$(adb shell pidof "$APP_ID" | tr -d '\r' || true)
+  kill "$log_pid" "$events_pid" 2>/dev/null || true
+  wait "$log_pid" 2>/dev/null || true
+  wait "$events_pid" 2>/dev/null || true
+  adb logcat -b events -d -v threadtime > "$dir/events-final.log" || return 1
+  adb logcat -b all -d -v threadtime > "$dir/logcat-final.log" || return 1
+  adb shell dumpsys activity activities > "$dir/activities.txt"
+  adb exec-out screencap -p > "$dir/final.png"
+  adb shell uiautomator dump /sdcard/kisok-final.xml >/dev/null 2>&1 &&
+    adb shell cat /sdcard/kisok-final.xml > "$dir/hierarchy.xml" || true
 
-# Let the system settle before driving the UI.
-#
-# A run once failed with the app healthy and in the foreground — logcat showed
-# "Running \"main\"" and "Displayed ... MainActivity" — while a system ANR dialog
-# for the LAUNCHER ("Pixel Launcher isn't responding") sat on top of everything,
-# so uiautomator saw only that dialog. Freshly booted emulators are still busy
-# indexing, and a cold app start on top of that is enough to tip the launcher
-# over.
-sleep 5
+  process_status=0
+  python3 - "$dir/events-final.log" "$final_pid" <<'PY' > "$dir/process.txt" || process_status=$?
+import pathlib
+import re
+import sys
 
-# Dismiss a system ANR dialog ONLY when it is not ours.
-#
-# Deliberately narrow: if com.kisok.kiosk is the one not responding, that is a
-# real defect and this must not paper over it. The dialog belongs to package
-# "android", so the test is the title text. The global flag tells the caller
-# whether a foreign dialog was actually cleared, so Maestro may be retried once.
-dismiss_foreign_anr() {
-  DISMISSED_FOREIGN_ANR=0
-
-  local hierarchy
-  hierarchy=$(adb shell uiautomator dump /sdcard/pre-check.xml >/dev/null 2>&1 &&
-    adb shell cat /sdcard/pre-check.xml 2>/dev/null) || return 0
-
-  case "$hierarchy" in
-    *"isn't responding"*)
-      # Ownership is decided by the DIALOG TITLE, not by the whole dump. Our own
-      # window sits behind the dialog and its package name appears throughout,
-      # so grepping the dump for "kisok" would refuse every legitimate dismissal.
-      local title
-      title=$(printf '%s' "$hierarchy" |
-        grep -o "text=\"[^\"]*isn't responding\"" | head -1)
-
-      case "$title" in
-        *[Kk]isok*|*kiosk*)
-          echo "::error::KISOK itself is not responding ($title) — a real failure, not cleared."
-          return 0
-          ;;
-      esac
-
-      echo "::warning::Dismissing a system ANR dialog that is not KISOK's: $title"
-      adb shell am force-stop com.google.android.apps.nexuslauncher || true
-      adb shell input keyevent KEYCODE_HOME || true
-      sleep 3
-      DISMISSED_FOREIGN_ANR=1
-      ;;
-  esac
+package = "com.kisok.kiosk"
+events = []
+for line in pathlib.Path(sys.argv[1]).read_text(errors="replace").splitlines():
+    match = re.search(r"\b(am_proc_start|am_proc_died|am_crash|am_anr)\s*:\s*\[(.*)\]", line)
+    if match:
+        fields = match[2].split(",")
+        index = 3 if match[1] == "am_proc_start" else 2
+        if len(fields) > index and fields[index].strip() == package:
+            events.append((match[1], fields[1].strip()))
+starts = [pid for tag, pid in events if tag == "am_proc_start"]
+failures = [(tag, pid) for tag, pid in events if tag != "am_proc_start" and pid in starts]
+final = sys.argv[2].split()
+print("Exact-package events:", events)
+print("Final PID:", final)
+if len(starts) != 1 or final != starts or failures:
+    print("FAIL: process continuity not proven")
+    sys.exit(1)
+print("PASS: exactly one app process; same PID alive after the complete journey")
+PY
+  cat "$dir/process.txt"
+  echo "$label / $name: Maestro=$flow_status native-process=$process_status"
+  if [ "$flow_status" -ne 0 ] || [ "$process_status" -ne 0 ]; then
+    echo "::group::$label native exception evidence"
+    grep -A 60 -B 5 -E "FATAL EXCEPTION|ViewGroup.dispatchGetDisplayList|Fatal signal|ANR in com.kisok.kiosk" \
+      "$dir/logcat-final.log" || true
+    echo "::endgroup::"
+    return 1
+  fi
 }
 
-dismiss_foreign_anr
-
-maestro test .maestro/flows --format junit --output maestro-report.xml
-status=$?
-
-# A launcher ANR can appear after the pre-check while Maestro is waiting for the
-# sign-in screen. If — and only if — the failed run is currently covered by a
-# foreign system ANR, clear it and rerun the same smoke flow once. A second
-# failure is preserved and diagnosed normally; KISOK's own ANR is never cleared.
-if [ "$status" -ne 0 ]; then
-  dismiss_foreign_anr
-  if [ "$DISMISSED_FOREIGN_ANR" -eq 1 ]; then
-    echo "::warning::Retrying Maestro once after clearing the foreign launcher ANR."
-    rm -f maestro-report.xml
-    maestro test .maestro/flows --format junit --output maestro-report.xml
-    status=$?
-  fi
+# Temporary isolated original-Dialog comparison, removed after evidence capture.
+if [ -n "${KISOK_BASELINE_APK:-}" ]; then
+  baseline_status=0
+  run_flow baseline "$KISOK_BASELINE_APK" .maestro/flows/catalog-review-cart.yaml ||
+    baseline_status=$?
+  echo "Original Dialog comparison result=$baseline_status (inspect native stack before attributing)"
 fi
 
-if [ "$status" -ne 0 ]; then
-  echo "::group::What was actually on screen"
-  adb exec-out screencap -p > failure.png || true
-  adb shell dumpsys activity activities \
-    | grep -E "mResumedActivity|mFocusedApp|topResumedActivity" || true
-  echo "::endgroup::"
+status=0
+for flow in .maestro/flows/*.yaml; do
+  run_flow candidate "$APK" "$flow" || status=1
+done
 
-  echo "::group::App logcat (crashes, JS errors, Expo)"
-  adb logcat -d -v brief \
-    -s ReactNative:V ReactNativeJS:V AndroidRuntime:E ExpoModulesCore:V expo:V \
-    | tail -300 || true
-  echo "::endgroup::"
-
-  echo "::group::Anything the app process logged"
-  adb logcat -d -v brief | grep -iE "kisok|hermes|fatal|exception" | tail -200 || true
-  echo "::endgroup::"
-
-  # Dump to a file and cat it: `uiautomator dump /dev/tty` is unreliable under
-  # `exec-out` and silently produces nothing.
-  echo "::group::The full view hierarchy Maestro was searching"
-  if adb shell uiautomator dump /sdcard/ui-hierarchy.xml >/dev/null 2>&1; then
-    adb shell cat /sdcard/ui-hierarchy.xml | tail -c 20000 || true
-  else
-    echo "uiautomator dump failed (no window? app not running?)"
-  fi
-  echo "::endgroup::"
-fi
+# Maestro diagnostics can contain expanded inputText values. Scrub before upload.
+node <<'NODE'
+const fs = require("node:fs");
+const path = require("node:path");
+const values = [process.env.MAESTRO_CUSTOMER_EMAIL, process.env.MAESTRO_CUSTOMER_PASSWORD];
+function redact(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const name = path.join(dir, entry.name);
+    if (entry.isDirectory()) redact(name);
+    else if (!/\.(png|jpe?g|webm|mp4)$/.test(name)) {
+      const bytes = fs.readFileSync(name);
+      let text;
+      try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+      catch { throw new Error("Unexpected binary diagnostic: " + name); }
+      for (const value of [...values, values[0].toLowerCase()]) text = text.split(value).join("[REDACTED]");
+      fs.writeFileSync(name, text);
+    }
+  }
+}
+redact("android-runtime-evidence");
+fs.writeFileSync("android-runtime-evidence/.redacted", "ready\n");
+NODE
 
 exit "$status"

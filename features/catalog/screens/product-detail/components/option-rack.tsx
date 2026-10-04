@@ -163,6 +163,7 @@ export function OptionRack({
       >
         <ScrollView
           ref={scrollRef}
+          testID="catalog-option-rack"
           accessibilityRole="radiogroup"
           accessibilityLabel={`${decision.overline} options`}
           nestedScrollEnabled
@@ -217,6 +218,7 @@ export function OptionRack({
 
       {decision.hasMore && !searching ? (
         <Pressable
+          testID="catalog-option-show-all"
           accessibilityRole="button"
           accessibilityState={{ expanded }}
           accessibilityLabel={

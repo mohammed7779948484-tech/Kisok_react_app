@@ -13,7 +13,7 @@ defeats its only purpose.
 
 ```
 Current round     : Android Review Cart hotfix
-Current task      : HF04 (restore normal CI)
+Current task      : HF05 (native release acceptance)
 Last gate         : Hotfix FEATURE GATE: PENDING
 Next legal action : Restore CI; collect native release evidence and full review
 Blocked by        : Native acceptance and normal final-head CI pending
@@ -172,6 +172,6 @@ cart-access-button`
 
 ### Completion revision (2026-10-04)
 
-- HF04: normal CI restoration staged; verification pending.
-- HF05: native flow/selector research in progress; runtime gate pending.
-- HF06: manual full CodeRabbit review requested while draft.
+- HF04: PASS — normal CI restored; all normal jobs GREEN (run 37168568345).
+- HF05: flow/selector research complete; native implementation staged; runtime gate pending.
+- HF06: full review request was cancelled by a head update; retrigger after native staging.

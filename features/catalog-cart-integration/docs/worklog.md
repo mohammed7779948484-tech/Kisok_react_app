@@ -488,3 +488,32 @@ Implementation: restore ci.yml exactly from fetched develop. Normal CI is the
 verification authority; no RED is appropriate for a configuration restoration.
 Native research found placeholders and disabled animations in the current E2E
 job; its sign-in smoke cannot satisfy HF-AC-03. No native PASS is claimed.
+
+### HF04 GREEN / HF05 configured
+
+Normal [CI run 37168568345](https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37168568345)
+at 1d06dd0d12efe7ad2a9bdc982bc2eed5caf530a1 passed all three normal jobs:
+Verify, Web bundle and Expo doctor. Actual Verify output:
+
+```text
+Test Suites: 97 passed, 97 total
+Tests:       1241 passed, 1241 total
+Time:        65.327 s
+Database types match the migrations (16 tables, 3 enums, 11 functions).
+```
+
+All Verify summary rows succeeded, including guards, real commit range and
+generator smoke. ci.yml equals fetched develop; no hotfix job/bypass remains.
+
+HF05 MODE: config/test instrumentation. SCAFFOLD: N/A, no generator capability
+covers a Maestro flow or diagnostics, and existing components receive testIDs.
+Research verified real UI reachability and disposable TEST login injection,
+first-install release notes behavior, the separate native-stack Cart screen,
+and exact Android14 process-event fields from AOSP. Maestro env injection,
+archive layout, version and digest were verified from official 2.11.0 sources.
+
+Native comparison/acceptance is configured but has NOT RUN yet. Stable selectors
+and actual UI interaction are used; no runtime auth/cart/navigation mocks.
+Original Dialog comparison is temporary and will be removed before readiness.
+Native failure attribution requires a captured exception, not a Maestro timeout.
+The initial full CodeRabbit request was cancelled because HEAD changed.
