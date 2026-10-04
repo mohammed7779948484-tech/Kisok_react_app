@@ -579,3 +579,23 @@ existing dismissal after password entry. This is a test-only user action; no
 sleep, retry or app behavior change. Independent native reviewer confirmed it
 is the smallest reasonable correction. Both Review Cart cycles remain unrun.
 Normal CI at 786cb749 passed all jobs (97 suites / 1241 tests).
+
+### HF05 confirmed emulator blocker / deterministic setup
+
+[Native run 37172176931](https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37172176931)
+at fa7b70a5 built both release APKs but all three journeys were covered by
+Android's Pixel Launcher isn't responding dialog (android:id/alertTitle).
+Each KISOK process remained alive with Running main and no app exception.
+Artifact 11292235953 and failure-output hierarchies capture the foreign ANR.
+No authentication or Review Cart acceptance is claimed.
+
+Configure the ephemeral GitHub emulator to disable only the installed
+com.google.android.apps.nexuslauncher package before any flow. Verify its
+disabled state and absent process; fail setup if that cannot be established.
+This addresses a demonstrated CI environment fault. No sleep, dialog dismissal,
+retry, app recovery, animation disabling or KISOK behavior change is introduced.
+
+Independent reviewer verified Maestro 2.11 launches KISOK directly using
+PackageManager.getLaunchIntentForPackage and context.startActivity, without
+Pixel Launcher. Exact-package KISOK crash/death/ANR and continuity checks remain.
+Normal CI at fa7b70a5 passed all jobs. Native acceptance remains pending.

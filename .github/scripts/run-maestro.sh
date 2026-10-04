@@ -26,6 +26,29 @@ echo "::add-mask::$MAESTRO_CUSTOMER_EMAIL"
 echo "::add-mask::${MAESTRO_CUSTOMER_EMAIL,,}"
 echo "::add-mask::$MAESTRO_CUSTOMER_PASSWORD"
 
+# The CI tablet image's Pixel Launcher ANR can cover an otherwise healthy app.
+# Disable only this unrelated launcher on the ephemeral GitHub emulator.
+# Maestro starts KISOK directly; no app dialog is dismissed and no flow retried.
+if [ "${CI:-}" = "true" ]; then
+  ci_launcher=com.google.android.apps.nexuslauncher
+  ci_packages=$(adb shell pm list packages --user 0 | tr -d '\r')
+  if printf '%s\n' "$ci_packages" | grep -Fx "package:$ci_launcher" >/dev/null; then
+    adb shell pm disable-user --user 0 "$ci_launcher"
+    adb shell am force-stop "$ci_launcher"
+    ci_disabled=$(adb shell pm list packages -d --user 0 | tr -d '\r')
+    if ! printf '%s\n' "$ci_disabled" | grep -Fx "package:$ci_launcher" >/dev/null; then
+      echo "::error::Could not disable the CI image's unrelated Pixel Launcher"
+      exit 1
+    fi
+    ci_launcher_pid=$(adb shell pidof "$ci_launcher" | tr -d '\r' || true)
+    if [ -n "$ci_launcher_pid" ]; then
+      echo "::error::Pixel Launcher remains alive after CI emulator setup"
+      exit 1
+    fi
+    echo "CI emulator: Pixel Launcher disabled; KISOK launches directly"
+  fi
+fi
+
 echo "device ABIs: $(adb shell getprop ro.product.cpu.abilist | tr -d '\r')"
 for setting in window_animation_scale transition_animation_scale animator_duration_scale; do
   adb shell settings put global "$setting" 1
