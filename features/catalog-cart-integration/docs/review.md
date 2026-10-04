@@ -192,3 +192,112 @@ observations closed), genuine UNVERIFIED items explicit (native tier,
 OS 200% scaling, second-customer runtime, badge corner geometry beyond
 the 48×48 measurement). The Integration PR remains DRAFT and UNMERGED —
 HUMAN_HANDOFF.
+
+## Android Review Cart hotfix independent review (2026-10-03)
+
+Reviewed head: a9c9c6a25d946f8021bc6be617e4501d71059b0a.
+Reviewer: fresh-context hotfix_review agent using kisok-code-review.
+
+Result: 0 blocking, 0 major, 0 minor findings. Safe to retain as a draft candidate.
+Examined briefs/plans, tests before implementation, CI scope and all shared
+Dialog consumers. Both Android wrappers omit exits; entering/iOS policy and
+primitive signatures remain intact. No consumer depends on animation completion.
+Navigation, cart state, contracts, dependencies, Checkout, Supabase, MDM and
+Device Mode are unchanged.
+
+RED was independently verified from CI job 111309047099. The subsequent job
+111309445626 passed 63 tests, full TypeScript, lint, formatting, Expo Doctor,
+release identity, and Android JS export. Native jobs were skipped.
+
+HF-AC-03 is unverified. The upstream reproduction supports the candidate but
+does not prove KISOK's native exception, process survival or Full Cart contents.
+The hotfix FEATURE GATE remains PENDING; PR #40 stays draft.
+
+## Android Review Cart hotfix quality audit (2026-10-03)
+
+Audited source head: a9c9c6a25d946f8021bc6be617e4501d71059b0a.
+Auditor: fresh-context hotfix_audit using quality-audit.
+
+Result: source candidate and requested short CI evidenced; full delivery PENDING.
+Plan READY at the RED commit, scoped diff matches the plan, and GREEN output
+confirms 6 suites / 63 tests, TypeScript, lint, formatting, Doctor 18/18,
+evaluated 1.1.4 / code 6 and Android JS export (4067 modules).
+
+Record corrections dispositioned: PR shared paths enumerated; final worklog
+explicitly supersedes pending JS bundle evidence with export PASS while native
+APK/runtime remains UNVERIFIED. Historical feature gates do not certify this
+hotfix. Final documentation-head CI is linked from PR #40 after completion.
+
+No additional scope/evidence defect within the authorized short tier.
+HF-AC-03 and hotfix FEATURE GATE remain PENDING; keep PR #40 draft.
+
+## Native completion review (2026-10-04)
+
+Fresh read-only reviewer: native_hotfix_review using kisok-code-review.
+Reviewed c397bd87bc2548677cbc38f930388738228d157e.
+
+One major verification finding: Android14 ActivityManagerService writes
+am_crash fields with PID/user in a different order from EventLogTags. The new
+runner's PID correlation could drop an exact-package crash. Remediation staged:
+reject exact-package am_crash unconditionally; retain PID correlation for
+death/ANR events. Re-review is required after that correction is pushed.
+
+No other blocking/major issues found in the Dialog guard, regression tests,
+test selectors, actual Maestro journey, TEST env injection, release build
+configuration or temporary candidate APK preservation/restore.
+
+Normal CI found a plan.md formatting issue, also staged for correction.
+Native evidence and full CodeRabbit review are pending; no final approval.
+
+### Full CodeRabbit review
+
+[Review 5403843357](https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/40#pullrequestreview-5403843357)
+completed the full base-to-c397bd87 diff (23 files), not just a draft notice.
+It posted one minor finding: TODO next action still says restore CI even though
+CI is restored and final-head checks are pending. The next-action correction was pushed in 353ca250 and the review
+thread resolved; final-head CI remains an explicit blocker.
+
+The automated docstring-coverage advisory is nonblocking: this hotfix changes
+exit policy/test instrumentation, not the existing component contracts.
+No unrelated docstring expansion is introduced for a numerical coverage score.
+
+### Verification findings disposition / native results
+
+The major crash-event parser finding was corrected in 353ca250 and independently
+re-reviewed with no remaining major finding. Plan formatting and the CodeRabbit
+TODO finding were also corrected; the CodeRabbit thread is resolved.
+
+Native reviewer inspected the email/password failure and confirmed the minimal
+hideKeyboard action between fields. Actual hierarchy later identified the
+foreign Pixel Launcher ANR. The reviewer verified Maestro's direct launch intent
+and the CI-only launcher disable/state/PID checks. No retry, timing recovery,
+animation disabling or KISOK ANR dismissal is used.
+
+API34 and API36 candidates passed the actual release journeys with existing
+contents and one process. Both original-Dialog comparisons also passed.
+Native evidence research confirmed the upstream's device dependence and exact
+locked-stack Android16 reproduction, with a different animated-scroll topology.
+Neither result establishes KISOK's production exception. HF-AC-03 PASS does not
+close HF-AC-04. Final-candidate review/audit and checks are pending; retain draft.
+
+### Cleaned candidate review and evidence
+
+Reviewed source: 703c8d2975e40fb715aa3b766ab6080ded7f1e1f.
+Fresh native_hotfix_review: 0 blocking, 0 major, 0 minor findings.
+Fresh completion_quality_audit: no additional actionable defect; causal delivery
+remains BLOCKED. Both independently verified the final generic native logs.
+
+Normal CI37175011568 passed Verify, Web bundle and Expo Doctor.
+Native CI37175011665 passed the two-cycle cart journey in 2m18s with one
+start/final PID4997; smoke passed in 13s with PID6692 continuous.
+Animations, New Architecture, 1.1.4 / code 6 and artifact11293585779 verified.
+
+[Full CodeRabbit review 5404244385](https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/40#pullrequestreview-5404244385)
+processed the complete develop-to-703c8d29 diff (25 files).
+It found one minor issue: Full Cart announced "1 items" and the new flow asserted
+that existing label. Correct the label to singular for quantity one and update
+the native assertion. Plural wording, visible content and cart behavior remain.
+
+Final post-review candidate CI and review results are recorded in PR #40.
+No readiness claim follows from source checks: HF-AC-04 remains UNVERIFIED,
+because both original-Dialog comparisons passed and no customer stack exists.

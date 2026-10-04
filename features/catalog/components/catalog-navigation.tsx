@@ -34,6 +34,7 @@ export function CatalogNavigation({
     return (
       <Pressable
         key={destination}
+        testID={`catalog-nav-${destination}`}
         accessibilityRole="tab"
         accessibilityLabel={label}
         accessibilityState={{ selected }}

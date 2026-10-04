@@ -347,3 +347,124 @@ T03 Product Detail edit and T04 layout edit use no generator.
 - [x] Route mappings known (none created; `/cart` reused via public push)
 - [x] Files changing outside the feature listed and justified (exactly two)
 - [x] No unnecessary capability or folder planned
+
+## Android Review Cart hotfix (2026-10-03)
+
+Hotfix plan status: READY for implementation; native acceptance remains pending.
+
+Start: remote develop 252796384270dd0375d3f3cb391c74067f65c06d.
+The lockfile resolves Reanimated 4.1.6, Router 6.0.24, Screens 4.16.0,
+React Native 0.81.5, and Worklets 0.5.1 with Fabric enabled.
+
+Upstream issue [8422](https://github.com/software-mansion/react-native-reanimated/issues/8422)
+includes the overlay-dismissal/native-stack crash and maintainer reproduction on
+4.1.6. Reanimated can flush view mutations while Android traverses the display
+list. The draw-pass fix later shipped in 4.1.7. KISOK's matching code path is
+Review Cart navigation, followed by `open && browsing` becoming false at
+`/cart`, plus pathname cleanup, while both Dialog wrappers have FadeOut exits.
+This is evidence for the candidate fix, not KISOK logcat confirmation.
+
+- HF01 (bug; HF-AC-01/02): Add a colocated Dialog/AdaptiveSheet regression at the
+  real animation seam and extend the provider navigation lifecycle test. Observe
+  RED in GitHub CI before removing only Android exits from both Dialog wrappers.
+  Keep entering animations, iOS/web behavior, routing, and primitive signatures.
+- HF02 (config; supporting HF-AC-02): Bump package/app versions to 1.1.4 and
+  Android versionCode to 6. Run short CI and obtain independent review.
+- HF03 (verification; HF-AC-03): Native release journey and before/after logcat
+  remain pending; the user's revised short-CI scope excludes APK/emulator jobs.
+
+Shared change justification: exit configuration belongs to DialogOverlay, which
+owns both wrappers. Consumer audit: QuickCartSheet, CompactRefine, WhatsNewGate,
+BlockingOverlay and UI Lab. AlertDialog has a separate overlay and is untouched.
+No data contracts, state stores, routes or new runtime components are needed.
+Scaffold: N/A, existing components/config edited in place. Manual artifact:
+`design-system/composites/dialog.test.tsx`, a behavior regression with no matching
+generator capability. Allowed edits also include the existing provider test and
+comment, these control documents, package/app config, and `.github/workflows/ci.yml`.
+CI is scoped to this exact hotfix branch; normal policy remains for other refs.
+
+## Hotfix completion revision (2026-10-04)
+
+Completion plan status: READY for HF04; HF05 scope is finalized after native
+selector research. This supersedes the October 3 short-tier-only policy.
+
+- HF04 (config; supporting HF-AC-03): Restore .github/workflows/ci.yml byte-for-byte
+  from current develop. No branch-specific job or bypass remains in the PR diff.
+  Verify using the normal Verify, Web bundle and Expo doctor jobs.
+- HF05 (config/test instrumentation; HF-AC-03): Reuse the label-gated release
+  Maestro workflow for the actual authenticated Catalog/Review Cart journey.
+  Enable animations, use the documented disposable TEST project, capture native
+  success/failure logs, and verify app liveness plus contents/browse/reopen.
+  No seeding, Checkout submission, production backend or new runtime harness.
+- HF06 (review/audit): Request manual full CodeRabbit review while draft.
+  Address real findings and obtain normal final-head CI/native evidence before
+  marking ready. Do not merge.
+
+HF04 scaffold: N/A, existing CI configuration restored. No generator capability
+fits CI, Maestro flows, diagnostic scripts or additive testID instrumentation.
+The feature shape, data contracts, dependencies and navigation remain unchanged.
+Allowed HF04 edits: .github/workflows/ci.yml and these control documents.
+
+### HF05 finalized scope
+
+HF05 completion plan status: READY. Entry evidence: HF04 normal CI GREEN
+(97 suites / 1241 tests). Config verification runs the actual label-gated native
+job; no string-matching unit test is manufactured for workflow configuration.
+
+Manual artifact: .maestro/flows/catalog-review-cart.yaml; no generator capability
+covers E2E flows. Existing owners receive only additive testIDs:
+`features/catalog/components/{catalog-navigation,product-card}.tsx`,
+`features/catalog/screens/product-detail/components/{option-rack,option-rack-item}.tsx`,
+`features/catalog-cart-integration/components/{add-to-cart-button,cart-access-button}.tsx`,
+`features/cart/components/{quick-cart-sheet,cart-line-card}.tsx`, and
+`features/cart/screens/full-cart/full-cart-screen.tsx`.
+
+Shared verification files: .github/workflows/android-e2e.yml and
+.github/scripts/run-maestro.sh. Use TEST .env and documented Customer credentials
+injected as masked `MAESTRO_*` variables; flow YAML contains no account.
+Maestro 2.11.0 is pinned to the official release archive/digest. Animations stay
+enabled, native process events and final PID must prove one continuous process.
+Compare the actual Quick Cart line title/caption/count with Full Cart twice,
+with Keep browsing/reopen between; never submit an order.
+
+Temporary verification only: build an original-Dialog APK from the fetched
+develop blob with all E2E instrumentation retained. The same toolchain/emulator
+executes original and candidate independently. Before readiness, remove the
+pinned comparison build step, baseline environment variable and runner branch.
+This does not become permanent repository CI. Baseline failure proves a native
+cause only if Android logs identify it; baseline PASS means not reproduced.
+No new app state, route, persistence, library, backend or test-mode component.
+
+Final native operation notes also update `.maestro/README.md` and the existing
+smoke-flow comment; no feature generator capability fits these instructions.
+
+### Final verification scope / attribution gate
+
+- HF05 native acceptance (HF-AC-03): PASS on API34 and API36 at f8cc42f1 and
+  3f44ec4c respectively. Each candidate completed both review cycles with
+  contents preserved and one live app process.
+- Remove the temporary original-Dialog build, pinned commit, environment
+  variable and runner branch. Restore the established API34 CI target after the
+  one-off API36 probe. Keep generic regression coverage and proven emulator
+  setup; .github/workflows/ci.yml continues to equal develop.
+- HF06: Obtain normal final-candidate CI, final generic native verification,
+  full CodeRabbit review and fresh independent review/audit. Do not merge.
+- HF07 (verification; HF-AC-04): Attribute the production failure using the
+  actual tablet model/OS and captured native exception or a failing KISOK native
+  reproduction. Both original-Dialog CI journeys passed; do not call this a
+  confirmed production fix. Required production evidence has been requested.
+  No implementation is justified by a timeout, inferred splash or upstream
+  stack alone. No additional automated platform matrix or stress loop is
+  planned without device evidence.
+
+HF07 scaffold: N/A, evidence collection only. Completion plan remains READY;
+the hotfix FEATURE GATE remains PENDING until HF-AC-04 and final checks pass.
+
+### HF06 full-review minor correction
+
+Full review at 703c8d29 found the existing singular accessibility label was
+"1 items"; the new flow asserted that label. Correct only its grammar and the
+matching assertion. This is a presentation/test correction within the existing
+FullCartScreen and Maestro scope, with no cart or Checkout behavior change.
+MODE: copy/config. SCAFFOLD: N/A, existing label and flow assertion.
+Normal final-head CI, native journey and full review are recorded in PR #40.

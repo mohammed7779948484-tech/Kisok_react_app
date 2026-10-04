@@ -91,9 +91,11 @@ export function FullCartScreen({
     >
       <View className="gap-2">
         <Eyebrow rule>Your selection</Eyebrow>
-        <Text variant="display">Cart</Text>
+        <Text testID="full-cart-title" variant="display">
+          Cart
+        </Text>
       </View>
-      <Button variant="tonal" disabled={locked} onPress={browse}>
+      <Button testID="full-cart-keep-browsing" variant="tonal" disabled={locked} onPress={browse}>
         <Icon as={ArrowLeft} size={18} />
         <Text>Keep browsing</Text>
       </Button>
@@ -166,14 +168,15 @@ export function FullCartScreen({
         <Text variant="eyebrow">Ready to order</Text>
         <View className="flex-row items-baseline gap-3">
           <Text
+            testID="full-cart-total-quantity"
             className="font-display text-display-lg text-foreground"
-            accessibilityLabel={`${totalQuantity} items`}
+            accessibilityLabel={`${totalQuantity} ${totalQuantity === 1 ? "item" : "items"}`}
           >
             {totalQuantity}
           </Text>
           <Text variant="title">{totalQuantity === 1 ? "item" : "items"}</Text>
         </View>
-        <Text variant="meta" tone="muted">
+        <Text testID="full-cart-selection-count" variant="meta" tone="muted">
           {distinctLineCount} {distinctLineCount === 1 ? "selection" : "selections"}
         </Text>
       </View>
@@ -265,7 +268,7 @@ export function FullCartScreen({
           >
             <View className="flex-row flex-wrap items-center gap-x-6 gap-y-3">
               <View className="min-w-[160px] flex-1 gap-0.5">
-                <Text variant="title">
+                <Text testID="full-cart-summary" variant="title">
                   {`${totalQuantity} ${totalQuantity === 1 ? "item" : "items"} · ${distinctLineCount} ${distinctLineCount === 1 ? "selection" : "selections"}`}
                 </Text>
                 <Text variant="meta" tone="muted">
