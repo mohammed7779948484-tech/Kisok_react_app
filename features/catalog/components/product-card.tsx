@@ -46,6 +46,7 @@ export const ProductCard = memo(function ProductCard({
 
   return (
     <Pressable
+      testID={`catalog-product-${product.isAvailable ? "available" : "unavailable"}-${product.id}`}
       accessibilityRole="button"
       accessibilityLabel={`${product.name}${brandName ? `, by ${brandName}` : ""}, ${availabilityText}`}
       onPress={handlePress}

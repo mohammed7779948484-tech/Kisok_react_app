@@ -382,3 +382,164 @@ cross-owner leak (one Customer test account — jest-covered by the cart
 suite and re-verified through the convergence net); the live badge
 corner-inset geometry beyond the class pin + the 48×48 box measurement
 above.
+
+## Android Review Cart hotfix (2026-10-03)
+
+MODE: bug (HF01), config (HF02).
+SCAFFOLD: N/A, existing shared primitive/config and integration tests.
+Manual regression: design-system/composites/dialog.test.tsx.
+
+Repository fetched through GitHub at develop
+252796384270dd0375d3f3cb391c74067f65c06d. No terminal, local clone, adb,
+emulator or build runner is exposed in this session; no local execution is claimed.
+The user requested GitHub CI execution and a short tier without native builds.
+
+Source confirms route-derived dismissal and two native exit animations.
+Upstream issue 8422 and PR 9072 identify the draw-pass hierarchy mutation defect;
+the maintainer reproduced the overlay/navigation crash on Reanimated 4.1.6.
+KISOK's own native exception and process/activity restart remain UNVERIFIED.
+
+RED: pending, test-only PR commit will run against the original Dialog.
+GREEN/affected checks: pending.
+Native release reproduction, Android production bundle/build, Full Cart runtime
+contents, Keep browsing and reopening on a device: UNVERIFIED.
+Scope excludes Checkout, Supabase, MDM and Device Mode.
+Hotfix FEATURE GATE: PENDING.
+
+### HF01 regression RED and implementation
+
+[CI run 37159256040](https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37159256040)
+tested original Dialog at test-only head f1f9552a3ad865926ba8b324172e8c4b56c8a01a.
+
+Actual output from the focused Jest invocation:
+
+```text
+FAIL design-system/composites/dialog.test.tsx
+expect(received).toBeUndefined()
+Received: {}
+Test Suites: 1 failed, 5 passed, 6 total
+Tests:       2 failed, 61 passed, 63 total
+Time:        24.623 s
+```
+
+Both failures are the intended existing Android exit registration, not an
+import or rendering failure. The unchanged iOS policy and the five existing
+affected suites passed. The mock exposes actual props forwarded from the real
+NativeOnlyAnimatedView; it does not reproduce Android drawing/native-stack.
+
+Implementation: set exiting to undefined on Android on both DialogOverlay
+wrappers; preserve entering and non-Android exit behavior. Correct the provider
+comment; keep navigation and route-derived dismissal intact.
+
+HF02: package/app version 1.1.4, Android versionCode 6. CI additionally evaluates
+Expo release identity and exports Android production JavaScript, without Gradle
+or an emulator. GREEN and independent review pending.
+
+### HF01/HF02 GREEN and independent review
+
+[CI run 37159386352](https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37159386352)
+passed on implementation head a9c9c6a25d946f8021bc6be617e4501d71059b0a.
+Job 111309445626 completed in about 2 minutes 17 seconds.
+
+```text
+Test Suites: 6 passed, 6 total
+Tests:       63 passed, 63 total
+Time:        34.753 s
+18/18 checks passed. No issues detected!
+Release identity verified: KISOK 1.1.4 / Android versionCode 6
+Android Bundled 43780ms node_modules/expo-router/entry.js (4067 modules)
+Exported: dist-android-hotfix
+```
+
+The job also passed full TypeScript, lint and repository formatting.
+Normal verify/web jobs and native APK/E2E workflows were explicitly skipped.
+No full Jest suite, Gradle build, emulator or native journey is claimed.
+
+Independent review at a9c9c6a: 0 blocking, 0 major, 0 minor findings.
+Both wrapper guards and the consumer audit were reviewed; no consumer depends
+on animation completion. Candidate safe to retain as a draft. HF-AC-03 remains
+unverified; the hotfix FEATURE GATE remains PENDING. The final documentation
+commit receives another short CI run, whose final-head result is linked in PR #40.
+
+### HF01/HF02 quality audit
+
+Fresh-context hotfix_audit independently checked the plan, scoped diff, RED and
+GREEN logs. The source candidate and short CI are evidenced; full delivery is
+PENDING because HF-AC-03 has no native release journey or logcat evidence.
+
+This entry supersedes the initial pending bundle/build record above:
+Android production JavaScript export PASS; native APK build/runtime UNVERIFIED.
+Full pnpm verify, the full Jest suite and a fresh browser journey were not run.
+The final documentation-head CI result is recorded in PR #40 after it completes.
+
+Audit record corrections: the PR enumerates every shared path, and current
+hotfix records distinguish historical feature PASS from this pending hotfix.
+No additional source defect was found within the authorized short tier.
+
+## Hotfix completion continuation (2026-10-04)
+
+Fetched PR #40 and both remote refs before edits: open/draft/unmerged, branch
+01a5a6434ff8aa5bb61945c53b69dd5eab9c1d81, develop unchanged at
+252796384270dd0375d3f3cb391c74067f65c06d. No full CodeRabbit review existed;
+a manual full review was requested. Shell/adb remain unavailable locally.
+
+HF04 MODE: config. SCAFFOLD: N/A, restore an existing configuration.
+Implementation: restore ci.yml exactly from fetched develop. Normal CI is the
+verification authority; no RED is appropriate for a configuration restoration.
+Native research found placeholders and disabled animations in the current E2E
+job; its sign-in smoke cannot satisfy HF-AC-03. No native PASS is claimed.
+
+### HF04 GREEN / HF05 configured
+
+Normal [CI run 37168568345](https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37168568345)
+at 1d06dd0d12efe7ad2a9bdc982bc2eed5caf530a1 passed all three normal jobs:
+Verify, Web bundle and Expo doctor. Actual Verify output:
+
+```text
+Test Suites: 97 passed, 97 total
+Tests:       1241 passed, 1241 total
+Time:        65.327 s
+Database types match the migrations (16 tables, 3 enums, 11 functions).
+```
+
+All Verify summary rows succeeded, including guards, real commit range and
+generator smoke. ci.yml equals fetched develop; no hotfix job/bypass remains.
+
+HF05 MODE: config/test instrumentation. SCAFFOLD: N/A, no generator capability
+covers a Maestro flow or diagnostics, and existing components receive testIDs.
+Research verified real UI reachability and disposable TEST login injection,
+first-install release notes behavior, the separate native-stack Cart screen,
+and exact Android14 process-event fields from AOSP. Maestro env injection,
+archive layout, version and digest were verified from official 2.11.0 sources.
+
+Native comparison/acceptance is configured but has NOT RUN yet. Stable selectors
+and actual UI interaction are used; no runtime auth/cart/navigation mocks.
+Original Dialog comparison is temporary and will be removed before readiness.
+Native failure attribution requires a captured exception, not a Maestro timeout.
+The initial full CodeRabbit request was cancelled because HEAD changed.
+
+### HF05 interim review and CI findings
+
+Candidate c397bd87 passed TypeScript/lint/Web/Doctor. Verify run 37169180470
+failed only plan.md formatting; full tests/guards after formatting were skipped.
+A correction is staged, not yet pushed while the native comparison builds.
+
+Independent native completion review found the am_crash writer/schema field
+order mismatch in Android14 ActivityManagerService. Rejecting exact-package
+crash events prevents a false process-continuity PASS; death/ANR correlation
+still excludes the previous force-stopped process. Remediation is staged.
+No runtime acceptance or native root-cause conclusion is claimed yet.
+
+### HF05 first release build result / configuration remediation
+
+[Native run 37169188448](https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37169188448)
+at c397bd87 built candidate release successfully in 12m54s, then the isolated
+original-Dialog APK successfully in 59s. Emulator execution was skipped: an
+overbroad git diff guard detected Expo prebuild's expected package.json script
+edits. This was a verification configuration failure, not a KISOK runtime crash.
+
+Correction: verify only the replaced Dialog file is restored. Keep normal
+repository CI unmodified. Apply the reviewed crash-event predicate correction,
+explicit Maestro artifact directory, plan formatting and TODO next-action fixes.
+Standard Gradle setup/cache supports repeated native verification without app
+dependency upgrades. Native runtime still PENDING.

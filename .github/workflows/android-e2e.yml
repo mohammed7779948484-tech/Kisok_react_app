@@ -26,14 +26,11 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'e2e')
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      EXPO_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
-      EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
-      EXPO_PUBLIC_ENVIRONMENT: local
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
 
@@ -47,12 +44,36 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - uses: gradle/actions/setup-gradle@v6.4.0
+        with:
+          cache-read-only: false
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       # Cheap, and it fails before an emulator is booted for nothing.
       - name: Check Maestro flows target the app this build produces
         run: pnpm check:e2e-appid
+
+      # Authenticated journeys use only the committed disposable TEST backend.
+      - name: Validate test environment and release configuration
+        run: |
+          pnpm exec expo config --json > "$RUNNER_TEMP/e2e-expo-config.json"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const env = fs.readFileSync(".env", "utf8");
+          if (!/^EXPO_PUBLIC_ENVIRONMENT=["']?test["']?\s*$/m.test(env)) {
+            throw new Error("Native E2E requires the documented TEST backend");
+          }
+          const config = JSON.parse(
+            fs.readFileSync(process.env.RUNNER_TEMP + "/e2e-expo-config.json", "utf8"),
+          );
+          if (!config.newArchEnabled || config.version !== require("./package.json").version ||
+              !Number.isInteger(config.android.versionCode) || config.android.versionCode < 1) {
+            throw new Error("Invalid release identity or New Architecture configuration");
+          }
+          console.log("Release configuration:", config.version, config.android.versionCode, "New Architecture enabled");
+          NODE
 
       - name: Expo prebuild (Android)
         run: npx --yes expo prebuild --platform android --no-install --clean
@@ -76,7 +97,25 @@ jobs:
       # It is also a much faster build.
       - name: Assemble release APK (self-contained, bundled JS, emulator ABI)
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=x86_64
+        run: ./gradlew assembleRelease --no-daemon --build-cache -PreactNativeArchitectures=x86_64
+
+      # TEMPORARY: isolate the original Dialog while retaining the same E2E IDs.
+      # Remove this comparison step after its before/after logs are captured.
+      - name: Build original Dialog comparison APK
+        env:
+          BASE_DIALOG_COMMIT: 252796384270dd0375d3f3cb391c74067f65c06d
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          cp "$apk" "$RUNNER_TEMP/kisok-candidate.apk"
+          trap 'git restore -- design-system/composites/dialog.tsx' EXIT
+          git show "$BASE_DIALOG_COMMIT:design-system/composites/dialog.tsx" > design-system/composites/dialog.tsx
+          git rev-parse "$BASE_DIALOG_COMMIT:design-system/composites/dialog.tsx"
+          (cd android && ./gradlew assembleRelease --no-daemon --build-cache -PreactNativeArchitectures=x86_64)
+          cp "$apk" "$RUNNER_TEMP/kisok-original-dialog.apk"
+          git restore -- design-system/composites/dialog.tsx
+          git diff --exit-code -- design-system/composites/dialog.tsx
+          cp "$RUNNER_TEMP/kisok-candidate.apk" "$apk"
+          sha256sum "$RUNNER_TEMP/kisok-original-dialog.apk" "$apk"
 
       - name: Confirm the APK really contains a JS bundle
         run: |
@@ -93,25 +132,25 @@ jobs:
           echo "native libraries in the APK:"
           unzip -l "$apk" | grep -oE "lib/[^/]+/" | sort -u
 
-      # NOT PINNED, and that is a known reproducibility gap: this installer takes
-      # whatever is newest, so a Maestro release can change selector or timeout
-      # behaviour and turn a green flow red with no change in this repository.
-      #
-      # It is left unpinned deliberately rather than pinned wrongly. The
-      # installer's own version-selection interface could not be verified from
-      # the environment this was written in (egress to the host is blocked), and
-      # a pin that silently does nothing is worse than an honest unpinned
-      # install — it reads as a guarantee that is not there.
-      #
-      # To close this: check the installer's supported version variable, or
-      # fetch a specific release archive by URL, then record the version here.
-      - name: Install Maestro
+      - name: Record native release identity and architecture
         run: |
-          curl -fsSL "https://get.maestro.mobile.dev" | bash
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          grep -q '^newArchEnabled=true' android/gradle.properties
+          grep -R -E 'IS_NEW_ARCHITECTURE_ENABLED.*true' android/app/build/generated/source/buildConfig
+          aapt_path=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -1)
+          "$aapt_path" dump badging android/app/build/outputs/apk/release/app-release.apk | head -1
+          sha256sum android/app/build/outputs/apk/release/app-release.apk
+          git rev-parse HEAD
+          node -e 'for (const name of ["react-native", "react-native-reanimated", "react-native-screens"]) console.log(name, require(name + "/package.json").version)'
 
-      # Until it is pinned, at least every run states which version produced its
-      # result, so a sudden failure can be checked against a version change.
+      # Pinned official archive; its digest is published on the GitHub release.
+      - name: Install Maestro 2.11.0
+        run: |
+          curl -fsSL "https://github.com/mobile-dev-inc/Maestro/releases/download/cli-2.11.0/maestro.zip" -o "$RUNNER_TEMP/maestro.zip"
+          echo "5384593cb4e7a106489e75a821d157dd43f4e438df6bc308b72e82c685e1283a  $RUNNER_TEMP/maestro.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP/maestro-cli"
+          echo "$RUNNER_TEMP/maestro-cli/maestro/bin" >> "$GITHUB_PATH"
+
+      # Record the tool version alongside the native evidence.
       - name: Report the Maestro version
         run: maestro --version
 
@@ -127,6 +166,8 @@ jobs:
       # A tablet profile, because that is the deployment target: a phone-sized
       # emulator would not exercise the landscape layouts at all.
       - name: Run Maestro flows on an emulator
+        env:
+          KISOK_BASELINE_APK: ${{ runner.temp }}/kisok-original-dialog.apk
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -134,7 +175,7 @@ jobs:
           arch: x86_64
           profile: pixel_tablet
           ram-size: 4096M
-          disable-animations: true
+          disable-animations: false
           # ONE line, so it is ONE shell. This action runs the script line by
           # line, each in its own `sh -c`: an inline `set +e` does not survive
           # to the next line and `$?` reads the wrong shell, which is why an
@@ -142,13 +183,10 @@ jobs:
           script: bash .github/scripts/run-maestro.sh
 
       - name: Upload Maestro report
-        if: always()
+        if: always() && hashFiles('android-runtime-evidence/.redacted') != ''
         uses: actions/upload-artifact@v7
         with:
-          name: maestro-report
-          path: |
-            maestro-report.xml
-            failure.png
-            ~/.maestro/tests/**
+          name: android-runtime-evidence
+          path: android-runtime-evidence
           retention-days: 7
           if-no-files-found: warn

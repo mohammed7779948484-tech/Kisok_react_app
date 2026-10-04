@@ -132,6 +132,7 @@ export function AddToCartButton({
         variant={tone === "inverse" ? "inverse" : "primary"}
         disabled={!canAdd}
         onPress={handleAdd}
+        testID="catalog-add-to-cart"
       >
         <Icon
           as={ShoppingCart}
@@ -171,6 +172,7 @@ export function AddToCartButton({
           variant={inverse ? "inverse" : "primary"}
           disabled={!canAdd}
           onPress={handleAdd}
+          testID="catalog-add-to-cart"
           className="flex-1 rounded-md"
         >
           <Icon

@@ -12,11 +12,11 @@ defeats its only purpose.
 ## Current checkpoint
 
 ```
-Current round     : 2 (of 2)
-Current task      : — (delivery complete)
-Last gate         : FEATURE GATE: PASS (final review SHIP-READY 0/0/3 + quality audit CLEAN-WITH-OBSERVATIONS — all closure items applied)
-Next legal action : HUMAN_HANDOFF — the Draft PR #11 (4f7eed3 + this gate record) stays DRAFT and UNMERGED; a human reviews and decides the merge
-Blocked by        : —
+Current round     : Android Review Cart hotfix
+Current task      : HF05 (native release acceptance)
+Last gate         : Hotfix FEATURE GATE: PENDING
+Next legal action : Run normal CI on final head; collect native release evidence and full review
+Blocked by        : Native acceptance and normal final-head CI pending
 ```
 
 ## Rules
@@ -162,3 +162,16 @@ cart-access-button`
 ## Blocked
 
 - —
+
+## Android Review Cart hotfix (2026-10-03)
+
+- HF01 (bug): RED observed; candidate implementation and 63 focused tests GREEN.
+- HF02 (config): 1.1.4 / code 6 evaluated; short checks GREEN; independent review clean; quality audit recorded.
+- HF03: native release journey/logcat UNVERIFIED under the revised CI scope.
+- Hotfix FEATURE GATE: PENDING. Earlier feature gates do not certify this hotfix.
+
+### Completion revision (2026-10-04)
+
+- HF04: PASS — normal CI restored; all normal jobs GREEN (run 37168568345).
+- HF05: both release APKs built; comparison restore guard failed before emulator; corrections staged; runtime gate pending.
+- HF06: full CodeRabbit review completed at c397bd87; one minor TODO correction staged.

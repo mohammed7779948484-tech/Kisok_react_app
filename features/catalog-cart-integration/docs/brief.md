@@ -181,3 +181,23 @@ Be explicit. This is what stops a feature growing while it is being built.
 - Live hosted TEST Catalog dataset (populated products/variants incl.
   option-backed ones) for the final browser journey; Customer test account
   from `docs/environment.md`.
+
+## Android Review Cart hotfix (2026-10-03)
+
+- HF-AC-01: Android Quick Cart dismissal registers no Reanimated exit animation
+  on either Dialog wrapper, including route-driven dismissal.
+- HF-AC-02: Review Cart retains the cart lines; returning to browsing allows the
+  sheet to reopen. The release identity becomes 1.1.4 / Android code 6.
+- HF-AC-03: On an Android release, Review Cart renders Full Cart with the same
+  contents and the app remains alive; Keep browsing and reopening also work.
+
+HF-AC-03 requires native evidence and remains unverified. The user requested
+no local emulator/E2E and only short CI checks for this PR. No Checkout,
+Supabase, MDM, Device Mode, dependency, or Catalog UX changes are in scope.
+
+### Completion scope supersession (2026-10-04)
+
+The user now requires normal final CI, native Android runtime acceptance and a
+real full CodeRabbit review. This supersedes the earlier short-CI-only policy.
+HF-AC-01/02/03 retain their IDs. No local emulator/E2E is run; native execution
+uses GitHub CI. No new product behavior or backend/Checkout changes are allowed.
