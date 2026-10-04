@@ -543,3 +543,24 @@ repository CI unmodified. Apply the reviewed crash-event predicate correction,
 explicit Maestro artifact directory, plan formatting and TODO next-action fixes.
 Standard Gradle setup/cache supports repeated native verification without app
 dependency upgrades. Native runtime still PENDING.
+
+### HF05 release runtime attempt at 353ca250
+
+Normal [CI run 37170102083](https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37170102083)
+passed Verify, Web bundle and Expo Doctor: 97 suites, 1241 tests, TypeScript,
+lint, formatting, database checks and repository guards.
+
+[Native run 37170102079](https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37170102079)
+built both release APKs and verified 1.1.4 / code 6, New Architecture, x86_64,
+RN 0.81.5, Reanimated 4.1.6 and Screens 4.16.0. Animations were enabled.
+All three attempts failed waiting for sign-in-submit, before authentication or
+any Catalog interaction. Each attempt recorded one package process start and
+the same final PID; no package crash/restart was captured. These are startup
+attempts, not Review Cart acceptance or evidence disproving the production crash.
+
+The report, final screenshot, hierarchy and logcat are in artifact 11291670853.
+The available connector cannot inspect its ZIP contents locally. Add JS and
+final UI diagnostics to failure output so the next CI run can identify the
+startup blocker without changing application behavior or adding retries.
+
+Native acceptance, original-Dialog attribution and final cleanup remain pending.

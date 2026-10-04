@@ -88,7 +88,7 @@ print("Final PID:", final)
 if len(starts) != 1 or final != starts or failures:
     print("FAIL: process continuity not proven")
     sys.exit(1)
-print("PASS: exactly one app process; same PID alive after the complete journey")
+print("PASS: exactly one app process; same PID alive after the test attempt (Maestro result is checked separately)")
 PY
   cat "$dir/process.txt"
   echo "$label / $name: Maestro=$flow_status native-process=$process_status"
@@ -96,6 +96,10 @@ PY
     echo "::group::$label native exception evidence"
     grep -A 60 -B 5 -E "FATAL EXCEPTION|ViewGroup.dispatchGetDisplayList|Fatal signal|ANR in com.kisok.kiosk" \
       "$dir/logcat-final.log" || true
+    echo "::endgroup::"
+    echo "::group::$label JS and final UI evidence"
+    grep -E "ReactNativeJS|ReactNative|ExpoModulesCore" "$dir/logcat-final.log" | tail -100 || true
+    head -c 30000 "$dir/hierarchy.xml" || true
     echo "::endgroup::"
     return 1
   fi
