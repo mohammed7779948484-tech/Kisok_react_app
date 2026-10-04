@@ -599,3 +599,33 @@ Independent reviewer verified Maestro 2.11 launches KISOK directly using
 PackageManager.getLaunchIntentForPackage and context.startActivity, without
 Pixel Launcher. Exact-package KISOK crash/death/ANR and continuity checks remain.
 Normal CI at fa7b70a5 passed all jobs. Native acceptance remains pending.
+
+### HF05 Android14 acceptance / production attribution remains open
+
+[Release native run 37173070243](https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37173070243)
+at f8cc42f1 passed all attempts on API34 google_apis x86_64 pixel_tablet with
+animations enabled and Pixel Launcher disabled. Candidate Review Cart passed in
+1m31s: Full Cart had the same title/caption/count, Keep browsing/reopening and
+the second review passed, and PID7024 remained alive with exactly one start.
+Sign In smoke passed in 10s with PID7657 continuous.
+
+The original Dialog also passed both review cycles (2m1s, PID4785 continuous).
+Therefore this is candidate acceptance, not a reproduced production crash or
+confirmed race. Artifact 11291694231 includes native logs, process evidence,
+screenshots and reports. Both APKs are 1.1.4 / code 6 with New Architecture.
+Candidate SHA256: cee55d056e1327b46efc11226d2b9752b5b991dd18aa1709e7cba2d19ada9b46.
+Original SHA256: f87e807b8b5f1dccf5e181fe116e00e52842339dd65f4187361690ed3e187379.
+Normal CI37173070213 also passed all jobs.
+
+Upstream8422 reports device dependence: Realme GT Neo Android13 failed while
+the same model Android11 passed; a maintainer reproduced on Realme GT2.
+Upstream8907 reports Pixel8Pro API36.1; its linked repo at immutable 3d7213d
+locks RN0.81.5 / Reanimated4.1.6 / Screens4.16.0 / Worklets0.5.1, matching KISOK.
+Its animated-scroll/back topology differs from Quick Cart/modal/forward.
+Run one API36 diagnostic of KISOK's original journey, retaining release/animations
+and the isolated comparison. Do not manufacture the upstream reproduction in
+KISOK or add a platform matrix, timing changes, retries or dependency upgrades.
+
+The production tablet model/OS and fatal stack have been requested; no reply yet.
+Exact KISOK production attribution remains a blocker for declaring the proven
+root cause fixed. API34 baseline success neither confirms nor disproves it.
