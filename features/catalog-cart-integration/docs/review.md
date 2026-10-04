@@ -230,3 +230,33 @@ hotfix. Final documentation-head CI is linked from PR #40 after completion.
 
 No additional scope/evidence defect within the authorized short tier.
 HF-AC-03 and hotfix FEATURE GATE remain PENDING; keep PR #40 draft.
+
+## Native completion review (2026-10-04)
+
+Fresh read-only reviewer: native_hotfix_review using kisok-code-review.
+Reviewed c397bd87bc2548677cbc38f930388738228d157e.
+
+One major verification finding: Android14 ActivityManagerService writes
+am_crash fields with PID/user in a different order from EventLogTags. The new
+runner's PID correlation could drop an exact-package crash. Remediation staged:
+reject exact-package am_crash unconditionally; retain PID correlation for
+death/ANR events. Re-review is required after that correction is pushed.
+
+No other blocking/major issues found in the Dialog guard, regression tests,
+test selectors, actual Maestro journey, TEST env injection, release build
+configuration or temporary candidate APK preservation/restore.
+
+Normal CI found a plan.md formatting issue, also staged for correction.
+Native evidence and full CodeRabbit review are pending; no final approval.
+
+### Full CodeRabbit review
+
+[Review 5403843357](https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/40#pullrequestreview-5403843357)
+completed the full base-to-c397bd87 diff (23 files), not just a draft notice.
+It posted one minor finding: TODO next action still says restore CI even though
+CI is restored and final-head checks are pending. The next-action correction is
+staged; final-head CI remains an explicit blocker.
+
+The automated docstring-coverage advisory is nonblocking: this hotfix changes
+exit policy/test instrumentation, not the existing component contracts.
+No unrelated docstring expansion is introduced for a numerical coverage score.

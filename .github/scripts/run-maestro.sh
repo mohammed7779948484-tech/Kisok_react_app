@@ -53,7 +53,7 @@ run_flow() {
 
   flow_status=0
   maestro test "$flow" --format junit --output "$dir/report.xml" \
-    --debug-output "$dir/maestro" || flow_status=$?
+    --debug-output "$dir/maestro" --test-output-dir "$dir/maestro" || flow_status=$?
   final_pid=$(adb shell pidof "$APP_ID" | tr -d '\r' || true)
   kill "$log_pid" "$events_pid" 2>/dev/null || true
   wait "$log_pid" 2>/dev/null || true
@@ -81,7 +81,7 @@ for line in pathlib.Path(sys.argv[1]).read_text(errors="replace").splitlines():
         if len(fields) > index and fields[index].strip() == package:
             events.append((match[1], fields[1].strip()))
 starts = [pid for tag, pid in events if tag == "am_proc_start"]
-failures = [(tag, pid) for tag, pid in events if tag != "am_proc_start" and pid in starts]
+failures = [(tag, pid) for tag, pid in events if tag == "am_crash" or (tag != "am_proc_start" and pid in starts)]
 final = sys.argv[2].split()
 print("Exact-package events:", events)
 print("Final PID:", final)

@@ -44,6 +44,10 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - uses: gradle/actions/setup-gradle@v6.4.0
+        with:
+          cache-read-only: false
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -93,7 +97,7 @@ jobs:
       # It is also a much faster build.
       - name: Assemble release APK (self-contained, bundled JS, emulator ABI)
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=x86_64
+        run: ./gradlew assembleRelease --no-daemon --build-cache -PreactNativeArchitectures=x86_64
 
       # TEMPORARY: isolate the original Dialog while retaining the same E2E IDs.
       # Remove this comparison step after its before/after logs are captured.
@@ -106,10 +110,10 @@ jobs:
           trap 'git restore -- design-system/composites/dialog.tsx' EXIT
           git show "$BASE_DIALOG_COMMIT:design-system/composites/dialog.tsx" > design-system/composites/dialog.tsx
           git rev-parse "$BASE_DIALOG_COMMIT:design-system/composites/dialog.tsx"
-          (cd android && ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=x86_64)
+          (cd android && ./gradlew assembleRelease --no-daemon --build-cache -PreactNativeArchitectures=x86_64)
           cp "$apk" "$RUNNER_TEMP/kisok-original-dialog.apk"
           git restore -- design-system/composites/dialog.tsx
-          git diff --exit-code
+          git diff --exit-code -- design-system/composites/dialog.tsx
           cp "$RUNNER_TEMP/kisok-candidate.apk" "$apk"
           sha256sum "$RUNNER_TEMP/kisok-original-dialog.apk" "$apk"
 

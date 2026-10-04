@@ -52,3 +52,21 @@ ignore the result.
 
 A PR claiming Maestro coverage must paste the command and its result, and say
 which device or emulator image it ran on.
+
+## Authenticated Catalog → Cart acceptance
+
+`catalog-review-cart.yaml` uses the documented disposable TEST backend and
+Customer account. It requires `MAESTRO_CUSTOMER_EMAIL` and
+`MAESTRO_CUSTOMER_PASSWORD` in the environment; no account is written in the
+flow. Use a TEST release APK. CI reads/masks the documented login and injects
+these variables. The flow never submits an order or seeds backend data.
+
+The journey adds one available selection, reviews it, returns to browsing,
+reopens Quick Cart and reviews again. It compares line identity and item counts.
+Animations must remain enabled for this navigation/portal regression.
+
+The label-gated CI runner executes each flow independently, saves native logs,
+process evidence, view hierarchy and screenshots under
+`android-runtime-evidence`, and requires the same app process throughout each
+journey. Missing process evidence fails verification. Maestro is pinned and
+expanded login values are redacted from text diagnostics before upload.

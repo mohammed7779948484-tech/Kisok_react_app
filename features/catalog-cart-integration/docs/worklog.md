@@ -517,3 +517,29 @@ and actual UI interaction are used; no runtime auth/cart/navigation mocks.
 Original Dialog comparison is temporary and will be removed before readiness.
 Native failure attribution requires a captured exception, not a Maestro timeout.
 The initial full CodeRabbit request was cancelled because HEAD changed.
+
+### HF05 interim review and CI findings
+
+Candidate c397bd87 passed TypeScript/lint/Web/Doctor. Verify run 37169180470
+failed only plan.md formatting; full tests/guards after formatting were skipped.
+A correction is staged, not yet pushed while the native comparison builds.
+
+Independent native completion review found the am_crash writer/schema field
+order mismatch in Android14 ActivityManagerService. Rejecting exact-package
+crash events prevents a false process-continuity PASS; death/ANR correlation
+still excludes the previous force-stopped process. Remediation is staged.
+No runtime acceptance or native root-cause conclusion is claimed yet.
+
+### HF05 first release build result / configuration remediation
+
+[Native run 37169188448](https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37169188448)
+at c397bd87 built candidate release successfully in 12m54s, then the isolated
+original-Dialog APK successfully in 59s. Emulator execution was skipped: an
+overbroad git diff guard detected Expo prebuild's expected package.json script
+edits. This was a verification configuration failure, not a KISOK runtime crash.
+
+Correction: verify only the replaced Dialog file is restored. Keep normal
+repository CI unmodified. Apply the reviewed crash-event predicate correction,
+explicit Maestro artifact directory, plan formatting and TODO next-action fixes.
+Standard Gradle setup/cache supports repeated native verification without app
+dependency upgrades. Native runtime still PENDING.

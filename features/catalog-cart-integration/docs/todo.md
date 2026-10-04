@@ -15,7 +15,7 @@ defeats its only purpose.
 Current round     : Android Review Cart hotfix
 Current task      : HF05 (native release acceptance)
 Last gate         : Hotfix FEATURE GATE: PENDING
-Next legal action : Restore CI; collect native release evidence and full review
+Next legal action : Run normal CI on final head; collect native release evidence and full review
 Blocked by        : Native acceptance and normal final-head CI pending
 ```
 
@@ -173,5 +173,5 @@ cart-access-button`
 ### Completion revision (2026-10-04)
 
 - HF04: PASS — normal CI restored; all normal jobs GREEN (run 37168568345).
-- HF05: flow/selector research complete; native implementation staged; runtime gate pending.
-- HF06: full review request was cancelled by a head update; retrigger after native staging.
+- HF05: both release APKs built; comparison restore guard failed before emulator; corrections staged; runtime gate pending.
+- HF06: full CodeRabbit review completed at c397bd87; one minor TODO correction staged.

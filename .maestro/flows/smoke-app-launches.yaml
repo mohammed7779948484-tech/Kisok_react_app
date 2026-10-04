@@ -1,4 +1,4 @@
-# The one flow this repository has: with no stored session the app boots through
+# The launch smoke flow: with no stored session the app boots through
 # the startup screen and lands on sign-in without crashing. It needs no account,
 # no seeded data and no network.
 #

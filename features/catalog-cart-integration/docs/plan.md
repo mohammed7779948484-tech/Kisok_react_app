@@ -413,15 +413,15 @@ job; no string-matching unit test is manufactured for workflow configuration.
 
 Manual artifact: .maestro/flows/catalog-review-cart.yaml; no generator capability
 covers E2E flows. Existing owners receive only additive testIDs:
-features/catalog/components/{catalog-navigation,product-card}.tsx,
-features/catalog/screens/product-detail/components/{option-rack,option-rack-item}.tsx,
-features/catalog-cart-integration/components/{add-to-cart-button,cart-access-button}.tsx,
-features/cart/components/{quick-cart-sheet,cart-line-card}.tsx, and
-features/cart/screens/full-cart/full-cart-screen.tsx.
+`features/catalog/components/{catalog-navigation,product-card}.tsx`,
+`features/catalog/screens/product-detail/components/{option-rack,option-rack-item}.tsx`,
+`features/catalog-cart-integration/components/{add-to-cart-button,cart-access-button}.tsx`,
+`features/cart/components/{quick-cart-sheet,cart-line-card}.tsx`, and
+`features/cart/screens/full-cart/full-cart-screen.tsx`.
 
 Shared verification files: .github/workflows/android-e2e.yml and
 .github/scripts/run-maestro.sh. Use TEST .env and documented Customer credentials
-injected as masked MAESTRO_* variables; flow YAML contains no account.
+injected as masked `MAESTRO_*` variables; flow YAML contains no account.
 Maestro 2.11.0 is pinned to the official release archive/digest. Animations stay
 enabled, native process events and final PID must prove one continuous process.
 Compare the actual Quick Cart line title/caption/count with Full Cart twice,
@@ -434,3 +434,6 @@ pinned comparison build step, baseline environment variable and runner branch.
 This does not become permanent repository CI. Baseline failure proves a native
 cause only if Android logs identify it; baseline PASS means not reproduced.
 No new app state, route, persistence, library, backend or test-mode component.
+
+Final native operation notes also update `.maestro/README.md` and the existing
+smoke-flow comment; no feature generator capability fits these instructions.
