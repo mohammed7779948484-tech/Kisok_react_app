@@ -254,9 +254,28 @@ Native evidence and full CodeRabbit review are pending; no final approval.
 [Review 5403843357](https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/40#pullrequestreview-5403843357)
 completed the full base-to-c397bd87 diff (23 files), not just a draft notice.
 It posted one minor finding: TODO next action still says restore CI even though
-CI is restored and final-head checks are pending. The next-action correction is
-staged; final-head CI remains an explicit blocker.
+CI is restored and final-head checks are pending. The next-action correction was pushed in 353ca250 and the review
+thread resolved; final-head CI remains an explicit blocker.
 
 The automated docstring-coverage advisory is nonblocking: this hotfix changes
 exit policy/test instrumentation, not the existing component contracts.
 No unrelated docstring expansion is introduced for a numerical coverage score.
+
+### Verification findings disposition / native results
+
+The major crash-event parser finding was corrected in 353ca250 and independently
+re-reviewed with no remaining major finding. Plan formatting and the CodeRabbit
+TODO finding were also corrected; the CodeRabbit thread is resolved.
+
+Native reviewer inspected the email/password failure and confirmed the minimal
+hideKeyboard action between fields. Actual hierarchy later identified the
+foreign Pixel Launcher ANR. The reviewer verified Maestro's direct launch intent
+and the CI-only launcher disable/state/PID checks. No retry, timing recovery,
+animation disabling or KISOK ANR dismissal is used.
+
+API34 and API36 candidates passed the actual release journeys with existing
+contents and one process. Both original-Dialog comparisons also passed.
+Native evidence research confirmed the upstream's device dependence and exact
+locked-stack Android16 reproduction, with a different animated-scroll topology.
+Neither result establishes KISOK's production exception. HF-AC-03 PASS does not
+close HF-AC-04. Final-candidate review/audit and checks are pending; retain draft.

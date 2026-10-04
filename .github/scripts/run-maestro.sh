@@ -128,14 +128,6 @@ PY
   fi
 }
 
-# Temporary isolated original-Dialog comparison, removed after evidence capture.
-if [ -n "${KISOK_BASELINE_APK:-}" ]; then
-  baseline_status=0
-  run_flow baseline "$KISOK_BASELINE_APK" .maestro/flows/catalog-review-cart.yaml ||
-    baseline_status=$?
-  echo "Original Dialog comparison result=$baseline_status (inspect native stack before attributing)"
-fi
-
 status=0
 for flow in .maestro/flows/*.yaml; do
   run_flow candidate "$APK" "$flow" || status=1

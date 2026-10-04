@@ -70,3 +70,8 @@ process evidence, view hierarchy and screenshots under
 `android-runtime-evidence`, and requires the same app process throughout each
 journey. Missing process evidence fails verification. Maestro is pinned and
 expanded login values are redacted from text diagnostics before upload.
+
+CI disables only the installed Pixel Launcher on its ephemeral emulator because
+its captured foreign ANR covered a healthy KISOK. Maestro launches KISOK directly.
+Setup verifies disabled state and no launcher PID. No flow is retried, no KISOK
+dialog is dismissed, and app-owned ANRs/crashes remain failures.

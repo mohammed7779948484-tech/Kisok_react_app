@@ -437,3 +437,25 @@ No new app state, route, persistence, library, backend or test-mode component.
 
 Final native operation notes also update `.maestro/README.md` and the existing
 smoke-flow comment; no feature generator capability fits these instructions.
+
+### Final verification scope / attribution gate
+
+- HF05 native acceptance (HF-AC-03): PASS on API34 and API36 at f8cc42f1 and
+  3f44ec4c respectively. Each candidate completed both review cycles with
+  contents preserved and one live app process.
+- Remove the temporary original-Dialog build, pinned commit, environment
+  variable and runner branch. Restore the established API34 CI target after the
+  one-off API36 probe. Keep generic regression coverage and proven emulator
+  setup; .github/workflows/ci.yml continues to equal develop.
+- HF06: Obtain normal final-candidate CI, final generic native verification,
+  full CodeRabbit review and fresh independent review/audit. Do not merge.
+- HF07 (verification; HF-AC-04): Attribute the production failure using the
+  actual tablet model/OS and captured native exception or a failing KISOK native
+  reproduction. Both original-Dialog CI journeys passed; do not call this a
+  confirmed production fix. Required production evidence has been requested.
+  No implementation is justified by a timeout, inferred splash or upstream
+  stack alone. No additional automated platform matrix or stress loop is
+  planned without device evidence.
+
+HF07 scaffold: N/A, evidence collection only. Completion plan remains READY;
+the hotfix FEATURE GATE remains PENDING until HF-AC-04 and final checks pass.

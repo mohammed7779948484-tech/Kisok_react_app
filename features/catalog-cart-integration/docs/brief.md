@@ -201,3 +201,16 @@ The user now requires normal final CI, native Android runtime acceptance and a
 real full CodeRabbit review. This supersedes the earlier short-CI-only policy.
 HF-AC-01/02/03 retain their IDs. No local emulator/E2E is run; native execution
 uses GitHub CI. No new product behavior or backend/Checkout changes are allowed.
+
+### Verified native acceptance and remaining crash-attribution requirement
+
+HF-AC-03 is verified on API34 and API36 x86_64 tablet release builds:
+both Review Cart cycles, existing contents, Keep browsing/reopening and one
+continuous app process passed. This supersedes the earlier unverified status.
+
+HF-AC-04: Identify KISOK's actual failing native/runtime mechanism from a
+reproduced failing journey or customer-tablet crash stack, then show the fix
+addresses that mechanism. This records the original user's explicit proof
+requirement; it introduces no new product behavior or architecture.
+HF-AC-04 remains UNVERIFIED: the original Dialog also passed both CI platforms.
+Passing candidates do not prove the reported production cause or a causal fix.

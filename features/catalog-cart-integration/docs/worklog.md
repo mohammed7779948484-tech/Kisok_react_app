@@ -629,3 +629,28 @@ KISOK or add a platform matrix, timing changes, retries or dependency upgrades.
 The production tablet model/OS and fatal stack have been requested; no reply yet.
 Exact KISOK production attribution remains a blocker for declaring the proven
 root cause fixed. API34 baseline success neither confirms nor disproves it.
+
+### HF05 Android16 result / temporary configuration cleanup
+
+[Native run 37174112127](https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37174112127)
+at 3f44ec4c passed API36 google_apis x86_64 pixel_tablet release acceptance.
+Original Dialog: both cycles PASS in 2m26s, one start/final PID3122.
+Candidate: both cycles PASS in 1m41s, one start/final PID5641.
+Sign In smoke: PASS in 13s, one start/final PID6316.
+No matching KISOK crash/death/ANR was recorded. Artifact 11292768172 contains
+the logs, screenshots, process evidence and reports. Release identity remained
+1.1.4 / code 6, New Architecture true and exact installed native versions.
+Normal CI37174112123 also passed all jobs.
+
+The second native platform confirms candidate acceptance, not a reproduced
+before/after failure. The production mechanism remains unconfirmed. Formal
+HF-AC-04/HF07 records the original causal-proof requirement; tablet evidence
+has been requested and is not available yet. Do not mark ready or claim a fix.
+
+Remove all temporary comparison configuration: original-Dialog build/pinned
+commit, baseline environment/runner branch, full-history fetch and API36 probe.
+Return generic native CI to the established API34 target. Keep the genuine
+regression flow, animations, release build/cache, narrow emulator setup,
+exact-package process checks, JS/UI diagnostics and redacted evidence upload.
+No branch-specific condition/job remains. Final generic native/normal CI and
+full review/audit run next; their final-head results are recorded in PR #40.

@@ -30,7 +30,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-          fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
 
@@ -99,24 +98,6 @@ jobs:
         working-directory: android
         run: ./gradlew assembleRelease --no-daemon --build-cache -PreactNativeArchitectures=x86_64
 
-      # TEMPORARY: isolate the original Dialog while retaining the same E2E IDs.
-      # Remove this comparison step after its before/after logs are captured.
-      - name: Build original Dialog comparison APK
-        env:
-          BASE_DIALOG_COMMIT: 252796384270dd0375d3f3cb391c74067f65c06d
-        run: |
-          apk=android/app/build/outputs/apk/release/app-release.apk
-          cp "$apk" "$RUNNER_TEMP/kisok-candidate.apk"
-          trap 'git restore -- design-system/composites/dialog.tsx' EXIT
-          git show "$BASE_DIALOG_COMMIT:design-system/composites/dialog.tsx" > design-system/composites/dialog.tsx
-          git rev-parse "$BASE_DIALOG_COMMIT:design-system/composites/dialog.tsx"
-          (cd android && ./gradlew assembleRelease --no-daemon --build-cache -PreactNativeArchitectures=x86_64)
-          cp "$apk" "$RUNNER_TEMP/kisok-original-dialog.apk"
-          git restore -- design-system/composites/dialog.tsx
-          git diff --exit-code -- design-system/composites/dialog.tsx
-          cp "$RUNNER_TEMP/kisok-candidate.apk" "$apk"
-          sha256sum "$RUNNER_TEMP/kisok-original-dialog.apk" "$apk"
-
       - name: Confirm the APK really contains a JS bundle
         run: |
           apk=android/app/build/outputs/apk/release/app-release.apk
@@ -166,11 +147,9 @@ jobs:
       # A tablet profile, because that is the deployment target: a phone-sized
       # emulator would not exercise the landscape layouts at all.
       - name: Run Maestro flows on an emulator
-        env:
-          KISOK_BASELINE_APK: ${{ runner.temp }}/kisok-original-dialog.apk
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 36
+          api-level: 34
           target: google_apis
           arch: x86_64
           profile: pixel_tablet
