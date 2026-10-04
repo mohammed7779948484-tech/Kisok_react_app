@@ -219,9 +219,9 @@ describe("CatalogCartProvider", () => {
     expect(screen.getByText("open:false")).toBeOnTheScreen();
   });
 
-  it("Review cart navigates to the customer cart route", async () => {
+  it("Review cart closes on /cart, retains the cart, and can reopen after browsing", async () => {
     const user = userEvent.setup();
-    await renderProvider(<QuickCartProbe />, REVIEW_OWNER);
+    const view = await renderProvider(<QuickCartProbe />, REVIEW_OWNER);
     await waitForCartRestored(REVIEW_OWNER);
     await act(async () => {
       addItem(waterInput);
@@ -233,6 +233,31 @@ describe("CatalogCartProvider", () => {
     expect(mockRouter.navigate).toHaveBeenCalledTimes(1);
     expect(mockRouter.navigate).toHaveBeenCalledWith("/(customer)/cart");
     expect(mockRouter.push).not.toHaveBeenCalled();
+    const linesBeforeNavigation = getCartSnapshot().lines;
+
+    mockPathname.current = "/cart";
+    await view.rerender(
+      <AuthedHarness>
+        <QuickCartProbe />
+      </AuthedHarness>,
+    );
+
+    expect(screen.queryByText("Your cart")).toBeNull();
+    expect(screen.getByText("open:false")).toBeOnTheScreen();
+    expect(getCartSnapshot().lines).toEqual(linesBeforeNavigation);
+
+    mockPathname.current = "/products";
+    await view.rerender(
+      <AuthedHarness>
+        <QuickCartProbe />
+      </AuthedHarness>,
+    );
+
+    expect(screen.queryByText("Your cart")).toBeNull();
+    await user.press(screen.getByRole("button", { name: "Open Quick Cart" }));
+    expect(await screen.findByText("Your cart")).toBeOnTheScreen();
+    expect(screen.getByText("1 item · 1 selection")).toBeOnTheScreen();
+    expect(getCartSnapshot().lines).toEqual(linesBeforeNavigation);
   });
 
   it("closes the quick cart when the route changes", async () => {

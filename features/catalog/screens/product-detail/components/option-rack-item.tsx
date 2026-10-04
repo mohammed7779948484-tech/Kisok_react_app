@@ -36,6 +36,7 @@ export const OptionRackItem = memo(function OptionRackItem({
 
   return (
     <Pressable
+      testID={`catalog-option-${unavailable ? "unavailable" : "available"}-${choice.id}`}
       accessibilityRole="radio"
       accessibilityState={{ checked: selected }}
       accessibilityLabel={`${choice.label}${choice.details ? `, ${choice.details}` : ""}${unavailable ? ", currently unavailable" : lowStock ? `, only ${choice.availableQuantity} left` : ""}`}

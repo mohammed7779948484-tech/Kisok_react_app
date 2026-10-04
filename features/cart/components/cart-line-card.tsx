@@ -66,11 +66,11 @@ export const CartLineCard = memo(function CartLineCard({
 
       <View className={cn("min-w-0 flex-1 gap-3 py-1", !compact && "flex-row items-center")}>
         <View className="min-w-0 flex-1 gap-1">
-          <Text variant="title" numberOfLines={2}>
+          <Text testID="full-cart-line-title" variant="title" numberOfLines={2}>
             {title}
           </Text>
           {caption ? (
-            <Text variant="meta" tone="muted" numberOfLines={2}>
+            <Text testID="full-cart-line-caption" variant="meta" tone="muted" numberOfLines={2}>
               {caption}
             </Text>
           ) : null}

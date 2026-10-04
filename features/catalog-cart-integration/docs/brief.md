@@ -181,3 +181,43 @@ Be explicit. This is what stops a feature growing while it is being built.
 - Live hosted TEST Catalog dataset (populated products/variants incl.
   option-backed ones) for the final browser journey; Customer test account
   from `docs/environment.md`.
+
+## Android Review Cart hotfix (2026-10-03)
+
+- HF-AC-01: Android Quick Cart dismissal registers no Reanimated exit animation
+  on either Dialog wrapper, including route-driven dismissal.
+- HF-AC-02: Review Cart retains the cart lines; returning to browsing allows the
+  sheet to reopen. The release identity becomes 1.1.4 / Android code 6.
+- HF-AC-03: On an Android release, Review Cart renders Full Cart with the same
+  contents and the app remains alive; Keep browsing and reopening also work.
+
+HF-AC-03 requires native evidence and remains unverified. The user requested
+no local emulator/E2E and only short CI checks for this PR. No Checkout,
+Supabase, MDM, Device Mode, dependency, or Catalog UX changes are in scope.
+
+### Completion scope supersession (2026-10-04)
+
+The user now requires normal final CI, native Android runtime acceptance and a
+real full CodeRabbit review. This supersedes the earlier short-CI-only policy.
+HF-AC-01/02/03 retain their IDs. No local emulator/E2E is run; native execution
+uses GitHub CI. No new product behavior or backend/Checkout changes are allowed.
+
+### Verified native acceptance and remaining crash-attribution requirement
+
+HF-AC-03 is verified on API34 and API36 x86_64 tablet release builds:
+both Review Cart cycles, existing contents, Keep browsing/reopening and one
+continuous app process passed. This supersedes the earlier unverified status.
+
+HF-AC-04: Identify KISOK's actual failing native/runtime mechanism from a
+reproduced failing journey or customer-tablet crash stack, then show the fix
+addresses that mechanism. This records the original user's explicit proof
+requirement; it introduces no new product behavior or architecture.
+HF-AC-04 remains UNVERIFIED: the original Dialog also passed both CI platforms.
+Passing candidates do not prove the reported production cause or a causal fix.
+
+### Final generic workflow acceptance
+
+The cleaned API34 native workflow at 703c8d29 also passed the two-cycle journey
+with preserved contents and one continuous PID4997. Release identity is
+1.1.4 / code 6 with New Architecture and animations enabled. HF-AC-04 remains
+UNVERIFIED; this additional acceptance does not establish the production cause.

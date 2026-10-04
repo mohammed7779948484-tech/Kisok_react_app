@@ -26,6 +26,8 @@ const DialogPortal = DialogPrimitive.Portal;
 const DialogClose = DialogPrimitive.Close;
 const FullWindowOverlay = Platform.OS === "ios" ? RNFullWindowOverlay : React.Fragment;
 
+// Android exit animations can mutate the portal hierarchy during native-stack
+// drawing on Reanimated 4.1.x (upstream #8422). Dismiss without animated teardown.
 function DialogOverlay({
   className,
   children,
@@ -60,7 +62,11 @@ function DialogOverlay({
       >
         <NativeOnlyAnimatedView
           entering={FadeIn.duration(180).reduceMotion(ReduceMotion.System)}
-          exiting={FadeOut.duration(140).reduceMotion(ReduceMotion.System)}
+          exiting={
+            Platform.OS === "android"
+              ? undefined
+              : FadeOut.duration(140).reduceMotion(ReduceMotion.System)
+          }
           as="Pressable"
           style={[
             StyleSheet.absoluteFillObject,
@@ -73,7 +79,11 @@ function DialogOverlay({
           ) : null}
           <NativeOnlyAnimatedView
             entering={FadeIn.delay(40).duration(180).reduceMotion(ReduceMotion.System)}
-            exiting={FadeOut.duration(140).reduceMotion(ReduceMotion.System)}
+            exiting={
+              Platform.OS === "android"
+                ? undefined
+                : FadeOut.duration(140).reduceMotion(ReduceMotion.System)
+            }
             style={[
               { flex: 1, width: "100%", alignItems: "center", justifyContent: "center" },
               nativeContentStyle,

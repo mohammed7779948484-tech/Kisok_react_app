@@ -59,8 +59,8 @@ export function CatalogCartProvider({ children }: CatalogCartProviderProps) {
         addedLineId={addedLineId}
         onOpenChange={setOpen}
         onViewFullCart={() => {
-          // Pathname cleanup owns dismissal after the route changes. Avoid
-          // tearing down the native portal in the same event as navigation.
+          // The route change dismisses via open && browsing. DialogOverlay
+          // skips Android exit animations during the native screen transition.
           router.navigate("/(customer)/cart");
         }}
       />

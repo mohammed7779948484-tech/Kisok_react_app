@@ -12,11 +12,11 @@ defeats its only purpose.
 ## Current checkpoint
 
 ```
-Current round     : 2 (of 2)
-Current task      : — (delivery complete)
-Last gate         : FEATURE GATE: PASS (final review SHIP-READY 0/0/3 + quality audit CLEAN-WITH-OBSERVATIONS — all closure items applied)
-Next legal action : HUMAN_HANDOFF — the Draft PR #11 (4f7eed3 + this gate record) stays DRAFT and UNMERGED; a human reviews and decides the merge
-Blocked by        : —
+Current round     : Android Review Cart hotfix
+Current task      : HF07 (production attribution)
+Last gate         : HF06 source review complete; hotfix FEATURE GATE: PENDING
+Next legal action : Obtain customer-tablet model/OS and crash stack; verify causal fix
+Blocked by        : Production mechanism unconfirmed; original Dialog also passed CI
 ```
 
 ## Rules
@@ -162,3 +162,25 @@ cart-access-button`
 ## Blocked
 
 - —
+
+## Android Review Cart hotfix (2026-10-03)
+
+- HF01 (bug): RED observed; candidate implementation and 63 focused tests GREEN.
+- HF02 (config): 1.1.4 / code 6 evaluated; short checks GREEN; independent review clean; quality audit recorded.
+- HF03: native release journey/logcat UNVERIFIED under the revised CI scope.
+- Hotfix FEATURE GATE: PENDING. Earlier feature gates do not certify this hotfix.
+
+### Completion revision (2026-10-04)
+
+- HF04: PASS — normal CI restored byte-for-byte from develop; all normal jobs green.
+- HF05 / HF-AC-03: PASS — candidate release journey on Android14 and Android16;
+  contents, browse/reopen, both review cycles and process continuity verified.
+- Comparison cleanup: original-Dialog build, pinned ref, baseline env/runner and
+  one-off API36 target removed in the final candidate. Generic native coverage stays.
+- HF06: full CodeRabbit reviews at c397bd87 and 703c8d29 completed. TODO finding
+  resolved; the final minor singular-item accessibility finding is corrected.
+  Normal/generic-native CI and fresh source review/audit passed at 703c8d29.
+  Post-review candidate check results and final review are tracked in PR #40.
+- HF07 / HF-AC-04: BLOCKED — original Dialog also passed both platforms; no
+  KISOK production exception captured. Tablet model/OS/crash stack requested.
+- Hotfix FEATURE GATE: PENDING. Do not mark ready or merge until causal proof exists.

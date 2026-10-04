@@ -52,17 +52,18 @@ function PreviewLine({ line, featured = false }: { line: CartLine; featured?: bo
         className={cn("rounded-xl border border-border/60", featured ? "h-24 w-24" : "h-16 w-16")}
       />
       <View className="min-w-0 flex-1 gap-1">
-        <Text variant="title" numberOfLines={2}>
+        <Text testID="quick-cart-line-title" variant="title" numberOfLines={2}>
           {title}
         </Text>
         {caption ? (
-          <Text variant="meta" tone="muted" numberOfLines={1}>
+          <Text testID="quick-cart-line-caption" variant="meta" tone="muted" numberOfLines={1}>
             {caption}
           </Text>
         ) : null}
       </View>
       <View
         accessible
+        testID="quick-cart-line-quantity"
         accessibilityLabel={`Quantity ${line.quantity}`}
         className="min-w-12 items-center rounded-full bg-secondary px-3 py-1.5"
       >
@@ -94,7 +95,7 @@ export function QuickCartSheet({
 
   return (
     <AdaptiveSheet open={open} onOpenChange={onOpenChange}>
-      <AdaptiveSheetContent className={cn("bg-background", className)}>
+      <AdaptiveSheetContent testID="quick-cart-sheet" className={cn("bg-background", className)}>
         <AdaptiveSheetHeader className="flex-row items-center gap-4 px-6 pb-4 pt-6">
           <View
             className={cn(
@@ -110,7 +111,7 @@ export function QuickCartSheet({
           </View>
           <View className="min-w-0 flex-1 gap-1">
             <AdaptiveSheetTitle>{added ? "Added to your cart" : "Your cart"}</AdaptiveSheetTitle>
-            <AdaptiveSheetDescription>
+            <AdaptiveSheetDescription testID="quick-cart-summary">
               {lines.length === 0
                 ? "Nothing here yet."
                 : `${totalQuantity} ${totalQuantity === 1 ? "item" : "items"} · ${lines.length} ${lines.length === 1 ? "selection" : "selections"}`}
@@ -160,7 +161,12 @@ export function QuickCartSheet({
             </Button>
           </AdaptiveSheetClose>
           {hydrated && lines.length > 0 && onViewFullCart ? (
-            <Button size="large" className="flex-1" onPress={onViewFullCart}>
+            <Button
+              testID="quick-cart-review"
+              size="large"
+              className="flex-1"
+              onPress={onViewFullCart}
+            >
               <Text>Review cart</Text>
             </Button>
           ) : null}
