@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Search } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   AppImage,
@@ -12,12 +13,14 @@ import {
   Screen,
   Text,
   useLayout,
+  usePageGutter,
 } from "@/design-system";
 import { cn } from "@/core/utils";
 
 import type { CatalogFullSettings } from "../model/catalog-snapshot.schema";
 import type { CatalogView } from "../model/catalog-view";
 import { CatalogNavigation, type CatalogDestination } from "./catalog-navigation";
+import { HELP_ME_CHOOSE_PILL_MIN_BOTTOM_OFFSET, HelpMeChoosePill } from "./help-me-choose-pill";
 
 /** Below this window width the navigation tabs move to their own row. */
 const SINGLE_ROW_MIN_WIDTH = 1180;
@@ -38,7 +41,15 @@ export type CatalogShellProps = {
   settings?: CatalogView["settings"];
   children: React.ReactNode;
   contentClassName?: string;
+  /**
+   * Float the Help Me Choose pill over the page, optionally pre-scoped to a
+   * category or a brand. Only a browsing page's success state opts in, and it
+   * reserves `HELP_ME_CHOOSE_PILL_CLEARANCE` below its scroll content.
+   */
+  helpMeChoose?: HelpMeChooseScope;
 };
+
+export type HelpMeChooseScope = { categoryId?: string; brandId?: string };
 
 /**
  * The catalog chrome: the store's identity, a search field that is always
@@ -50,8 +61,11 @@ export function CatalogShell({
   settings,
   children,
   contentClassName,
+  helpMeChoose,
 }: CatalogShellProps) {
   const router = useRouter();
+  const gutter = usePageGutter();
+  const insets = useSafeAreaInsets();
   const { width, isCompact } = useLayout();
   const singleRow = width >= SINGLE_ROW_MIN_WIDTH;
 
@@ -77,6 +91,14 @@ export function CatalogShell({
     },
     [router],
   );
+
+  const openHelpMeChoose = useCallback(() => {
+    // Only the scope ids the page provides; no key carries `undefined`.
+    const params: HelpMeChooseScope = {};
+    if (helpMeChoose?.categoryId) params.categoryId = helpMeChoose.categoryId;
+    if (helpMeChoose?.brandId) params.brandId = helpMeChoose.brandId;
+    router.push({ pathname: "/help-me-choose", params });
+  }, [router, helpMeChoose?.categoryId, helpMeChoose?.brandId]);
 
   const storeName = settings && isFullSettings(settings) ? settings.store_name : "KISOK";
   const logoUrl = settings && isFullSettings(settings) ? settings.logo_secure_url : null;
@@ -174,7 +196,19 @@ export function CatalogShell({
           </ContentContainer>
         </View>
 
-        <View className={cn("min-h-0 flex-1", contentClassName)}>{children}</View>
+        <View className={cn("min-h-0 flex-1", contentClassName)}>
+          {children}
+          {helpMeChoose ? (
+            <HelpMeChoosePill
+              onPress={openHelpMeChoose}
+              style={{
+                position: "absolute",
+                right: gutter,
+                bottom: Math.max(HELP_ME_CHOOSE_PILL_MIN_BOTTOM_OFFSET, insets.bottom + 16),
+              }}
+            />
+          ) : null}
+        </View>
       </View>
     </Screen>
   );

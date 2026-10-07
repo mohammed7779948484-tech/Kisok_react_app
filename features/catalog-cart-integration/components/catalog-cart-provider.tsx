@@ -18,6 +18,7 @@ const CATALOG_BROWSING_ROUTES = new Set([
   "/category-detail",
   "/search",
   "/product-detail",
+  "/help-me-choose",
 ]);
 
 /**

@@ -504,6 +504,17 @@ describe("BrandDetailScreen", () => {
     expect(screen.queryByRole("button", { name: /Café Crème/ })).toBeNull();
   });
 
+  it("offers Help Me Choose scoped to this brand", async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderBrand(catalogFixtureIds.brands.elite, "Maison Élite");
+
+    await user.press(screen.getByRole("button", { name: "Help me choose" }));
+
+    expect(mockRouterPush.mock.calls).toEqual([
+      [{ pathname: "/help-me-choose", params: { brandId: catalogFixtureIds.brands.elite } }],
+    ]);
+  });
+
   it("announces a loading state before the first snapshot resolves", async () => {
     mockFetchCatalog.mockReturnValue(new Promise(() => {}));
 
@@ -512,6 +523,7 @@ describe("BrandDetailScreen", () => {
     expect(screen.getByLabelText("Loading the catalog…")).toBeOnTheScreen();
     expect(screen.queryByRole("header", { name: "Maison Élite" })).toBeNull();
     expect(screen.queryByTestId("brand-products-grid")).toBeNull();
+    expect(screen.queryByTestId("help-me-choose-pill")).toBeNull();
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
   });
 

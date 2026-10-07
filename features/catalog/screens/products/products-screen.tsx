@@ -5,6 +5,7 @@ import { KeyFigure, PageHeading, useLayout } from "@/design-system";
 
 import { BrowseResults } from "../../components/browse-results";
 import { CatalogShell } from "../../components/catalog-shell";
+import { HELP_ME_CHOOSE_PILL_CLEARANCE } from "../../components/help-me-choose-pill";
 import {
   CatalogEmptyState,
   CatalogErrorState,
@@ -56,7 +57,7 @@ export function ProductsScreen({ initialCategoryId }: ProductsScreenProps = {}) 
   }
 
   return (
-    <CatalogShell currentDestination="products" settings={view.settings}>
+    <CatalogShell currentDestination="products" settings={view.settings} helpMeChoose={{}}>
       <BrowseResults
         view={view}
         products={view.products}
@@ -64,6 +65,7 @@ export function ProductsScreen({ initialCategoryId }: ProductsScreenProps = {}) 
         onProductPress={handleProductPress}
         showShortcuts
         initialFilters={initialFilters}
+        bottomInset={HELP_ME_CHOOSE_PILL_CLEARANCE}
         testID="products-grid"
         header={
           <PageHeading

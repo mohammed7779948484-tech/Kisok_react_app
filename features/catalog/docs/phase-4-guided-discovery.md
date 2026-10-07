@@ -101,12 +101,12 @@ explicitly unverified.
 
 ## Todo
 
-| Task | Gate    |
-| ---- | ------- |
-| A1   | PASS    |
-| A2   | PASS    |
-| A3   | PASS    |
-| B1   | PASS    |
-| B2   | PASS    |
-| B3   | PASS    |
-| B4   | PENDING |
+| Task | Gate |
+| ---- | ---- |
+| A1   | PASS |
+| A2   | PASS |
+| A3   | PASS |
+| B1   | PASS |
+| B2   | PASS |
+| B3   | PASS |
+| B4   | PASS |

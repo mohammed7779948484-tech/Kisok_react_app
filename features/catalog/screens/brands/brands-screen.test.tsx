@@ -607,12 +607,22 @@ describe("BrandsScreen", () => {
     expect(screen.queryByText("The catalog could not load")).toBeNull();
     expect(screen.queryByTestId("brands-grid")).toBeNull();
     expect(screen.queryByRole("button", { name: /Maison Élite/ })).toBeNull();
+    expect(screen.queryByTestId("help-me-choose-pill")).toBeNull();
 
     // The way forward: an action that takes the customer to Products.
     await user.press(screen.getByRole("button", { name: "Browse all products" }));
 
     expect(mockRouterReplace.mock.calls).toEqual([["/products"]]);
     expect(mockRouterPush).not.toHaveBeenCalled();
+  });
+
+  it("offers Help Me Choose, unscoped, over the populated grid", async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderPopulated();
+
+    await user.press(screen.getByRole("button", { name: "Help me choose" }));
+
+    expect(mockRouterPush.mock.calls).toEqual([[{ pathname: "/help-me-choose", params: {} }]]);
   });
 
   it("announces a loading state before the first snapshot resolves", async () => {
@@ -626,6 +636,7 @@ describe("BrandsScreen", () => {
     expect(screen.getByRole("tab", { name: "Brands", selected: true })).toBeOnTheScreen();
     expect(screen.queryByRole("header", { name: "Brands" })).toBeNull();
     expect(screen.queryByTestId("brands-grid")).toBeNull();
+    expect(screen.queryByTestId("help-me-choose-pill")).toBeNull();
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
   });
 

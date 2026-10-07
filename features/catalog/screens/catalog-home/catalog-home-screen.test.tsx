@@ -83,7 +83,8 @@ function snapshotWithoutOptionalCollections(): CatalogSnapshot {
 
 /**
  * Café Crème gains a second Color ("Noir"), so Color is a choice customers
- * actually make in this catalog and Home offers it as a discovery path.
+ * actually make in this catalog — the case that used to put an option-type
+ * text search on Home.
  */
 function snapshotWithVaryingColor(): CatalogSnapshot {
   const base = createCatalogSnapshotFixture();
@@ -173,7 +174,7 @@ async function renderHome(snapshot: CatalogSnapshot = createCatalogSnapshotFixtu
   mockFetchCatalog.mockResolvedValue(snapshot);
   const result = await renderWithProviders(<CatalogHomeScreen />);
   await waitFor(() =>
-    expect(screen.getByRole("header", { name: "Find Your Option" })).toBeOnTheScreen(),
+    expect(screen.getByRole("header", { name: "Help me choose" })).toBeOnTheScreen(),
   );
   await measureLayout();
   return result;
@@ -212,9 +213,12 @@ describe("CatalogHomeScreen", () => {
 
     // Every bounded section the catalog supports is present.
     expect(screen.getByRole("header", { name: "Store Map" })).toBeOnTheScreen();
-    expect(screen.getByRole("header", { name: "Find Your Option" })).toBeOnTheScreen();
+    expect(screen.getByRole("header", { name: "Help me choose" })).toBeOnTheScreen();
     expect(screen.getByRole("header", { name: "Brand District" })).toBeOnTheScreen();
     expect(screen.getByRole("header", { name: "Explore the Range" })).toBeOnTheScreen();
+
+    // Home carries its own Help Me Choose entry, not the floating pill.
+    expect(screen.queryByTestId("help-me-choose-pill")).toBeNull();
 
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
   });
@@ -284,7 +288,7 @@ describe("CatalogHomeScreen", () => {
     await user.press(screen.getByRole("tab", { name: "Products" }));
     await user.press(screen.getByRole("tab", { name: "Brands" }));
     await user.press(screen.getByRole("tab", { name: "Categories" }));
-    // The chrome's search field and the Option Finder's both open Search.
+    // The chrome's search field and the guided-discovery panel's both open Search.
     for (const field of screen.getAllByRole("search", { name: "Search the store" })) {
       await user.press(field);
     }
@@ -333,43 +337,61 @@ describe("CatalogHomeScreen", () => {
     expect(mockRouterReplace).not.toHaveBeenCalled();
   });
 
-  it("Browse-all actions and discovery tiles replace to their root destinations", async () => {
+  it("Browse-all actions replace to their root destinations", async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     await renderHome();
 
     await user.press(screen.getByRole("link", { name: "View all categories" }));
     await user.press(screen.getByRole("link", { name: "View all brands" }));
     await user.press(screen.getByRole("link", { name: "View all products" }));
-    await user.press(screen.getByRole("button", { name: "Brand, Explore brand families" }));
-    await user.press(screen.getByRole("button", { name: "Category, Start from the store map" }));
 
-    expect(mockRouterReplace.mock.calls).toEqual([
-      ["/categories"],
-      ["/brands"],
-      ["/products"],
-      ["/brands"],
-      ["/categories"],
-    ]);
+    expect(mockRouterReplace.mock.calls).toEqual([["/categories"], ["/brands"], ["/products"]]);
     expect(mockRouterPush).not.toHaveBeenCalled();
   });
 
-  it("offers the option types customers actually choose between as searches", async () => {
+  it("guided discovery leads into Help Me Choose", async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
-    await renderHome(snapshotWithVaryingColor());
-
-    expect(screen.getByText("Explore by color, brand, or category.")).toBeOnTheScreen();
-
-    await user.press(screen.getByRole("button", { name: "Color, Products with color choices" }));
-
-    expect(mockRouterPush.mock.calls).toEqual([[{ pathname: "/search", params: { q: "Color" } }]]);
-  });
-
-  it("offers no option-type search when no option actually varies", async () => {
     await renderHome();
 
-    expect(screen.getByText("Explore by brand, or category.")).toBeOnTheScreen();
+    expect(
+      screen.getByText(
+        "Not sure what it's called? Answer a few quick questions and we'll narrow the store to what's in stock.",
+      ),
+    ).toBeOnTheScreen();
+
+    await user.press(screen.getByTestId("home-help-me-choose"));
+
+    expect(mockRouterPush.mock.calls).toEqual([["/help-me-choose"]]);
+    expect(mockRouterReplace).not.toHaveBeenCalled();
+  });
+
+  it("starts Help Me Choose inside a stocked root category", async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderHome();
+
+    // Root categories only: the sub-category is not a quick start.
+    expect(screen.queryByRole("button", { name: "Help me choose in Tóp Picks" })).toBeNull();
+
+    await user.press(screen.getByRole("button", { name: "Help me choose in Drínks" }));
+
+    expect(mockRouterPush.mock.calls).toEqual([
+      [
+        {
+          pathname: "/help-me-choose",
+          params: { categoryId: catalogFixtureIds.categories.drinks },
+        },
+      ],
+    ]);
+  });
+
+  it("no longer offers option-type names as text searches", async () => {
+    // Color varies here, which used to put a "Color" text-search tile on Home.
+    await renderHome(snapshotWithVaryingColor());
+
     expect(screen.queryByRole("button", { name: /^Color, / })).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Size, / })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Color" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Brand, / })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Category, / })).toBeNull();
   });
 
   it("falls back to a neutral store name when settings are empty", async () => {
@@ -390,6 +412,9 @@ describe("CatalogHomeScreen", () => {
     expect(screen.queryByRole("header", { name: "Store Map" })).toBeNull();
     expect(screen.queryByRole("tab", { name: /^Show / })).toBeNull();
     expect(screen.queryByRole("header", { name: "Brand District" })).toBeNull();
+    // Guided discovery stays, without a category quick start.
+    expect(screen.getByTestId("home-help-me-choose")).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: /^Help me choose in / })).toBeNull();
 
     // The range preview still leads into the products that exist.
     expect(screen.getByRole("header", { name: "Explore the Range" })).toBeOnTheScreen();
@@ -404,7 +429,7 @@ describe("CatalogHomeScreen", () => {
     expect(screen.getByLabelText("Loading the catalog…")).toBeOnTheScreen();
     // The chrome stays usable, but no section pretends to be data.
     expect(screen.getByRole("tab", { name: "Explore", selected: true })).toBeOnTheScreen();
-    expect(screen.queryByRole("header", { name: "Find Your Option" })).toBeNull();
+    expect(screen.queryByRole("header", { name: "Help me choose" })).toBeNull();
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
   });
 
@@ -445,7 +470,7 @@ describe("CatalogHomeScreen", () => {
 
     const { queryClient } = await renderWithProviders(<CatalogHomeScreen />);
     await waitFor(() =>
-      expect(screen.getByRole("header", { name: "Find Your Option" })).toBeOnTheScreen(),
+      expect(screen.getByRole("header", { name: "Help me choose" })).toBeOnTheScreen(),
     );
     await measureLayout();
 

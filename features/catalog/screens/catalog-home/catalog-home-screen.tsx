@@ -15,7 +15,6 @@ import type {
   CatalogCategoryView,
   CatalogProductView,
 } from "../../model/catalog-view";
-import { deriveDiscoveryOptionTypes } from "../../model/discovery-presentation";
 import { useCatalog } from "../../queries/use-catalog";
 import { productDetailHref } from "../product-detail/product-detail-href";
 import { BrandDistrict } from "./sections/brand-district";
@@ -71,7 +70,6 @@ export function CatalogHomeScreen() {
     return {
       categories: view.rootCategories.filter((category) => category.productCount > 0),
       featured,
-      optionTypes: deriveDiscoveryOptionTypes(view.products),
       brands: view.brands.filter((brand) => brand.productCount > 0).slice(0, BRAND_DISTRICT_LIMIT),
       range: range.length > 0 ? range : view.products.slice(0, EXPLORE_LIMIT),
     };
@@ -118,12 +116,13 @@ export function CatalogHomeScreen() {
             onProductPress={handleProductPress}
           />
           <OptionFinder
-            optionTypes={composition.optionTypes}
+            categories={composition.categories}
             split={split}
             onSearch={() => router.replace("/search")}
-            onSearchFor={(query) => router.push({ pathname: "/search", params: { q: query } })}
-            onBrands={() => router.replace("/brands")}
-            onCategories={() => router.replace("/categories")}
+            onHelpMeChoose={() => router.push("/help-me-choose")}
+            onHelpMeChooseIn={(category) =>
+              router.push({ pathname: "/help-me-choose", params: { categoryId: category.id } })
+            }
           />
           <BrandDistrict
             brands={composition.brands}

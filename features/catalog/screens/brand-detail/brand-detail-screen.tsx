@@ -7,6 +7,7 @@ import { SectionHeading, SectionLink, useLayout } from "@/design-system";
 import { BrowseResults } from "../../components/browse-results";
 import { CatalogHero, HeroFact } from "../../components/catalog-hero";
 import { CatalogShell } from "../../components/catalog-shell";
+import { HELP_ME_CHOOSE_PILL_CLEARANCE } from "../../components/help-me-choose-pill";
 import {
   CatalogEmptyState,
   CatalogErrorState,
@@ -73,7 +74,11 @@ export function BrandDetailScreen({ brandId }: BrandDetailScreenProps) {
   const optionCount = products.reduce((total, product) => total + product.variants.length, 0);
 
   return (
-    <CatalogShell currentDestination="brands" settings={view.settings}>
+    <CatalogShell
+      currentDestination="brands"
+      settings={view.settings}
+      helpMeChoose={{ brandId: brand.id }}
+    >
       <BrowseResults
         view={view}
         products={products}
@@ -81,6 +86,7 @@ export function BrandDetailScreen({ brandId }: BrandDetailScreenProps) {
         showBrandFacet={false}
         scopeLabel={`${brand.name} products`}
         onProductPress={handleProductPress}
+        bottomInset={HELP_ME_CHOOSE_PILL_CLEARANCE}
         testID="brand-products-grid"
         emptyTitle={products.length === 0 ? "Nothing from this brand right now" : undefined}
         emptySecondaryAction={{ label: "All brands", onPress: () => router.replace("/brands") }}

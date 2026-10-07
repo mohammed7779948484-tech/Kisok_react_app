@@ -37,6 +37,60 @@ beforeEach(() => {
   mockRouterReplace.mockClear();
 });
 
+describe("CatalogShell — Help Me Choose pill", () => {
+  it("is absent unless the page opts in", async () => {
+    await renderShell();
+
+    expect(screen.queryByTestId("help-me-choose-pill")).toBeNull();
+  });
+
+  it("opens Help Me Choose unscoped when the page opts in without a scope", async () => {
+    await renderWithProviders(
+      <CatalogShell currentDestination="products" settings={settings} helpMeChoose={{}}>
+        <Text>Page</Text>
+      </CatalogShell>,
+    );
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+    await user.press(screen.getByRole("button", { name: "Help me choose" }));
+
+    // No params key carries an undefined value.
+    expect(mockRouterPush.mock.calls).toEqual([[{ pathname: "/help-me-choose", params: {} }]]);
+    expect(mockRouterReplace).not.toHaveBeenCalled();
+  });
+
+  it("carries only the scope ids the page provides", async () => {
+    const view = await renderWithProviders(
+      <CatalogShell
+        currentDestination="categories"
+        settings={settings}
+        helpMeChoose={{ categoryId: "cat-1" }}
+      >
+        <Text>Page</Text>
+      </CatalogShell>,
+    );
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+
+    await user.press(screen.getByTestId("help-me-choose-pill"));
+
+    await view.rerender(
+      <CatalogShell
+        currentDestination="brands"
+        settings={settings}
+        helpMeChoose={{ brandId: "b-1" }}
+      >
+        <Text>Page</Text>
+      </CatalogShell>,
+    );
+    await user.press(screen.getByTestId("help-me-choose-pill"));
+
+    expect(mockRouterPush.mock.calls).toEqual([
+      [{ pathname: "/help-me-choose", params: { categoryId: "cat-1" } }],
+      [{ pathname: "/help-me-choose", params: { brandId: "b-1" } }],
+    ]);
+  });
+});
+
 describe("CatalogShell — store lockup", () => {
   it("goes Home on an ordinary tap", async () => {
     const user = await renderShell();

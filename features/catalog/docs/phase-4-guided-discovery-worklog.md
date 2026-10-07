@@ -103,3 +103,20 @@ Perks, Pebble. Sizes: 1280×800, 768×1024, 600×900. All scenarios: zero page e
   tuning (`TILE_MIN_WIDTH` 280→230); Order Bar visible with selection + quantity; search
   "mint" → 3 of 46 with unavailable marked; closing the browser keeps "Add 3 to cart" at all
   three sizes.
+
+## B4 — entry points (GD-09)
+
+- Mode: behavior-change. Scaffold (Lead): `pnpm generate component catalog help-me-choose-pill`
+  → `components/help-me-choose-pill.tsx`. Implementer: feature-implementer; Lead verified.
+- RED: 23 failed / 126 passed (`Unable to find … button, name: Help me choose`, clearance
+  constant undefined, cart button absent on `/help-me-choose`).
+- GREEN: `pnpm exec jest features/catalog features/catalog-cart-integration` → 31 suites /
+  375 passed; typecheck 0; eslint/prettier clean.
+- Delivered: extended pill (Compass + "Help me choose", `bg-card`, secondary to the filled
+  cart), opt-in `CatalogShell` prop, scoped on Category/Brand detail, bottom clearance on the
+  5 screens; Home panel → Help Me Choose CTA + root-category quick starts (option-type text
+  search chips removed); `/help-me-choose` added to `CATALOG_BROWSING_ROUTES`.
+- Lead check: `Screen` default edges exclude bottom, so `insets.bottom + 16` is not doubled.
+- Runtime (1280×800, 768×1024): Home panel renders; pill bottom-right on Products, readable,
+  not competing with Cart; pill → `/help-me-choose`; cart access present there; zero errors.
+- GATE: PASS

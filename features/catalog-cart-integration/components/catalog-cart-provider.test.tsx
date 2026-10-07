@@ -319,6 +319,13 @@ describe("CatalogCartProvider — cart affordance placement", () => {
     expect(await screen.findByRole("button", { name: "Open cart" })).toBeOnTheScreen();
   });
 
+  it("places the cart affordance on Help Me Choose, a browsing route", async () => {
+    mockPathname.current = "/help-me-choose";
+    await renderProvider(<Text>child-probe</Text>, AFFORDANCE_OWNER);
+
+    expect(await screen.findByRole("button", { name: "Open cart" })).toBeOnTheScreen();
+  });
+
   it('on "/cart", shows neither the affordance nor the quick cart, even if a child asks', async () => {
     const user = userEvent.setup();
     mockPathname.current = "/cart";

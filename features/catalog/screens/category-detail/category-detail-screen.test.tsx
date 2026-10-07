@@ -565,6 +565,20 @@ describe("CategoryDetailScreen", () => {
     expect(productCardNames()).toEqual(["Field Compass, Currently unavailable"]);
   });
 
+  it.each([
+    ["a path page", catalogFixtureIds.categories.drinks, "Drínks"],
+    ["a products page", catalogFixtureIds.categories.specials, "Tóp Picks"],
+  ])("offers Help Me Choose scoped to this category on %s", async (_page, categoryId, name) => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderCategory(categoryId, name);
+
+    await user.press(screen.getByRole("button", { name: "Help me choose" }));
+
+    expect(mockRouterPush.mock.calls).toEqual([
+      [{ pathname: "/help-me-choose", params: { categoryId } }],
+    ]);
+  });
+
   it("announces a loading state before the first snapshot resolves", async () => {
     mockFetchCatalog.mockReturnValue(new Promise(() => {}));
 
@@ -574,6 +588,7 @@ describe("CategoryDetailScreen", () => {
 
     expect(screen.getByLabelText("Loading the catalog…")).toBeOnTheScreen();
     expect(screen.queryByRole("header", { name: "Drínks" })).toBeNull();
+    expect(screen.queryByTestId("help-me-choose-pill")).toBeNull();
     expect(mockFetchCatalog).toHaveBeenCalledTimes(1);
   });
 
