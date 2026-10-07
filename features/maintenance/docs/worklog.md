@@ -126,3 +126,14 @@ _None yet._
 - Mode: config. `docs/state-management.md` customer-isolation section and an ADR-0003
   amendment now describe the staff discard; `pnpm check:docs` → "Documentation matches the
   current workflow (103 files checked)". GATE: PASS
+
+## Runtime evidence (web, 1280×800)
+
+- Harness: the real app under `pnpm web`, Playwright with network mocks (stored session,
+  `current_active_profile` → customer, catalog snapshot); details in
+  `features/catalog/docs/phase-4-guided-discovery-worklog.md` ("Runtime harness").
+- Mouse-down on `catalog-store-lockup` for 3.3 s → Staff page ("Signed in as Front Counter
+  Kiosk", Back to the catalog / Sign out); Sign out → `/sign-in`; zero page errors. This also
+  exercises AC-07 (customer group teardown) in the real navigator on web.
+- Not verified: Android device (long-press timing with a finger, native-stack teardown,
+  TalkBack long-press announcement).
