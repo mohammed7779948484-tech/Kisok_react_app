@@ -193,8 +193,13 @@ export function ProductDetailScreen({ productId, backLabel, match }: ProductDeta
   if (selectedId !== null && selectedChoice === undefined) setSelectedId(null);
   const selected =
     selectedChoice ?? (decision.mode === "single" ? (decision.choices[0] ?? null) : null);
-  const quantity =
-    selected !== null && quantityFor.variantId === selected.id ? quantityFor.value : 1;
+  // A quantity left behind by an option a refresh took away is dropped, not
+  // just hidden — otherwise it would reappear if that option came back.
+  const effectiveId = selected?.id ?? null;
+  if (quantityFor.variantId !== null && quantityFor.variantId !== effectiveId) {
+    setQuantityFor({ variantId: null, value: 1 });
+  }
+  const quantity = quantityFor.variantId === effectiveId ? quantityFor.value : 1;
 
   const media = selected ? selected.variant.media : product.coverMedia ? [product.coverMedia] : [];
   const activeMediaAssetId =

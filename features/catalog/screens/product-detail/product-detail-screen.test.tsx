@@ -434,6 +434,32 @@ function snapshotWithVape(flavorCount: number = VAPE_FLAVORS.length): CatalogSna
   });
 }
 
+/**
+ * The vape catalog keeping only the flavours `keep` accepts, with an optional
+ * stock figure for them — a refresh that swaps, removes or restocks options.
+ */
+function snapshotWithVapeWhere(
+  keep: (flavor: (typeof VAPE_FLAVORS)[number]) => boolean,
+  availableQuantity?: number,
+): CatalogSnapshot {
+  const full = snapshotWithVape();
+  const kept = new Set(VAPE_FLAVORS.filter(keep).map(vapeVariantId));
+  const isVape = (variantId: string) => variantId.startsWith("f1000000-");
+  return createCatalogSnapshotFixture({
+    ...full,
+    variants: full.variants
+      .filter((variant) => !isVape(variant.id) || kept.has(variant.id))
+      .map((variant) =>
+        isVape(variant.id) && availableQuantity !== undefined && variant.is_available
+          ? { ...variant, available_quantity: availableQuantity }
+          : variant,
+      ),
+    variant_option_values: full.variant_option_values.filter(
+      (link) => !isVape(link.variant_id) || kept.has(link.variant_id),
+    ),
+  });
+}
+
 /** The single durable key the cart's hydrate() reads — disk hygiene between tests. */
 const CART_KEY = storageKey("cart", "lines");
 
@@ -1182,21 +1208,83 @@ describe("ProductDetailScreen — quantity across a catalog refresh", () => {
 
     await refresh(queryClient);
 
+    // The refresh landed: ten flavours remain.
+    expect(screen.getByRole("button", { name: "Browse all 10 flavors" })).toBeOnTheScreen();
     expect(screen.getByRole("radio", { name: "Banana" })).toBeChecked();
     expect(screen.getByRole("button", { name: "Add 3 to cart" })).toBeOnTheScreen();
   });
 
   it("keeps the quantity of a single-option product when that option survives", async () => {
+    const appleOnly = (flavor: string) => flavor === "Apple";
     mockFetchCatalog
-      .mockResolvedValueOnce(snapshotWithVape(1))
-      .mockResolvedValueOnce(snapshotWithVape(1));
+      .mockResolvedValueOnce(snapshotWithVapeWhere(appleOnly))
+      // The same option, restocked: new data, so the screen really re-derives.
+      .mockResolvedValueOnce(snapshotWithVapeWhere(appleOnly, 15));
     const user = userEvent.setup();
     const { queryClient } = await renderVape();
     await user.press(screen.getByRole("button", { name: "Increase quantity" }));
     await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    expect(screen.getByText("20 available now")).toBeOnTheScreen();
 
     await refresh(queryClient);
 
+    expect(screen.getByText("15 available now")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Add 3 to cart" })).toBeOnTheScreen();
+  });
+
+  it("starts at 1 when a refresh swaps the only option away and later brings it back", async () => {
+    const only = (name: string) => (flavor: string) => flavor === name;
+    mockFetchCatalog
+      .mockResolvedValueOnce(snapshotWithVapeWhere(only("Apple")))
+      .mockResolvedValueOnce(snapshotWithVapeWhere(only("Banana")))
+      .mockResolvedValueOnce(snapshotWithVapeWhere(only("Apple")));
+    const user = userEvent.setup();
+    const { queryClient } = await renderVape();
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    expect(screen.getByRole("button", { name: "Add 3 to cart" })).toBeOnTheScreen();
+
+    await refresh(queryClient);
+    expect(screen.getByRole("radio", { name: "Banana" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Add 1 to cart" })).toBeOnTheScreen();
+
+    // Apple returns: the 3 the customer last saw was replaced by 1, so it stays 1.
+    await refresh(queryClient);
+    expect(screen.getByRole("radio", { name: "Apple" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Add 1 to cart" })).toBeOnTheScreen();
+  });
+
+  it("treats the one option a refresh leaves as the current one, so tapping it keeps its quantity", async () => {
+    mockFetchCatalog
+      .mockResolvedValueOnce(snapshotWithVape())
+      .mockResolvedValueOnce(snapshotWithVape(1));
+    const user = userEvent.setup();
+    const { queryClient } = await renderVape();
+    await user.press(screen.getByRole("radio", { name: "Banana" }));
+
+    await refresh(queryClient);
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    expect(screen.getByRole("button", { name: "Add 2 to cart" })).toBeOnTheScreen();
+    await user.press(screen.getByRole("radio", { name: "Apple" }));
+
+    expect(screen.getByRole("button", { name: "Add 2 to cart" })).toBeOnTheScreen();
+  });
+
+  it("does not re-pick a removed option when a later refresh brings it back", async () => {
+    mockFetchCatalog
+      .mockResolvedValueOnce(snapshotWithVape())
+      .mockResolvedValueOnce(snapshotWithVapeWhere((flavor) => flavor !== "Banana"))
+      .mockResolvedValueOnce(snapshotWithVape());
+    const user = userEvent.setup();
+    const { queryClient } = await renderVape();
+    await user.press(screen.getByRole("radio", { name: "Banana" }));
+
+    await refresh(queryClient);
+    expect(screen.queryByRole("radio", { name: "Banana" })).toBeNull();
+    await refresh(queryClient);
+
+    expect(screen.getByRole("radio", { name: "Banana" })).not.toBeChecked();
+    for (const choice of screen.getAllByRole("radio")) expect(choice).not.toBeChecked();
+    expect(screen.getByText(NO_QUANTITY_HINT)).toBeOnTheScreen();
   });
 });
