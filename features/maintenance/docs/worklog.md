@@ -63,8 +63,6 @@ Delete the lines that do not apply to the mode. An empty RED heading under a
 
 ## Entries
 
-_None yet._
-
 ## T01 — customer sign-out teardown (AC-07)
 
 - Mode: bug (risk raised in planning: `useActiveProfile()` throws without a profile and
@@ -171,3 +169,11 @@ _None yet._
 - Android: UNVERIFIED (no device; label-gated Android/Maestro CI not run). Pending device
   checks: long-press timing with a finger, Back held while signing out, native-stack teardown
   on sign-out, TalkBack announcement of the lockup long press, 200% font scale on the Staff page.
+
+## Feature gate — CI
+
+- GitHub CI run 37690946342 on 6dedba1 (final HEAD): **success** — Verify (typecheck, lint,
+  format, tests, guards, db, generator), Web bundle, Expo doctor. Android build/E2E, Maestro
+  and prebuild skipped (label-gated; Android recorded UNVERIFIED). The run on 747d8dd
+  (37690777710) was cancelled by concurrency when 6dedba1 superseded it.
+  https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37690946342

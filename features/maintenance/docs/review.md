@@ -65,4 +65,4 @@ dispositioned. It returns findings; the Lead records them here.
 - Definition of Done (`AGENTS.md`) met: yes, with Android and 200% text explicitly UNVERIFIED
 
 Audit result: first pass `NOT CLEAN` (records only; full report summarised in
-`features/catalog/docs/review.md`); resolutions recorded above; `PENDING RE-AUDIT`.
+`features/catalog/docs/review.md`); resolutions recorded above; re-audit: `CLEAN AFTER RESOLUTIONS` (details in the catalog review).

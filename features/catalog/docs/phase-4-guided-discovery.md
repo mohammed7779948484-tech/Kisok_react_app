@@ -37,7 +37,8 @@ approved plan had the Home panel's option-type chips start Help Me Choose at tha
 question. With the real catalog a Flavor question would list ~206 values (only 23
 shared), so the tap question for it never exists; the chips were replaced by
 root-category quick starts, which open Help Me Choose scoped to that category.
-Reported to the user with the PR for confirmation; reversible without model changes.
+Confirmation requested from the user on #42 (https://github.com/mohammed7779948484-tech/Kisok_react_app/pull/42#issuecomment-6047459985); awaiting their answer.
+Reversible without model changes.
 
 Out of scope: dimension chips in the browser, a Search inline entry, synonym or
 flavour taxonomies, backend/schema/RPC changes, a header tab, persisted or global
@@ -120,10 +121,10 @@ explicitly unverified.
 
 ## Round gates
 
-| Round                    | Tasks      | Gate | Evidence                                                                                                       |
-| ------------------------ | ---------- | ---- | -------------------------------------------------------------------------------------------------------------- |
-| A — Product Detail       | A1, A2, A3 | PASS | Task gates PASS; `pnpm exec jest features/catalog features/catalog-cart-integration` green; runtime at 4 sizes |
-| B — Help Me Choose/entry | B1–B4      | PASS | Task gates PASS; catalog suites green; runtime HMC path + entry points at 4 sizes                              |
+| Round                    | Tasks      | Gate | Evidence                                                                                                                                                                      |
+| ------------------------ | ---------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A — Product Detail       | A1, A2, A3 | PASS | Task gates PASS; `pnpm exec jest features/catalog features/catalog-cart-integration` green; runtime at 4 sizes (recorded at the feature gate against the final tree, 747d8dd) |
+| B — Help Me Choose/entry | B1–B4      | PASS | Task gates PASS; catalog suites green; runtime HMC path + entry points at 4 sizes (recorded at the feature gate against the final tree, 747d8dd)                              |
 
 ## Feature gate
 
@@ -131,10 +132,10 @@ explicitly unverified.
 - [x] Every round gate PASS (A, B)
 - [x] Every AC verified (GD-01–GD-09; GD-09 as amended above)
 - [x] `pnpm verify` PASS after the final code change (747d8dd: 104 suites / 1351 tests; worklog)
-- [ ] fast GitHub CI PASS on the final HEAD (worklog "Feature gate")
+- [x] fast GitHub CI PASS on the final HEAD (run 37690946342 on 6dedba1; worklog "Feature gate — CI")
 - [x] runtime evidence recorded at 1280×800, 1024×768, 768×1024, 600×900 (worklog)
 - [x] Android device behaviour and 200% text: **explicitly unverified** (worklog "Feature gate")
 - [x] review findings dispositioned, re-review done (`review.md`)
-- [x] quality audit findings resolved (`review.md`)
+- [x] quality audit: re-audit findings resolved (`review.md`)
 
-FEATURE GATE: PENDING CI on the final HEAD
+FEATURE GATE: PASS — Android and 200% text explicitly UNVERIFIED; GD-09 amendment awaiting user confirmation; PR stays with the human (agents never merge)

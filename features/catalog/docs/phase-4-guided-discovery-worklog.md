@@ -197,3 +197,11 @@ FlashList column changes on rotation, sign-out teardown on the native stack, Tal
 `Tests: 1351 passed, 1351 total`, check:docs (103 files), check:commits (19 cases),
 check:e2e-appid (2 flows), check:ci-scripts (5 workflows, 10 checks), db:verify
 (16 tables, 3 enums, 11 functions), generator smoke test passed.
+
+## Feature gate — CI
+
+- GitHub CI run 37690946342 on 6dedba1 (final HEAD): **success** — Verify (typecheck, lint,
+  format, tests, guards, db, generator), Web bundle, Expo doctor. Android build/E2E, Maestro
+  and prebuild skipped (label-gated; Android recorded UNVERIFIED). The run on 747d8dd
+  (37690777710) was cancelled by concurrency when 6dedba1 superseded it.
+  https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37690946342

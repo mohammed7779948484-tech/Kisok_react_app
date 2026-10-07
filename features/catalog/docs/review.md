@@ -125,7 +125,7 @@ CodeRabbit: 1 minor (AC-07 evidence path, fixed in 9200a74), 1 trivial optional 
 | m-02 | minor    | Staff page: Back during sign-out could drop a later failure; success briefly re-enabled the button                                  | fix (maintenance)          | BackHandler held while pending; on `ok` the action stays spent; RED test                                                                                                                                                                                                   |
 | m-03 | minor    | Pill offset grows with `insets.bottom` but reserved clearance was fixed at 96                                                       | fix                        | `useHelpMeChoosePillLayout()` returns both `bottom` and `clearance` from the insets; shell + 5 screens use it; tests at inset 0 and 48                                                                                                                                     |
 | m-04 | minor    | Teardown test uses hand-built layouts, not the real `RootNavigator`                                                                 | accept                     | Real-router test is mutation-checked; the real customer tree's teardown is runtime-evidenced (web: staff sign-out → `/sign-in`, zero errors); a full RootNavigator mount needs device-mode/auth/catalog fakes for little gain. Same disposition given to CodeRabbit on #42 |
-| m-05 | minor    | Four screen-private components under `help-me-choose/components/` lack a SCAFFOLD record                                            | fix (record)               | Recorded in the worklog as planned manual artifacts inside B2's screen scope (no capability was run per component; `component --screen` would have produced the same placement)                                                                                            |
+| m-05 | minor    | Four screen-private components under `help-me-choose/components/` lack a SCAFFOLD record                                            | fix (record)               | Superseded by the quality audit below (unplanned, accepted by the Lead). Was: recorded in the worklog as planned manual artifacts inside B2's screen scope (no capability was run per component; `component --screen` would have produced the same placement)              |
 | m-06 | minor    | `model/discovery-presentation.ts` dead after the Home rework                                                                        | fix                        | Deleted; no remaining references; typecheck 0                                                                                                                                                                                                                              |
 | m-07 | minor    | Constant-only pill test; style-prop grid test                                                                                       | fix (pill) / accept (grid) | Pill test replaced by inset-aware layout tests; the grid `bottomInset` test pins a prop contract and stays                                                                                                                                                                 |
 | m-08 | info     | Silent log sink in maintenance tests                                                                                                | no action                  | —                                                                                                                                                                                                                                                                          |
@@ -154,23 +154,41 @@ the record and the final-HEAD evidence". Auditor re-ran typecheck, `test:ci` (10
 lint, format:check, check:docs. Findings and the Lead's resolutions (records only, no
 product code):
 
-| Category      | Finding                                                                         | Resolution                                                                                                              |
-| ------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| not delivered | GD-09 Home option-type chips became root-category quick starts without an amend | GD-09 amended in `phase-4-guided-discovery.md` with the reason (206 Flavor values); flagged to the user on #42          |
-| not delivered | 1024×768 runtime size missing                                                   | Run on 747d8dd with all scenarios (worklog "Feature gate")                                                              |
-| not evidenced | CI on the final HEAD                                                            | Recorded at the gate in the worklog                                                                                     |
-| not evidenced | No `pnpm verify` after the last change                                          | Run on 747d8dd: exit 0, 104 / 1351 (worklog)                                                                            |
-| not evidenced | "All round gates PASS" with no round gate recorded                              | Round gates and feature gate sections added to `phase-4-guided-discovery.md`                                            |
-| not evidenced | No runtime after remediation (M-01, m-03, 4e87d78)                              | All scenarios × 4 sizes on 747d8dd, zero page errors                                                                    |
-| not evidenced | HMC "skip brand → bubblegum → Clear" runtime path not in the worklog            | Recorded (worklog "Feature gate")                                                                                       |
-| not planned   | Four hand-written HMC components called "planned"                               | Relabelled: unplanned manual artifacts inside B2's screen scope, accepted by the Lead (B2 row); m-05 wording superseded |
-| not planned   | `bottomInset` on `CatalogGrid` beyond A2's scope                                | Added to A2's scope line (justified by D6)                                                                              |
-| stale record  | PR #42 body ("review running", "366aa46")                                       | PR body updated at the gate                                                                                             |
-| stale record  | No re-review entry                                                              | Re-review section above                                                                                                 |
-| open (DoD)    | Text scaling to 200% not checked                                                | Recorded UNVERIFIED with the reason (no faithful web emulation); moved to the Android device check                      |
+| Category      | Finding                                                                         | Resolution                                                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| not delivered | GD-09 Home option-type chips became root-category quick starts without an amend | GD-09 amended in `phase-4-guided-discovery.md` with the reason (206 Flavor values); confirmation requested on #42 (issuecomment-6047459985) |
+| not delivered | 1024×768 runtime size missing                                                   | Run on 747d8dd with all scenarios (worklog "Feature gate")                                                                                  |
+| not evidenced | CI on the final HEAD                                                            | CI run 37690946342 on 6dedba1: success (worklog "Feature gate — CI")                                                                        |
+| not evidenced | No `pnpm verify` after the last change                                          | Run on 747d8dd: exit 0, 104 / 1351 (worklog)                                                                                                |
+| not evidenced | "All round gates PASS" with no round gate recorded                              | Round gates and feature gate sections added to `phase-4-guided-discovery.md`                                                                |
+| not evidenced | No runtime after remediation (M-01, m-03, 4e87d78)                              | All scenarios × 4 sizes on 747d8dd, zero page errors                                                                                        |
+| not evidenced | HMC "skip brand → bubblegum → Clear" runtime path not in the worklog            | Recorded (worklog "Feature gate")                                                                                                           |
+| not planned   | Four hand-written HMC components called "planned"                               | Relabelled: unplanned manual artifacts inside B2's screen scope, accepted by the Lead (B2 row); m-05 wording superseded                     |
+| not planned   | `bottomInset` on `CatalogGrid` beyond A2's scope                                | Added to A2's scope line (justified by D6)                                                                                                  |
+| stale record  | PR #42 body ("review running", "366aa46")                                       | PR body rewritten after the re-audit (gate state, reviews, verify 104/1351, 4 sizes, unverified items, GD-09)                               |
+| stale record  | No re-review entry                                                              | Re-review section above                                                                                                                     |
+| open (DoD)    | Text scaling to 200% not checked                                                | Recorded UNVERIFIED with the reason (no faithful web emulation); moved to the Android device check                                          |
 
 Maintenance-specific findings (AC-06 wording, SCAFFOLD record, T01 mode, todo gate) are
 resolved in `features/maintenance/docs/review.md`.
 
-Audit result after the Lead's resolutions: `PENDING RE-AUDIT` — a fresh `quality-auditor`
-pass confirms or rejects the resolutions above.
+Re-audit (fresh `quality-auditor`, scope `fd77e4f..6dedba1`): **NOT CLEAN — very close**. It
+independently reproduced `pnpm verify` (104 / 1351), the RED of both new fix tests, and the
+runtime screenshots, and confirmed every code fix. It found two resolutions recorded but not
+done (GD-09 flag on #42, PR body) and five small record issues:
+
+| Finding                                                    | Resolution                                                          |
+| ---------------------------------------------------------- | ------------------------------------------------------------------- |
+| GD-09 not actually flagged on #42                          | Comment posted: issuecomment-6047459985; both records now cite it   |
+| PR #42 body not updated                                    | Rewritten                                                           |
+| CI resolution pointed at a worklog line that did not exist | CI run 37690946342 recorded in both worklogs; boxes ticked          |
+| Catalog audit box ticked while the audit was pending       | Ticked only after these resolutions                                 |
+| Round gates' "4 sizes" back-filled silently                | Rows now say they were recorded at the feature gate against 747d8dd |
+| T01 still labelled `bug`                                   | Relabelled `characterization` in `plan.md` and `todo.md`            |
+| Template "_None yet._"; m-05 lacked a forward pointer      | Removed; m-05 row points at this audit                              |
+
+Auditor's observation (not a finding): N-01/N-02/N-04/R-01 had Lead review plus RED/GREEN
+and runtime evidence, not a further fresh code review — accepted by the Lead as all minor.
+
+Audit result: `CLEAN AFTER RESOLUTIONS` — the auditor stated these record-only fixes would make
+it so; no code changed after the re-audit.
