@@ -268,3 +268,50 @@ teardown path). Three items, recorded in `review.md`.
   (19), check:e2e-appid (2 flows), check:ci-scripts, db:verify (16 tables, 3 enums,
   11 functions), generator smoke passed. commitlint over a051f0b..1dfc1e9: clean.
 - Labels `android-build` and `e2e` added to #42 (requested by the reviewer).
+
+### Round C — focused independent review (fresh `code-reviewer`, `a051f0b..1dfc1e9`)
+
+0 blocking, 0 major, 4 minor, 3 info (dispositions in `review.md`). Fixes, test-first:
+
+- R-01 (bug): a refreshed-away quantity was hidden, not dropped, so it could reappear if the
+  option came back. RED "starts at 1 when a refresh swaps the only option away and later
+  brings it back" (Apple×3 → Banana → Apple) → `Unable to find … Add 1 to cart`. Fix: the
+  stale quantity is reset in render (same pattern as the selection). GREEN.
+- R-02 (test gap): two tests pin the stale-selection reconcile — "treats the one option a
+  refresh leaves as the current one, so tapping it keeps its quantity" and "does not re-pick
+  a removed option when a later refresh brings it back". Mutation: deleting the
+  `setSelectedId(null)` line fails both (`Tests: 2 failed, 5 passed`); restored.
+- R-03 (test gap): the survival guards now prove the refresh landed ("Browse all 10
+  flavors"; "20 → 15 available now" with a restocked snapshot, so structural sharing cannot
+  make the refresh a no-op).
+- R-04 (test gap): the keyword test asserts `matchingVariantIds` is only the available
+  variant, in the result and through `serializeMatch` → `parseMatch` → `matchingVariantIds`.
+  Mutation: removing the `is_available` gate fails it; restored.
+- R-06 (optional, taken): the flow asserts `catalog-option-browser` again after Keep browsing.
+- Commits 6f4ac4d, ff2d7d2, 48b6820. `pnpm exec jest features/catalog/screens/product-detail`
+  → 49 passed; guided-discovery 32 passed; typecheck 0; eslint/prettier clean.
+- `pnpm verify` on 48b6820 (final code change): exit 0 — `Test Suites: 104 passed, 104 total`,
+  `Tests: 1358 passed, 1358 total`, all guards. commitlint bfd916a..48b6820 clean.
+
+### Round C — CI and Android on 48b6820 (final code HEAD)
+
+- Fast CI: Verify, Web bundle, Expo doctor — success.
+- Android build (label `android-build`): "Android prebuild check" — success.
+- Android E2E (label `e2e`), run 37696791985, job "Maestro flows" — **success**. Release APK
+  (bundled JS, x86_64) on the CI emulator: API 34, `google_apis`, `pixel_tablet` profile,
+  2560×1600 @ 320 dpi, animations at 1.
+  - `[Passed] Catalog — choose from the Option Browser, review cart and reopen without losing
+selections (2m 42s)`; `Exact-package events: [('am_proc_start', '5134')]`, `Final PID:
+['5134']`, `PASS: exactly one app process; same PID alive after the test attempt`,
+    `Maestro=0 native-process=0`.
+  - `[Passed] Smoke — app launches to sign-in (14s)`; one process (7071), `Maestro=0
+native-process=0`.
+  - Passing the flow means its assertions held on device: the pinned UT 50K card was found
+    and opened, `catalog-option-browser` was visible with the rack gone, an option was
+    chosen and added from inside the browser, the Review Cart → Keep browsing (browser still
+    shown) → reopen → Review Cart cycle matched line identity and counts, with no crash,
+    death or ANR. Screenshots and logs: artifact `android-runtime-evidence` (7-day retention).
+  - The earlier runs on 1dfc1e9 and bfd916a were cancelled by concurrency when newer commits
+    were pushed; none failed.
+- The records commit after this entry re-runs the same jobs (labels stay on #42); their
+  result on that exact HEAD is reported on the PR.

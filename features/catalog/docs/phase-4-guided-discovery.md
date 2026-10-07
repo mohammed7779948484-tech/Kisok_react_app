@@ -116,18 +116,18 @@ explicitly unverified.
 
 ## Todo
 
-| Task | Gate                                    |
-| ---- | --------------------------------------- |
-| A1   | PASS                                    |
-| A2   | PASS                                    |
-| A3   | PASS                                    |
-| B1   | PASS                                    |
-| B2   | PASS                                    |
-| B3   | PASS                                    |
-| B4   | PASS                                    |
-| C1   | PASS                                    |
-| C2   | PASS                                    |
-| C3   | PENDING (Android E2E on the final HEAD) |
+| Task | Gate |
+| ---- | ---- |
+| A1   | PASS |
+| A2   | PASS |
+| A3   | PASS |
+| B1   | PASS |
+| B2   | PASS |
+| B3   | PASS |
+| B4   | PASS |
+| C1   | PASS |
+| C2   | PASS |
+| C3   | PASS |
 
 ## Round gates
 
@@ -135,6 +135,7 @@ explicitly unverified.
 | ------------------------ | ---------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A — Product Detail       | A1, A2, A3 | PASS | Task gates PASS; `pnpm exec jest features/catalog features/catalog-cart-integration` green; runtime at 4 sizes (recorded at the feature gate against the final tree, 747d8dd) |
 | B — Help Me Choose/entry | B1–B4      | PASS | Task gates PASS; catalog suites green; runtime HMC path + entry points at 4 sizes (recorded at the feature gate against the final tree, 747d8dd)                              |
+| C — pre-merge review     | C1–C3      | PASS | Task gates PASS; focused review R-01–R-04 fixed; `pnpm verify` 104/1358 on 48b6820; Android E2E run 37696791985 passed on 48b6820                                             |
 
 ## Feature gate
 
@@ -149,3 +150,16 @@ explicitly unverified.
 - [x] quality audit: re-audit findings resolved (`review.md`)
 
 FEATURE GATE: PASS — Android and 200% text explicitly UNVERIFIED; GD-09 amendment awaiting user confirmation; PR stays with the human (agents never merge)
+
+### Feature gate after Round C (pre-merge human review)
+
+- [x] Round C task gates PASS (C1–C3) and round gate PASS
+- [x] focused independent review on the Round C diff: 0 blocking/major; minor findings fixed (`review.md`)
+- [x] `pnpm verify` PASS after the final code change (48b6820: 104 suites / 1358 tests)
+- [x] fast CI PASS on 48b6820
+- [x] **Android verified for the catalog → Option Browser → Review Cart journey**: label-gated
+      Android build + Maestro E2E passed on 48b6820 (run 37696791985) with the runner's
+      process-liveness checks; other device checks (long-press timing, TalkBack, 200% font
+      scale, Staff sign-out on device) remain UNVERIFIED
+
+FEATURE GATE: PASS (Round C) — PR stays open for the human; agents never merge

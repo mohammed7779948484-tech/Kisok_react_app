@@ -192,3 +192,31 @@ and runtime evidence, not a further fresh code review — accepted by the Lead a
 
 Audit result: `CLEAN AFTER RESOLUTIONS` — the auditor stated these record-only fixes would make
 it so; no code changed after the re-audit.
+
+### Phase 4 — pre-merge human review of #42 (on a051f0b)
+
+Independent human review. Direction stays approved. Confirmed: the Android Dialog
+exit-animation mitigation from the Review Cart hotfix is intact, and neither the Option
+Browser nor the Staff page adds a Portal/Dialog/exiting-animation teardown path.
+
+| ID   | Severity  | Finding                                                                                                                                 | Disposition | Remediation                                                                                                                                |
+| ---- | --------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| H-01 | pre-merge | `catalog-review-cart.yaml` opened the first available product (Float 3k, ≤6 variants in TEST) and entered the browser only when offered | fix         | Pinned TEST product with 46 variants; unconditional Browse all; asserts `catalog-option-browser`; Android E2E passed (C3, 1dfc1e9/48b6820) |
+| H-02 | pre-merge | Quantity could carry over to a different effective variant after a refresh left one other option                                        | fix         | Quantity bound to its variant; stale selection cleared; regression tests (C1, b324e81; hardened by R-01–R-03)                              |
+| H-03 | minor     | Help Me Choose text ignored product `search_keywords`, unlike catalog search                                                            | fix         | Product keywords matched, still per available variant (C2, 2fa4c34; R-04)                                                                  |
+
+### Phase 4 — Round C focused review (fresh `code-reviewer`, `a051f0b..1dfc1e9`)
+
+0 blocking, 0 major. Reviewer re-ran typecheck, lint, prettier, 10 suites / 132 tests, check:e2e-appid.
+
+| ID   | Severity | Finding                                                                                                | Disposition     | Remediation                                                                                             |
+| ---- | -------- | ------------------------------------------------------------------------------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------- |
+| R-01 | minor    | A refreshed-away quantity was hidden, not dropped: A×3 → only B → only A showed 3 again                | fix             | Reset in render; RED test A → B → A (6f4ac4d)                                                           |
+| R-02 | minor    | The render-phase `setSelectedId(null)` reconcile had no test                                           | fix             | Two tests; mutation-checked (6f4ac4d)                                                                   |
+| R-03 | minor    | Two survival tests could pass with a no-op refresh (structural sharing; no proof the new data arrived) | fix             | Different snapshot + "15 available now"; "Browse all 10 flavors" (6f4ac4d)                              |
+| R-04 | minor    | Keyword test's "per available variant" part could not fail                                             | fix             | Asserts `matchingVariantIds` in the result and through the `match` hand-off; mutation-checked (ff2d7d2) |
+| R-05 | info     | H-01 unproven until Android E2E passes                                                                 | closed          | Run 37696791985 on 48b6820 passed (worklog)                                                             |
+| R-06 | info     | Optional: assert the browser after Keep browsing; `scrollUntilVisible` to Add never needs to scroll    | fix / no action | Assertion added (48b6820); the harmless scroll stays                                                    |
+| R-07 | info     | Rotation keeps the quantity by construction but has no test (pre-existing gap)                         | accept          | State lives in the screen and the button is controlled; device rotation stays on the Android checklist  |
+
+Still open: none. CodeRabbit on bfd916a and 48b6820: no actionable comments.
