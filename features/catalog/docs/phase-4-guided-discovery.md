@@ -85,8 +85,12 @@ free-text step over variant text. Brand is the best second split for vapes.
 | B2   | behavior        | GD-04–07    | Help Me Choose screen + route; four screen-private components (`answer-chip`, `choice-tile`, `no-text-match`, `question-panel`) written by hand — unplanned, accepted by the Lead (see `review.md`) | `pnpm generate screen …` then `pnpm generate route …`                    |
 | B3   | behavior        | GD-08       | `match` param on `productDetailHref`/route; matching-first ordering and count in Product Detail                                                                                                     | N/A — existing files                                                     |
 | B4   | behavior-change | GD-09       | Home panel rework; pill + `CatalogShell` opt-in; 5 screens opt in; `CATALOG_BROWSING_ROUTES`                                                                                                        | `pnpm generate component catalog help-me-choose-pill`                    |
+| C1   | bug             | GD-03       | Pre-merge review H-02: quantity bound to its variant; stale selection cleared on refresh                                                                                                            | N/A — existing screen                                                    |
+| C2   | behavior        | GD-05       | Pre-merge review H-03: product `search_keywords` in Help Me Choose text                                                                                                                             | N/A — pure model                                                         |
+| C3   | config (e2e)    | GD-01–03    | Pre-merge review H-01: `catalog-review-cart.yaml` opens a pinned >6-variant TEST product and uses the browser                                                                                       | N/A — existing flow                                                      |
 
 Dependencies: A3 after A1+A2; B2 after B1; B3 after A3+B1; B4 after B2.
+Round C (after the human pre-merge review of #42): C1, C2, C3 independent.
 
 Files outside `features/catalog`: `features/catalog-cart-integration`
 (`add-to-cart-button.tsx`, `catalog-cart-provider.tsx`), `app/(customer)/`
@@ -96,6 +100,9 @@ Files outside `features/catalog`: `features/catalog-cart-integration`
 
 - The Maestro release flow taps `catalog-option-show-all` then
   `catalog-option-available-*`; both testIDs are kept.
+- `catalog-review-cart.yaml` depends on TEST data: the pinned product (UT 50K) must stay
+  visible with >6 variants and ≥1 in stock. It fails loudly at the product step;
+  `.maestro/README.md` says how to re-pin it (read-only, never by editing TEST data).
 - Substring matching does not understand synonyms ("fruity"); documented limit.
 - FlashList remounts on column change; selection and quantity live in screen
   state, so they survive.
@@ -109,15 +116,18 @@ explicitly unverified.
 
 ## Todo
 
-| Task | Gate |
-| ---- | ---- |
-| A1   | PASS |
-| A2   | PASS |
-| A3   | PASS |
-| B1   | PASS |
-| B2   | PASS |
-| B3   | PASS |
-| B4   | PASS |
+| Task | Gate                                    |
+| ---- | --------------------------------------- |
+| A1   | PASS                                    |
+| A2   | PASS                                    |
+| A3   | PASS                                    |
+| B1   | PASS                                    |
+| B2   | PASS                                    |
+| B3   | PASS                                    |
+| B4   | PASS                                    |
+| C1   | PASS                                    |
+| C2   | PASS                                    |
+| C3   | PENDING (Android E2E on the final HEAD) |
 
 ## Round gates
 

@@ -205,3 +205,66 @@ check:e2e-appid (2 flows), check:ci-scripts (5 workflows, 10 checks), db:verify
   and prebuild skipped (label-gated; Android recorded UNVERIFIED). The run on 747d8dd
   (37690777710) was cancelled by concurrency when 6dedba1 superseded it.
   https://github.com/mohammed7779948484-tech/Kisok_react_app/actions/runs/37690946342
+
+## Round C — pre-merge human review of #42 (H-01–H-03)
+
+The independent human review on a051f0b kept the direction approved and confirmed
+the Android Dialog exit-animation mitigation from the Review Cart hotfix is intact
+(neither the Option Browser nor the Staff page adds a Portal/Dialog/exiting
+teardown path). Three items, recorded in `review.md`.
+
+### C1 — quantity bound to its variant across a refresh (H-02)
+
+- Mode: bug. Scaffold: N/A (existing screen). Implementer: Lead.
+- RED: `product-detail-screen.test.tsx` "starts at 1 when a refresh removes the chosen
+  option and leaves exactly one other" (Banana × 3 → refresh to Apple only) →
+  `Unable to find an element with role: button, name: Add 1 to cart` — the single
+  remaining option was offered with Banana's 3. Two guards passed on the old code, as
+  expected: "keeps the quantity when the chosen option survives the refresh" and "keeps the
+  quantity of a single-option product when that option survives".
+- Fix: the quantity state records its variant (`{ variantId, value }`); the shown quantity
+  is 1 unless it belongs to the effective selection; a selection whose variant a refresh
+  removed is cleared in render (the screen's existing reconcile pattern).
+- GREEN: `pnpm exec jest features/catalog/screens/product-detail` → 46 passed; typecheck 0.
+- Mutation check: deriving the quantity without the variant check fails only the RED test
+  (`Tests: 1 failed, 3 passed` in the refresh/browser subset); restored.
+- Commit b324e81. GATE: PASS
+
+### C2 — product keywords in Help Me Choose text (H-03)
+
+- Mode: behavior. Scaffold: N/A (pure model). Implementer: Lead.
+- RED: `guided-discovery.test.ts` "matches a term against the product's own keywords,
+  still per available variant" → `Expected ["night"], Received []`.
+- Fix: `variantText()` adds `product.search_keywords` beside the product and brand names;
+  matching stays per available variant with the option answers (the test proves a keyword
+  product is excluded when its only variant for the answer is unavailable).
+- GREEN: `pnpm exec jest features/catalog` → 32 suites / 384 passed; typecheck 0; eslint clean.
+- Commit 2fa4c34. GATE: PASS
+
+### C3 — deterministic Option Browser journey on Android (H-01)
+
+- Mode: config (E2E flow). Scaffold: N/A (existing flow).
+- Read-only TEST check before pinning (Supabase SQL, no writes): UT 50K
+  `7a7ed8a8-eeba-433d-abc2-0930c2f19593` — 46 active variants, 41 in stock, its one category
+  active. Float 3k (display_order 2890) is first in store order, confirming the review's
+  premise that the old "first available product" step could skip the browser.
+- `catalog-review-cart.yaml`: pinned `LARGE_PRODUCT_ID` in `env`; taps its card by id;
+  taps `catalog-option-show-all` unconditionally; waits for and asserts
+  `catalog-option-browser`, asserts the rack is gone; selects the first available option
+  inside the browser; asserts the browser again before `catalog-add-to-cart`; the Quick Cart
+  → Review Cart → Keep browsing → reopen → Review Cart cycle is unchanged. Screenshots
+  `catalog-review-cart-option-browser` and `-option-selected` added.
+- `.github/scripts/run-maestro.sh` unchanged: per flow, one app process with the same PID
+  alive at the end, no `am_crash`/`am_anr`/death, FATAL/ANR greps, redaction.
+- Local: `pnpm check:e2e-appid` → "Maestro flows target com.kisok.kiosk (2 flow(s)
+  checked)"; YAML parses (34 steps). Maestro cannot run here (no emulator); the evidence is
+  the label-gated Android E2E job (below).
+- Commit 1dfc1e9.
+
+### Round C checks
+
+- `pnpm verify` on 1dfc1e9 (final code change): exit 0 — `Test Suites: 104 passed, 104 total`,
+  `Tests: 1355 passed, 1355 total`; typecheck, lint, format, check:docs (103), check:commits
+  (19), check:e2e-appid (2 flows), check:ci-scripts, db:verify (16 tables, 3 enums,
+  11 functions), generator smoke passed. commitlint over a051f0b..1dfc1e9: clean.
+- Labels `android-build` and `e2e` added to #42 (requested by the reviewer).
