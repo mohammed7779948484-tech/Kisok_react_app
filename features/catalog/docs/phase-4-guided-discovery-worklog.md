@@ -58,3 +58,48 @@ Baseline before any change (develop @ fd77e4f): `pnpm typecheck` clean; `pnpm te
 - Not covered by jest: split layout (≥900) and column counts — runtime check pending;
   Back handling with real navigator focus — device check pending.
 - GATE: PASS
+
+## B2 — Help Me Choose screen + route
+
+- Mode: behavior. Scaffold (Lead): `pnpm generate screen catalog help-me-choose`;
+  `pnpm generate route catalog help-me-choose --role=customer --screen=help-me-choose`
+  (export added to `features/catalog/index.ts`). Implementer: feature-implementer; Lead verified.
+- RED: placeholder → 18 failed (`Unable to find an element with role: link, name: KISOK Test
+Store, explore the store`). GREEN: 18 passed, zero console output; mutation checks on
+  reconcile and Clear each fail their tests.
+- Scope trim (Lead): Home chips will start Help Me Choose scoped by root category instead of a
+  `start` dimension — in the real catalog a Flavor tap question would list ~200 values.
+- Runtime (web, real-shaped catalog — see "Runtime harness" below) found and fixed:
+  - split layout inverted at 1280 (web ScrollView grew in the row) → pinned column width;
+  - suggestions were noise with real data (unique flavours) → only values shared by ≥2
+    products (model rule + tests updated, behavior-change);
+  - card copy "Matched Matching · 1 option" → "Matched Your choices · 1 option".
+- After fixes: `pnpm exec jest features/catalog` → 30 suites / 362 passed; typecheck 0; lint clean.
+- GATE: PASS
+
+## B3 — `match` hand-off into Product Detail
+
+- Mode: behavior. Scaffold: N/A (existing files). Implementer: Lead.
+- RED: PD "opened from Help Me Choose" — order and "N flavors match your choices." absent
+  (2 failed; the ignore-non-matching test passed as expected); HMC hand-off — params lacked
+  `match`.
+- Implementation: `productDetailHref(id, backLabel, match)`; route reads `match`; Product
+  Detail orders matching available variants first (preview and browser) and states the count;
+  never selects; a non-matching term is never serialised.
+- GREEN: catalog suite 362 passed; runtime: Help Me Choose → "mint" → Geekbar 25k opened with
+  `match=t.mint`, "1 variation matches your choices." and the match first.
+- GATE: PASS
+
+## Runtime harness (evidence method)
+
+No Customer credentials exist in this environment. The real app ran under `pnpm web`
+(Metro dev, CI mode) driven by Playwright with network mocks: a stored session, the
+`current_active_profile` RPC returning a customer, and `get_customer_catalog_v2` returning a
+v2 snapshot generated from REAL Test_kisok labels (read-only query): UT 50K (46), Geekbar 25k
+(40, many unavailable), 7-Hydroxy (30 titled), Zyn 9mg (16, Flavor+Strength), Zyn 15mg,
+Perks, Pebble. Sizes: 1280×800, 768×1024, 600×900. All scenarios: zero page errors.
+
+- Product Detail: preview 6 + "Browse all 46 variations"; browser 3 columns at 1280 after
+  tuning (`TILE_MIN_WIDTH` 280→230); Order Bar visible with selection + quantity; search
+  "mint" → 3 of 46 with unavailable marked; closing the browser keeps "Add 3 to cart" at all
+  three sizes.

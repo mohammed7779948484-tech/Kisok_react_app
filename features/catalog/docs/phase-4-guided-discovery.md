@@ -107,6 +107,6 @@ explicitly unverified.
 | A2   | PASS    |
 | A3   | PASS    |
 | B1   | PASS    |
-| B2   | PENDING |
-| B3   | PENDING |
+| B2   | PASS    |
+| B3   | PASS    |
 | B4   | PENDING |
