@@ -234,3 +234,42 @@ describe("CatalogGrid", () => {
     expect(onScrollOffset).toHaveBeenLastCalledWith(0);
   });
 });
+
+describe("CatalogGrid — selection grids", () => {
+  it("re-renders its rows when extraData changes even though data did not", async () => {
+    const selections: string[] = [];
+    const marked = ({ item, onPress }: CatalogGridRowInfo<CatalogProductView>) => {
+      selections.push(item.id);
+      return <ProductCard product={item} onPress={onPress} />;
+    };
+    const onPress = jest.fn();
+    await renderWithProviders(gridElement(onPress, { renderItem: marked, extraData: "first" }));
+    await layoutGrid(1200);
+    const before = selections.length;
+
+    await screen.rerender(gridElement(onPress, { renderItem: marked, extraData: "second" }));
+
+    expect(selections.length).toBeGreaterThan(before);
+  });
+
+  it("can be announced as a named group, such as a radio group of choices", async () => {
+    await renderWithProviders(
+      gridElement(jest.fn(), { accessibilityRole: "radiogroup", accessibilityLabel: "Flavors" }),
+    );
+    await layoutGrid(1200);
+
+    const grid = screen.getByTestId(GRID_TEST_ID);
+    expect(grid.props.accessibilityRole).toBe("radiogroup");
+    expect(grid.props.accessibilityLabel).toBe("Flavors");
+  });
+
+  it("reserves extra room below the last row when asked", async () => {
+    await renderWithProviders(gridElement(jest.fn(), { bottomInset: 120 }));
+    await layoutGrid(1200);
+
+    const grid = screen.getByTestId(GRID_TEST_ID);
+    expect(grid.props.contentContainerStyle).toEqual(
+      expect.objectContaining({ paddingBottom: 120 }),
+    );
+  });
+});
