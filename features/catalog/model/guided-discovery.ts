@@ -76,15 +76,16 @@ function normalizeTerm(term: string | null | undefined): string | null {
 }
 
 /**
- * What a free-text term is matched against, per variant: the product and brand
- * name (so "geek" finds every Geekbar), then the variant's own values, title and
- * keywords (so "mint" finds only the mint variants).
+ * What a free-text term is matched against, per variant: the product's name,
+ * brand and keywords (so "geek" finds every Geekbar), then the variant's own
+ * values, title and keywords (so "mint" finds only the mint variants).
  */
 function variantText(product: CatalogProductView, variant: CatalogVariantView): string {
   return normalizeCatalogSearchText(
     [
       product.name,
       product.brand?.name ?? "",
+      ...(product.search_keywords ?? []),
       ...variant.options.map((option) => option.value.value),
       variant.title_override ?? "",
       ...(variant.search_keywords ?? []),

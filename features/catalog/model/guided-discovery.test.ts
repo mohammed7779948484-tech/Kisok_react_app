@@ -30,6 +30,7 @@ type ProductSpec = {
   name: string;
   brand: string | null;
   category: string;
+  keywords?: string[];
   variants: VariantSpec[];
 };
 type CategorySpec = { id: string; name: string; parent?: string };
@@ -123,7 +124,7 @@ function buildView(spec: CatalogSpec): CatalogView {
         cover_public_id: null,
         cover_secure_url: null,
         short_description: null,
-        search_keywords: null,
+        search_keywords: product.keywords ?? null,
         display_order: (index + 1) * 10,
         is_featured: false,
       })),
@@ -617,6 +618,44 @@ describe("guided discovery", () => {
       const byName = deriveGuidedResult(view, [], "focus");
       expect(productIds(byName)).toEqual(["focus-drops"]);
       expect(byName.noTextMatches).toBe(false);
+    });
+
+    it("matches a term against the product's own keywords, still per available variant", () => {
+      // Review H-03: catalog search reads product keywords; Help Me Choose does too.
+      const keyworded = buildView({
+        brands: [],
+        categories: [{ id: "cat-pouches", name: "Pouches" }],
+        optionTypes: ["Strength"],
+        products: [
+          {
+            id: "night",
+            name: "Night Pouch",
+            brand: null,
+            category: "cat-pouches",
+            keywords: ["Tobacco-free"],
+            variants: [
+              { options: { Strength: "3" } },
+              { options: { Strength: "9" }, available: false },
+            ],
+          },
+          {
+            id: "day",
+            name: "Day Pouch",
+            brand: null,
+            category: "cat-pouches",
+            variants: [{ options: { Strength: "3" } }],
+          },
+        ],
+      });
+
+      expect(productIds(deriveGuidedResult(keyworded, [], "tobacco"))).toEqual(["night"]);
+      expect(
+        productIds(deriveGuidedResult(keyworded, [option("Strength", "3")], "tobacco")),
+      ).toEqual(["night"]);
+      // The keyword is the product's, but the match is still one available variant.
+      expect(deriveGuidedResult(keyworded, [option("Strength", "9")], "tobacco").products).toEqual(
+        [],
+      );
     });
 
     it("does not suggest values of an option type that is already answered", () => {
