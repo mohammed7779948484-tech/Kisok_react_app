@@ -1,4 +1,4 @@
-import { BackHandler } from "react-native";
+import { BackHandler, Keyboard } from "react-native";
 
 import { useAuth } from "@/core/auth";
 import { AppError } from "@/core/errors";
@@ -1096,5 +1096,38 @@ describe("ProductDetailScreen — opened from Help Me Choose", () => {
 
     expect(screen.queryByText(/match your choices/)).toBeNull();
     expect(screen.getByText("Start with 6 visible flavors, or browse all 30.")).toBeOnTheScreen();
+  });
+});
+
+/**
+ * Review M-01: in the stacked browser the Order Bar steps aside only while the
+ * keyboard is actually up. Android can hide the keyboard (Back, hide key)
+ * without blurring the field, so focus alone must not keep the bar away.
+ */
+describe("ProductDetailScreen — stacked browser and the keyboard", () => {
+  it("brings the Order Bar back when the keyboard hides, even if the search keeps focus", async () => {
+    const listeners = new Map<string, () => void>();
+    const spy = jest.spyOn(Keyboard, "addListener").mockImplementation(((
+      event: string,
+      handler: () => void,
+    ) => {
+      listeners.set(event, handler);
+      return { remove: () => listeners.delete(event) };
+    }) as never);
+    mockFetchCatalog.mockResolvedValue(snapshotWithVape());
+    const user = userEvent.setup();
+    await renderVape();
+    await openBrowser(user);
+
+    const prompt = "Select one of the options above to set quantity.";
+    expect(screen.getByText(prompt)).toBeOnTheScreen();
+
+    await act(async () => listeners.get("keyboardDidShow")?.());
+    expect(screen.queryByText(prompt)).toBeNull();
+
+    // No blur: the field keeps focus while the keyboard goes away.
+    await act(async () => listeners.get("keyboardDidHide")?.());
+    expect(screen.getByText(prompt)).toBeOnTheScreen();
+    spy.mockRestore();
   });
 });

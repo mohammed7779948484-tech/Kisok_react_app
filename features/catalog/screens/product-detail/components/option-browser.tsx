@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
-import { Pressable, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Keyboard, Pressable, View } from "react-native";
 import { ArrowLeft } from "lucide-react-native";
 
 import { Button, Icon, MediaFrame, SearchInput, Text } from "@/design-system";
@@ -50,11 +50,11 @@ export type OptionBrowserProps = {
  * Available choices come first, then unavailable ones, each in store order.
  * Long sets (more than ten) get a search with a live count. The Order Bar is
  * always on screen: at the foot of the context column in landscape, pinned to
- * the bottom when stacked — and, stacked, set aside while the search field has
- * the keyboard so the grid keeps its room.
+ * the bottom when stacked — and, stacked, set aside only while the keyboard is
+ * up so the grid keeps its room.
  *
  * Presentational only: data and callbacks arrive as props; the search text and
- * the field's focus are the only state it keeps.
+ * whether the keyboard is up are the only state it keeps.
  */
 export function OptionBrowser({
   decision,
@@ -71,7 +71,18 @@ export function OptionBrowser({
   bottomInset,
 }: OptionBrowserProps) {
   const [query, setQuery] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
+  // The pinned Order Bar steps aside only while the keyboard is up. Focus is not
+  // enough: Android can hide the keyboard without blurring the field.
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  useEffect(() => {
+    if (split) return;
+    const shown = Keyboard.addListener("keyboardDidShow", () => setKeyboardVisible(true));
+    const hidden = Keyboard.addListener("keyboardDidHide", () => setKeyboardVisible(false));
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, [split]);
 
   const ordered = useMemo(() => browseOrder(decision.choices), [decision.choices]);
   const searching = decision.searchable && query.trim().length > 0;
@@ -128,8 +139,6 @@ export function OptionBrowser({
             placeholder={`Find a ${decision.noun}…`}
             accessibilityLabel={`Search ${decision.nounPlural}`}
             trailing={matches.length}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
           />
           <Text accessibilityLiveRegion="polite" className="text-caption text-muted-foreground">
             {`Showing ${matches.length} of ${total}`}
@@ -238,8 +247,8 @@ export function OptionBrowser({
         </View>
       </View>
       {browse}
-      {/* Pinned to the foot; set aside while the search field has the keyboard. */}
-      {!searchFocused ? (
+      {/* Pinned to the foot; set aside only while the keyboard is up. */}
+      {!keyboardVisible ? (
         <View
           className="overflow-hidden rounded-t-2xl bg-primary"
           style={{ paddingBottom: bottomInset }}
