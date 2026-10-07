@@ -542,6 +542,13 @@ describe("HelpMeChooseScreen", () => {
     expect(screen.getByText("3 matches")).toBeOnTheScreen();
   });
 
+  it("drops a scope with nothing in stock on first open without claiming the catalog changed", async () => {
+    await renderGuided({ categoryId: "no-such-category" });
+
+    expect(screen.queryByText("Some choices changed because the catalog was updated.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Vapes, 4 products" })).toBeOnTheScreen();
+  });
+
   it("opens pre-scoped to a brand", async () => {
     await renderGuided({ brandId: BRAND.zyn });
 

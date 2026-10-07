@@ -76,7 +76,9 @@ export function HelpMeChooseScreen({ categoryId, brandId }: HelpMeChooseScreenPr
     if (reconciled.changed) {
       setAnswers(reconciled.answers);
       setEditingIndex(null);
-      setCatalogChanged(true);
+      // Only a refresh changed the catalog; a starting scope with nothing in
+      // stock is simply dropped on first open.
+      setCatalogChanged(reconciledView !== undefined);
     }
   }
 
