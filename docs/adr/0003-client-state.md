@@ -58,3 +58,10 @@ cheapest honest response: the cart shows a non-blocking "may not survive a
 restart" note; checkout refuses to send an order it could not save. Customer
 isolation comes from the owner stored inside each record, not from sign-out
 cleanup. See [state-management.md](../state-management.md).
+
+## Amendment (2026-10-07)
+
+The customer UI now has a hidden staff sign-out (`features/maintenance`).
+Owner isolation is unchanged, but the Customer account is shared, so that
+sign-out discards the cart explicitly (`discardCart()`) before signing out.
+Checkout's pending record is never cleared by it.

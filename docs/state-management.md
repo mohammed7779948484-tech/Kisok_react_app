@@ -93,8 +93,15 @@ Namespace keys with `storageKey("cart", "lines")` → `kisok:cart:lines`.
 Every persisted customer record carries its `ownerId`. Restoring for a
 different profile starts empty and removes the other customer's record, so
 one customer's cart or order never reaches another — without any sign-out
-cleanup. The customer UI has no sign-out; preparation and unauthorized
-accounts own no local state.
+cleanup. Preparation and unauthorized accounts own no local state.
+
+The Customer account is shared by everyone who uses the tablet, so the owner
+does not change when staff hand the tablet over. The hidden staff sign-out
+(`features/maintenance`) therefore discards the cart explicitly with
+`discardCart()` before signing out, and refuses to sign out if the tablet copy
+could not be removed. It never touches checkout's pending record: an unresolved
+order keeps its request id across sign-out and is resumed after the next
+sign-in, and `CheckoutGate` covers the Staff page while one is unresolved.
 
 ### Checkout's duplicate-order guarantee
 
