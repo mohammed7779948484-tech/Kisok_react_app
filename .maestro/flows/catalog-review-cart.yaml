@@ -175,6 +175,9 @@ env:
                 visible:
                   id: "catalog-cart-access"
                 timeout: 30000
+            # Back on Product Detail, still in the Option Browser.
+            - assertVisible:
+                id: "catalog-option-browser"
             - tapOn:
                 id: "catalog-cart-access"
             - extendedWaitUntil:
