@@ -120,6 +120,15 @@ export function clearCartAfterOrder(): Promise<void> {
   return useCartStore.getState().clear();
 }
 
+/**
+ * Discard the cart for staff sign-out on a shared account: memory now, the
+ * tablet copy through the storage queue, even before hydration. `saved` is
+ * false when the tablet copy could not be removed.
+ */
+export async function discardCart(): Promise<{ saved: boolean }> {
+  return { saved: await useCartStore.getState().discard() };
+}
+
 /** Hold user edits while an order is being submitted. */
 export function lockCart(): void {
   useCartStore.getState().lock();

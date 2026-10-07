@@ -32,6 +32,10 @@ const STORAGE_KEY = storageKey("cart", "lines");
  *   the cart while it is still locked.
  * - `saveFailed`: the last write to the tablet failed. The cart still works
  *   in memory; the UI may say changes might not survive a restart.
+ *
+ * `discard()` is for staff sign-out on a shared customer account: unlike
+ * `clear()` it also runs before hydration (a pending restore cannot bring the
+ * cart back), ignores the lock, and resolves whether the tablet copy is gone.
  */
 export type CartState = {
   lines: CartLine[];
@@ -45,6 +49,8 @@ export type CartState = {
   removeLine: (lineId: string) => void;
   /** Empty the cart in memory now and on the tablet; resolves once the write has settled. */
   clear: () => Promise<void>;
+  /** Empty the cart in memory and on the tablet, hydrated or not; resolves `true` once removed. */
+  discard: () => Promise<boolean>;
   lock: () => void;
   unlock: () => void;
 };
@@ -156,6 +162,22 @@ export function createCartStore(backend: JsonStorage = storage) {
         if (!get().hydrated) return Promise.resolve();
         set({ lines: [] });
         return save();
+      },
+
+      discard: async () => {
+        set({ lines: [] });
+        let saved = false;
+        await enqueue(async () => {
+          try {
+            const result = await backend.remove(STORAGE_KEY);
+            saved = result.status === "persisted";
+          } finally {
+            // Re-empty: a restore queued earlier may have refilled memory.
+            set({ lines: [], saveFailed: !saved });
+          }
+        });
+        if (!saved) log.warn("Discarded cart was not removed from the tablet");
+        return saved;
       },
 
       lock: () => set({ locked: true }),

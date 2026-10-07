@@ -575,3 +575,102 @@ describe("saving — failures and ordering", () => {
     expect(raw.map.has(KEY)).toBe(false);
   });
 });
+
+describe("discard — staff sign-out on a shared account", () => {
+  it("empties a restored cart and removes it from the tablet", async () => {
+    const tracked = trackedStore();
+    seedCart(tracked.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine, waterLine] });
+    const useStore = storeOver(tracked);
+    await useStore.getState().hydrate(OWNER_A);
+
+    const saved = await useStore.getState().discard();
+
+    expect(saved).toBe(true);
+    expect(useStore.getState()).toMatchObject({ lines: [], saveFailed: false });
+    expect(tracked.raw.map.has(KEY)).toBe(false);
+  });
+
+  it("works before the restore finishes: the saved cart never comes back", async () => {
+    const tracked = trackedStore();
+    seedCart(tracked.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
+    const useStore = storeOver(tracked);
+
+    const restoring = useStore.getState().hydrate(OWNER_A);
+    const discarding = useStore.getState().discard();
+    expect(useStore.getState().lines).toEqual([]); // memory empties immediately
+    await restoring;
+    const saved = await discarding;
+
+    expect(saved).toBe(true);
+    expect(useStore.getState().lines).toEqual([]);
+    expect(tracked.raw.map.has(KEY)).toBe(false);
+  });
+
+  it("removes the saved cart even when the store was never hydrated", async () => {
+    const tracked = trackedStore();
+    seedCart(tracked.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
+    const useStore = storeOver(tracked);
+
+    await expect(useStore.getState().discard()).resolves.toBe(true);
+
+    expect(tracked.raw.map.has(KEY)).toBe(false);
+  });
+
+  it("a later hydrate for the same customer does not bring the lines back", async () => {
+    const tracked = trackedStore();
+    seedCart(tracked.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
+    const useStore = storeOver(tracked);
+    await useStore.getState().hydrate(OWNER_A);
+
+    await useStore.getState().discard();
+    await useStore.getState().hydrate(OWNER_A);
+
+    expect(useStore.getState().lines).toEqual([]);
+    // A cold start on the same tablet finds nothing either.
+    const coldStart = storeOver(tracked);
+    await coldStart.getState().hydrate(OWNER_A);
+    expect(coldStart.getState().lines).toEqual([]);
+  });
+
+  it("a rejected removal resolves false and reports saveFailed", async () => {
+    const tracked = trackedStore({ failOn: "removeItem" });
+    seedCart(tracked.raw, { version: 1, ownerId: OWNER_A, lines: [espressoLine] });
+    const useStore = storeOver(tracked);
+    await useStore.getState().hydrate(OWNER_A);
+
+    const saved = await useStore.getState().discard();
+
+    expect(saved).toBe(false);
+    expect(useStore.getState()).toMatchObject({ lines: [], saveFailed: true });
+  });
+
+  it("a storage backend that throws resolves false rather than claiming success", async () => {
+    const tracked = trackedStore();
+    const throwing = {
+      ...createJsonStorage(tracked.raw),
+      remove: () => Promise.reject(new Error("storage unavailable")),
+    };
+    const useStore = createCartStore(throwing);
+    await useStore.getState().hydrate(OWNER_A);
+
+    await expect(useStore.getState().discard()).resolves.toBe(false);
+    expect(useStore.getState()).toMatchObject({ lines: [], saveFailed: true });
+  });
+
+  it("leaves the owner and the lock alone, and works while locked", async () => {
+    const { raw, useStore, idle } = await hydratedStore();
+    useStore.getState().addItem(espressoInput);
+    await idle();
+    useStore.getState().lock();
+
+    await expect(useStore.getState().discard()).resolves.toBe(true);
+
+    expect(useStore.getState()).toMatchObject({
+      lines: [],
+      ownerId: OWNER_A,
+      hydrated: true,
+      locked: true,
+    });
+    expect(raw.map.has(KEY)).toBe(false);
+  });
+});
