@@ -21,6 +21,12 @@ import { CatalogNavigation, type CatalogDestination } from "./catalog-navigation
 
 /** Below this window width the navigation tabs move to their own row. */
 const SINGLE_ROW_MIN_WIDTH = 1180;
+/**
+ * Holding the store identity this long opens the hidden Staff page. Long
+ * enough that a customer never trips it by accident; there is deliberately no
+ * visible affordance. Not a security boundary (see features/maintenance).
+ */
+const STAFF_HOLD_MS = 3000;
 
 function isFullSettings(settings: CatalogView["settings"]): settings is CatalogFullSettings {
   return "store_name" in settings;
@@ -77,9 +83,12 @@ export function CatalogShell({
 
   const lockup = (
     <Pressable
+      testID="catalog-store-lockup"
       accessibilityRole="link"
       accessibilityLabel={`${storeName}, explore the store`}
       onPress={() => handleNavigate("home")}
+      onLongPress={() => router.push("/maintenance")}
+      delayLongPress={STAFF_HOLD_MS}
       className="min-h-touch shrink-0 flex-row items-center gap-3 active:opacity-80"
     >
       <View className="h-10 w-10 items-center justify-center overflow-hidden rounded-[13px] bg-primary">
