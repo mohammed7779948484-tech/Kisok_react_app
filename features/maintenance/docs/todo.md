@@ -13,22 +13,22 @@ defeats its only purpose.
 
 ```
 Current round     : 1
-Current task      : T01
-Current stage     : not started
+Current task      : —
+Current stage     : all tasks PASS; feature gate pending
 Last gate         : —
-Next legal action : T01 (root guard test)
+Next legal action : feature gate (verify, CI, runtime, review, audit)
 Blocked by        : —
 ```
 
 ## Status board
 
-| Task | Mode     | Acceptance          | Objective                    | Deps | Stage       | Gate    |
-| ---- | -------- | ------------------- | ---------------------------- | ---- | ----------- | ------- |
-| T01  | bug      | AC-07               | Customer sign-out guard test | —    | not started | PENDING |
-| T02  | behavior | Supporting AC-03/04 | `discardCart()`              | —    | not started | PENDING |
-| T03  | behavior | AC-02–AC-06         | Staff screen + route         | T02  | not started | PENDING |
-| T04  | behavior | AC-01               | Lockup long press            | T03  | not started | PENDING |
-| T05  | config   | N/A — docs          | Docs that become false       | T03  | not started | PENDING |
+| Task | Mode     | Acceptance          | Objective                    | Deps | Stage | Gate |
+| ---- | -------- | ------------------- | ---------------------------- | ---- | ----- | ---- |
+| T01  | bug      | AC-07               | Customer sign-out guard test | —    | done  | PASS |
+| T02  | behavior | Supporting AC-03/04 | `discardCart()`              | —    | done  | PASS |
+| T03  | behavior | AC-02–AC-06         | Staff screen + route         | T02  | done  | PASS |
+| T04  | behavior | AC-01               | Lockup long press            | T03  | done  | PASS |
+| T05  | config   | N/A — docs          | Docs that become false       | T03  | done  | PASS |
 
 ## Feature gate
 

@@ -92,3 +92,37 @@ _None yet._
 - Diff review (Lead): memory emptied now; removal always queued (even pre-hydration);
   `saved` true only on `persisted`; owner/lock/hydrated untouched.
 - GATE: PASS
+
+## T03 — Staff screen + route (AC-02, AC-03–AC-06)
+
+- Mode: behavior. Scaffold (Lead): `pnpm generate screen maintenance maintenance` →
+  `screens/maintenance/maintenance-screen.tsx` + `.test.tsx`;
+  `pnpm generate route maintenance maintenance --role=customer --screen=maintenance` →
+  `app/(customer)/maintenance.tsx`, export added to `features/maintenance/index.ts`.
+- Implementer: feature-implementer; Lead verified.
+- RED: placeholder screen → 8 failed (`Unable to find an element with text: Staff`,
+  missing `maintenance-back` / `maintenance-sign-out`).
+- GREEN: `pnpm exec jest features/maintenance` → 9 passed, zero console output.
+- Covered: account name; cart sentence singular/plural/absent; Back (back or replace "/");
+  discard before signOut with "Signing out…" and both buttons disabled; discard failure blocks
+  signOut then retry; signOut failure reason then retry; thrown error → generic message.
+- Known test limit: the double-press test cannot isolate the ref guard (the button is
+  disabled after the first press); the ref remains as defence for presses before re-render.
+- No checkout import. GATE: PASS
+
+## T04 — lockup long press (AC-01)
+
+- Mode: behavior. Scaffold: N/A (existing shell). Implementer: Lead.
+- New `features/catalog/components/catalog-shell.test.tsx`. RED (after adding only the
+  testID): hold test failed `Expected: "/maintenance"`.
+- Implementation: `onLongPress` → `router.push("/maintenance")`, `delayLongPress={3000}`.
+  Test premise corrected once: a 1 s press is an ordinary tap and goes Home (asserted).
+- GREEN: 3 passed (tap → Home; 1 s → Home, no push; 3.2 s → `/maintenance`, no Home;
+  no visible staff text, no hint). eslint/prettier clean.
+- GATE: PASS
+
+## T05 — docs that became false
+
+- Mode: config. `docs/state-management.md` customer-isolation section and an ADR-0003
+  amendment now describe the staff discard; `pnpm check:docs` → "Documentation matches the
+  current workflow (103 files checked)". GATE: PASS
