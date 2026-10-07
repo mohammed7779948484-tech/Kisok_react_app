@@ -103,10 +103,10 @@ explicitly unverified.
 
 | Task | Gate    |
 | ---- | ------- |
-| A1   | PENDING |
-| A2   | PENDING |
+| A1   | PASS    |
+| A2   | PASS    |
 | A3   | PENDING |
-| B1   | PENDING |
+| B1   | PASS    |
 | B2   | PENDING |
 | B3   | PENDING |
 | B4   | PENDING |
