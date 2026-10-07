@@ -67,8 +67,9 @@ function toCartSource(product: CatalogProductView, variant: CatalogVariantView):
  * Canvas, never a route or a sheet. The customer picks one explicitly (only a
  * genuinely single-option product counts as chosen), then sets a quantity and
  * adds it from the Order Bar. Selection and quantity live here, so both
- * survive opening and closing the browser; the quantity resets only when the
- * selected option changes or after a successful add.
+ * survive opening and closing the browser; the quantity resets when the
+ * selected option changes (by a tap, or because a catalog refresh removed it)
+ * or after a successful add.
  */
 export function ProductDetailScreen({ productId, backLabel, match }: ProductDetailScreenProps) {
   const router = useRouter();
@@ -80,7 +81,12 @@ export function ProductDetailScreen({ productId, backLabel, match }: ProductDeta
   // Selection, image, quantity and browsing state are screen-local.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedMediaAssetId, setSelectedMediaAssetId] = useState<string | null>(null);
-  const [quantity, setQuantity] = useState(1);
+  // The quantity belongs to one concrete option: it never carries over to
+  // another one, including one a catalog refresh leaves as the only choice.
+  const [quantityFor, setQuantityFor] = useState<{ variantId: string | null; value: number }>({
+    variantId: null,
+    value: 1,
+  });
   const [browsing, setBrowsing] = useState(false);
 
   const product = catalog.data?.resolveProduct(productId);
@@ -143,7 +149,7 @@ export function ProductDetailScreen({ productId, backLabel, match }: ProductDeta
       if (variantId === currentId) return;
       setSelectedId(variantId);
       setSelectedMediaAssetId(null);
-      setQuantity(1);
+      setQuantityFor({ variantId, value: 1 });
     },
     [currentId],
   );
@@ -183,9 +189,12 @@ export function ProductDetailScreen({ productId, backLabel, match }: ProductDeta
 
   // A selection survives a catalog refresh only while its variant still
   // exists; otherwise the customer chooses again — nothing is re-picked for them.
+  const selectedChoice = decision.choices.find((choice) => choice.id === selectedId);
+  if (selectedId !== null && selectedChoice === undefined) setSelectedId(null);
   const selected =
-    decision.choices.find((choice) => choice.id === selectedId) ??
-    (decision.mode === "single" ? (decision.choices[0] ?? null) : null);
+    selectedChoice ?? (decision.mode === "single" ? (decision.choices[0] ?? null) : null);
+  const quantity =
+    selected !== null && quantityFor.variantId === selected.id ? quantityFor.value : 1;
 
   const media = selected ? selected.variant.media : product.coverMedia ? [product.coverMedia] : [];
   const activeMediaAssetId =
@@ -235,7 +244,7 @@ export function ProductDetailScreen({ productId, backLabel, match }: ProductDeta
             withQuantity
             tone="inverse"
             quantity={quantity}
-            onQuantityChange={setQuantity}
+            onQuantityChange={(value) => setQuantityFor({ variantId: selected.id, value })}
           />
         ) : null
       }
