@@ -1,3 +1,5 @@
+import { BackHandler } from "react-native";
+
 import type { SignOutOutcome } from "@/core/auth";
 import { resetLogging, setLogSink } from "@/core/logging";
 import { act, renderWithProviders, screen, userEvent } from "@/core/testing";
@@ -249,5 +251,33 @@ describe("MaintenanceScreen", () => {
     await act(async () => signOut.resolve({ status: "ok" }));
     expect(mockDiscardCart).toHaveBeenCalledTimes(1);
     expect(mockSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps staff on the page while signing out: Back is held and success never re-enables", async () => {
+    const handlers: (() => boolean)[] = [];
+    const spy = jest.spyOn(BackHandler, "addEventListener").mockImplementation(((
+      _event: string,
+      handler: () => boolean,
+    ) => {
+      handlers.push(handler);
+      return { remove: () => handlers.splice(handlers.indexOf(handler), 1) };
+    }) as never);
+    const user = userEvent.setup();
+    const discard = deferred<{ saved: boolean }>();
+    mockDiscardCart.mockReturnValue(discard.promise);
+    mockSignOut.mockResolvedValue({ status: "ok" });
+    await renderWithProviders(<MaintenanceScreen />);
+    expect(handlers).toHaveLength(0);
+
+    await user.press(signOutButton());
+
+    // Android Back would unmount the page and lose a later failure message.
+    expect(handlers.at(-1)?.()).toBe(true);
+
+    await act(async () => discard.resolve({ saved: true }));
+    // Signed out: the route guard is about to leave; the action stays spent.
+    expect(signOutButton()).toBeDisabled();
+    expect(signOutButton()).toHaveTextContent("Signing out…");
+    spy.mockRestore();
   });
 });

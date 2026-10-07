@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ScrollView, View } from "react-native";
+import { BackHandler, ScrollView, View } from "react-native";
 
 import { useActiveProfile, useAuth } from "@/core/auth";
 import { toAppError } from "@/core/errors";
@@ -54,6 +54,14 @@ export function MaintenanceScreen() {
     };
   }, []);
 
+  // While signing out, Android Back would unmount this page and drop a later
+  // failure message — staff would think it worked. Hold it until there is an outcome.
+  useEffect(() => {
+    if (!pending) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => true);
+    return () => subscription.remove();
+  }, [pending]);
+
   const goBack = useCallback(() => {
     if (router.canGoBack()) router.back();
     else router.replace("/");
@@ -67,6 +75,7 @@ export function MaintenanceScreen() {
 
     void (async () => {
       let failure: string | null = null;
+      let signedOut = false;
       try {
         const { saved } = await discardCart();
         if (!saved) {
@@ -74,7 +83,8 @@ export function MaintenanceScreen() {
           failure = CART_DISCARD_FAILED;
         } else {
           const outcome = await signOut();
-          if (outcome.status !== "ok") failure = outcome.reason;
+          if (outcome.status === "ok") signedOut = true;
+          else failure = outcome.reason;
         }
       } catch (error) {
         // Fail CLOSED, as `useSignOutAction` does: known failures arrive as
@@ -84,11 +94,14 @@ export function MaintenanceScreen() {
         });
         failure = SIGN_OUT_THREW;
       } finally {
-        inFlight.current = false;
-        // A successful sign-out unmounts this screen; do not update it then.
-        if (mounted.current) {
-          setPending(false);
-          setMessage(failure);
+        // Signed out: the route guard is about to replace this screen, so the
+        // action stays spent rather than flashing back to enabled.
+        if (!signedOut) {
+          inFlight.current = false;
+          if (mounted.current) {
+            setPending(false);
+            setMessage(failure);
+          }
         }
       }
     })();
