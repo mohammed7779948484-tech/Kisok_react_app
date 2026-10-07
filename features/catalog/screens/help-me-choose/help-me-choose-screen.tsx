@@ -204,13 +204,17 @@ export function HelpMeChooseScreen({ categoryId, brandId }: HelpMeChooseScreenPr
     </View>
   );
 
+  // Split, the results stand apart from the panel and repeat the no-match way
+  // out; stacked, the panel's own message sits right above, so once is enough.
   const emptyResults = result.noTextMatches ? (
-    <NoTextMatch
-      term={trimmedTerm}
-      onClear={() => setTerm("")}
-      testID="help-me-choose-results-clear-term"
-      className="items-start py-6"
-    />
+    split ? (
+      <NoTextMatch
+        term={trimmedTerm}
+        onClear={() => setTerm("")}
+        testID="help-me-choose-results-clear-term"
+        className="items-start py-6"
+      />
+    ) : undefined
   ) : (
     <EmptyState
       className="py-12"

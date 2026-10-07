@@ -511,6 +511,20 @@ describe("HelpMeChooseScreen", () => {
     expect(screen.getByLabelText("Describe what you want").props.value).toBe("");
   });
 
+  it("says no-match once when the questions sit above the results", async () => {
+    const user = setupUser();
+    await renderGuided({}, { width: 700 });
+
+    await user.press(screen.getByRole("button", { name: "Vapes, 4 products" }));
+    await user.press(screen.getByRole("button", { name: "Cloud Co, 2 products" }));
+    await user.type(screen.getByLabelText("Describe what you want"), "cola");
+
+    // Stacked, the panel's message sits right above the results: one is enough.
+    expect(screen.getAllByText("No matches for “cola” with your other choices.")).toHaveLength(1);
+    expect(screen.getByTestId("help-me-choose-clear-term")).toBeOnTheScreen();
+    expect(screen.queryByTestId("help-me-choose-results-clear-term")).toBeNull();
+  });
+
   it("starts over back to the opening question", async () => {
     const user = setupUser();
     await renderGuided();
