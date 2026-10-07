@@ -313,7 +313,10 @@ function textQuestion(
     }
   }
 
+  // Only values several products share are worth a tap: a value unique to one
+  // product (most flavours in a real catalog) is just a product name in disguise.
   const suggestions = [...labels.entries()]
+    .filter(([, entry]) => entry.productIds.size >= 2)
     .sort(
       ([leftKey, left], [rightKey, right]) =>
         right.productIds.size - left.productIds.size || compareText(leftKey, rightKey),

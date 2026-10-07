@@ -429,12 +429,11 @@ describe("guided discovery", () => {
         title: "Anything specific?",
       });
       if (result.question?.kind !== "text") throw new Error("expected the text question");
-      expect(result.question.suggestions[0]).toEqual({ label: "Cool mint", productCount: 3 });
-      expect(result.question.suggestions[1]).toEqual({ label: "Watermelon", productCount: 1 });
-      expect(result.question.suggestions).toHaveLength(8);
+      // Only "Cool mint" is shared; the rest are unique flavours, so the field stands alone.
+      expect(result.question.suggestions).toEqual([{ label: "Cool mint", productCount: 3 }]);
     });
 
-    it("ranks suggestions by product count, then label, ignoring unavailable variants", () => {
+    it("suggests only values several products share, by product count, ignoring unavailable variants", () => {
       const result = deriveGuidedResult(
         view,
         [category(ROOT.pouches), skip(`option:${STRENGTH}`), skip("brand")],
@@ -445,9 +444,6 @@ describe("guided discovery", () => {
       expect(result.question.suggestions).toEqual([
         { label: "Mint", productCount: 3 },
         { label: "Berry", productCount: 2 },
-        { label: "15", productCount: 1 },
-        { label: "3", productCount: 1 },
-        { label: "9", productCount: 1 },
       ]);
     });
 
