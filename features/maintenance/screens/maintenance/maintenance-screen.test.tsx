@@ -97,7 +97,10 @@ beforeEach(() => {
   mockCanGoBack = true;
 });
 
-afterEach(() => resetLogging());
+afterEach(() => {
+  resetLogging();
+  jest.restoreAllMocks();
+});
 
 describe("MaintenanceScreen", () => {
   it("names the signed-in account and offers Back and Sign out, with no cart sentence when empty", async () => {
@@ -255,7 +258,7 @@ describe("MaintenanceScreen", () => {
 
   it("keeps staff on the page while signing out: Back is held and success never re-enables", async () => {
     const handlers: (() => boolean)[] = [];
-    const spy = jest.spyOn(BackHandler, "addEventListener").mockImplementation(((
+    jest.spyOn(BackHandler, "addEventListener").mockImplementation(((
       _event: string,
       handler: () => boolean,
     ) => {
@@ -278,6 +281,25 @@ describe("MaintenanceScreen", () => {
     // Signed out: the route guard is about to leave; the action stays spent.
     expect(signOutButton()).toBeDisabled();
     expect(signOutButton()).toHaveTextContent("Signing out…");
-    spy.mockRestore();
+  });
+
+  it("releases Back again once a sign-out fails", async () => {
+    const handlers: (() => boolean)[] = [];
+    jest.spyOn(BackHandler, "addEventListener").mockImplementation(((
+      _event: string,
+      handler: () => boolean,
+    ) => {
+      handlers.push(handler);
+      return { remove: () => handlers.splice(handlers.indexOf(handler), 1) };
+    }) as never);
+    const user = userEvent.setup();
+    mockDiscardCart.mockResolvedValue({ saved: true });
+    mockSignOut.mockResolvedValue({ status: "failed", reason: "Network down" });
+    await renderWithProviders(<MaintenanceScreen />);
+
+    await user.press(signOutButton());
+
+    expect(await screen.findByText("Network down")).toBeOnTheScreen();
+    expect(handlers).toHaveLength(0);
   });
 });
