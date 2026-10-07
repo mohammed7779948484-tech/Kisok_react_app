@@ -6,9 +6,9 @@ import {
   formatVariantSummary,
 } from "../../../model/variant-selection";
 
-/** The first six choices are shown before "Show all". */
+/** The Choice Canvas previews this many; beyond it, the Option Browser shows the rest. */
 export const PREVIEW_CHOICE_COUNT = 6;
-/** Above this many choices the rack offers search. */
+/** Above this many choices the Option Browser offers search. */
 const SEARCHABLE_OVER = 10;
 
 export type OptionChoice = {
@@ -107,16 +107,15 @@ export function deriveVariantDecision(variants: readonly CatalogVariantView[]): 
   const nounPlural = pluralOf(noun);
   const count = choices.length;
 
+  // Beyond the preview, the rest of the range is one "Browse all" away.
   const context =
     mode === "single"
       ? "This product has one option."
-      : mode === "variations"
-        ? `All ${count} ${nounPlural} are shown with the details that distinguish them.`
-        : count <= PREVIEW_CHOICE_COUNT
-          ? `All ${count} ${count === 1 ? noun : nounPlural} are shown here.`
-          : count > SEARCHABLE_OVER
-            ? `Start with ${PREVIEW_CHOICE_COUNT} visible ${nounPlural}, search all ${count}, or show the full range.`
-            : `Start with ${PREVIEW_CHOICE_COUNT} visible ${nounPlural}, or show all ${count}.`;
+      : count > PREVIEW_CHOICE_COUNT
+        ? `Start with ${PREVIEW_CHOICE_COUNT} visible ${nounPlural}, or browse all ${count}.`
+        : mode === "variations"
+          ? `All ${count} ${nounPlural} are shown with the details that distinguish them.`
+          : `All ${count} ${count === 1 ? noun : nounPlural} are shown here.`;
 
   return {
     mode,
@@ -136,9 +135,21 @@ export function deriveVariantDecision(variants: readonly CatalogVariantView[]): 
   };
 }
 
-/** Choices matching a rack search, by label, details, option values and keywords. */
+/** Choices matching a search, by label, details, option values and keywords. */
 export function filterChoices(choices: readonly OptionChoice[], query: string): OptionChoice[] {
   const normalized = normalizeCatalogSearchText(query);
   if (!normalized) return [...choices];
   return choices.filter((choice) => choice.searchText.includes(normalized));
+}
+
+/**
+ * The Option Browser's order: available choices first, then unavailable ones,
+ * each group in the store's own order. A stable partition — never a sort that
+ * could reshuffle equal choices between renders.
+ */
+export function browseOrder(choices: readonly OptionChoice[]): OptionChoice[] {
+  return [
+    ...choices.filter((choice) => choice.isAvailable),
+    ...choices.filter((choice) => !choice.isAvailable),
+  ];
 }

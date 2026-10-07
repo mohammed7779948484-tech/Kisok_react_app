@@ -39,3 +39,22 @@ Baseline before any change (develop @ fd77e4f): `pnpm typecheck` clean; `pnpm te
 - GREEN after fixes: `pnpm exec jest features/catalog/model` → 99 passed. eslint/prettier clean.
 - Decisions accepted: the 8-value tap cap applies to brand too; malformed `match` entries ignored.
 - GATE: PASS
+
+## A3 — Option Browser, lifted quantity, Back handling
+
+- Mode: behavior-change. Scaffold (Lead): `pnpm generate component catalog option-browser
+--screen=product-detail` → `components/option-browser.tsx` (placeholder replaced).
+- Implementer: feature-implementer; Lead verified and fixed one defect in-task.
+- RED: `pnpm exec jest features/catalog/screens/product-detail` → 9 failed / 29 passed
+  (new copy, `browseOrder is not a function`, `Unable to find … Browse all 30 flavors`).
+- GREEN: 38/38; mutation checks (drop `browseOrder`, drop controlled quantity, drop the Back
+  handler) each fail their tests.
+- Lead review defect: the landscape context column used a full-width square image above the
+  Order Bar in a non-scrolling column — at 1280×800 a selected option with its stepper would
+  push the Order Bar off-screen (violates GD-02). Fixed: the image takes only leftover height
+  (`flex-1`, `maxHeight` 400). Jest runs portrait, so this is verified at runtime, not here.
+- Affected: `pnpm exec jest features/catalog` → 30 suites / 341 passed; typecheck 0 errors;
+  eslint/prettier clean.
+- Not covered by jest: split layout (≥900) and column counts — runtime check pending;
+  Back handling with real navigator focus — device check pending.
+- GATE: PASS

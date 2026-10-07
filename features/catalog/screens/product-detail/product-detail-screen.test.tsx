@@ -1,9 +1,12 @@
+import { BackHandler } from "react-native";
+
 import { useAuth } from "@/core/auth";
 import { AppError } from "@/core/errors";
 import { resetLogging, setLogSink } from "@/core/logging";
 import { storage, storageKey } from "@/core/storage";
 import {
   act,
+  fireEvent,
   installMockAuth,
   renderWithProviders,
   screen,
@@ -89,6 +92,13 @@ const mockCanGoBack = jest.fn().mockReturnValue(true);
 const mockLocalSearchParams: { productId?: string } = {};
 
 jest.mock("expo-router", () => ({
+  // The Option Browser's Android Back handler and its grid both register
+  // through `useFocusEffect`; outside a navigator the screen is focused while
+  // it is mounted, so the callback runs as an ordinary effect.
+  useFocusEffect: (effect: () => void | (() => void)) => {
+    const { useEffect } = jest.requireActual<typeof import("react")>("react");
+    useEffect(effect, [effect]);
+  },
   useRouter: () => ({
     push: mockRouterPush,
     replace: mockRouterReplace,
@@ -312,6 +322,118 @@ function snapshotWithOption3Removed(): CatalogSnapshot {
   });
 }
 
+/**
+ * A product shaped like the real store catalog (phase 4): one Flavor
+ * dimension with 30 values, six of them out of stock — two inside the first
+ * six — so the preview, the available-first browser order and search are all
+ * observable. Four flavours contain "berry" (two of them unavailable).
+ */
+const VAPE_PRODUCT_ID = "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0";
+const FLAVOR_TYPE_ID = "f3f3f3f3-f3f3-4f3f-8f3f-f3f3f3f3f3f3";
+const VAPE_FLAVORS = [
+  "Apple",
+  "Apricot",
+  "Banana",
+  "Blackberry",
+  "Blueberry",
+  "Cherry",
+  "Coconut",
+  "Cola",
+  "Grape",
+  "Guava",
+  "Kiwi",
+  "Lemon",
+  "Lime",
+  "Lychee",
+  "Mango",
+  "Melon",
+  "Mint",
+  "Nectarine",
+  "Orange",
+  "Papaya",
+  "Passion Fruit",
+  "Peach",
+  "Pear",
+  "Pineapple",
+  "Plum",
+  "Raspberry",
+  "Strawberry",
+  "Tangerine",
+  "Vanilla",
+  "Watermelon",
+] as const;
+const UNAVAILABLE_FLAVORS = new Set([
+  "Apricot",
+  "Blackberry",
+  "Kiwi",
+  "Melon",
+  "Passion Fruit",
+  "Raspberry",
+]);
+
+function vapeIdFor(prefix: string, index: number): string {
+  return `${prefix}-0000-4000-8000-${String(index).padStart(12, "0")}`;
+}
+const vapeVariantId = (flavor: (typeof VAPE_FLAVORS)[number]) =>
+  vapeIdFor("f1000000", VAPE_FLAVORS.indexOf(flavor));
+
+/** The vape catalog; `flavorCount` trims the flavour list (a refresh that shrinks it). */
+function snapshotWithVape(flavorCount: number = VAPE_FLAVORS.length): CatalogSnapshot {
+  const base = createCatalogSnapshotFixture();
+  const flavors = VAPE_FLAVORS.slice(0, flavorCount);
+  return createCatalogSnapshotFixture({
+    products: [
+      ...base.products,
+      {
+        id: VAPE_PRODUCT_ID,
+        name: "Cloud Vape",
+        brand_id: null,
+        cover_media_asset_id: null,
+        cover_public_id: null,
+        cover_secure_url: null,
+        short_description: null,
+        search_keywords: null,
+        display_order: 50,
+        is_featured: false,
+      },
+    ],
+    option_types: [...base.option_types, { id: FLAVOR_TYPE_ID, name: "Flavor", display_order: 30 }],
+    option_values: [
+      ...base.option_values,
+      ...flavors.map((value, index) => ({
+        id: vapeIdFor("f2000000", index),
+        option_type_id: FLAVOR_TYPE_ID,
+        value,
+        display_order: index + 1,
+      })),
+    ],
+    variants: [
+      ...base.variants,
+      ...flavors.map(
+        (flavor, index): CatalogVariant => ({
+          id: vapeIdFor("f1000000", index),
+          product_id: VAPE_PRODUCT_ID,
+          sku: `SECRET-SKU-VAPE-${index}`,
+          barcode: null,
+          title_override: null,
+          search_keywords: null,
+          display_order: index + 1,
+          is_available: !UNAVAILABLE_FLAVORS.has(flavor),
+          available_quantity: UNAVAILABLE_FLAVORS.has(flavor) ? 0 : 20,
+        }),
+      ),
+    ],
+    variant_option_values: [
+      ...base.variant_option_values,
+      ...flavors.map((_, index) => ({
+        variant_id: vapeIdFor("f1000000", index),
+        option_type_id: FLAVOR_TYPE_ID,
+        option_value_id: vapeIdFor("f2000000", index),
+      })),
+    ],
+  });
+}
+
 /** The single durable key the cart's hydrate() reads — disk hygiene between tests. */
 const CART_KEY = storageKey("cart", "lines");
 
@@ -325,6 +447,7 @@ const CART_KEY = storageKey("cart", "lines");
  */
 const SCREEN_OWNER = "7f8e9d0c-1b2a-4c3d-8e4f-5a6b7c8d9e0f";
 const PRESS_ADD_OWNER = "a1b2c3d4-5e6f-4a70-8b7c-8d9e0f1a2b3c";
+const BROWSER_ADD_OWNER = "b2c3d4e5-6f70-4a81-8c9d-0e1f2a3b4c5d";
 
 /**
  * Gates the screen on auth readiness and the integration provider, exactly
@@ -693,5 +816,235 @@ describe("ProductDetailScreen — adding to the cart", () => {
     });
     expect(screen.getByRole("button", { name: "Review cart" })).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Keep browsing" })).toBeOnTheScreen();
+  });
+});
+
+/**
+ * Jest-expo resolves react-native to iOS, whose BackHandler drops handlers.
+ * This spy stands in for Android's (the checkout-gate suite's pattern):
+ * registrations are recorded, `remove` unregisters, and `pressHardwareBack`
+ * dispatches newest-first, stopping at the first handler that consumes it.
+ */
+type HardwareBackHandler = () => boolean | null | undefined;
+const backHandlers: HardwareBackHandler[] = [];
+function installBackHandlerSpy() {
+  backHandlers.length = 0;
+  return jest.spyOn(BackHandler, "addEventListener").mockImplementation((_event, handler) => {
+    backHandlers.push(handler);
+    return {
+      remove: () => {
+        const index = backHandlers.indexOf(handler);
+        if (index !== -1) backHandlers.splice(index, 1);
+      },
+    };
+  });
+}
+function pressHardwareBack(): boolean {
+  for (let i = backHandlers.length - 1; i >= 0; i -= 1) {
+    if (backHandlers[i]?.()) return true;
+  }
+  return false;
+}
+
+async function renderVape(ownerId: string = SCREEN_OWNER) {
+  const rendered = await renderProductDetail(VAPE_PRODUCT_ID, ownerId);
+  await waitFor(() => expect(screen.getByRole("header", { name: "Cloud Vape" })).toBeOnTheScreen());
+  return rendered;
+}
+
+type HostNode = { children: readonly (HostNode | string)[] };
+
+/**
+ * The browser's grid renders rows only once it has measured the width it is
+ * given; deliver that layout pass (the catalog-grid suite's technique) at a
+ * tablet-portrait content width.
+ */
+async function layoutBrowserGrid(width = 700) {
+  const host = screen.getByTestId("catalog-option-browser-grid") as unknown as HostNode;
+  const container = host.children[0];
+  if (container === undefined || typeof container === "string") {
+    throw new Error("The Option Browser did not render its grid");
+  }
+  await fireEvent(container as never, "layout", {
+    nativeEvent: { layout: { x: 0, y: 0, width, height: 900 } },
+  });
+}
+
+async function openBrowser(user: ReturnType<typeof userEvent.setup>) {
+  await user.press(screen.getByRole("button", { name: "Browse all 30 flavors" }));
+  expect(screen.getByTestId("catalog-option-browser")).toBeOnTheScreen();
+  await layoutBrowserGrid();
+}
+
+function radioNames(): string[] {
+  return screen.getAllByRole("radio").map((radio) => String(radio.props.accessibilityLabel ?? ""));
+}
+
+/**
+ * Phase 4 (GD-01–GD-03): a large variant set previews six choices in the
+ * Choice Canvas and browses the full range in the Option Browser, which
+ * replaces the Stage and Canvas in place — never a route or a sheet.
+ */
+describe("ProductDetailScreen — large variant sets", () => {
+  it("keeps every choice in place for a product with six or fewer, with nothing to browse", async () => {
+    await renderKettle();
+
+    expect(screen.getAllByRole("radio")).toHaveLength(3);
+    expect(screen.queryByTestId("catalog-option-show-all")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Browse all/ })).toBeNull();
+  });
+
+  it("previews six choices and offers to browse all of them, with no search in the canvas", async () => {
+    mockFetchCatalog.mockResolvedValue(snapshotWithVape());
+    await renderVape();
+
+    expect(screen.getAllByRole("radio")).toHaveLength(6);
+    const browseAll = screen.getByRole("button", { name: "Browse all 30 flavors" });
+    expect(browseAll).toBe(screen.getByTestId("catalog-option-show-all"));
+    expect(screen.getByText("Browse all 30 flavors")).toBeOnTheScreen();
+    // The in-place expand and the in-place rack search are gone.
+    expect(screen.queryByLabelText("Search flavors")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Show all/ })).toBeNull();
+    expect(screen.getByText("Start with 6 visible flavors, or browse all 30.")).toBeOnTheScreen();
+  });
+
+  it("browses every choice in one grid, available ones first, in place of the product view", async () => {
+    mockFetchCatalog.mockResolvedValue(snapshotWithVape());
+    const user = userEvent.setup();
+    await renderVape();
+
+    await openBrowser(user);
+
+    // The Stage and the Canvas make way for the browser.
+    expect(screen.queryByRole("link", { name: "Back to products" })).toBeNull();
+    expect(screen.queryByTestId("catalog-option-rack")).toBeNull();
+    expect(screen.getByRole("button", { name: "Back to product" })).toBe(
+      screen.getByTestId("catalog-option-browser-close"),
+    );
+    expect(screen.getByLabelText("Flavor options")).toBeOnTheScreen();
+    expect(screen.getByText("24 of 30 available")).toBeOnTheScreen();
+
+    const names = radioNames();
+    expect(names).toHaveLength(30);
+    const available = VAPE_FLAVORS.filter((flavor) => !UNAVAILABLE_FLAVORS.has(flavor));
+    const unavailable = VAPE_FLAVORS.filter((flavor) => UNAVAILABLE_FLAVORS.has(flavor));
+    // Store order within each group.
+    expect(names).toEqual([
+      ...available,
+      ...unavailable.map((flavor) => `${flavor}, currently unavailable`),
+    ]);
+  });
+
+  it("searches the full range, says how many match, and recovers from no match", async () => {
+    mockFetchCatalog.mockResolvedValue(snapshotWithVape());
+    const user = userEvent.setup();
+    await renderVape();
+    await openBrowser(user);
+
+    expect(screen.getByText("Showing 30 of 30")).toBeOnTheScreen();
+    await user.type(screen.getByLabelText("Search flavors"), "berry");
+
+    expect(radioNames()).toEqual([
+      "Blueberry",
+      "Strawberry",
+      "Blackberry, currently unavailable",
+      "Raspberry, currently unavailable",
+    ]);
+    expect(screen.getByText("Showing 4 of 30")).toBeOnTheScreen();
+
+    await user.clear(screen.getByLabelText("Search flavors"));
+    await user.type(screen.getByLabelText("Search flavors"), "zzz");
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    expect(screen.getByText("No matching flavors.")).toBeOnTheScreen();
+    expect(screen.getByText("Showing 0 of 30")).toBeOnTheScreen();
+
+    await user.press(screen.getByTestId("catalog-option-browser-clear"));
+    expect(screen.getAllByRole("radio")).toHaveLength(30);
+    expect(screen.getByLabelText("Search flavors")).toHaveDisplayValue("");
+  });
+
+  it("keeps the chosen option and quantity across the browser, and resets quantity only for another option", async () => {
+    mockFetchCatalog.mockResolvedValue(snapshotWithVape());
+    const user = userEvent.setup();
+    await renderVape(BROWSER_ADD_OWNER);
+    await openBrowser(user);
+
+    // Mango is not in the six-choice preview.
+    await user.press(screen.getByRole("radio", { name: "Mango" }));
+    expect(screen.getByRole("radio", { name: "Mango" })).toBeChecked();
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    expect(screen.getByRole("button", { name: "Add 3 to cart" })).toBeOnTheScreen();
+
+    await user.press(screen.getByRole("button", { name: "Back to product" }));
+    expect(screen.queryByTestId("catalog-option-browser")).toBeNull();
+    expect(screen.getByRole("link", { name: "Back to products" })).toBeOnTheScreen();
+    // The preview swaps the selection in, and the quantity survived.
+    expect(screen.getByRole("radio", { name: "Mango" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Add 3 to cart" })).toBeOnTheScreen();
+
+    // Choosing the same option again keeps the quantity.
+    await user.press(screen.getByRole("radio", { name: "Mango" }));
+    expect(screen.getByRole("button", { name: "Add 3 to cart" })).toBeOnTheScreen();
+
+    await openBrowser(user);
+    expect(screen.getByRole("radio", { name: "Mango" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Add 3 to cart" })).toBeOnTheScreen();
+
+    // Another option starts again at one.
+    await user.press(screen.getByRole("radio", { name: "Lemon" }));
+    expect(screen.getByRole("button", { name: "Add 1 to cart" })).toBeOnTheScreen();
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    await user.press(screen.getByRole("button", { name: "Add 2 to cart" }));
+    await settleDurableWrites();
+
+    const { lines } = getCartSnapshot();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      variantId: vapeVariantId("Lemon"),
+      productId: VAPE_PRODUCT_ID,
+      quantity: 2,
+    });
+  });
+
+  it("closes the browser on Android Back, and leaves Back alone otherwise", async () => {
+    const spy = installBackHandlerSpy();
+    try {
+      mockFetchCatalog.mockResolvedValue(snapshotWithVape());
+      const user = userEvent.setup();
+      await renderVape();
+      expect(backHandlers).toHaveLength(0);
+
+      await openBrowser(user);
+      let consumed = false;
+      await act(async () => {
+        consumed = pressHardwareBack();
+      });
+
+      expect(consumed).toBe(true);
+      expect(screen.queryByTestId("catalog-option-browser")).toBeNull();
+      expect(screen.getByRole("button", { name: "Browse all 30 flavors" })).toBeOnTheScreen();
+      expect(backHandlers).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("returns to the product view when a refresh leaves too few choices to browse", async () => {
+    mockFetchCatalog
+      .mockResolvedValueOnce(snapshotWithVape())
+      .mockResolvedValueOnce(snapshotWithVape(5));
+    const user = userEvent.setup();
+    const { queryClient } = await renderVape();
+    await openBrowser(user);
+
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: catalogKeys.all });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.queryByTestId("catalog-option-browser")).toBeNull();
+    expect(screen.getAllByRole("radio")).toHaveLength(5);
+    expect(screen.queryByTestId("catalog-option-show-all")).toBeNull();
   });
 });
