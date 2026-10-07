@@ -20,8 +20,6 @@ const ROW_SHAPES = [
   { lead: 1.3, height: 280 },
   { lead: 1.65, height: 360 },
 ] as const;
-/** The page's own foot room, plus the room the floating Help Me Choose pill needs. */
-
 export function CategoriesScreen() {
   const pillClearance = useHelpMeChoosePillLayout().clearance;
   const router = useRouter();

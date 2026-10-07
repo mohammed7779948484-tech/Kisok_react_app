@@ -30,8 +30,6 @@ import { productCountLabel } from "../../model/labels";
 import { useCatalog } from "../../queries/use-catalog";
 import { productDetailHref } from "../product-detail/product-detail-href";
 
-/** A path page's own foot room, plus the room the floating Help Me Choose pill needs. */
-
 export type CategoryDetailScreenProps = {
   categoryId: string;
 };
