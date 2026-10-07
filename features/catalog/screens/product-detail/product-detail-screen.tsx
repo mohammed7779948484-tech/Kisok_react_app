@@ -14,6 +14,7 @@ import {
   CatalogMissingState,
 } from "../../components/catalog-state-panel";
 import type { CatalogProductView, CatalogVariantView } from "../../model/catalog-view";
+import { matchingVariantIds, parseMatch } from "../../model/guided-discovery";
 import { availableVariantCount } from "../../model/product-summary";
 import { useCatalog } from "../../queries/use-catalog";
 import { ChoiceCanvas } from "./components/choice-canvas";
@@ -33,6 +34,8 @@ export type ProductDetailScreenProps = {
   productId: string;
   /** Names where the customer came from, e.g. "Back to Vape Products". */
   backLabel?: string;
+  /** Help Me Choose's answers (`serializeMatch`): matching choices are listed first. */
+  match?: string;
 };
 
 function toCartSource(product: CatalogProductView, variant: CatalogVariantView): CatalogCartSource {
@@ -67,7 +70,7 @@ function toCartSource(product: CatalogProductView, variant: CatalogVariantView):
  * survive opening and closing the browser; the quantity resets only when the
  * selected option changes or after a successful add.
  */
-export function ProductDetailScreen({ productId, backLabel }: ProductDetailScreenProps) {
+export function ProductDetailScreen({ productId, backLabel, match }: ProductDetailScreenProps) {
   const router = useRouter();
   const catalog = useCatalog();
   const { width, height } = useLayout();
@@ -81,10 +84,25 @@ export function ProductDetailScreen({ productId, backLabel }: ProductDetailScree
   const [browsing, setBrowsing] = useState(false);
 
   const product = catalog.data?.resolveProduct(productId);
-  const decision = useMemo(
-    () => (product ? deriveVariantDecision(product.variants) : null),
-    [product],
-  );
+  const parsedMatch = useMemo(() => parseMatch(match), [match]);
+  const decision = useMemo(() => {
+    if (!product) return null;
+    const derived = deriveVariantDecision(product.variants);
+    if (!parsedMatch) return derived;
+    // Opened from Help Me Choose: its matches lead, in store order, and the
+    // canvas says how many there are. Nothing is selected for the customer.
+    const matching = new Set(matchingVariantIds(product, parsedMatch));
+    if (matching.size === 0) return derived;
+    const count = matching.size;
+    return {
+      ...derived,
+      choices: [
+        ...derived.choices.filter((choice) => matching.has(choice.id)),
+        ...derived.choices.filter((choice) => !matching.has(choice.id)),
+      ],
+      context: `${count} ${count === 1 ? derived.noun : derived.nounPlural} ${count === 1 ? "matches" : "match"} your choices.`,
+    };
+  }, [product, parsedMatch]);
 
   // Browsing only means something while there is more than the preview: a
   // refresh that shrinks the set (or removes the product) ends it rather than

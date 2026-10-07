@@ -458,12 +458,12 @@ const BROWSER_ADD_OWNER = "b2c3d4e5-6f70-4a81-8c9d-0e1f2a3b4c5d";
  * the contract, not a defect for the screen to code around — the
  * full-cart and integration suites' AuthedHarness pattern).
  */
-function AuthedProductDetail({ productId }: { productId: string }) {
+function AuthedProductDetail({ productId, match }: { productId: string; match?: string }) {
   const { status, profile } = useAuth();
   if (status !== "ready" || profile === null) return null;
   return (
     <CatalogCartProvider>
-      <ProductDetailScreen productId={productId} />
+      <ProductDetailScreen productId={productId} match={match} />
     </CatalogCartProvider>
   );
 }
@@ -486,11 +486,15 @@ const mockAuthHolder: { current: ReturnType<typeof installMockAuth> | null } = {
  * Renders the resolved-path screen behind the real auth gate and the real
  * integration provider — the mounting the customer layout will provide.
  */
-async function renderProductDetail(productId: string, ownerId: string = SCREEN_OWNER) {
+async function renderProductDetail(
+  productId: string,
+  ownerId: string = SCREEN_OWNER,
+  match?: string,
+) {
   mockAuthHolder.current = installMockAuth({
     profile: { ...TEST_PROFILE, id: ownerId },
   });
-  return renderWithProviders(<AuthedProductDetail productId={productId} />, {
+  return renderWithProviders(<AuthedProductDetail productId={productId} match={match} />, {
     withAuth: true,
   });
 }
@@ -1046,5 +1050,51 @@ describe("ProductDetailScreen — large variant sets", () => {
     expect(screen.queryByTestId("catalog-option-browser")).toBeNull();
     expect(screen.getAllByRole("radio")).toHaveLength(5);
     expect(screen.queryByTestId("catalog-option-show-all")).toBeNull();
+  });
+});
+
+/**
+ * Phase 4 (GD-08): a product opened from Help Me Choose lists the choices that
+ * match the customer's answers first and says how many match — it never
+ * chooses for them.
+ */
+describe("ProductDetailScreen — opened from Help Me Choose", () => {
+  const berries = VAPE_FLAVORS.filter(
+    (flavor) => flavor.toLowerCase().includes("berry") && !UNAVAILABLE_FLAVORS.has(flavor),
+  );
+
+  async function renderMatched(match: string) {
+    mockFetchCatalog.mockResolvedValue(snapshotWithVape());
+    await renderProductDetail(VAPE_PRODUCT_ID, SCREEN_OWNER, match);
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: "Cloud Vape" })).toBeOnTheScreen(),
+    );
+  }
+
+  it("previews the matching choices first, says how many match, and selects nothing", async () => {
+    expect(berries.length).toBeGreaterThan(1);
+    await renderMatched("t.berry");
+
+    expect(radioNames().slice(0, berries.length)).toEqual(berries);
+    expect(screen.getByText(`${berries.length} flavors match your choices.`)).toBeOnTheScreen();
+    for (const radio of screen.getAllByRole("radio")) {
+      expect(radio.props.accessibilityState?.checked).toBe(false);
+    }
+  });
+
+  it("puts the matching choices first in the Option Browser too", async () => {
+    const user = userEvent.setup();
+    await renderMatched("t.berry");
+
+    await openBrowser(user);
+
+    expect(radioNames().slice(0, berries.length)).toEqual(berries);
+  });
+
+  it("ignores a match that fits none of this product's choices", async () => {
+    await renderMatched("t.zzzz");
+
+    expect(screen.queryByText(/match your choices/)).toBeNull();
+    expect(screen.getByText("Start with 6 visible flavors, or browse all 30.")).toBeOnTheScreen();
   });
 });

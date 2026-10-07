@@ -14,8 +14,8 @@ import {
   type VariantDecision,
 } from "./variant-decision";
 
-/** Two tiles side by side need this much room each before the grid drops a column. */
-const TILE_MIN_WIDTH = 280;
+/** Three tiles fit across a 1280 landscape tablet; narrower screens drop to two, then one. */
+const TILE_MIN_WIDTH = 230;
 const TILE_GAP = 8;
 /** The context column beside the grid in a split (landscape) layout. */
 const CONTEXT_COLUMN_WIDTH = 400;
