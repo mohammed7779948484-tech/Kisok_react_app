@@ -76,11 +76,15 @@ export function OptionBrowser({
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   useEffect(() => {
     if (split) return;
+    // Start from the keyboard as it is now: a rotation through the split layout
+    // (which does not listen) can change it unseen.
+    setKeyboardVisible(Keyboard.isVisible());
     const shown = Keyboard.addListener("keyboardDidShow", () => setKeyboardVisible(true));
     const hidden = Keyboard.addListener("keyboardDidHide", () => setKeyboardVisible(false));
     return () => {
       shown.remove();
       hidden.remove();
+      setKeyboardVisible(false);
     };
   }, [split]);
 

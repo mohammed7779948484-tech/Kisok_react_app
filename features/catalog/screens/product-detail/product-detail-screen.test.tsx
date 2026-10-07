@@ -1105,9 +1105,11 @@ describe("ProductDetailScreen — opened from Help Me Choose", () => {
  * without blurring the field, so focus alone must not keep the bar away.
  */
 describe("ProductDetailScreen — stacked browser and the keyboard", () => {
+  afterEach(() => jest.restoreAllMocks());
+
   it("brings the Order Bar back when the keyboard hides, even if the search keeps focus", async () => {
     const listeners = new Map<string, () => void>();
-    const spy = jest.spyOn(Keyboard, "addListener").mockImplementation(((
+    jest.spyOn(Keyboard, "addListener").mockImplementation(((
       event: string,
       handler: () => void,
     ) => {
@@ -1122,12 +1124,15 @@ describe("ProductDetailScreen — stacked browser and the keyboard", () => {
     const prompt = "Select one of the options above to set quantity.";
     expect(screen.getByText(prompt)).toBeOnTheScreen();
 
+    // The customer starts searching: the field takes focus and keeps it below.
+    await act(async () => {
+      fireEvent(screen.getByLabelText("Search flavors"), "focus");
+    });
     await act(async () => listeners.get("keyboardDidShow")?.());
     expect(screen.queryByText(prompt)).toBeNull();
 
     // No blur: the field keeps focus while the keyboard goes away.
     await act(async () => listeners.get("keyboardDidHide")?.());
     expect(screen.getByText(prompt)).toBeOnTheScreen();
-    spy.mockRestore();
   });
 });
