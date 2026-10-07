@@ -648,7 +648,13 @@ describe("guided discovery", () => {
         ],
       });
 
-      expect(productIds(deriveGuidedResult(keyworded, [], "tobacco"))).toEqual(["night"]);
+      const byKeyword = deriveGuidedResult(keyworded, [], "tobacco");
+      expect(productIds(byKeyword)).toEqual(["night"]);
+      // Only the available variant counts, here and in the hand-off to Product Detail.
+      expect(byKeyword.products[0]?.matchingVariantIds).toEqual(["night-v1"]);
+      const handoff = parseMatch(serializeMatch([], "tobacco"));
+      const night = keyworded.resolveProduct("night");
+      expect(handoff && night ? matchingVariantIds(night, handoff) : null).toEqual(["night-v1"]);
       expect(
         productIds(deriveGuidedResult(keyworded, [option("Strength", "3")], "tobacco")),
       ).toEqual(["night"]);
