@@ -20,17 +20,24 @@ names, and most products carry many variants. Two outcomes:
 
 ### Acceptance criteria
 
-| ID    | Criterion                                                                                                                                                                                                                                                                                      |
-| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GD-01 | A product with ≤6 choices behaves exactly as before. With 7+ choices the Choice Canvas shows a 6-choice preview and a "Browse all N …" action (`catalog-option-show-all`) that opens the Option Browser; the in-place expand and in-place rack search are gone.                                |
-| GD-02 | The Option Browser fills the content area: a single-scroll grid of the same option tiles (2–3 columns landscape, 2 portrait, 1 compact), search when >10 choices with a live count, available choices first, and the Order Bar (selection, quantity, Add) always on screen.                    |
-| GD-03 | Leaving the browser ("Back to product" or Android Back) returns to the split view. The selected variant **and the chosen quantity** survive opening/closing the browser; quantity resets only when the selected variant changes or after a successful add.                                     |
-| GD-04 | Help Me Choose (`/help-me-choose`) asks catalog-derived questions — root category first, then brand or a low-cardinality option type chosen by a deterministic score, then a free-text "Anything specific?" step — and shows live results that are tappable at any moment.                     |
-| GD-05 | A product is a result only when one **available** variant satisfies every option answer and the text term together; category and brand are product-level. Every tap value shown leads to at least one product, with a product count.                                                           |
-| GD-06 | Answers can be skipped, changed and removed; removing only widens. A free-text term with no match is a recoverable state: it is announced, other answers are preserved, the term stays editable/clearable, clearing restores the previous set, and it is never passed on.                      |
-| GD-07 | A catalog refresh reconciles answers (unknown values dropped, trailing answers dropped until non-empty) and announces the change.                                                                                                                                                              |
-| GD-08 | Opening a result passes the committed answers to Product Detail, which lists matching choices first (preview and browser) and says how many match. Nothing is auto-selected.                                                                                                                   |
-| GD-09 | Entry points: the Home "Guided discovery" panel becomes a Help Me Choose entry (its chips start at that question); a floating "Help me choose" pill appears on Products, Categories, Category detail, Brands and Brand detail (scoped to the category/brand on detail pages) and nowhere else. |
+| ID    | Criterion                                                                                                                                                                                                                                                                                                         |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GD-01 | A product with ≤6 choices behaves exactly as before. With 7+ choices the Choice Canvas shows a 6-choice preview and a "Browse all N …" action (`catalog-option-show-all`) that opens the Option Browser; the in-place expand and in-place rack search are gone.                                                   |
+| GD-02 | The Option Browser fills the content area: a single-scroll grid of the same option tiles (2–3 columns landscape, 2 portrait, 1 compact), search when >10 choices with a live count, available choices first, and the Order Bar (selection, quantity, Add) always on screen.                                       |
+| GD-03 | Leaving the browser ("Back to product" or Android Back) returns to the split view. The selected variant **and the chosen quantity** survive opening/closing the browser; quantity resets only when the selected variant changes or after a successful add.                                                        |
+| GD-04 | Help Me Choose (`/help-me-choose`) asks catalog-derived questions — root category first, then brand or a low-cardinality option type chosen by a deterministic score, then a free-text "Anything specific?" step — and shows live results that are tappable at any moment.                                        |
+| GD-05 | A product is a result only when one **available** variant satisfies every option answer and the text term together; category and brand are product-level. Every tap value shown leads to at least one product, with a product count.                                                                              |
+| GD-06 | Answers can be skipped, changed and removed; removing only widens. A free-text term with no match is a recoverable state: it is announced, other answers are preserved, the term stays editable/clearable, clearing restores the previous set, and it is never passed on.                                         |
+| GD-07 | A catalog refresh reconciles answers (unknown values dropped, trailing answers dropped until non-empty) and announces the change.                                                                                                                                                                                 |
+| GD-08 | Opening a result passes the committed answers to Product Detail, which lists matching choices first (preview and browser) and says how many match. Nothing is auto-selected.                                                                                                                                      |
+| GD-09 | Entry points: the Home "Guided discovery" panel becomes a Help Me Choose entry with root-category quick starts (amended — see below); a floating "Help me choose" pill appears on Products, Categories, Category detail, Brands and Brand detail (scoped to the category/brand on detail pages) and nowhere else. |
+
+**GD-09 amendment (Lead decision during B2, recorded at the feature gate).** The
+approved plan had the Home panel's option-type chips start Help Me Choose at that
+question. With the real catalog a Flavor question would list ~206 values (only 23
+shared), so the tap question for it never exists; the chips were replaced by
+root-category quick starts, which open Help Me Choose scoped to that category.
+Reported to the user with the PR for confirmation; reversible without model changes.
 
 Out of scope: dimension chips in the browser, a Search inline entry, synonym or
 flavour taxonomies, backend/schema/RPC changes, a header tab, persisted or global
@@ -68,15 +75,15 @@ free-text step over variant text. Brand is the best second split for vapes.
 
 ## Tasks
 
-| Task | Mode            | Acceptance  | Scope                                                                                                              | Scaffold                                                                 |
-| ---- | --------------- | ----------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| A1   | behavior        | GD-03       | `AddToCartButton` optional controlled quantity + tests                                                             | N/A — existing component                                                 |
-| A2   | behavior        | Supp. GD-02 | `CatalogGrid` additive `extraData` / `accessibilityRole` + test                                                    | N/A — existing component                                                 |
-| A3   | behavior-change | GD-01–03    | Option Browser component, Product Detail browsing state, lifted quantity, Back handling, rack/canvas/decision copy | `pnpm generate component catalog option-browser --screen=product-detail` |
-| B1   | behavior        | GD-04–07    | `model/guided-discovery.ts` + tests (fixtures shaped like the real catalog)                                        | N/A — pure domain model                                                  |
-| B2   | behavior        | GD-04–07    | Help Me Choose screen + route                                                                                      | `pnpm generate screen …` then `pnpm generate route …`                    |
-| B3   | behavior        | GD-08       | `match` param on `productDetailHref`/route; matching-first ordering and count in Product Detail                    | N/A — existing files                                                     |
-| B4   | behavior-change | GD-09       | Home panel rework; pill + `CatalogShell` opt-in; 5 screens opt in; `CATALOG_BROWSING_ROUTES`                       | `pnpm generate component catalog help-me-choose-pill`                    |
+| Task | Mode            | Acceptance  | Scope                                                                                                                                                                                               | Scaffold                                                                 |
+| ---- | --------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| A1   | behavior        | GD-03       | `AddToCartButton` optional controlled quantity + tests                                                                                                                                              | N/A — existing component                                                 |
+| A2   | behavior        | Supp. GD-02 | `CatalogGrid` additive `extraData` / `accessibilityRole` / `bottomInset` + test                                                                                                                     | N/A — existing component                                                 |
+| A3   | behavior-change | GD-01–03    | Option Browser component, Product Detail browsing state, lifted quantity, Back handling, rack/canvas/decision copy                                                                                  | `pnpm generate component catalog option-browser --screen=product-detail` |
+| B1   | behavior        | GD-04–07    | `model/guided-discovery.ts` + tests (fixtures shaped like the real catalog)                                                                                                                         | N/A — pure domain model                                                  |
+| B2   | behavior        | GD-04–07    | Help Me Choose screen + route; four screen-private components (`answer-chip`, `choice-tile`, `no-text-match`, `question-panel`) written by hand — unplanned, accepted by the Lead (see `review.md`) | `pnpm generate screen …` then `pnpm generate route …`                    |
+| B3   | behavior        | GD-08       | `match` param on `productDetailHref`/route; matching-first ordering and count in Product Detail                                                                                                     | N/A — existing files                                                     |
+| B4   | behavior-change | GD-09       | Home panel rework; pill + `CatalogShell` opt-in; 5 screens opt in; `CATALOG_BROWSING_ROUTES`                                                                                                        | `pnpm generate component catalog help-me-choose-pill`                    |
 
 Dependencies: A3 after A1+A2; B2 after B1; B3 after A3+B1; B4 after B2.
 
@@ -110,3 +117,24 @@ explicitly unverified.
 | B2   | PASS |
 | B3   | PASS |
 | B4   | PASS |
+
+## Round gates
+
+| Round                    | Tasks      | Gate | Evidence                                                                                                       |
+| ------------------------ | ---------- | ---- | -------------------------------------------------------------------------------------------------------------- |
+| A — Product Detail       | A1, A2, A3 | PASS | Task gates PASS; `pnpm exec jest features/catalog features/catalog-cart-integration` green; runtime at 4 sizes |
+| B — Help Me Choose/entry | B1–B4      | PASS | Task gates PASS; catalog suites green; runtime HMC path + entry points at 4 sizes                              |
+
+## Feature gate
+
+- [x] Every task gate PASS (A1–A3, B1–B4)
+- [x] Every round gate PASS (A, B)
+- [x] Every AC verified (GD-01–GD-09; GD-09 as amended above)
+- [x] `pnpm verify` PASS after the final code change (747d8dd: 104 suites / 1351 tests; worklog)
+- [ ] fast GitHub CI PASS on the final HEAD (worklog "Feature gate")
+- [x] runtime evidence recorded at 1280×800, 1024×768, 768×1024, 600×900 (worklog)
+- [x] Android device behaviour and 200% text: **explicitly unverified** (worklog "Feature gate")
+- [x] review findings dispositioned, re-review done (`review.md`)
+- [x] quality audit findings resolved (`review.md`)
+
+FEATURE GATE: PENDING CI on the final HEAD

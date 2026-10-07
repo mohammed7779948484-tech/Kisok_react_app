@@ -129,3 +129,48 @@ CodeRabbit: 1 minor (AC-07 evidence path, fixed in 9200a74), 1 trivial optional 
 | m-06 | minor    | `model/discovery-presentation.ts` dead after the Home rework                                                                        | fix                        | Deleted; no remaining references; typecheck 0                                                                                                                                                                                                                              |
 | m-07 | minor    | Constant-only pill test; style-prop grid test                                                                                       | fix (pill) / accept (grid) | Pill test replaced by inset-aware layout tests; the grid `bottomInset` test pins a prop contract and stays                                                                                                                                                                 |
 | m-08 | info     | Silent log sink in maintenance tests                                                                                                | no action                  | —                                                                                                                                                                                                                                                                          |
+
+### Phase 4 — re-review (fresh `code-reviewer`, scope `git diff 366aa46..0435b51`)
+
+Result: all original findings resolved or properly accepted (M-01, m-01, m-02, m-03/m-07,
+m-06 RESOLVED; m-04 ACCEPT; m-05 recorded). 0 blocking, 0 major, 4 new minor. Reviewer
+re-ran `pnpm typecheck` (0), eslint (clean), jest catalog + maintenance (32 suites / 388).
+
+| ID   | Severity | Finding                                                                                                | Disposition | Remediation                                                                                                  |
+| ---- | -------- | ------------------------------------------------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------------------------------------ |
+| N-01 | minor    | Stacked Order Bar keyboard state could go stale across a rotation through split (M-01 symptom returns) | fix         | Seed from `Keyboard.isVisible()`, reset on cleanup; RED rotation test in `option-browser.test.tsx` (bdc874a) |
+| N-02 | minor    | M-01 test never focused the field, so a focus-driven regression would pass                             | fix         | Test focuses "Search flavors" first; spy restored in `afterEach` (bdc874a)                                   |
+| N-03 | minor    | Orphan doc comments in `categories-screen.tsx` and `category-detail-screen.tsx`                        | fix         | Removed (747d8dd)                                                                                            |
+| N-04 | minor    | Maintenance: no test that Back is released after a failed sign-out; spies restored only at test end    | fix         | `afterEach` restores mocks; failure-path release test (9e1204c)                                              |
+| R-01 | minor    | (Lead, runtime) stacked Help Me Choose repeated the no-match sentence in the panel and the results     | fix         | Results repeat it only in split; RED "says no-match once…" (80bec6e)                                         |
+
+Still open after re-review: none. Each fix is narrow, test-covered and runtime-checked on
+747d8dd (worklog "Feature gate"); no further re-review round was judged necessary.
+
+### Phase 4 — quality audit (fresh `quality-auditor`, scope `fd77e4f..0435b51`)
+
+Verdict on 0435b51: **NOT CLEAN** — "the work itself looks sound; what blocks the gate is
+the record and the final-HEAD evidence". Auditor re-ran typecheck, `test:ci` (103 / 1348),
+lint, format:check, check:docs. Findings and the Lead's resolutions (records only, no
+product code):
+
+| Category      | Finding                                                                         | Resolution                                                                                                              |
+| ------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| not delivered | GD-09 Home option-type chips became root-category quick starts without an amend | GD-09 amended in `phase-4-guided-discovery.md` with the reason (206 Flavor values); flagged to the user on #42          |
+| not delivered | 1024×768 runtime size missing                                                   | Run on 747d8dd with all scenarios (worklog "Feature gate")                                                              |
+| not evidenced | CI on the final HEAD                                                            | Recorded at the gate in the worklog                                                                                     |
+| not evidenced | No `pnpm verify` after the last change                                          | Run on 747d8dd: exit 0, 104 / 1351 (worklog)                                                                            |
+| not evidenced | "All round gates PASS" with no round gate recorded                              | Round gates and feature gate sections added to `phase-4-guided-discovery.md`                                            |
+| not evidenced | No runtime after remediation (M-01, m-03, 4e87d78)                              | All scenarios × 4 sizes on 747d8dd, zero page errors                                                                    |
+| not evidenced | HMC "skip brand → bubblegum → Clear" runtime path not in the worklog            | Recorded (worklog "Feature gate")                                                                                       |
+| not planned   | Four hand-written HMC components called "planned"                               | Relabelled: unplanned manual artifacts inside B2's screen scope, accepted by the Lead (B2 row); m-05 wording superseded |
+| not planned   | `bottomInset` on `CatalogGrid` beyond A2's scope                                | Added to A2's scope line (justified by D6)                                                                              |
+| stale record  | PR #42 body ("review running", "366aa46")                                       | PR body updated at the gate                                                                                             |
+| stale record  | No re-review entry                                                              | Re-review section above                                                                                                 |
+| open (DoD)    | Text scaling to 200% not checked                                                | Recorded UNVERIFIED with the reason (no faithful web emulation); moved to the Android device check                      |
+
+Maintenance-specific findings (AC-06 wording, SCAFFOLD record, T01 mode, todo gate) are
+resolved in `features/maintenance/docs/review.md`.
+
+Audit result after the Lead's resolutions: `PENDING RE-AUDIT` — a fresh `quality-auditor`
+pass confirms or rejects the resolutions above.

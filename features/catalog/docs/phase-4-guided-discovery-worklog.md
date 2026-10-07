@@ -139,3 +139,61 @@ no-text-match,question-panel}.tsx` were written by hand inside B2's scope. They 
 - m-06: deleted `features/catalog/model/discovery-presentation.ts` (dead); typecheck 0.
 - After all: `pnpm exec jest features/catalog features/maintenance` → 32 suites / 388 passed;
   eslint clean; typecheck 0.
+
+## Re-review remediation (N-01–N-04, `review.md`)
+
+- N-01 (bug): new `components/option-browser.test.tsx` "shows the Order Bar again after
+  rotating away and back while the keyboard was up". RED against the previous
+  `option-browser.tsx`: failed (bar still hidden after stacked → split → stacked). Fix: seed
+  from `Keyboard.isVisible()` on subscribe, reset on cleanup. GREEN.
+- N-02 (test quality): the M-01 test now focuses "Search flavors" before `keyboardDidShow`
+  and sends `keyboardDidHide` without a blur, so a focus-driven regression fails it; its
+  `Keyboard` spy is restored in a scoped `afterEach`.
+- N-03: orphan comments removed from `categories-screen.tsx` and `category-detail-screen.tsx`.
+- N-04 (maintenance): see `features/maintenance/docs/worklog.md`.
+- Runtime finding R-01 (portrait, after remediation): stacked Help Me Choose said the
+  no-match sentence twice (panel + results). RED "says no-match once when the questions sit
+  above the results" → `Expected length: 1, Received length: 2`. Fix: the results region
+  repeats it only in the split layout. GREEN 21/21.
+- RED re-confirmed for both new tests by restoring the previous source of
+  `option-browser.tsx` and `help-me-choose-screen.tsx`: `Tests: 2 failed, 20 passed`;
+  sources restored → green.
+- Affected suites: product-detail, help-me-choose, maintenance, categories, category-detail
+  → `Tests: 103 passed, 103 total`.
+- Commits: bdc874a (N-01/N-02), 80bec6e (R-01), 9e1204c (N-04), 747d8dd (N-03).
+
+## Feature gate
+
+**Runtime on the final code (747d8dd), web under `pnpm web` with the harness above,
+server restarted on that tree.** Every scenario at 1280×800, 1024×768, 768×1024 and
+600×900, zero page errors in all 13 runs:
+
+- Product Detail (UT 50K, 46): preview → "Browse all 46 variations" → select → quantity 3 →
+  search "mint" → back; the Add label reads "Add 3 to cart" after closing the browser at all
+  four sizes. 1024×768: 2 columns, context column with the Order Bar on screen.
+- Help Me Choose, full path at all four sizes: Vape Products → skip brand → "mint" →
+  "bubblegum" (no-match: other answers kept, term editable, Clear offered; stacked shows the
+  sentence once) → Clear → "mint" → Geekbar 25k opened with `match=t.mint`.
+- Entry: Home panel; Products pill → `/help-me-choose`, cart access present there.
+- Staff (1280×800): 3 s hold → Staff page → Sign out → `/sign-in`.
+- Post-remediation layout (keyboard-driven Order Bar, inset-aware pill clearance) is
+  covered by these runs; web has no soft keyboard, so the keyboard path itself remains a
+  jest + device item.
+
+**200% text: UNVERIFIED.** The harness option that doubles the root font size does not
+emulate text scaling: React Native Web sets font sizes in px, so only rem-based spacing
+grew and text stayed the same size (screens checked: Product Detail browser at 1280,
+Help Me Choose at 1024). There is no faithful web emulation; it moves to the Android
+device check (system font scale 200% on Product Detail's Order Bar, the Option Browser
+context column and the Help Me Choose panel).
+
+**Android: UNVERIFIED.** No device or emulator here; the label-gated Android/Maestro CI
+jobs were not run on #42. Device checks pending: long-press timing, Android Back in the
+Option Browser and on the Staff page, keyboard show/hide with the stacked Order Bar,
+FlashList column changes on rotation, sign-out teardown on the native stack, TalkBack.
+
+**`pnpm verify` on 747d8dd** (final code change): exit 0 — typecheck, lint, format
+("All matched files use Prettier code style!"), `Test Suites: 104 passed, 104 total`,
+`Tests: 1351 passed, 1351 total`, check:docs (103 files), check:commits (19 cases),
+check:e2e-appid (2 flows), check:ci-scripts (5 workflows, 10 checks), db:verify
+(16 tables, 3 enums, 11 functions), generator smoke test passed.
