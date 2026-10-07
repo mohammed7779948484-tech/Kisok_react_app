@@ -7,9 +7,14 @@ Implementation notes do not belong here; they belong in `worklog.md`.
 
 ## Findings
 
-| ID  | Severity                 | Finding | Evidence                | Disposition           | Remediation |
-| --- | ------------------------ | ------- | ----------------------- | --------------------- | ----------- |
-| R01 | blocking / major / minor | TODO    | file:line, or a command | fix / accept / reject | TODO        |
+| ID  | Severity | Finding                                                                                                            | Evidence                                            | Disposition | Remediation                                                                                                                   |
+| --- | -------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| R01 | minor    | (m-02) Back during sign-out could unmount the page and drop a later failure; success briefly re-enabled "Sign out" | `maintenance-screen.tsx` sign-out handler           | fix         | BackHandler held while pending; `ok` keeps the action spent; RED test added                                                   |
+| R02 | minor    | (m-04) Teardown test uses hand-built layouts                                                                       | `app/__tests__/customer-sign-out-teardown.test.tsx` | accept      | Mutation-checked real-router test + runtime evidence of the real tree (worklog); full RootNavigator mount not worth its fakes |
+| R03 | minor    | (CodeRabbit) AC-07 evidence path pointed at `root-layout-guards.test.tsx`                                          | `brief.md:34`, `plan.md:52,61`                      | fix         | 9200a74                                                                                                                       |
+
+The full shared table (catalog + maintenance) is in `features/catalog/docs/review.md`
+("Phase 4 — independent review").
 
 Severity means: **blocking** — must not merge; **major** — fix in this feature;
 **minor** — worth doing, safe to defer with a note.

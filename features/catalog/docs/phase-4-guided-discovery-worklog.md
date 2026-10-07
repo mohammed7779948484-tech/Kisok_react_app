@@ -120,3 +120,22 @@ Perks, Pebble. Sizes: 1280×800, 768×1024, 600×900. All scenarios: zero page e
 - Runtime (1280×800, 768×1024): Home panel renders; pill bottom-right on Products, readable,
   not competing with Cart; pill → `/help-me-choose`; cart access present there; zero errors.
 - GATE: PASS
+
+## Review remediation (findings in `review.md`)
+
+- M-01 (bug): RED `product-detail-screen.test.tsx` "brings the Order Bar back when the keyboard
+  hides…" failed (bar never hid on `keyboardDidShow`). Fix: keyboard-driven visibility. GREEN 42/42.
+- m-01 (bug): RED "drops a scope with nothing in stock on first open…" showed the notice. Fix:
+  announce only after a refresh. GREEN 20/20.
+- m-02 (bug, maintenance): RED "keeps staff on the page while signing out…" `Expected: true,
+Received: undefined` (no Back handler). Fix in `maintenance-screen.tsx`. GREEN 10/10.
+- m-03/m-07 (bug + test quality): RED `useHelpMeChoosePillLayout is not a function`. Fix: one hook
+  for offset and clearance; 5 screens + shell switched. GREEN.
+- m-05 (record): `features/catalog/screens/help-me-choose/components/{answer-chip,choice-tile,
+no-text-match,question-panel}.tsx` were written by hand inside B2's scope. They are
+  screen-private presentational pieces (the placement `component --screen=help-me-choose`
+  would produce); no generator command was run for them. Recorded here as planned manual
+  artifacts of B2 rather than regenerated, to avoid churn with identical output.
+- m-06: deleted `features/catalog/model/discovery-presentation.ts` (dead); typecheck 0.
+- After all: `pnpm exec jest features/catalog features/maintenance` → 32 suites / 388 passed;
+  eslint clean; typecheck 0.
