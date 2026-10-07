@@ -31,7 +31,7 @@ be retried.
 | AC-04 | If the cart discard cannot be saved to the tablet, sign-out does not start and the page explains why.                                                                                  | Screen test with a failing storage write.                                      |
 | AC-05 | While signing out the action is disabled and says "Signing out…"; a repeated press does nothing; a failed sign-out keeps the page with an alert message and can be retried.            | Screen test for pending, double press, failure, retry.                         |
 | AC-06 | The checkout pending/idempotency record is never touched, and the Staff page is unreachable while `CheckoutGate` covers an unresolved order.                                           | Screen test asserts no checkout API use; gate covers the `(customer)` group.   |
-| AC-07 | Signing the Customer account out does not crash the customer tree (no error boundary) even though customer components read the active profile.                                         | `app/__tests__/root-layout-guards.test.tsx` customer sign-out case.            |
+| AC-07 | Signing the Customer account out does not crash the customer tree (no error boundary) even though customer components read the active profile.                                         | `app/__tests__/customer-sign-out-teardown.test.tsx` (real router).             |
 
 ## Scope
 

@@ -47,18 +47,18 @@ Status: `READY`
 
 ## Rounds and tasks
 
-| Task | Mode     | Acceptance          | Objective                                                    | Deps | Scope                                                        |
-| ---- | -------- | ------------------- | ------------------------------------------------------------ | ---- | ------------------------------------------------------------ |
-| T01  | bug      | AC-07               | Customer sign-out lands on sign-in without an error boundary | —    | `app/__tests__/root-layout-guards.test.tsx`; fix only if red |
-| T02  | behavior | Supporting AC-03/04 | `discardCart()` in `features/cart`                           | —    | `features/cart/state/*`, `features/cart/index.ts`            |
-| T03  | behavior | AC-02, AC-03–AC-06  | Staff screen + route                                         | T02  | `features/maintenance/**`, `app/(customer)/maintenance.tsx`  |
-| T04  | behavior | AC-01               | Lockup long press                                            | T03  | `features/catalog/components/catalog-shell.tsx` + test       |
-| T05  | config   | N/A — docs          | Correct docs that become false                               | T03  | `docs/state-management.md`, `docs/adr/0003-client-state.md`  |
+| Task | Mode     | Acceptance          | Objective                                                    | Deps | Scope                                                                |
+| ---- | -------- | ------------------- | ------------------------------------------------------------ | ---- | -------------------------------------------------------------------- |
+| T01  | bug      | AC-07               | Customer sign-out lands on sign-in without an error boundary | —    | `app/__tests__/customer-sign-out-teardown.test.tsx`; fix only if red |
+| T02  | behavior | Supporting AC-03/04 | `discardCart()` in `features/cart`                           | —    | `features/cart/state/*`, `features/cart/index.ts`                    |
+| T03  | behavior | AC-02, AC-03–AC-06  | Staff screen + route                                         | T02  | `features/maintenance/**`, `app/(customer)/maintenance.tsx`          |
+| T04  | behavior | AC-01               | Lockup long press                                            | T03  | `features/catalog/components/catalog-shell.tsx` + test               |
+| T05  | config   | N/A — docs          | Correct docs that become false                               | T03  | `docs/state-management.md`, `docs/adr/0003-client-state.md`          |
 
 ## Files expected to change outside the feature
 
 `features/cart` (additive export), `features/catalog/components/catalog-shell.tsx`,
-`app/(customer)/maintenance.tsx`, `app/__tests__/root-layout-guards.test.tsx`,
+`app/(customer)/maintenance.tsx`, `app/__tests__/customer-sign-out-teardown.test.tsx`,
 `docs/state-management.md`, `docs/adr/0003-client-state.md`.
 
 ## Risks
