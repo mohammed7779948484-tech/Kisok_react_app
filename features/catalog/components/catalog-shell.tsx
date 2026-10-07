@@ -2,7 +2,6 @@ import { useCallback } from "react";
 import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Search } from "lucide-react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   AppImage,
@@ -20,7 +19,7 @@ import { cn } from "@/core/utils";
 import type { CatalogFullSettings } from "../model/catalog-snapshot.schema";
 import type { CatalogView } from "../model/catalog-view";
 import { CatalogNavigation, type CatalogDestination } from "./catalog-navigation";
-import { HELP_ME_CHOOSE_PILL_MIN_BOTTOM_OFFSET, HelpMeChoosePill } from "./help-me-choose-pill";
+import { HelpMeChoosePill, useHelpMeChoosePillLayout } from "./help-me-choose-pill";
 
 /** Below this window width the navigation tabs move to their own row. */
 const SINGLE_ROW_MIN_WIDTH = 1180;
@@ -44,7 +43,7 @@ export type CatalogShellProps = {
   /**
    * Float the Help Me Choose pill over the page, optionally pre-scoped to a
    * category or a brand. Only a browsing page's success state opts in, and it
-   * reserves `HELP_ME_CHOOSE_PILL_CLEARANCE` below its scroll content.
+   * reserves `useHelpMeChoosePillLayout().clearance` below its scroll content.
    */
   helpMeChoose?: HelpMeChooseScope;
 };
@@ -65,7 +64,7 @@ export function CatalogShell({
 }: CatalogShellProps) {
   const router = useRouter();
   const gutter = usePageGutter();
-  const insets = useSafeAreaInsets();
+  const pillLayout = useHelpMeChoosePillLayout();
   const { width, isCompact } = useLayout();
   const singleRow = width >= SINGLE_ROW_MIN_WIDTH;
 
@@ -204,7 +203,7 @@ export function CatalogShell({
               style={{
                 position: "absolute",
                 right: gutter,
-                bottom: Math.max(HELP_ME_CHOOSE_PILL_MIN_BOTTOM_OFFSET, insets.bottom + 16),
+                bottom: pillLayout.bottom,
               }}
             />
           ) : null}

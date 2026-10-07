@@ -18,7 +18,7 @@ import { BrowseResults } from "../../components/browse-results";
 import { CatalogHero } from "../../components/catalog-hero";
 import { CatalogShell } from "../../components/catalog-shell";
 import { CategoryCard } from "../../components/category-card";
-import { HELP_ME_CHOOSE_PILL_CLEARANCE } from "../../components/help-me-choose-pill";
+import { useHelpMeChoosePillLayout } from "../../components/help-me-choose-pill";
 import {
   CatalogEmptyState,
   CatalogErrorState,
@@ -31,7 +31,6 @@ import { useCatalog } from "../../queries/use-catalog";
 import { productDetailHref } from "../product-detail/product-detail-href";
 
 /** A path page's own foot room, plus the room the floating Help Me Choose pill needs. */
-const PATH_PAGE_BOTTOM_PADDING = 64 + HELP_ME_CHOOSE_PILL_CLEARANCE;
 
 export type CategoryDetailScreenProps = {
   categoryId: string;
@@ -43,6 +42,7 @@ export type CategoryDetailScreenProps = {
  * category shows its products directly.
  */
 export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) {
+  const pillClearance = useHelpMeChoosePillLayout().clearance;
   const router = useRouter();
   const catalog = useCatalog();
   const { isExpanded } = useLayout();
@@ -122,7 +122,7 @@ export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) 
         settings={view.settings}
         helpMeChoose={{ categoryId: category.id }}
       >
-        <ScrollView contentContainerStyle={{ paddingBottom: PATH_PAGE_BOTTOM_PADDING }}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 64 + pillClearance }}>
           <ContentContainer className="gap-10">
             <CatalogHero
               wide={isExpanded}
@@ -181,7 +181,7 @@ export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) 
         showCategoryFacet={false}
         scopeLabel={`${category.name} products`}
         onProductPress={handleProductPress}
-        bottomInset={HELP_ME_CHOOSE_PILL_CLEARANCE}
+        bottomInset={pillClearance}
         testID="category-products-grid"
         header={
           <CatalogHero

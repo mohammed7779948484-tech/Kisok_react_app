@@ -6,7 +6,7 @@ import { ContentContainer, EmptyState, PageHeading, useLayout } from "@/design-s
 
 import { CatalogShell } from "../../components/catalog-shell";
 import { CategoryCard } from "../../components/category-card";
-import { HELP_ME_CHOOSE_PILL_CLEARANCE } from "../../components/help-me-choose-pill";
+import { useHelpMeChoosePillLayout } from "../../components/help-me-choose-pill";
 import {
   CatalogEmptyState,
   CatalogErrorState,
@@ -21,9 +21,9 @@ const ROW_SHAPES = [
   { lead: 1.65, height: 360 },
 ] as const;
 /** The page's own foot room, plus the room the floating Help Me Choose pill needs. */
-const CONTENT_BOTTOM_PADDING = 64 + HELP_ME_CHOOSE_PILL_CLEARANCE;
 
 export function CategoriesScreen() {
+  const pillClearance = useHelpMeChoosePillLayout().clearance;
   const router = useRouter();
   const catalog = useCatalog();
   const { isExpanded, isCompact } = useLayout();
@@ -92,7 +92,7 @@ export function CategoriesScreen() {
     <CatalogShell currentDestination="categories" settings={view.settings} helpMeChoose={{}}>
       <ScrollView
         testID="categories-list"
-        contentContainerStyle={{ paddingBottom: CONTENT_BOTTOM_PADDING }}
+        contentContainerStyle={{ paddingBottom: 64 + pillClearance }}
       >
         <ContentContainer className="gap-8">
           {heading}

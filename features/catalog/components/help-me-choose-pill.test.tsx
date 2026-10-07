@@ -1,6 +1,9 @@
+import { renderHook } from "@testing-library/react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+
 import { renderWithProviders, screen, userEvent } from "@/core/testing";
 
-import { HELP_ME_CHOOSE_PILL_CLEARANCE, HelpMeChoosePill } from "./help-me-choose-pill";
+import { HelpMeChoosePill, useHelpMeChoosePillLayout } from "./help-me-choose-pill";
 
 /**
  * The floating Help Me Choose entry (GD-09): an extended pill — icon plus
@@ -26,8 +29,25 @@ describe("HelpMeChoosePill", () => {
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("asks a screen to reserve room for the pill, its offset and breathing room", () => {
-    // 56 (pill) + 24 (bottom offset) + 16 (breathing room).
-    expect(HELP_ME_CHOOSE_PILL_CLEARANCE).toBe(96);
+  function layoutWithBottomInset(bottom: number) {
+    const metrics = {
+      frame: { x: 0, y: 0, width: 1280, height: 800 },
+      insets: { top: 0, left: 0, right: 0, bottom },
+    };
+    return renderHook(() => useHelpMeChoosePillLayout(), {
+      wrapper: ({ children }) => (
+        <SafeAreaProvider initialMetrics={metrics}>{children}</SafeAreaProvider>
+      ),
+    }).then(({ result }) => result.current);
+  }
+
+  it("floats 24 above the content's foot and has pages reserve room for it", async () => {
+    expect(await layoutWithBottomInset(0)).toEqual({ bottom: 24, clearance: 96 });
+  });
+
+  it("clears the Android navigation bar, and the reserved room grows with it", async () => {
+    // 3-button navigation: the pill sits above the bar, and the last row must
+    // still scroll clear of it.
+    expect(await layoutWithBottomInset(48)).toEqual({ bottom: 64, clearance: 136 });
   });
 });

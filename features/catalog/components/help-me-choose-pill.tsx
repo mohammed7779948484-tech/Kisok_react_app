@@ -1,4 +1,5 @@
 import { Platform, Pressable, type StyleProp, type ViewStyle } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Compass } from "lucide-react-native";
 
 import { colorOf, Icon, size, Text } from "@/design-system";
@@ -7,16 +8,22 @@ import { cn } from "@/core/utils";
 /** The pill's height: the primary call-to-action height (`h-control-lg`). */
 const PILL_HEIGHT = size["control-lg"];
 /** The pill's least distance from the bottom of the content area. */
-export const HELP_ME_CHOOSE_PILL_MIN_BOTTOM_OFFSET = 24;
+const MIN_BOTTOM_OFFSET = 24;
+/** Above a bottom inset (the Android navigation bar), keep this much clear of it. */
+const ABOVE_INSET = 16;
 /** Room between the last row of a page and the top of the pill. */
 const BREATHING_ROOM = 16;
 
 /**
- * The vertical room a page reserves below its scroll content so its last row
- * scrolls clear of the floating pill.
+ * Where the pill floats (`bottom`) and how much room a page must reserve
+ * below its scroll content (`clearance`) so the last row scrolls clear of it.
+ * One source for both, so they agree with any bottom safe-area inset.
  */
-export const HELP_ME_CHOOSE_PILL_CLEARANCE =
-  PILL_HEIGHT + HELP_ME_CHOOSE_PILL_MIN_BOTTOM_OFFSET + BREATHING_ROOM;
+export function useHelpMeChoosePillLayout(): { bottom: number; clearance: number } {
+  const insets = useSafeAreaInsets();
+  const bottom = Math.max(MIN_BOTTOM_OFFSET, insets.bottom + ABOVE_INSET);
+  return { bottom, clearance: PILL_HEIGHT + bottom + BREATHING_ROOM };
+}
 
 const SOFT_ELEVATION = Platform.select<ViewStyle>({
   android: { elevation: 6 },
