@@ -71,3 +71,27 @@ tree.
 ```
 npx jest features/release-notes → 20 passed
 ```
+
+## Release 1.2.0 (versionCode 7) — notes
+
+Feature release (Help Me Choose, large variant sets, the hidden staff
+sign-out): `app.config.ts` `version` 1.1.4 → 1.2.0 and `android.versionCode`
+6 → 7; `package.json` version follows, as in every previous bump.
+
+- Mode: behavior. RED: `pnpm exec jest features/release-notes/model` → 2 failed
+  — "returns the written KISOK 1.2.0 notes at their exact release token"
+  (`Expected - 5, Received + 1`: no entry) and the new guard "has written
+  notes for the release this app config builds" (`Expected: > 0, Received: 0`).
+  The guard builds the token from the real `app.config.ts` exactly as
+  `readReleaseIdentity` does, so a future version bump without notes fails CI
+  instead of shipping the generic line.
+- GREEN: `RELEASE_NOTES["1.2.0+7"]`, three customer-facing bullets;
+  `pnpm exec jest features/release-notes` → 25 passed. The staff sign-out is
+  deliberately not announced: it is a hidden staff tool, not something a
+  customer should see.
+- "Once after an update, never on first install" is unchanged and already
+  covered by `whats-new-gate.test.tsx` ("says nothing on a FIRST install",
+  "announces once when the installed release differs", "does not reappear on a
+  restart after Continue").
+- Prebuild check: `expo prebuild --platform android --no-install --clean` →
+  `android/app/build.gradle` has `versionCode 7`, `versionName "1.2.0"`.
