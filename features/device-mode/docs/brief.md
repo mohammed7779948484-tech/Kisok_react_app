@@ -1,70 +1,49 @@
 # DeviceMode — brief
 
-**WHAT this feature is, and how we will know it is done.** No implementation
-sequencing here; that belongs in `plan.md`.
-
 Status: `READY`
 
 ## Objective
 
-KISOK ships as one APK (`com.kisok.kiosk`) to two kinds of store-owned Android
-tablets. The Customer tablet is corporate-owned, enrolled through ManageEngine
-Android Enterprise as Fully Managed / Device Owner, and locked into Single-App
-Kiosk. The Employee tablet runs the same APK as an ordinary Android application.
+Authenticated users access the experience authorized by their account role on
+any Android device. Device mode is descriptive context and never prevents or
+delays a valid Preparation or Customer session. Android and ManageEngine manage
+device policies independently.
 
-Today the app cannot tell the two apart, so a preparation employee who signs in
-on the Customer Kiosk tablet reaches the Preparation experience on a device that
-is physically locked to the customer-facing kiosk and cannot be handed back.
-
-This feature gives KISOK the **minimum** device context to prevent that: it
-reads one MDM-pushed managed configuration value and lets the existing root
-routing refuse the Preparation experience on a Customer Kiosk device.
-
-## What this feature is NOT
-
-Android and ManageEngine own device lockdown. KISOK does not:
-
-- provision, enforce, inspect or escape kiosk/lock-task mode
-- call any `DevicePolicyManager` write API, `startLockTask`, or `stopLockTask`
-- read `ActivityManager.getLockTaskModeState()` or infer a policy from it
-- keep a device-policy snapshot, policy engine, or maintenance-unlock runtime
-- replace Supabase role authorization — RLS remains the authorization boundary
-
-The device check is an **additional device/role compatibility guard**, layered
-on top of the existing auth and role routing, and nothing more.
+This intentional product-policy change supersedes the original device/role
+compatibility guard. No Supabase authentication, authorization, RLS, checkout,
+native RestrictionsManager integration or release infrastructure changes.
 
 ## User-visible behaviour
 
-**Employee tablet (ordinary Android, no MDM-managed configuration).** Nothing
-changes. A customer profile reaches the customer experience; a preparation
-profile reaches the preparation experience, exactly as today.
+A ready Preparation account reaches the Preparation workspace immediately in
+`standard`, `customer-kiosk`, `unknown` and `unavailable` modes. Pending native
+reads, retries, failures and configuration changes never withhold or unmount its
+workspace. The customer-kiosk blocking screen is unreachable for this account.
 
-**Customer Kiosk tablet (ManageEngine pushes `kiosk_device_role =
-customer_kiosk`).** A customer profile reaches the customer experience as
-normal. A preparation profile never reaches the Preparation UI: it lands on a
-short explanation screen that offers the existing shared sign-out, so the tablet
-returns to the customer sign-in state.
-
-**While the managed configuration has not been read yet** (the native read is
-disk I/O, and Android's own `restrictions_pending` flag says real values may
-still be arriving) the app holds a preparation session on the existing startup
-screen rather than guessing. A customer session is never held — the customer
-experience is correct on both device kinds.
+A ready Customer account still reaches Customer immediately in every mode.
+Signed-out, resolving/error, inactive and unauthorized accounts retain their
+existing restrictions; Admin has no tablet experience.
 
 ## Acceptance criteria
 
-| ID    | Criterion                                                                                                           | Observable how                                                                                                                                                                                               |
-| ----- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AC-01 | With no managed configuration (employee tablet, web, dev), device mode is `standard` and role routing is unchanged  | `deviceRoleAccess` table test; root-layout and index route tests                                                                                                                                             |
-| AC-02 | `kiosk_device_role = customer_kiosk` + customer profile reaches the customer experience                             | `deviceRoleAccess` table test; index route test                                                                                                                                                              |
-| AC-03 | `kiosk_device_role = customer_kiosk` + preparation profile can never reach Preparation UI                           | `deviceRoleAccess` table test; root-layout guard test; index route test                                                                                                                                      |
-| AC-04 | Android's documented `restrictions_pending` is treated as "not known yet", never as "unmanaged"                     | `deriveDeviceMode` test; access test asserts `pending` for preparation                                                                                                                                       |
-| AC-05 | A managed-configuration change is observed through `ACTION_APPLICATION_RESTRICTIONS_CHANGED` and re-read            | provider test drives the module's event subscription                                                                                                                                                         |
-| AC-06 | The blocked preparation session can sign out through the existing shared sign-out pipeline                          | device-mismatch screen test                                                                                                                                                                                  |
-| AC-07 | A malformed or unreadable native payload fails closed (never silently "standard" on a managed device)               | managed-configuration source test                                                                                                                                                                            |
-| AC-08 | The Android app declares the managed-configuration schema so ManageEngine can push the value                        | `expo prebuild` + assert the generated manifest meta-data and res/xml                                                                                                                                        |
-| AC-09 | A dispatched release builds a signed APK, verifies its identity/signature/version/bundle, and refuses on mismatch   | `verify-release-apk` unit tests incl. deliberate mismatch; workflow syntax and script-resolution checks. **NEVER DISPATCHED** — the workflow has not been run once, so end-to-end build→verify is UNVERIFIED |
-| AC-10 | The verified APK is uploaded to the ManageEngine App Repository and KISOK is created or updated, matched by package | `publish-app` unit tests over the documented API contract. **NEVER EXECUTED** — no call has been made against a real tenant; TENANT VALIDATION REQUIRED                                                      |
+Existing IDs remain stable. AC-03 (block Preparation on customer kiosk) and
+AC-06 (device-mismatch sign-out) are **superseded** by AC-11–AC-13 below.
+
+| ID    | Criterion                                                                            | Evidence                                                            |
+| ----- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| AC-01 | Absent managed role remains `standard`; ordinary-device routing is unchanged         | Derivation and routing tests                                        |
+| AC-02 | Customer accesses its experience on a customer kiosk                                 | Role and routing tests                                              |
+| AC-03 | Superseded: device mode no longer denies Preparation access                          | AC-11                                                               |
+| AC-04 | `restrictions_pending` still derives `unknown`, without delaying authorized accounts | Derivation and routing integration tests                            |
+| AC-05 | Configuration broadcasts still trigger a read                                        | Provider tests                                                      |
+| AC-06 | Superseded: no device-mismatch handoff for valid tablet roles                        | AC-11                                                               |
+| AC-07 | Malformed/unreadable payloads remain `unknown`, rather than silently `standard`      | Native source tests                                                 |
+| AC-08 | Android managed-configuration schema and unset default remain intact                 | Plugin and receiver tests; existing prebuild CI                     |
+| AC-09 | Release APK validation remains unchanged                                             | Existing release tests; deployment not performed by this fix        |
+| AC-10 | ManageEngine publishing remains unchanged                                            | Existing publish tests; tenant deployment not performed by this fix |
+| AC-11 | Ready Preparation accesses its workspace under all four modes, without mismatch      | Shared decision, navigator and index tests                          |
+| AC-12 | Unresolved reads, retries and broadcasts never delay or unmount Preparation          | Routing integration regression tests                                |
+| AC-13 | Customer routing and other-role restrictions remain correct                          | Role/routing and existing auth tests                                |
 
 ## Out of scope (deliberate)
 
@@ -84,7 +63,7 @@ experience is correct on both device kinds.
 - Managed configurations are Android-only. On web and in jest the native module
   is absent, which is itself the platform verdict: `standard`. On Android the
   module missing is NOT that verdict — it means a broken build, and derives
-  `unknown` so Preparation stays withheld.
+  `unknown` without changing account-role access.
 - `app/**` may not import Zustand, TanStack Query or Supabase; the feature
   exposes a provider and hooks.
 - No new Supabase contract, grant, or RLS change. None is needed.

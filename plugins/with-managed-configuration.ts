@@ -48,35 +48,21 @@ const META_DATA_NAME = "android.content.APP_RESTRICTIONS";
 const RESTRICTIONS_RESOURCE = "kiosk_restrictions";
 
 /**
- * ONE restriction. `kiosk_device_role` is the only managed value KISOK reads,
- * and `features/device-mode/model/device-mode.schema.ts` reads it in three
- * cases, not two:
+ * ONE descriptive restriction. Parsing remains:
  *
- *   ABSENT                     -> `standard`      (an ordinary employee tablet)
+ *   ABSENT                     -> `standard`
  *   exactly "customer_kiosk"   -> `customer-kiosk`
- *   ANY other present value    -> `unknown`, and Preparation is WITHHELD
+ *   ANY other present value    -> `unknown`
  *
- * The empty string belongs in that third case, not the first: the native
- * module maps a present null to "" precisely so an explicitly-cleared value
- * stays visibly PRESENT to JS rather than looking unset.
+ * Device classification does not determine account access. Both tablet roles
+ * can use their experience regardless of this value or native read status.
  *
- * `choice`, NOT `string`, and that is the important part. A free-text field
- * lets an operator type `customer-kiosk` or `Customer_Kiosk`. The app reads
- * any present-but-unrecognised value as `unknown`, so such a typo does not
- * make Preparation reachable — it withholds Preparation on the tablet until
- * the value is corrected, with the mismatch screen as the only signal. A
- * choice restriction makes the console offer the one valid value instead, so
- * the typo cannot be expressed in the first place.
+ * The native module maps a present null to "" so an explicitly cleared value
+ * stays present to JS. The choice field offers the one recognized kiosk value.
  *
- * No `android:defaultValue`, and no "not configured" entry. An ordinary tablet
- * has no managed configuration at all, and "absent" is already the correct
- * reading. This omission is also the ONLY way the schema can say "unset by
- * default": a default is applied as a real value when an administrator saves
- * the configuration, while a restriction without one is left out of the
- * payload. Any default here would be a present value — `customer_kiosk` would
- * turn every tablet that receives the configuration into a kiosk, and an empty
- * or sentinel value would read as `unknown` and withhold Preparation. How the
- * console first DRAWS this unset dropdown is the console's own rendering; see
+ * No `android:defaultValue` and no "not configured" entry: omitting a default
+ * preserves the unset reading. Any default would be a real value, changing that
+ * classification. The console decides how it draws the unset dropdown; see
  * `features/device-mode/docs/mdm-operations.md` → "Initial state in the console".
  */
 export const RESTRICTIONS_XML = `<?xml version="1.0" encoding="utf-8"?>
@@ -86,9 +72,8 @@ export const RESTRICTIONS_XML = `<?xml version="1.0" encoding="utf-8"?>
          KISOK treats as a kiosk is "customer_kiosk". Leaving the key UNSET is
          what an ordinary employee tablet looks like. Any OTHER present value
          is read as unknown, not as an ordinary tablet: only an MDM can set
-         this key, so a value the app does not recognise means a managed device
-         whose policy it cannot read, and Preparation stays withheld there
-         until the value is removed or corrected. -->
+         this key. Device classification never prevents an authenticated
+         Preparation or Customer account from using its experience. -->
     <restriction
         android:key="kiosk_device_role"
         android:restrictionType="choice"

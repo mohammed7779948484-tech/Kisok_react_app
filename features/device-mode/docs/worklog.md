@@ -1834,3 +1834,124 @@ Configured; the administrator chooses "Customer kiosk tablet" explicitly.
   empty "Not configured" item: 2 of the 3 tests fail. Then restored.
 - Parsing semantics untouched: absent → standard, exactly `customer_kiosk` →
   customer-kiosk, any other present value → unknown.
+
+## 2026-10-08 — T12 account-role Preparation access
+
+Classification: `behavior-change`; Acceptance: AC-11–AC-13.
+
+SCAFFOLD: N/A — existing decision and route tests; a manual routing integration
+test is planned for real-provider read/broadcast behavior. No new runtime
+capability, state, dependency or database contract.
+
+Baseline: isolated checkout of PR #42's `develop` branch was clean and matched
+`b204f39943e20193c48cbe5deb120b0209f85dc8`. `pnpm install --frozen-lockfile`
+completed in 19.9 s. Release stays 1.2.0 / versionCode 7.
+
+Trace: `deviceRoleAccess` returns pending/blocked for Preparation based on mode;
+`app/index.tsx` consequently holds/redirects, and `app/_layout.tsx` removes its
+protected route group. Provider reads/retries/broadcasts feed those two
+consumers. An unresolved read can hold startup indefinitely; broadcasts can
+unmount an active session. Independent research confirmed no other access
+consumer and no coupling in `core/auth`. Missing/inactive profiles and Admin
+remain unauthorized through the existing profile-resolution pipeline.
+
+RED command:
+
+```sh
+pnpm exec jest features/device-mode/model/device-mode.schema.test.ts \
+  app/__tests__/root-layout-guards.test.tsx app/__tests__/index-route.test.tsx \
+  app/__tests__/device-mode-routing.test.tsx --runInBand
+```
+
+Actual output before the production change:
+
+```text
+FAIL app/__tests__/device-mode-routing.test.tsx
+  opens Preparation immediately even when the initial MDM read never resolves
+  Unable to find an element with text: preparation-workspace:1
+  Rendered: startup; device-mode:unknown
+Test Suites: 4 failed, 4 total
+Tests:       12 failed, 49 passed, 61 total
+Snapshots:   0 total
+Time:        24.139 s
+```
+
+All 12 failures expressed the obsolete Preparation policy: three helper modes,
+three index redirects, three navigator guards and three real-provider routing
+cases. Customer and account-state defenses passed. Full log retained during
+the task at `/tmp/kisok-access-red.log`.
+
+GREEN command:
+
+```sh
+pnpm exec jest features/device-mode app/__tests__/root-layout-guards.test.tsx \
+  app/__tests__/index-route.test.tsx app/__tests__/device-mode-routing.test.tsx \
+  core/auth --runInBand
+```
+
+Actual output:
+
+```text
+Test Suites: 11 passed, 11 total
+Tests:       110 passed, 110 total
+Snapshots:   0 total
+Time:        5.087 s
+```
+
+The role/mode tables cover both tablet roles and Admin across all four modes.
+The new routing integration uses the real provider and shared decision:
+Preparation is immediately available with a never-resolving native Promise,
+stays available through unknown retries and unavailable, and preserves a
+workspace mount marker across configuration broadcasts. Existing auth tests
+still reject missing/inactive profiles and Admin and protect sign-out semantics.
+
+Diff review: a token/AST comparison against baseline confirmed the only runtime
+logic change is `deviceRoleAccess`. Root/index guards, provider/retries, native
+boundary, schemas and derivation remain identical apart from comments. Plugin
+tokens and generated restriction/display values remain identical after ignoring
+source/XML comments. The mismatch route remains guarded and unreachable for
+valid Customer/Preparation accounts; its legacy implementation is retained to
+avoid unrelated routing/sign-out cleanup. No `core/auth`, Supabase, checkout,
+cart, catalog, Android navigation mitigation, release configuration or dependency
+change.
+
+Full verification command:
+
+```sh
+KISOK_PG_BIN=/usr/lib/postgresql/18/bin KISOK_DB_VERIFY_REQUIRED=1 pnpm verify
+```
+
+Actual output (`/tmp/kisok-verify.log`, shell exit recorded as 0):
+
+```text
+All matched files use Prettier code style!
+Test Suites: 106 passed, 106 total
+Tests:       1388 passed, 1388 total
+Time:        93.503 s
+Database types match the migrations (16 tables, 3 enums, 11 functions).
+KISOK generator smoke test passed
+```
+
+All verify stages completed: typecheck, lint, format, Jest, documentation,
+commit, E2E app-ID and CI-script guards, database types and generator smoke.
+The MDM plugin/native/receiver, release/publish, catalog, cart, staff sign-out,
+checkout recovery and idempotency tests are included. PostgreSQL was installed
+only in the isolated execution environment; no application dependency changed.
+The check applies committed migrations to a throwaway local database and never
+touches hosted Supabase.
+
+Independent T12 review: CLEAN, no actionable findings. It checked the role and
+session guards, real-provider regression behavior, RED/GREEN evidence,
+configuration semantics and the complete focused code/comment diff.
+
+Limits: physical Android and ManageEngine-console behavior are unverified here.
+No APK deployment or MDM policy update was performed. CI on the pushed HEAD will
+be reported in PR #42; older CI/native evidence is not claimed for this fix.
+The documentation record is finalized after this run and checked before push.
+
+Quality audit: CLEAN after correcting one minor documentation statement.
+The MDM parsing bullet now distinguishes returned unknown results (retried)
+from a Promise that never settles (can remain unknown). Also clarified the
+retained screen/barrel JSDoc: valid tablet roles cannot reach the legacy mismatch
+fallback. These final corrections are comments/docs only. A final full
+`pnpm verify` is run after their formatting before push.

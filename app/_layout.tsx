@@ -24,9 +24,8 @@ export const unstable_settings = { anchor: "index" };
  * effects, so an unreachable screen simply is not in the navigator. This is UX
  * protection only — Supabase RLS is the actual authorization boundary.
  *
- * Two things decide what is reachable: WHO is signed in (`useAuth`) and WHAT
- * kind of tablet this is (`useDeviceMode`). The device check can only ever
- * withhold an experience, never grant one — see `features/device-mode`.
+ * The authenticated account role determines its workspace. Device mode is
+ * descriptive context and cannot withhold or delay an authorized experience.
  *
  * Exported for the guard-table test in `app/__tests__`; Expo Router uses the
  * default export below.
@@ -42,10 +41,9 @@ export function RootNavigator() {
   }
 
   const ready = status === "ready";
-  // "allowed" on an ordinary tablet, "blocked" on a customer kiosk or a device
-  // whose configuration could not be read, "pending" until it has been read.
-  // `app/index.tsx` computes the SAME value and branches on it identically, so
-  // the navigator and the entry redirect cannot disagree about who goes where.
+  // Both tablet roles are allowed regardless of device mode. Missing identity
+  // stays pending and other roles stay blocked. The entry redirect uses the
+  // same decision, so it agrees with the navigator about access.
   const deviceAccess = ready && profile ? deviceRoleAccess(profile.role, deviceMode) : "pending";
 
   return (
@@ -68,8 +66,8 @@ export function RootNavigator() {
         <Stack.Screen name="(preparation)" />
       </Stack.Protected>
 
-      {/* This tablet is the customer kiosk and a preparation employee signed in.
-          The account is valid; it simply belongs on an employee tablet. */}
+      {/* Legacy fallback for a blocked role. Neither authorized tablet role
+          can reach this route; core/auth normally rejects other roles first. */}
       <Stack.Protected guard={deviceAccess === "blocked"}>
         <Stack.Screen name="device-mismatch" />
       </Stack.Protected>
@@ -98,9 +96,8 @@ export default function RootLayout() {
             <EnvGate>
               <QueryProvider>
                 <AuthProvider>
-                  {/* Reads the MDM-pushed managed configuration once and keeps
-                    it current. Mounted here because the root navigator's guards
-                    consume it. */}
+                  {/* Keeps descriptive MDM device context current, independently
+                    of authenticated workspace access. */}
                   <DeviceModeProvider>
                     <RootNavigator />
                   </DeviceModeProvider>

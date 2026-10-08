@@ -4,9 +4,9 @@ import type { AppRole } from "@/core/auth";
 
 /**
  * The complete device-policy domain of this application. It is deliberately
- * one small file: KISOK reads ONE managed-configuration value and derives ONE
- * access decision from it. Android and ManageEngine own device lockdown —
- * see `../docs/brief.md` → "What this feature is NOT".
+ * one small file: KISOK reads one managed-configuration value for descriptive
+ * device context. Account roles determine workspace access; Android and
+ * ManageEngine independently own device lockdown.
  *
  * Pure: no React, no IO, no native import. Everything here is table-testable.
  */
@@ -53,19 +53,11 @@ export const managedConfigurationSchema = z.object({
 export type ManagedConfiguration = z.infer<typeof managedConfigurationSchema>;
 
 /**
- * What kind of tablet this is.
+ * Descriptive device classification, independent of account-role access.
  *
- * `unknown` is not an error state. It is the honest answer before the first
- * native read resolves, while Android reports `restrictions_pending`, and when
- * a read fails or fails validation — all cases where claiming `standard` would
- * be a guess that fails OPEN on a managed device.
- *
- * `unavailable` is where `unknown` STOPS. A read can fail permanently, and
- * nothing re-reads by itself unless the MDM changes something, so a plain
- * `unknown` would hold a preparation employee on a loading screen forever with
- * no way off a kiosk tablet. After the provider has retried and given up, the
- * mode becomes `unavailable`: still fail-closed for preparation, but a
- * terminal state the UI can explain and offer a sign-out from.
+ * `unknown` describes an unresolved, pending, failed or invalid native read.
+ * The provider retries unknown results and publishes `unavailable` when those
+ * attempts are exhausted. Neither state delays an authorized workspace.
  */
 export type DeviceMode = "customer-kiosk" | "standard" | "unknown" | "unavailable";
 
@@ -81,10 +73,8 @@ export type DeviceRoleAccess = "allowed" | "blocked" | "pending";
  *   managed configuration at all, so absence is positive evidence.
  * - The key holds exactly `customer_kiosk` → `customer-kiosk`.
  * - The key is PRESENT with anything else → `unknown`, never `standard`.
- *   Only an MDM that manages this device can set that key, so a value we do
- *   not recognise — a typo, a stale value, a wrong primitive type — means a
- *   managed device whose policy we cannot read. Calling that an ordinary
- *   tablet would fail OPEN and put Preparation on a kiosk.
+ *   A value we do not recognise — a typo, a stale value, a wrong primitive
+ *   type — describes a managed configuration we cannot interpret.
  *
  * `restrictions_pending` wins over all of it, and is read with the same rule:
  * Android documents it as a boolean, so `true` means pending and `false` means
@@ -102,27 +92,16 @@ export function deriveDeviceMode(restrictions: ManagedConfiguration["restriction
 }
 
 /**
- * The entire device guard, as one pure decision.
+ * Workspace access follows the account role, regardless of device mode.
  *
- * - `customer` is `allowed` on every mode: the customer experience is correct
- *   on a kiosk tablet and on an ordinary one, so device mode never delays it.
- * - `preparation` is `allowed` only on a `standard` device — exactly today's
- *   routing — `blocked` on a Customer Kiosk, `pending` while the mode is not
- *   yet known (holding briefly is honest and guessing is not), and `blocked`
- *   once the read has failed for good: an unreadable device is never assumed
- *   to be an ordinary one.
- * - Any other role has no tablet experience at all. `core/auth` already
- *   resolves those to `unauthorized` before `ready`, so this row is
- *   unreachable through `useAuth()` today; it exists so the function is total
- *   and a drifted role can never fall through into an experience.
+ * Customer and Preparation are the only tablet roles. Other roles stay
+ * blocked defensively; `core/auth` normally resolves them to `unauthorized`.
+ * Keep the mode parameter for existing consumers, without coupling access to
+ * native reads, retries or MDM classification changes.
  *
- * This guard is UX protection layered on top of authorization. Supabase RLS
- * remains the boundary that actually refuses work.
+ * This is a routing decision. Supabase authorization and RLS remain the
+ * security boundary.
  */
-export function deviceRoleAccess(role: AppRole, mode: DeviceMode): DeviceRoleAccess {
-  if (role === "customer") return "allowed";
-  if (role !== "preparation") return "blocked";
-  if (mode === "customer-kiosk" || mode === "unavailable") return "blocked";
-  if (mode === "unknown") return "pending";
-  return "allowed";
+export function deviceRoleAccess(role: AppRole, _mode: DeviceMode): DeviceRoleAccess {
+  return role === "customer" || role === "preparation" ? "allowed" : "blocked";
 }

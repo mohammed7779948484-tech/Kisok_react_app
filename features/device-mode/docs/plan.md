@@ -5,6 +5,41 @@ evidence in `worklog.md`.
 
 Status: `READY`
 
+## 2026-10-08 — account-role access policy (current)
+
+This section supersedes the original device compatibility policy below.
+Authenticated Customer and Preparation accounts use their own experience on
+every device mode, immediately. Device classification remains descriptive;
+Android and ManageEngine still own device policies.
+
+T12 is one atomic **behavior-change** task, accepting AC-11–AC-13 in the brief:
+update the existing shared `deviceRoleAccess` decision to allow both tablet
+roles regardless of mode, while keeping other roles blocked. Retain its API and
+existing routes so both consumers remain consistent without new state or an
+authorization path. No changes to Supabase, native integration, retries,
+restriction parsing, checkout, dependencies, or release versions.
+
+Scaffold: N/A — modify existing code and tests; no new capability is needed.
+Allowed manual files: a routing integration test in `app/__tests__/` if
+needed to exercise the actual provider with unresolved reads and broadcasts.
+Code scope: `model/device-mode.schema.ts` and its tests; routing guard and
+index tests; explanatory comments in their existing consumers and the
+provider/native boundary. The legacy mismatch route stays guarded and cannot
+be reached by either valid tablet role.
+
+Outside-feature changes: `app/_layout.tsx` and `app/index.tsx` comments,
+plus routing tests, because these are the two access consumers. No foundation
+change is needed. Update obsolete policy documentation and comment wording;
+historical worklogs/review evidence remain historical.
+
+Required skills: `test-driven-development`; independent review with
+`kisok-code-review` and delivery audit with `kisok-quality-audit`.
+Verification: RED then GREEN for the role/mode matrix, index redirects,
+navigator groups, pending reads, retries and broadcasts. Check customer,
+signed-out, resolving/error and unauthorized sessions. Run focused tests,
+then `pnpm verify` and CI on the pushed HEAD. Physical Android and
+ManageEngine-console testing are explicitly unverified in this environment.
+
 ## Research synthesis (first-party sources, opened for this plan)
 
 | Source                                                                       | What it settled                                                                                                                                                                                                                                                                            |
@@ -225,3 +260,10 @@ manifest/`res/xml` assertion for AC-08; `gradlew assembleDebug` for the native
 compile; GitHub CI on the PR head. The ManageEngine upload and anything needing
 the physical Galaxy Tab A9+ are marked **PHYSICAL/TENANT VALIDATION REQUIRED**
 and are not claimed as tested.
+
+T12 also updates comment-only policy wording in
+`plugins/with-managed-configuration.ts`; the restriction element, display
+strings, default omission, plugin logic and native integration stay unchanged.
+
+T12 also updates JSDoc in the public barrel and retained device-mismatch screen
+to identify the legacy fallback as unreachable by valid tablet roles.

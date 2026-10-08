@@ -5,13 +5,9 @@ import { StartupScreen } from "@/features/auth";
 import { deviceRoleAccess, useDeviceMode } from "@/features/device-mode";
 
 /**
- * Entry point. Sends the session to the one experience its role can use on
- * THIS tablet.
- *
- * Routing only — no data loading, no business logic. The device check is an
- * additional compatibility guard layered on the existing role routing: it can
- * only ever withhold an experience, never grant one. Supabase RLS remains the
- * authorization boundary.
+ * Entry point. Sends the session to the experience authorized by its role.
+ * Device classification never delays a valid Customer or Preparation account.
+ * Routing only; Supabase authorization and RLS remain the security boundary.
  */
 export default function IndexRoute() {
   const { status, profile } = useAuth();
@@ -23,9 +19,8 @@ export default function IndexRoute() {
 
   const access = profile ? deviceRoleAccess(profile.role, deviceMode) : "pending";
 
-  // The device mode is not settled yet. Holding on the startup screen is
-  // honest; guessing "ordinary tablet" would open the Preparation experience
-  // on a locked customer kiosk for as long as the read takes.
+  // Only missing identity keeps a ready session pending. Device reads and
+  // retries cannot delay an account whose tablet role is already known.
   if (access === "pending") return <StartupScreen />;
   if (access === "blocked") return <Redirect href="/device-mismatch" />;
 

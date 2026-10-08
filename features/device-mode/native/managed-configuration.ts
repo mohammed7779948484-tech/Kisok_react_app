@@ -14,19 +14,12 @@ const log = createLogger("device-mode");
 /**
  * The platform boundary: the only place that touches the native module.
  *
- * Absence of the module means different things on different platforms, and
- * conflating them is a fail-open:
+ * - Outside Android (web, jest), managed configurations are unavailable and
+ *   the device is classified as `standard`.
+ * - On Android, a missing module indicates a build integration issue and
+ *   produces `unknown`, as do unreadable or invalid native payloads.
  *
- * - NOT Android (web, jest) — managed configurations are an Android
- *   Enterprise capability, so there is no DPC at all and the device is by
- *   definition an ordinary one. `standard`.
- * - Android — the module SHOULD be there. Missing means autolinking or
- *   registration failed, i.e. a broken build, and a kiosk APK in that state
- *   would otherwise enable Preparation on a locked tablet. `unknown`.
- *
- * A device that has the module but whose payload cannot be read or trusted
- * fails closed the same way — claiming `standard` on a managed device is the
- * one outcome this feature exists to prevent.
+ * Classification remains accurate without controlling account-role access.
  */
 export async function readDeviceMode(): Promise<DeviceMode> {
   const nativeModule = getKioskPolicyModule();
