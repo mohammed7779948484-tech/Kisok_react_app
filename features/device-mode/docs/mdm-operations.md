@@ -305,6 +305,50 @@ tablet an operational invariant, not a convenience. See AR-01 below.
 The restriction is declared as a **choice**, not free text, so the console
 offers that single option rather than a text box.
 
+#### Initial state in the console ("Not Configured")
+
+The APK can say only one thing about the initial state: **the restriction has
+no default value.** It already does; `plugins/with-managed-configuration.ts`
+declares no `android:defaultValue` and no "not configured" entry, and
+`plugins/with-managed-configuration.test.ts` keeps it that way. Under Android
+Enterprise semantics a restriction without a default is left out of the
+configuration when an administrator saves without touching it, so "unset" is
+the schema's default.
+
+How the console first **draws** that unset field is ManageEngine's own
+rendering, not something the APK can enforce:
+
+- There is no Android schema attribute meaning "show as Not Configured". The
+  only lever is `android:defaultValue`, and every value it could hold is a
+  real value: `customer_kiosk` would make every tablet that receives the
+  configuration a kiosk, and an empty or sentinel value (`""`,
+  `not_configured`) would read as **unknown** and withhold Preparation. Both
+  break the safety reading below, so neither is used.
+- A single-option dropdown may be drawn with its only option already showing.
+  Whether ManageEngine then sends that value on save, or treats the field as
+  unset until it is chosen, is decided by ManageEngine.
+- An app configuration is attached in the console (to the app or its
+  distribution), not inside the APK. Uploading a new APK version does not
+  create, clear or change it; whether ManageEngine carries an existing
+  configuration across versions is ManageEngine's behaviour.
+  `tools/mdm/publish-app.ts` sends no app configuration at all.
+
+What to do, every time a new KISOK version is uploaded:
+
+1. Open the KISOK app configuration in the console and confirm what it would
+   send. On the Customer Kiosk tablet's distribution, explicitly choose
+   **Customer kiosk tablet**.
+2. For employee tablets, distribute KISOK **without** an app configuration (or
+   remove the field from it). Do not save a configuration where the dropdown
+   shows "Customer kiosk tablet" merely because it is the only option.
+3. Verify on a device: an employee tablet signed in as Preparation reaches the
+   Preparation workspace; the kiosk tablet signed in as Preparation shows the
+   mismatch screen.
+
+Not verified from this repository: no ManageEngine console was available to
+the agents, so how this tenant draws and saves the unset field is unconfirmed.
+Record what the console shows after the first 1.2.0 upload.
+
 **An unset key is the only correct employee-tablet configuration.** Setting
 `kiosk_device_role` to anything other than `customer_kiosk` does not mean
 "ordinary tablet" — it withholds Preparation on that tablet until the value is

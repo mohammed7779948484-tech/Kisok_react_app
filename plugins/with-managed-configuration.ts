@@ -68,10 +68,18 @@ const RESTRICTIONS_RESOURCE = "kiosk_restrictions";
  * choice restriction makes the console offer the one valid value instead, so
  * the typo cannot be expressed in the first place.
  *
- * No `android:defaultValue`: an ordinary tablet has no managed configuration at
- * all, and "absent" is already the correct, fail-safe reading.
+ * No `android:defaultValue`, and no "not configured" entry. An ordinary tablet
+ * has no managed configuration at all, and "absent" is already the correct
+ * reading. This omission is also the ONLY way the schema can say "unset by
+ * default": a default is applied as a real value when an administrator saves
+ * the configuration, while a restriction without one is left out of the
+ * payload. Any default here would be a present value — `customer_kiosk` would
+ * turn every tablet that receives the configuration into a kiosk, and an empty
+ * or sentinel value would read as `unknown` and withhold Preparation. How the
+ * console first DRAWS this unset dropdown is the console's own rendering; see
+ * `features/device-mode/docs/mdm-operations.md` → "Initial state in the console".
  */
-const RESTRICTIONS_XML = `<?xml version="1.0" encoding="utf-8"?>
+export const RESTRICTIONS_XML = `<?xml version="1.0" encoding="utf-8"?>
 <restrictions xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Set by the MDM on the store's Customer Kiosk tablet. The ONLY value
@@ -91,10 +99,10 @@ const RESTRICTIONS_XML = `<?xml version="1.0" encoding="utf-8"?>
 </restrictions>
 `;
 
-const STRINGS_XML = `<?xml version="1.0" encoding="utf-8"?>
+export const STRINGS_XML = `<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="kiosk_device_role_title">Kiosk device role</string>
-    <string name="kiosk_device_role_description">Choose Customer kiosk tablet on the store Customer Kiosk tablet. Leave unset on employee tablets.</string>
+    <string name="kiosk_device_role_description">Choose Customer kiosk tablet on the store Customer Kiosk tablet only. Leave this not configured on employee tablets.</string>
 
     <!-- The label an administrator sees, and the value the app actually reads.
          The two arrays are positional: entries[i] is shown for values[i]. -->

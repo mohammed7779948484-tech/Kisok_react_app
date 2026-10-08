@@ -1803,3 +1803,34 @@ that it is now the untested combination most worth spending a live
 dispatch on, and that every existing variant's behaviour is unchanged
 (154/154 pre-existing plus new tests pass with no modification to prior
 assertions). `tools/mdm/publish-app.ts` remains untouched.
+
+## Release 1.2.0 — "Not Configured" by default in ManageEngine
+
+Request: newly uploaded APKs should show `kiosk_device_role` as Not
+Configured; the administrator chooses "Customer kiosk tablet" explicitly.
+
+- Inspected `plugins/with-managed-configuration.ts`, the generated tree
+  (`expo prebuild --platform android --no-install`), and
+  `model/device-mode.schema.ts`. Generated `res/xml/kiosk_restrictions.xml`: one
+  `choice` restriction, key `kiosk_device_role`, entries/values from
+  `@array/…`, **no `android:defaultValue`**; manifest carries
+  `android.content.APP_RESTRICTIONS` → `@xml/kiosk_restrictions`.
+- Finding: the schema's only lever on initial state is `android:defaultValue`,
+  and it is already absent, which is how the schema says "unset". Every value a
+  default could hold is a real, present value: `customer_kiosk` would make every
+  configured tablet a kiosk; `""` or a sentinel would read as `unknown` and
+  withhold Preparation. Neither is added. How the console first draws an unset
+  single-option dropdown, whether it sends it on save, and whether it carries
+  an existing configuration across APK versions are ManageEngine behaviour;
+  `tools/mdm/publish-app.ts` sends no app configuration. No ManageEngine console
+  was available, so that rendering is unverified here. The procedure is in
+  `mdm-operations.md` → "Initial state in the console".
+- Change: the console description now says "Leave this not configured on
+  employee tablets"; `RESTRICTIONS_XML`/`STRINGS_XML` are exported for a new
+  guard, `plugins/with-managed-configuration.test.ts` (key matches
+  `KIOSK_DEVICE_ROLE_KEY`, type `choice`, no `defaultValue`, values exactly
+  `[CUSTOMER_KIOSK_ROLE]`). Mode: guard (it passes on the current schema). The
+  discrimination check was to add `android:defaultValue="customer_kiosk"` plus an
+  empty "Not configured" item: 2 of the 3 tests fail. Then restored.
+- Parsing semantics untouched: absent → standard, exactly `customer_kiosk` →
+  customer-kiosk, any other present value → unknown.
