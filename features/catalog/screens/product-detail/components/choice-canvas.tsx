@@ -11,18 +11,17 @@ const FILL_COLUMN = { flex: 1, maxHeight: 620 } as const;
  * The decision panel: what is being chosen, how many choices there are, the
  * Option Rack, and the Order Bar pinned to its foot. Its height never follows
  * its content — fixed when stacked, or the column's own height (capped) in a
- * split layout — so expanding or searching the rack never moves the Order Bar.
+ * split layout. The rack inside it holds at most a six-choice preview; a
+ * larger set is browsed in the Option Browser, which replaces the Stage and
+ * this canvas rather than growing inside it.
  */
 export function ChoiceCanvas({
   decision,
   height,
   rack,
   orderBar,
-  condensed = false,
 }: {
   decision: VariantDecision;
-  /** Drop the explanatory line so an expanded rack gets the room. */
-  condensed?: boolean;
   /** A fixed height; omit to fill the parent column, up to the cap. */
   height?: number;
   rack: React.ReactNode;
@@ -63,14 +62,12 @@ export function ChoiceCanvas({
           >
             {decision.prompt}
           </Text>
-          {!condensed ? (
-            <Text
-              className="text-caption leading-[17px] text-muted-foreground"
-              style={{ maxWidth: 340 }}
-            >
-              {decision.context}
-            </Text>
-          ) : null}
+          <Text
+            className="text-caption leading-[17px] text-muted-foreground"
+            style={{ maxWidth: 340 }}
+          >
+            {decision.context}
+          </Text>
         </View>
         {count > 1 ? (
           <View

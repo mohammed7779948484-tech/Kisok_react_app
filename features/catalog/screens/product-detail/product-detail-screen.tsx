@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
-import { ScrollView, View } from "react-native";
-import { useRouter } from "expo-router";
+import { BackHandler, ScrollView, View } from "react-native";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { chromeHeight, ContentContainer, Text, useLayout, usePageGutter } from "@/design-system";
@@ -14,8 +14,11 @@ import {
   CatalogMissingState,
 } from "../../components/catalog-state-panel";
 import type { CatalogProductView, CatalogVariantView } from "../../model/catalog-view";
+import { matchingVariantIds, parseMatch } from "../../model/guided-discovery";
+import { availableVariantCount } from "../../model/product-summary";
 import { useCatalog } from "../../queries/use-catalog";
 import { ChoiceCanvas } from "./components/choice-canvas";
+import { OptionBrowser } from "./components/option-browser";
 import { OptionRack } from "./components/option-rack";
 import { OrderBar } from "./components/order-bar";
 import { ProductStage } from "./components/product-stage";
@@ -31,6 +34,8 @@ export type ProductDetailScreenProps = {
   productId: string;
   /** Names where the customer came from, e.g. "Back to Vape Products". */
   backLabel?: string;
+  /** Help Me Choose's answers (`serializeMatch`): matching choices are listed first. */
+  match?: string;
 };
 
 function toCartSource(product: CatalogProductView, variant: CatalogVariantView): CatalogCartSource {
@@ -57,27 +62,72 @@ function toCartSource(product: CatalogProductView, variant: CatalogVariantView):
 
 /**
  * Product Detail v1.8: the Product Stage on the left, the Choice Canvas on the
- * right. Every option is shown in place; the customer picks one explicitly
- * (only a genuinely single-option product counts as chosen), then sets a
- * quantity and adds it from the Order Bar.
+ * right. Up to six options are shown in place; a larger set previews six and
+ * opens the Option Browser — screen-local state that replaces the Stage and
+ * Canvas, never a route or a sheet. The customer picks one explicitly (only a
+ * genuinely single-option product counts as chosen), then sets a quantity and
+ * adds it from the Order Bar. Selection and quantity live here, so both
+ * survive opening and closing the browser; the quantity resets when the
+ * selected option changes (by a tap, or because a catalog refresh removed it)
+ * or after a successful add.
  */
-export function ProductDetailScreen({ productId, backLabel }: ProductDetailScreenProps) {
+export function ProductDetailScreen({ productId, backLabel, match }: ProductDetailScreenProps) {
   const router = useRouter();
   const catalog = useCatalog();
   const { width, height } = useLayout();
   const gutter = usePageGutter();
   const insets = useSafeAreaInsets();
 
-  // Selection, image and rack state are screen-local.
+  // Selection, image, quantity and browsing state are screen-local.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedMediaAssetId, setSelectedMediaAssetId] = useState<string | null>(null);
-  const [rackQuery, setRackQuery] = useState("");
-  const [rackExpanded, setRackExpanded] = useState(false);
+  // The quantity belongs to one concrete option: it never carries over to
+  // another one, including one a catalog refresh leaves as the only choice.
+  const [quantityFor, setQuantityFor] = useState<{ variantId: string | null; value: number }>({
+    variantId: null,
+    value: 1,
+  });
+  const [browsing, setBrowsing] = useState(false);
 
   const product = catalog.data?.resolveProduct(productId);
-  const decision = useMemo(
-    () => (product ? deriveVariantDecision(product.variants) : null),
-    [product],
+  const parsedMatch = useMemo(() => parseMatch(match), [match]);
+  const decision = useMemo(() => {
+    if (!product) return null;
+    const derived = deriveVariantDecision(product.variants);
+    if (!parsedMatch) return derived;
+    // Opened from Help Me Choose: its matches lead, in store order, and the
+    // canvas says how many there are. Nothing is selected for the customer.
+    const matching = new Set(matchingVariantIds(product, parsedMatch));
+    if (matching.size === 0) return derived;
+    const count = matching.size;
+    return {
+      ...derived,
+      choices: [
+        ...derived.choices.filter((choice) => matching.has(choice.id)),
+        ...derived.choices.filter((choice) => !matching.has(choice.id)),
+      ],
+      context: `${count} ${count === 1 ? derived.noun : derived.nounPlural} ${count === 1 ? "matches" : "match"} your choices.`,
+    };
+  }, [product, parsedMatch]);
+
+  // Browsing only means something while there is more than the preview: a
+  // refresh that shrinks the set (or removes the product) ends it rather than
+  // leaving it to reappear later.
+  const showBrowser = browsing && decision !== null && decision.hasMore;
+  if (browsing && !showBrowser) setBrowsing(false);
+
+  // Android Back closes the browser before it leaves the screen. Registered
+  // only while this screen is focused and browsing, so a Product Detail
+  // further down the stack (or the checkout gate's own handler) is untouched.
+  useFocusEffect(
+    useCallback(() => {
+      if (!showBrowser) return;
+      const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+        setBrowsing(false);
+        return true;
+      });
+      return () => subscription.remove();
+    }, [showBrowser]),
   );
 
   const resolvedBackLabel = backLabel ?? "Back to products";
@@ -89,10 +139,22 @@ export function ProductDetailScreen({ productId, backLabel }: ProductDetailScree
     }
   }, [router]);
 
-  const handleSelect = useCallback((variantId: string) => {
-    setSelectedId(variantId);
-    setSelectedMediaAssetId(null);
-  }, []);
+  // The option the customer is looking at; a single-option product's only
+  // choice counts even before it is tapped.
+  const currentId =
+    selectedId ?? (decision?.mode === "single" ? (decision.choices[0]?.id ?? null) : null);
+  const handleSelect = useCallback(
+    (variantId: string) => {
+      // Choosing the same option again keeps its quantity.
+      if (variantId === currentId) return;
+      setSelectedId(variantId);
+      setSelectedMediaAssetId(null);
+      setQuantityFor({ variantId, value: 1 });
+    },
+    [currentId],
+  );
+  const openBrowser = useCallback(() => setBrowsing(true), []);
+  const closeBrowser = useCallback(() => setBrowsing(false), []);
 
   if (catalog.isPending)
     return <CatalogLoadingState destination="products" label="Loading product…" />;
@@ -127,9 +189,17 @@ export function ProductDetailScreen({ productId, backLabel }: ProductDetailScree
 
   // A selection survives a catalog refresh only while its variant still
   // exists; otherwise the customer chooses again — nothing is re-picked for them.
+  const selectedChoice = decision.choices.find((choice) => choice.id === selectedId);
+  if (selectedId !== null && selectedChoice === undefined) setSelectedId(null);
   const selected =
-    decision.choices.find((choice) => choice.id === selectedId) ??
-    (decision.mode === "single" ? (decision.choices[0] ?? null) : null);
+    selectedChoice ?? (decision.mode === "single" ? (decision.choices[0] ?? null) : null);
+  // A quantity left behind by an option a refresh took away is dropped, not
+  // just hidden — otherwise it would reappear if that option came back.
+  const effectiveId = selected?.id ?? null;
+  if (quantityFor.variantId !== null && quantityFor.variantId !== effectiveId) {
+    setQuantityFor({ variantId: null, value: 1 });
+  }
+  const quantity = quantityFor.variantId === effectiveId ? quantityFor.value : 1;
 
   const media = selected ? selected.variant.media : product.coverMedia ? [product.coverMedia] : [];
   const activeMediaAssetId =
@@ -166,21 +236,60 @@ export function ProductDetailScreen({ productId, backLabel }: ProductDetailScree
     />
   );
 
+  // One composition for both hosts: the Canvas, and the browser's column/foot.
+  const orderBar = (
+    <OrderBar
+      prompt={decision.prompt}
+      selected={selected}
+      action={
+        selected ? (
+          <AddToCartButton
+            key={selected.id}
+            source={toCartSource(product, selected.variant)}
+            withQuantity
+            tone="inverse"
+            quantity={quantity}
+            onQuantityChange={(value) => setQuantityFor({ variantId: selected.id, value })}
+          />
+        ) : null
+      }
+    />
+  );
+
+  if (showBrowser) {
+    return (
+      <CatalogShell currentDestination="products" settings={view.settings}>
+        <ContentContainer className="flex-1">
+          <OptionBrowser
+            decision={decision}
+            selectedId={selected?.id ?? null}
+            onSelect={handleSelect}
+            onClose={closeBrowser}
+            lowStockThreshold={lowStockThreshold}
+            split={split}
+            title={product.name}
+            media={selected?.variant.primaryMedia ?? product.coverMedia}
+            availableCount={availableVariantCount(product)}
+            total={product.variants.length}
+            orderBar={orderBar}
+            bottomInset={insets.bottom}
+          />
+        </ContentContainer>
+      </CatalogShell>
+    );
+  }
+
   const canvas = (
     <ChoiceCanvas
       decision={decision}
       height={split ? undefined : STACKED_CANVAS_HEIGHT}
-      condensed={rackExpanded || rackQuery.trim().length > 0}
       rack={
         decision.choices.length > 0 ? (
           <OptionRack
             decision={decision}
             selectedId={selected?.id ?? null}
             onSelect={handleSelect}
-            query={rackQuery}
-            onQueryChange={setRackQuery}
-            expanded={rackExpanded}
-            onExpandedChange={setRackExpanded}
+            onBrowseAll={openBrowser}
             lowStockThreshold={lowStockThreshold}
           />
         ) : (
@@ -189,22 +298,7 @@ export function ProductDetailScreen({ productId, backLabel }: ProductDetailScree
           </Text>
         )
       }
-      orderBar={
-        <OrderBar
-          prompt={decision.prompt}
-          selected={selected}
-          action={
-            selected ? (
-              <AddToCartButton
-                key={selected.id}
-                source={toCartSource(product, selected.variant)}
-                withQuantity
-                tone="inverse"
-              />
-            ) : null
-          }
-        />
-      }
+      orderBar={orderBar}
     />
   );
 

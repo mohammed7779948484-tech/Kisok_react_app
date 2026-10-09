@@ -69,6 +69,7 @@ const PUBLIC_RUNTIME_EXPORTS = [
   "clearCart",
   "clearCartAfterOrder",
   "customerLineIdentity",
+  "discardCart",
   "getCartSnapshot",
   "hydrateCart",
   "lockCart",
@@ -308,6 +309,16 @@ describe("plain cart actions (non-React callers)", () => {
     expect(useCartStore.getState()).toMatchObject({ lines: [], locked: true, ownerId: OWNER });
     expect((await readPersistedCart()).status).toBe("miss");
     cartApi.unlockCart();
+  });
+
+  it("discardCart empties the cart and its saved copy, and reports it saved", async () => {
+    await seedSavedCart([waterLine], OWNER);
+    await cartApi.hydrateCart(OWNER);
+
+    await expect(cartApi.discardCart()).resolves.toEqual({ saved: true });
+
+    expect(useCartStore.getState()).toMatchObject({ lines: [], ownerId: OWNER });
+    expect((await readPersistedCart()).status).toBe("miss");
   });
 
   it("getCartSnapshot is a point-in-time read including the owner", async () => {

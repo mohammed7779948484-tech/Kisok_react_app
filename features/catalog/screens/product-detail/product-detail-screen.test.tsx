@@ -1,9 +1,12 @@
+import { BackHandler, Keyboard } from "react-native";
+
 import { useAuth } from "@/core/auth";
 import { AppError } from "@/core/errors";
 import { resetLogging, setLogSink } from "@/core/logging";
 import { storage, storageKey } from "@/core/storage";
 import {
   act,
+  fireEvent,
   installMockAuth,
   renderWithProviders,
   screen,
@@ -89,6 +92,13 @@ const mockCanGoBack = jest.fn().mockReturnValue(true);
 const mockLocalSearchParams: { productId?: string } = {};
 
 jest.mock("expo-router", () => ({
+  // The Option Browser's Android Back handler and its grid both register
+  // through `useFocusEffect`; outside a navigator the screen is focused while
+  // it is mounted, so the callback runs as an ordinary effect.
+  useFocusEffect: (effect: () => void | (() => void)) => {
+    const { useEffect } = jest.requireActual<typeof import("react")>("react");
+    useEffect(effect, [effect]);
+  },
   useRouter: () => ({
     push: mockRouterPush,
     replace: mockRouterReplace,
@@ -312,6 +322,144 @@ function snapshotWithOption3Removed(): CatalogSnapshot {
   });
 }
 
+/**
+ * A product shaped like the real store catalog (phase 4): one Flavor
+ * dimension with 30 values, six of them out of stock — two inside the first
+ * six — so the preview, the available-first browser order and search are all
+ * observable. Four flavours contain "berry" (two of them unavailable).
+ */
+const VAPE_PRODUCT_ID = "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0";
+const FLAVOR_TYPE_ID = "f3f3f3f3-f3f3-4f3f-8f3f-f3f3f3f3f3f3";
+const VAPE_FLAVORS = [
+  "Apple",
+  "Apricot",
+  "Banana",
+  "Blackberry",
+  "Blueberry",
+  "Cherry",
+  "Coconut",
+  "Cola",
+  "Grape",
+  "Guava",
+  "Kiwi",
+  "Lemon",
+  "Lime",
+  "Lychee",
+  "Mango",
+  "Melon",
+  "Mint",
+  "Nectarine",
+  "Orange",
+  "Papaya",
+  "Passion Fruit",
+  "Peach",
+  "Pear",
+  "Pineapple",
+  "Plum",
+  "Raspberry",
+  "Strawberry",
+  "Tangerine",
+  "Vanilla",
+  "Watermelon",
+] as const;
+const UNAVAILABLE_FLAVORS = new Set([
+  "Apricot",
+  "Blackberry",
+  "Kiwi",
+  "Melon",
+  "Passion Fruit",
+  "Raspberry",
+]);
+
+function vapeIdFor(prefix: string, index: number): string {
+  return `${prefix}-0000-4000-8000-${String(index).padStart(12, "0")}`;
+}
+const vapeVariantId = (flavor: (typeof VAPE_FLAVORS)[number]) =>
+  vapeIdFor("f1000000", VAPE_FLAVORS.indexOf(flavor));
+
+/** The vape catalog; `flavorCount` trims the flavour list (a refresh that shrinks it). */
+function snapshotWithVape(flavorCount: number = VAPE_FLAVORS.length): CatalogSnapshot {
+  const base = createCatalogSnapshotFixture();
+  const flavors = VAPE_FLAVORS.slice(0, flavorCount);
+  return createCatalogSnapshotFixture({
+    products: [
+      ...base.products,
+      {
+        id: VAPE_PRODUCT_ID,
+        name: "Cloud Vape",
+        brand_id: null,
+        cover_media_asset_id: null,
+        cover_public_id: null,
+        cover_secure_url: null,
+        short_description: null,
+        search_keywords: null,
+        display_order: 50,
+        is_featured: false,
+      },
+    ],
+    option_types: [...base.option_types, { id: FLAVOR_TYPE_ID, name: "Flavor", display_order: 30 }],
+    option_values: [
+      ...base.option_values,
+      ...flavors.map((value, index) => ({
+        id: vapeIdFor("f2000000", index),
+        option_type_id: FLAVOR_TYPE_ID,
+        value,
+        display_order: index + 1,
+      })),
+    ],
+    variants: [
+      ...base.variants,
+      ...flavors.map(
+        (flavor, index): CatalogVariant => ({
+          id: vapeIdFor("f1000000", index),
+          product_id: VAPE_PRODUCT_ID,
+          sku: `SECRET-SKU-VAPE-${index}`,
+          barcode: null,
+          title_override: null,
+          search_keywords: null,
+          display_order: index + 1,
+          is_available: !UNAVAILABLE_FLAVORS.has(flavor),
+          available_quantity: UNAVAILABLE_FLAVORS.has(flavor) ? 0 : 20,
+        }),
+      ),
+    ],
+    variant_option_values: [
+      ...base.variant_option_values,
+      ...flavors.map((_, index) => ({
+        variant_id: vapeIdFor("f1000000", index),
+        option_type_id: FLAVOR_TYPE_ID,
+        option_value_id: vapeIdFor("f2000000", index),
+      })),
+    ],
+  });
+}
+
+/**
+ * The vape catalog keeping only the flavours `keep` accepts, with an optional
+ * stock figure for them — a refresh that swaps, removes or restocks options.
+ */
+function snapshotWithVapeWhere(
+  keep: (flavor: (typeof VAPE_FLAVORS)[number]) => boolean,
+  availableQuantity?: number,
+): CatalogSnapshot {
+  const full = snapshotWithVape();
+  const kept = new Set(VAPE_FLAVORS.filter(keep).map(vapeVariantId));
+  const isVape = (variantId: string) => variantId.startsWith("f1000000-");
+  return createCatalogSnapshotFixture({
+    ...full,
+    variants: full.variants
+      .filter((variant) => !isVape(variant.id) || kept.has(variant.id))
+      .map((variant) =>
+        isVape(variant.id) && availableQuantity !== undefined && variant.is_available
+          ? { ...variant, available_quantity: availableQuantity }
+          : variant,
+      ),
+    variant_option_values: full.variant_option_values.filter(
+      (link) => !isVape(link.variant_id) || kept.has(link.variant_id),
+    ),
+  });
+}
+
 /** The single durable key the cart's hydrate() reads — disk hygiene between tests. */
 const CART_KEY = storageKey("cart", "lines");
 
@@ -325,6 +473,7 @@ const CART_KEY = storageKey("cart", "lines");
  */
 const SCREEN_OWNER = "7f8e9d0c-1b2a-4c3d-8e4f-5a6b7c8d9e0f";
 const PRESS_ADD_OWNER = "a1b2c3d4-5e6f-4a70-8b7c-8d9e0f1a2b3c";
+const BROWSER_ADD_OWNER = "b2c3d4e5-6f70-4a81-8c9d-0e1f2a3b4c5d";
 
 /**
  * Gates the screen on auth readiness and the integration provider, exactly
@@ -335,12 +484,12 @@ const PRESS_ADD_OWNER = "a1b2c3d4-5e6f-4a70-8b7c-8d9e0f1a2b3c";
  * the contract, not a defect for the screen to code around — the
  * full-cart and integration suites' AuthedHarness pattern).
  */
-function AuthedProductDetail({ productId }: { productId: string }) {
+function AuthedProductDetail({ productId, match }: { productId: string; match?: string }) {
   const { status, profile } = useAuth();
   if (status !== "ready" || profile === null) return null;
   return (
     <CatalogCartProvider>
-      <ProductDetailScreen productId={productId} />
+      <ProductDetailScreen productId={productId} match={match} />
     </CatalogCartProvider>
   );
 }
@@ -363,11 +512,15 @@ const mockAuthHolder: { current: ReturnType<typeof installMockAuth> | null } = {
  * Renders the resolved-path screen behind the real auth gate and the real
  * integration provider — the mounting the customer layout will provide.
  */
-async function renderProductDetail(productId: string, ownerId: string = SCREEN_OWNER) {
+async function renderProductDetail(
+  productId: string,
+  ownerId: string = SCREEN_OWNER,
+  match?: string,
+) {
   mockAuthHolder.current = installMockAuth({
     profile: { ...TEST_PROFILE, id: ownerId },
   });
-  return renderWithProviders(<AuthedProductDetail productId={productId} />, {
+  return renderWithProviders(<AuthedProductDetail productId={productId} match={match} />, {
     withAuth: true,
   });
 }
@@ -693,5 +846,445 @@ describe("ProductDetailScreen — adding to the cart", () => {
     });
     expect(screen.getByRole("button", { name: "Review cart" })).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Keep browsing" })).toBeOnTheScreen();
+  });
+});
+
+/**
+ * Jest-expo resolves react-native to iOS, whose BackHandler drops handlers.
+ * This spy stands in for Android's (the checkout-gate suite's pattern):
+ * registrations are recorded, `remove` unregisters, and `pressHardwareBack`
+ * dispatches newest-first, stopping at the first handler that consumes it.
+ */
+type HardwareBackHandler = () => boolean | null | undefined;
+const backHandlers: HardwareBackHandler[] = [];
+function installBackHandlerSpy() {
+  backHandlers.length = 0;
+  return jest.spyOn(BackHandler, "addEventListener").mockImplementation((_event, handler) => {
+    backHandlers.push(handler);
+    return {
+      remove: () => {
+        const index = backHandlers.indexOf(handler);
+        if (index !== -1) backHandlers.splice(index, 1);
+      },
+    };
+  });
+}
+function pressHardwareBack(): boolean {
+  for (let i = backHandlers.length - 1; i >= 0; i -= 1) {
+    if (backHandlers[i]?.()) return true;
+  }
+  return false;
+}
+
+async function renderVape(ownerId: string = SCREEN_OWNER) {
+  const rendered = await renderProductDetail(VAPE_PRODUCT_ID, ownerId);
+  await waitFor(() => expect(screen.getByRole("header", { name: "Cloud Vape" })).toBeOnTheScreen());
+  return rendered;
+}
+
+type HostNode = { children: readonly (HostNode | string)[] };
+
+/**
+ * The browser's grid renders rows only once it has measured the width it is
+ * given; deliver that layout pass (the catalog-grid suite's technique) at a
+ * tablet-portrait content width.
+ */
+async function layoutBrowserGrid(width = 700) {
+  const host = screen.getByTestId("catalog-option-browser-grid") as unknown as HostNode;
+  const container = host.children[0];
+  if (container === undefined || typeof container === "string") {
+    throw new Error("The Option Browser did not render its grid");
+  }
+  await fireEvent(container as never, "layout", {
+    nativeEvent: { layout: { x: 0, y: 0, width, height: 900 } },
+  });
+}
+
+async function openBrowser(user: ReturnType<typeof userEvent.setup>) {
+  await user.press(screen.getByRole("button", { name: "Browse all 30 flavors" }));
+  expect(screen.getByTestId("catalog-option-browser")).toBeOnTheScreen();
+  await layoutBrowserGrid();
+}
+
+function radioNames(): string[] {
+  return screen.getAllByRole("radio").map((radio) => String(radio.props.accessibilityLabel ?? ""));
+}
+
+/**
+ * Phase 4 (GD-01–GD-03): a large variant set previews six choices in the
+ * Choice Canvas and browses the full range in the Option Browser, which
+ * replaces the Stage and Canvas in place — never a route or a sheet.
+ */
+describe("ProductDetailScreen — large variant sets", () => {
+  it("keeps every choice in place for a product with six or fewer, with nothing to browse", async () => {
+    await renderKettle();
+
+    expect(screen.getAllByRole("radio")).toHaveLength(3);
+    expect(screen.queryByTestId("catalog-option-show-all")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Browse all/ })).toBeNull();
+  });
+
+  it("previews six choices and offers to browse all of them, with no search in the canvas", async () => {
+    mockFetchCatalog.mockResolvedValue(snapshotWithVape());
+    await renderVape();
+
+    expect(screen.getAllByRole("radio")).toHaveLength(6);
+    const browseAll = screen.getByRole("button", { name: "Browse all 30 flavors" });
+    expect(browseAll).toBe(screen.getByTestId("catalog-option-show-all"));
+    expect(screen.getByText("Browse all 30 flavors")).toBeOnTheScreen();
+    // The in-place expand and the in-place rack search are gone.
+    expect(screen.queryByLabelText("Search flavors")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Show all/ })).toBeNull();
+    expect(screen.getByText("Start with 6 visible flavors, or browse all 30.")).toBeOnTheScreen();
+  });
+
+  it("browses every choice in one grid, available ones first, in place of the product view", async () => {
+    mockFetchCatalog.mockResolvedValue(snapshotWithVape());
+    const user = userEvent.setup();
+    await renderVape();
+
+    await openBrowser(user);
+
+    // The Stage and the Canvas make way for the browser.
+    expect(screen.queryByRole("link", { name: "Back to products" })).toBeNull();
+    expect(screen.queryByTestId("catalog-option-rack")).toBeNull();
+    expect(screen.getByRole("button", { name: "Back to product" })).toBe(
+      screen.getByTestId("catalog-option-browser-close"),
+    );
+    expect(screen.getByLabelText("Flavor options")).toBeOnTheScreen();
+    expect(screen.getByText("24 of 30 available")).toBeOnTheScreen();
+
+    const names = radioNames();
+    expect(names).toHaveLength(30);
+    const available = VAPE_FLAVORS.filter((flavor) => !UNAVAILABLE_FLAVORS.has(flavor));
+    const unavailable = VAPE_FLAVORS.filter((flavor) => UNAVAILABLE_FLAVORS.has(flavor));
+    // Store order within each group.
+    expect(names).toEqual([
+      ...available,
+      ...unavailable.map((flavor) => `${flavor}, currently unavailable`),
+    ]);
+  });
+
+  it("searches the full range, says how many match, and recovers from no match", async () => {
+    mockFetchCatalog.mockResolvedValue(snapshotWithVape());
+    const user = userEvent.setup();
+    await renderVape();
+    await openBrowser(user);
+
+    expect(screen.getByText("Showing 30 of 30")).toBeOnTheScreen();
+    await user.type(screen.getByLabelText("Search flavors"), "berry");
+
+    expect(radioNames()).toEqual([
+      "Blueberry",
+      "Strawberry",
+      "Blackberry, currently unavailable",
+      "Raspberry, currently unavailable",
+    ]);
+    expect(screen.getByText("Showing 4 of 30")).toBeOnTheScreen();
+
+    await user.clear(screen.getByLabelText("Search flavors"));
+    await user.type(screen.getByLabelText("Search flavors"), "zzz");
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    expect(screen.getByText("No matching flavors.")).toBeOnTheScreen();
+    expect(screen.getByText("Showing 0 of 30")).toBeOnTheScreen();
+
+    await user.press(screen.getByTestId("catalog-option-browser-clear"));
+    expect(screen.getAllByRole("radio")).toHaveLength(30);
+    expect(screen.getByLabelText("Search flavors")).toHaveDisplayValue("");
+  });
+
+  it("keeps the chosen option and quantity across the browser, and resets quantity only for another option", async () => {
+    mockFetchCatalog.mockResolvedValue(snapshotWithVape());
+    const user = userEvent.setup();
+    await renderVape(BROWSER_ADD_OWNER);
+    await openBrowser(user);
+
+    // Mango is not in the six-choice preview.
+    await user.press(screen.getByRole("radio", { name: "Mango" }));
+    expect(screen.getByRole("radio", { name: "Mango" })).toBeChecked();
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    expect(screen.getByRole("button", { name: "Add 3 to cart" })).toBeOnTheScreen();
+
+    await user.press(screen.getByRole("button", { name: "Back to product" }));
+    expect(screen.queryByTestId("catalog-option-browser")).toBeNull();
+    expect(screen.getByRole("link", { name: "Back to products" })).toBeOnTheScreen();
+    // The preview swaps the selection in, and the quantity survived.
+    expect(screen.getByRole("radio", { name: "Mango" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Add 3 to cart" })).toBeOnTheScreen();
+
+    // Choosing the same option again keeps the quantity.
+    await user.press(screen.getByRole("radio", { name: "Mango" }));
+    expect(screen.getByRole("button", { name: "Add 3 to cart" })).toBeOnTheScreen();
+
+    await openBrowser(user);
+    expect(screen.getByRole("radio", { name: "Mango" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Add 3 to cart" })).toBeOnTheScreen();
+
+    // Another option starts again at one.
+    await user.press(screen.getByRole("radio", { name: "Lemon" }));
+    expect(screen.getByRole("button", { name: "Add 1 to cart" })).toBeOnTheScreen();
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    await user.press(screen.getByRole("button", { name: "Add 2 to cart" }));
+    await settleDurableWrites();
+
+    const { lines } = getCartSnapshot();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      variantId: vapeVariantId("Lemon"),
+      productId: VAPE_PRODUCT_ID,
+      quantity: 2,
+    });
+  });
+
+  it("closes the browser on Android Back, and leaves Back alone otherwise", async () => {
+    const spy = installBackHandlerSpy();
+    try {
+      mockFetchCatalog.mockResolvedValue(snapshotWithVape());
+      const user = userEvent.setup();
+      await renderVape();
+      expect(backHandlers).toHaveLength(0);
+
+      await openBrowser(user);
+      let consumed = false;
+      await act(async () => {
+        consumed = pressHardwareBack();
+      });
+
+      expect(consumed).toBe(true);
+      expect(screen.queryByTestId("catalog-option-browser")).toBeNull();
+      expect(screen.getByRole("button", { name: "Browse all 30 flavors" })).toBeOnTheScreen();
+      expect(backHandlers).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("returns to the product view when a refresh leaves too few choices to browse", async () => {
+    mockFetchCatalog
+      .mockResolvedValueOnce(snapshotWithVape())
+      .mockResolvedValueOnce(snapshotWithVape(5));
+    const user = userEvent.setup();
+    const { queryClient } = await renderVape();
+    await openBrowser(user);
+
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: catalogKeys.all });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.queryByTestId("catalog-option-browser")).toBeNull();
+    expect(screen.getAllByRole("radio")).toHaveLength(5);
+    expect(screen.queryByTestId("catalog-option-show-all")).toBeNull();
+  });
+});
+
+/**
+ * Phase 4 (GD-08): a product opened from Help Me Choose lists the choices that
+ * match the customer's answers first and says how many match — it never
+ * chooses for them.
+ */
+describe("ProductDetailScreen — opened from Help Me Choose", () => {
+  const berries = VAPE_FLAVORS.filter(
+    (flavor) => flavor.toLowerCase().includes("berry") && !UNAVAILABLE_FLAVORS.has(flavor),
+  );
+
+  async function renderMatched(match: string) {
+    mockFetchCatalog.mockResolvedValue(snapshotWithVape());
+    await renderProductDetail(VAPE_PRODUCT_ID, SCREEN_OWNER, match);
+    await waitFor(() =>
+      expect(screen.getByRole("header", { name: "Cloud Vape" })).toBeOnTheScreen(),
+    );
+  }
+
+  it("previews the matching choices first, says how many match, and selects nothing", async () => {
+    expect(berries.length).toBeGreaterThan(1);
+    await renderMatched("t.berry");
+
+    expect(radioNames().slice(0, berries.length)).toEqual(berries);
+    expect(screen.getByText(`${berries.length} flavors match your choices.`)).toBeOnTheScreen();
+    for (const radio of screen.getAllByRole("radio")) {
+      expect(radio.props.accessibilityState?.checked).toBe(false);
+    }
+  });
+
+  it("puts the matching choices first in the Option Browser too", async () => {
+    const user = userEvent.setup();
+    await renderMatched("t.berry");
+
+    await openBrowser(user);
+
+    expect(radioNames().slice(0, berries.length)).toEqual(berries);
+  });
+
+  it("ignores a match that fits none of this product's choices", async () => {
+    await renderMatched("t.zzzz");
+
+    expect(screen.queryByText(/match your choices/)).toBeNull();
+    expect(screen.getByText("Start with 6 visible flavors, or browse all 30.")).toBeOnTheScreen();
+  });
+});
+
+/**
+ * Review M-01: in the stacked browser the Order Bar steps aside only while the
+ * keyboard is actually up. Android can hide the keyboard (Back, hide key)
+ * without blurring the field, so focus alone must not keep the bar away.
+ */
+describe("ProductDetailScreen — stacked browser and the keyboard", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it("brings the Order Bar back when the keyboard hides, even if the search keeps focus", async () => {
+    const listeners = new Map<string, () => void>();
+    jest.spyOn(Keyboard, "addListener").mockImplementation(((
+      event: string,
+      handler: () => void,
+    ) => {
+      listeners.set(event, handler);
+      return { remove: () => listeners.delete(event) };
+    }) as never);
+    mockFetchCatalog.mockResolvedValue(snapshotWithVape());
+    const user = userEvent.setup();
+    await renderVape();
+    await openBrowser(user);
+
+    const prompt = "Select one of the options above to set quantity.";
+    expect(screen.getByText(prompt)).toBeOnTheScreen();
+
+    // The customer starts searching: the field takes focus and keeps it below.
+    await act(async () => {
+      fireEvent(screen.getByLabelText("Search flavors"), "focus");
+    });
+    await act(async () => listeners.get("keyboardDidShow")?.());
+    expect(screen.queryByText(prompt)).toBeNull();
+
+    // No blur: the field keeps focus while the keyboard goes away.
+    await act(async () => listeners.get("keyboardDidHide")?.());
+    expect(screen.getByText(prompt)).toBeOnTheScreen();
+  });
+});
+
+/**
+ * Pre-merge review H-02: the screen-level quantity belongs to one concrete
+ * variant. A refresh that keeps that variant keeps its quantity; a refresh
+ * that changes the effective variant (the chosen one removed, one other left)
+ * starts it again at 1 rather than handing the old quantity to another option.
+ */
+describe("ProductDetailScreen — quantity across a catalog refresh", () => {
+  async function refresh(queryClient: { refetchQueries: (filters: object) => Promise<void> }) {
+    await act(async () => {
+      await queryClient.refetchQueries({ queryKey: catalogKeys.all });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  it("starts at 1 when a refresh removes the chosen option and leaves exactly one other", async () => {
+    mockFetchCatalog
+      .mockResolvedValueOnce(snapshotWithVape())
+      .mockResolvedValueOnce(snapshotWithVape(1));
+    const user = userEvent.setup();
+    const { queryClient } = await renderVape();
+    await user.press(screen.getByRole("radio", { name: "Banana" }));
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    expect(screen.getByRole("button", { name: "Add 3 to cart" })).toBeOnTheScreen();
+
+    await refresh(queryClient);
+
+    // Apple is now the only option, so it is the one on offer — at 1, not Banana's 3.
+    expect(screen.queryByRole("radio", { name: "Banana" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Add 1 to cart" })).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Add 3 to cart" })).toBeNull();
+  });
+
+  it("keeps the quantity when the chosen option survives the refresh", async () => {
+    mockFetchCatalog
+      .mockResolvedValueOnce(snapshotWithVape())
+      .mockResolvedValueOnce(snapshotWithVape(10));
+    const user = userEvent.setup();
+    const { queryClient } = await renderVape();
+    await user.press(screen.getByRole("radio", { name: "Banana" }));
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+
+    await refresh(queryClient);
+
+    // The refresh landed: ten flavours remain.
+    expect(screen.getByRole("button", { name: "Browse all 10 flavors" })).toBeOnTheScreen();
+    expect(screen.getByRole("radio", { name: "Banana" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Add 3 to cart" })).toBeOnTheScreen();
+  });
+
+  it("keeps the quantity of a single-option product when that option survives", async () => {
+    const appleOnly = (flavor: string) => flavor === "Apple";
+    mockFetchCatalog
+      .mockResolvedValueOnce(snapshotWithVapeWhere(appleOnly))
+      // The same option, restocked: new data, so the screen really re-derives.
+      .mockResolvedValueOnce(snapshotWithVapeWhere(appleOnly, 15));
+    const user = userEvent.setup();
+    const { queryClient } = await renderVape();
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    expect(screen.getByText("20 available now")).toBeOnTheScreen();
+
+    await refresh(queryClient);
+
+    expect(screen.getByText("15 available now")).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Add 3 to cart" })).toBeOnTheScreen();
+  });
+
+  it("starts at 1 when a refresh swaps the only option away and later brings it back", async () => {
+    const only = (name: string) => (flavor: string) => flavor === name;
+    mockFetchCatalog
+      .mockResolvedValueOnce(snapshotWithVapeWhere(only("Apple")))
+      .mockResolvedValueOnce(snapshotWithVapeWhere(only("Banana")))
+      .mockResolvedValueOnce(snapshotWithVapeWhere(only("Apple")));
+    const user = userEvent.setup();
+    const { queryClient } = await renderVape();
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    expect(screen.getByRole("button", { name: "Add 3 to cart" })).toBeOnTheScreen();
+
+    await refresh(queryClient);
+    expect(screen.getByRole("radio", { name: "Banana" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Add 1 to cart" })).toBeOnTheScreen();
+
+    // Apple returns: the 3 the customer last saw was replaced by 1, so it stays 1.
+    await refresh(queryClient);
+    expect(screen.getByRole("radio", { name: "Apple" })).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Add 1 to cart" })).toBeOnTheScreen();
+  });
+
+  it("treats the one option a refresh leaves as the current one, so tapping it keeps its quantity", async () => {
+    mockFetchCatalog
+      .mockResolvedValueOnce(snapshotWithVape())
+      .mockResolvedValueOnce(snapshotWithVape(1));
+    const user = userEvent.setup();
+    const { queryClient } = await renderVape();
+    await user.press(screen.getByRole("radio", { name: "Banana" }));
+
+    await refresh(queryClient);
+    await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+    expect(screen.getByRole("button", { name: "Add 2 to cart" })).toBeOnTheScreen();
+    await user.press(screen.getByRole("radio", { name: "Apple" }));
+
+    expect(screen.getByRole("button", { name: "Add 2 to cart" })).toBeOnTheScreen();
+  });
+
+  it("does not re-pick a removed option when a later refresh brings it back", async () => {
+    mockFetchCatalog
+      .mockResolvedValueOnce(snapshotWithVape())
+      .mockResolvedValueOnce(snapshotWithVapeWhere((flavor) => flavor !== "Banana"))
+      .mockResolvedValueOnce(snapshotWithVape());
+    const user = userEvent.setup();
+    const { queryClient } = await renderVape();
+    await user.press(screen.getByRole("radio", { name: "Banana" }));
+
+    await refresh(queryClient);
+    expect(screen.queryByRole("radio", { name: "Banana" })).toBeNull();
+    await refresh(queryClient);
+
+    expect(screen.getByRole("radio", { name: "Banana" })).not.toBeChecked();
+    for (const choice of screen.getAllByRole("radio")) expect(choice).not.toBeChecked();
+    expect(screen.getByText(NO_QUANTITY_HINT)).toBeOnTheScreen();
   });
 });

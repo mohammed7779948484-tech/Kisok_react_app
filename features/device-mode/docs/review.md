@@ -280,3 +280,29 @@ physical-tablet checklist.
 
 `PASS` — recorded in `todo.md`. The draft PR may be handed to a human. It is
 never merged by an agent.
+
+## 2026-10-08 — T12 Preparation access policy
+
+Independent code review (fresh reviewer, `kisok-code-review`): **CLEAN**.
+No actionable findings. Reviewed current brief/plan, tests before implementation,
+real-provider routing integration, all mode/role/session guards and the complete
+code/comment diff. Valid tablet roles cannot reach device-mismatch. Preparation
+remains mounted across pending reads, retries and broadcasts; other-role
+restrictions remain intact. Provider/native parsing/retry and plugin semantics
+are preserved. RED (12 intended failures) and GREEN (11 suites / 110 tests)
+evidence inspected.
+
+Physical Android and ManageEngine-console validation remain unverified.
+
+### T12 quality audit
+
+Quality audit result: **CLEAN after one minor record correction**.
+AC-11–AC-13 map to implementation and behavioral evidence; changed paths are
+planned; saved RED/GREEN/full-verify output matches the record. Corrected the MDM
+parsing bullet to say **returned unresolved results** are retried: a native read
+whose Promise never settles can remain unknown indefinitely, without delaying
+Preparation. Parent also corrected stale JSDoc in the retained mismatch screen
+and barrel; those are comments only and do not change navigation or sign-out.
+
+Final-head CI is recorded in PR #42 after push. Physical Android and console
+validation remain explicitly unverified; no claim is made for those.

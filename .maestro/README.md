@@ -61,8 +61,18 @@ Customer account. It requires `MAESTRO_CUSTOMER_EMAIL` and
 flow. Use a TEST release APK. CI reads/masks the documented login and injects
 these variables. The flow never submits an order or seeds backend data.
 
-The journey adds one available selection, reviews it, returns to browsing,
-reopens Quick Cart and reviews again. It compares line identity and item counts.
+The journey opens one specific TEST product with more than six variants
+(`LARGE_PRODUCT_ID` in the flow's `env`, currently "UT 50K", 46 variants), so
+Product Detail must open the Option Browser: it asserts
+`catalog-option-browser`, chooses an available option inside the browser and
+adds it from the browser's Order Bar. It then reviews the line, returns to
+browsing, reopens Quick Cart and reviews again, comparing line identity and
+item counts.
+
+The product is TEST data, not a fixture. If it is hidden, deactivated or sold
+out, the flow fails at the product step. Pick another visible TEST product with
+more than six variants and at least one in stock (read-only), and update
+`LARGE_PRODUCT_ID`. Never seed or edit TEST data to make the flow pass.
 Animations must remain enabled for this navigation/portal regression.
 
 The label-gated CI runner executes each flow independently, saves native logs,

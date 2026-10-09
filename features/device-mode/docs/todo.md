@@ -74,3 +74,12 @@ only ever moves forward is not measuring anything. — see the checklist below.
 
 FEATURE GATE: PASS
 ```
+
+## 2026-10-08 — T12 account-role access policy
+
+- Mode: `behavior-change`; Acceptance: AC-11–AC-13.
+- Scaffold: N/A — existing code/tests; routing integration tests are manual behavior coverage.
+- Stage: DONE; task gate PASS — RED 12 intended failures; GREEN 11 suites / 110 tests, typecheck, affected lint and format passed.
+- T12 round gate PASS; fix feature gate PENDING final-head CI. Quality audit CLEAN after the minor wording correction. Full verify PASS (106 suites / 1388 tests); independent review CLEAN.
+- Physical Android and ManageEngine-console validation remain explicitly unverified.
+- Device configuration remains descriptive and must never delay tablet roles.

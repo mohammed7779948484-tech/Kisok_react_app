@@ -1,3 +1,4 @@
+import appConfig from "../../../app.config";
 import { readReleaseIdentity, releaseNotesFor, shouldAnnounce } from "./release-notes";
 
 jest.mock("expo-constants", () => ({ __esModule: true, default: { expoConfig: {} } }));
@@ -78,5 +79,25 @@ describe("releaseNotesFor", () => {
       "Product options and variants are easier to browse and select, including products with large option sets.",
       "Cart, checkout, offline feedback, and the overall kiosk experience have been refined.",
     ]);
+  });
+
+  it("returns the written KISOK 1.2.0 notes at their exact release token", () => {
+    // versionName 1.2.0, android.versionCode 7 — Help Me Choose and large variant sets.
+    expect(releaseNotesFor("1.2.0+7")).toEqual([
+      "New: Help me choose. Answer a few quick questions and see only the products that have an option matching everything you picked.",
+      "Products with many flavors or options now open into a full, searchable list, with available options shown first.",
+      "Your chosen option and quantity stay put while you browse, and Help me choose points you straight to the options that match.",
+    ]);
+  });
+
+  it("has written notes for the release this app config builds", () => {
+    // The identity the shipped binary will report, built exactly as
+    // readReleaseIdentity does. Bumping the version without writing its
+    // notes would ship the generic fallback line to every tablet.
+    Constants.expoConfig = appConfig;
+    const current = readReleaseIdentity();
+
+    expect(current).toBeDefined();
+    expect(releaseNotesFor(current!.token).length).toBeGreaterThan(0);
   });
 });

@@ -12,15 +12,23 @@ import {
   Screen,
   Text,
   useLayout,
+  usePageGutter,
 } from "@/design-system";
 import { cn } from "@/core/utils";
 
 import type { CatalogFullSettings } from "../model/catalog-snapshot.schema";
 import type { CatalogView } from "../model/catalog-view";
 import { CatalogNavigation, type CatalogDestination } from "./catalog-navigation";
+import { HelpMeChoosePill, useHelpMeChoosePillLayout } from "./help-me-choose-pill";
 
 /** Below this window width the navigation tabs move to their own row. */
 const SINGLE_ROW_MIN_WIDTH = 1180;
+/**
+ * Holding the store identity this long opens the hidden Staff page. Long
+ * enough that a customer never trips it by accident; there is deliberately no
+ * visible affordance. Not a security boundary (see features/maintenance).
+ */
+const STAFF_HOLD_MS = 3000;
 
 function isFullSettings(settings: CatalogView["settings"]): settings is CatalogFullSettings {
   return "store_name" in settings;
@@ -32,7 +40,15 @@ export type CatalogShellProps = {
   settings?: CatalogView["settings"];
   children: React.ReactNode;
   contentClassName?: string;
+  /**
+   * Float the Help Me Choose pill over the page, optionally pre-scoped to a
+   * category or a brand. Only a browsing page's success state opts in, and it
+   * reserves `useHelpMeChoosePillLayout().clearance` below its scroll content.
+   */
+  helpMeChoose?: HelpMeChooseScope;
 };
+
+export type HelpMeChooseScope = { categoryId?: string; brandId?: string };
 
 /**
  * The catalog chrome: the store's identity, a search field that is always
@@ -44,8 +60,11 @@ export function CatalogShell({
   settings,
   children,
   contentClassName,
+  helpMeChoose,
 }: CatalogShellProps) {
   const router = useRouter();
+  const gutter = usePageGutter();
+  const pillLayout = useHelpMeChoosePillLayout();
   const { width, isCompact } = useLayout();
   const singleRow = width >= SINGLE_ROW_MIN_WIDTH;
 
@@ -72,14 +91,25 @@ export function CatalogShell({
     [router],
   );
 
+  const openHelpMeChoose = useCallback(() => {
+    // Only the scope ids the page provides; no key carries `undefined`.
+    const params: HelpMeChooseScope = {};
+    if (helpMeChoose?.categoryId) params.categoryId = helpMeChoose.categoryId;
+    if (helpMeChoose?.brandId) params.brandId = helpMeChoose.brandId;
+    router.push({ pathname: "/help-me-choose", params });
+  }, [router, helpMeChoose?.categoryId, helpMeChoose?.brandId]);
+
   const storeName = settings && isFullSettings(settings) ? settings.store_name : "KISOK";
   const logoUrl = settings && isFullSettings(settings) ? settings.logo_secure_url : null;
 
   const lockup = (
     <Pressable
+      testID="catalog-store-lockup"
       accessibilityRole="link"
       accessibilityLabel={`${storeName}, explore the store`}
       onPress={() => handleNavigate("home")}
+      onLongPress={() => router.push("/maintenance")}
+      delayLongPress={STAFF_HOLD_MS}
       className="min-h-touch shrink-0 flex-row items-center gap-3 active:opacity-80"
     >
       <View className="h-10 w-10 items-center justify-center overflow-hidden rounded-[13px] bg-primary">
@@ -165,7 +195,19 @@ export function CatalogShell({
           </ContentContainer>
         </View>
 
-        <View className={cn("min-h-0 flex-1", contentClassName)}>{children}</View>
+        <View className={cn("min-h-0 flex-1", contentClassName)}>
+          {children}
+          {helpMeChoose ? (
+            <HelpMeChoosePill
+              onPress={openHelpMeChoose}
+              style={{
+                position: "absolute",
+                right: gutter,
+                bottom: pillLayout.bottom,
+              }}
+            />
+          ) : null}
+        </View>
       </View>
     </Screen>
   );

@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react-native";
+import { renderWithProviders, screen } from "@/core/testing";
 
-import type { AuthStatus } from "@/core/auth";
+import type { AppRole, AuthStatus } from "@/core/auth";
 import type { DeviceMode } from "@/features/device-mode";
 
 import IndexRoute from "../index";
@@ -30,81 +30,64 @@ const { useAuth } = require("@/core/auth") as { useAuth: jest.Mock };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { useDeviceMode } = require("@/features/device-mode") as { useDeviceMode: jest.Mock };
 
-async function renderRoute(
-  status: AuthStatus,
-  role: "customer" | "preparation" | null,
-  mode: DeviceMode,
-) {
+const deviceModes = ["standard", "customer-kiosk", "unknown", "unavailable"] as const;
+
+async function renderRoute(status: AuthStatus, role: AppRole | null, mode: DeviceMode) {
   useAuth.mockReturnValue({
     status,
-    profile: role ? { id: "p", display_name: "P", role, is_active: true } : null,
+    profile: role ? { id: "p", display_name: "P", role, is_active: status === "ready" } : null,
   });
   useDeviceMode.mockReturnValue(mode);
-  return render(<IndexRoute />);
+  return renderWithProviders(<IndexRoute />);
 }
 
-describe("ordinary tablet — existing routing is unchanged", () => {
-  it("sends a customer profile to the customer experience", async () => {
-    await renderRoute("ready", "customer", "standard");
-    expect(screen.getByText("redirect:/(customer)")).toBeTruthy();
-  });
+describe.each(["customer", "preparation"] as const)("ready %s account", (role) => {
+  it.each(deviceModes)(
+    "redirects immediately to its experience when device mode is %s",
+    async (mode) => {
+      await renderRoute("ready", role, mode);
 
-  it("sends a preparation profile to the preparation experience", async () => {
-    await renderRoute("ready", "preparation", "standard");
-    expect(screen.getByText("redirect:/(preparation)")).toBeTruthy();
-  });
-
-  it("still sends a signed-out session to sign-in", async () => {
-    await renderRoute("signedOut", null, "standard");
-    expect(screen.getByText("redirect:/sign-in")).toBeTruthy();
-  });
-
-  it("still sends an unauthorized session to the unauthorized screen", async () => {
-    await renderRoute("unauthorized", null, "standard");
-    expect(screen.getByText("redirect:/unauthorized")).toBeTruthy();
-  });
+      expect(screen.getByText(`redirect:/(${role})`)).toBeOnTheScreen();
+      expect(screen.queryByText("redirect:/device-mismatch")).toBeNull();
+      expect(screen.queryByText("startup")).toBeNull();
+    },
+  );
 });
 
-describe("customer kiosk tablet", () => {
-  it("lets a customer profile through to the customer experience", async () => {
-    await renderRoute("ready", "customer", "customer-kiosk");
-    expect(screen.getByText("redirect:/(customer)")).toBeTruthy();
-  });
+describe("accounts without tablet access", () => {
+  it.each(deviceModes)(
+    "keeps a drifted ready admin out of both experiences in %s mode",
+    async (mode) => {
+      await renderRoute("ready", "admin", mode);
 
-  it("never sends a preparation profile to the preparation experience", async () => {
-    await renderRoute("ready", "preparation", "customer-kiosk");
+      expect(screen.getByText("redirect:/device-mismatch")).toBeOnTheScreen();
+      expect(screen.queryByText("redirect:/(customer)")).toBeNull();
+      expect(screen.queryByText("redirect:/(preparation)")).toBeNull();
+    },
+  );
+
+  it.each([
+    ["signedOut", "redirect:/sign-in"],
+    ["unauthorized", "redirect:/unauthorized"],
+    ["resolving", "startup"],
+    ["error", "startup"],
+  ] as const)(
+    "retains the %s session route even with a preparation profile",
+    async (status, expected) => {
+      await renderRoute(status, "preparation", "unknown");
+
+      expect(screen.getByText(expected)).toBeOnTheScreen();
+      expect(screen.queryByText("redirect:/(customer)")).toBeNull();
+      expect(screen.queryByText("redirect:/(preparation)")).toBeNull();
+      expect(screen.queryByText("redirect:/device-mismatch")).toBeNull();
+    },
+  );
+
+  it("holds a ready session without a profile until identity is available", async () => {
+    await renderRoute("ready", null, "standard");
+
+    expect(screen.getByText("startup")).toBeOnTheScreen();
+    expect(screen.queryByText("redirect:/(customer)")).toBeNull();
     expect(screen.queryByText("redirect:/(preparation)")).toBeNull();
-    expect(screen.getByText("redirect:/device-mismatch")).toBeTruthy();
-  });
-
-  it("does not block sign-in on a kiosk tablet", async () => {
-    await renderRoute("signedOut", null, "customer-kiosk");
-    expect(screen.getByText("redirect:/sign-in")).toBeTruthy();
-  });
-});
-
-describe("before the device mode is known", () => {
-  it("holds a preparation session on the startup screen rather than guessing", async () => {
-    await renderRoute("ready", "preparation", "unknown");
-    expect(screen.getByText("startup")).toBeTruthy();
-    expect(screen.queryByText("redirect:/(preparation)")).toBeNull();
-  });
-
-  it("never delays the customer experience", async () => {
-    await renderRoute("ready", "customer", "unknown");
-    expect(screen.getByText("redirect:/(customer)")).toBeTruthy();
-  });
-});
-
-describe("a device whose configuration could not be read", () => {
-  it("sends a preparation profile to the mismatch screen instead of holding forever", async () => {
-    await renderRoute("ready", "preparation", "unavailable");
-    expect(screen.getByText("redirect:/device-mismatch")).toBeTruthy();
-    expect(screen.queryByText("startup")).toBeNull();
-  });
-
-  it("still lets a customer straight through", async () => {
-    await renderRoute("ready", "customer", "unavailable");
-    expect(screen.getByText("redirect:/(customer)")).toBeTruthy();
   });
 });

@@ -283,66 +283,58 @@ Two consequences worth knowing:
   bar, the launcher, and kiosk escape. KISOK implements none of it and must not
   be asked to.
 
-### 2. Push the managed configuration — the one thing this feature needs
+### 2. Managed configuration — descriptive device context
 
-KISOK declares an Android Enterprise managed-configuration schema in its
-manifest, so the console can set app configuration values for it. Set:
+KISOK still declares the Android Enterprise managed-configuration schema and
+reads `kiosk_device_role` through Android's `RestrictionsManager`. The console
+can set **Kiosk device role → "Customer kiosk tablet"** (stored as
+`customer_kiosk`) to classify a customer kiosk. This setting does not decide
+which account can use the application.
 
-**Kiosk device role → "Customer kiosk tablet"** (the stored value is
-`customer_kiosk`)
+As of the 2026-10-08 access-policy change, authenticated Preparation employees
+can use their workspace on every Android device, including customer kiosks.
+Customer accounts still use Customer. MDM kiosk/lockdown policies remain under
+ManageEngine's control, independently of KISOK's account-role routing.
 
-on the **Customer Kiosk tablet only**. Leave it unset everywhere else: an
-absent key is what the app reads as an ordinary employee tablet.
+#### Initial state in the console ("Not Configured")
 
-Be precise about which direction that is safe in. Absence is safe on an
-employee tablet, where it is the truth. It is NOT a fail-safe on the kiosk
-tablet — there, an absent key is the one input that wrongly grants Preparation.
-Everything else about this feature fails closed; **this single case does not**,
-and it cannot, because the app has no way to tell an unconfigured managed
-device from an unmanaged one. That makes the app configuration on the kiosk
-tablet an operational invariant, not a convenience. See AR-01 below.
+The APK continues to declare **no default value** for the restriction.
+`plugins/with-managed-configuration.ts` declares no `android:defaultValue`
+and no "not configured" entry; its existing test pins this behavior. Under
+Android Enterprise semantics, a restriction without a default is omitted when
+an administrator saves without setting it.
 
-The restriction is declared as a **choice**, not free text, so the console
-offers that single option rather than a text box.
+ManageEngine decides how its single-option dropdown draws and saves that unset
+field. The APK does not create, clear or change an existing app configuration
+on upload, and `tools/mdm/publish-app.ts` sends no app configuration.
 
-**An unset key is the only correct employee-tablet configuration.** Setting
-`kiosk_device_role` to anything other than `customer_kiosk` does not mean
-"ordinary tablet" — it withholds Preparation on that tablet until the value is
-removed. That is deliberate: only an MDM can set the key at all, so a value the
-app does not recognise means a managed device whose policy it cannot read, and
-guessing "ordinary" there is the one failure this feature exists to prevent.
-The `choice` restriction stops an administrator typing a wrong value through
-the normal UI, but ManageEngine's raw key/value app-config path can still set
-one.
+Parsing remains unchanged:
 
-⚠️ **Removing the KISOK app configuration silently disables the guard.** A
-kiosk tablet presents an empty restrictions bundle if its app configuration is
-deleted, never delivered, or fails to reapply after a factory reset or an app
-reinstall — and at the Android API level that is indistinguishable from an
-unmanaged tablet. The app derives `standard` and Preparation becomes reachable
-on the locked tablet, with no signal. There is no unprivileged Android API that
-tells the two apart, so this cannot be fixed in the client: it is a
-console-discipline invariant. Check the app configuration is present after any
-factory reset, re-enrolment or KISOK reinstall.
+- Absent `kiosk_device_role` → `standard`.
+- Exactly `customer_kiosk` → `customer-kiosk`.
+- Any other present value, including an empty or sentinel value → `unknown`.
+- `restrictions_pending` → `unknown` until resolved.
+- Returned unresolved results are retried and eventually classified as `unavailable`.
 
-⚠️ The single assumption most worth confirming: that this tenant can push an app
-configuration to an **in-house enterprise** APK, not only to a Managed Google
-Play app. If the console does not offer app configuration for the KISOK
-enterprise app, **stop — do not put the tablet into service.**
+Do not add an artificial default or sentinel to change account access. None
+of these classifications blocks a valid Preparation or Customer account.
 
-An earlier version of this page claimed the guard "still fails closed" in that
-case. That was wrong, and the correction matters: with no app configuration the
-kiosk tablet presents an EMPTY restrictions bundle, the app derives `standard`,
-and Preparation is reachable on the locked tablet. A tenant that cannot push
-the configuration does not get a degraded-but-safe guard — it gets no guard.
+After uploading an APK, operators can inspect the console's configuration and
+choose the descriptive value appropriate to each distribution. Verify that
+Preparation reaches its workspace on both employee and customer kiosk tablets,
+including when the field is Not Configured, and that Customer reaches Customer.
+
+Console rendering and saving are unverified here because no ManageEngine
+console is available. MDM configuration delivery is no longer a prerequisite
+for Preparation access.
 
 ### What the tablet does if the configuration cannot be read
 
-The app retries the read a few times and then settles on an "unavailable"
-state. Preparation stays blocked — an unreadable tablet is never assumed to be
-an ordinary one — and the employee gets a screen that says so and offers sign
-out, rather than an indefinite loading screen with no way off the tablet. A
-customer is never affected: the customer experience needs no device context.
+The existing read/retry flow is unchanged. A read that has not completed can
+remain `unknown`; returned unresolved results are retried before the provider
+settles on `unavailable`. Preparation and Customer navigation never waits for
+these reads or retries. Configuration broadcasts cannot remove either
+authorized workspace.
 
 ### 3. Employee tablets
 

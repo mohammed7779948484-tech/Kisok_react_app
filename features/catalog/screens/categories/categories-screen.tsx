@@ -6,6 +6,7 @@ import { ContentContainer, EmptyState, PageHeading, useLayout } from "@/design-s
 
 import { CatalogShell } from "../../components/catalog-shell";
 import { CategoryCard } from "../../components/category-card";
+import { useHelpMeChoosePillLayout } from "../../components/help-me-choose-pill";
 import {
   CatalogEmptyState,
   CatalogErrorState,
@@ -19,8 +20,8 @@ const ROW_SHAPES = [
   { lead: 1.3, height: 280 },
   { lead: 1.65, height: 360 },
 ] as const;
-
 export function CategoriesScreen() {
+  const pillClearance = useHelpMeChoosePillLayout().clearance;
   const router = useRouter();
   const catalog = useCatalog();
   const { isExpanded, isCompact } = useLayout();
@@ -86,8 +87,11 @@ export function CategoriesScreen() {
   }
 
   return (
-    <CatalogShell currentDestination="categories" settings={view.settings}>
-      <ScrollView testID="categories-list" contentContainerClassName="pb-16">
+    <CatalogShell currentDestination="categories" settings={view.settings} helpMeChoose={{}}>
+      <ScrollView
+        testID="categories-list"
+        contentContainerStyle={{ paddingBottom: 64 + pillClearance }}
+      >
         <ContentContainer className="gap-8">
           {heading}
           <View className="gap-5">

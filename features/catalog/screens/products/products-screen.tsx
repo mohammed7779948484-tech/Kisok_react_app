@@ -5,6 +5,7 @@ import { KeyFigure, PageHeading, useLayout } from "@/design-system";
 
 import { BrowseResults } from "../../components/browse-results";
 import { CatalogShell } from "../../components/catalog-shell";
+import { useHelpMeChoosePillLayout } from "../../components/help-me-choose-pill";
 import {
   CatalogEmptyState,
   CatalogErrorState,
@@ -21,6 +22,7 @@ export type ProductsScreenProps = {
 };
 
 export function ProductsScreen({ initialCategoryId }: ProductsScreenProps = {}) {
+  const pillClearance = useHelpMeChoosePillLayout().clearance;
   const router = useRouter();
   const catalog = useCatalog();
   const { isExpanded } = useLayout();
@@ -56,7 +58,7 @@ export function ProductsScreen({ initialCategoryId }: ProductsScreenProps = {}) 
   }
 
   return (
-    <CatalogShell currentDestination="products" settings={view.settings}>
+    <CatalogShell currentDestination="products" settings={view.settings} helpMeChoose={{}}>
       <BrowseResults
         view={view}
         products={view.products}
@@ -64,6 +66,7 @@ export function ProductsScreen({ initialCategoryId }: ProductsScreenProps = {}) 
         onProductPress={handleProductPress}
         showShortcuts
         initialFilters={initialFilters}
+        bottomInset={pillClearance}
         testID="products-grid"
         header={
           <PageHeading

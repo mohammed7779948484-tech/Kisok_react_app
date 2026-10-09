@@ -7,6 +7,7 @@ import { SectionHeading, SectionLink, useLayout } from "@/design-system";
 import { BrowseResults } from "../../components/browse-results";
 import { CatalogHero, HeroFact } from "../../components/catalog-hero";
 import { CatalogShell } from "../../components/catalog-shell";
+import { useHelpMeChoosePillLayout } from "../../components/help-me-choose-pill";
 import {
   CatalogEmptyState,
   CatalogErrorState,
@@ -23,6 +24,7 @@ export type BrandDetailScreenProps = {
 
 /** A brand's page shows its products directly; the brand facet is implied and hidden. */
 export function BrandDetailScreen({ brandId }: BrandDetailScreenProps) {
+  const pillClearance = useHelpMeChoosePillLayout().clearance;
   const router = useRouter();
   const catalog = useCatalog();
   const { isExpanded } = useLayout();
@@ -73,7 +75,11 @@ export function BrandDetailScreen({ brandId }: BrandDetailScreenProps) {
   const optionCount = products.reduce((total, product) => total + product.variants.length, 0);
 
   return (
-    <CatalogShell currentDestination="brands" settings={view.settings}>
+    <CatalogShell
+      currentDestination="brands"
+      settings={view.settings}
+      helpMeChoose={{ brandId: brand.id }}
+    >
       <BrowseResults
         view={view}
         products={products}
@@ -81,6 +87,7 @@ export function BrandDetailScreen({ brandId }: BrandDetailScreenProps) {
         showBrandFacet={false}
         scopeLabel={`${brand.name} products`}
         onProductPress={handleProductPress}
+        bottomInset={pillClearance}
         testID="brand-products-grid"
         emptyTitle={products.length === 0 ? "Nothing from this brand right now" : undefined}
         emptySecondaryAction={{ label: "All brands", onPress: () => router.replace("/brands") }}

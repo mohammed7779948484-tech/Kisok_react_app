@@ -64,6 +64,8 @@ export type BrowseResultsProps = {
   /** Shown when refinement leaves nothing (the scope itself is never empty here). */
   emptyTitle?: string;
   emptySecondaryAction?: StateAction;
+  /** Space below the last row, raised when something floats over the page's foot. */
+  bottomInset?: number;
   testID?: string;
 };
 
@@ -85,6 +87,7 @@ export function BrowseResults({
   matchQuery,
   emptyTitle = "No products match these filters",
   emptySecondaryAction,
+  bottomInset,
   testID,
 }: BrowseResultsProps) {
   const gutter = usePageGutter();
@@ -212,6 +215,7 @@ export function BrowseResults({
             />
           }
           onScrollOffset={handleScrollOffset}
+          bottomInset={bottomInset}
           testID={testID}
         />
       ) : null}

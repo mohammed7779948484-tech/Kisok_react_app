@@ -29,3 +29,4 @@ export { CategoryDetailScreen } from "./screens/category-detail/category-detail-
 export { ProductDetailScreen } from "./screens/product-detail/product-detail-screen";
 export { useCustomerCatalogSettings } from "./queries/use-customer-settings";
 export { useInvalidateCatalog } from "./queries/use-invalidate-catalog";
+export { HelpMeChooseScreen } from "./screens/help-me-choose/help-me-choose-screen";

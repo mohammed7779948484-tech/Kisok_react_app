@@ -7,6 +7,7 @@ import { EmptyState, PageHeading, SearchInput, usePageGutter, useLayout } from "
 import { BrandCard } from "../../components/brand-card";
 import { CatalogGrid, type CatalogGridRowInfo } from "../../components/catalog-grid";
 import { CatalogShell } from "../../components/catalog-shell";
+import { useHelpMeChoosePillLayout } from "../../components/help-me-choose-pill";
 import {
   CatalogEmptyState,
   CatalogErrorState,
@@ -18,6 +19,7 @@ import { useCatalog } from "../../queries/use-catalog";
 const brandKeyExtractor = (brand: CatalogBrandView) => brand.id;
 
 export function BrandsScreen() {
+  const pillClearance = useHelpMeChoosePillLayout().clearance;
   const router = useRouter();
   const catalog = useCatalog();
   const gutter = usePageGutter();
@@ -116,7 +118,7 @@ export function BrandsScreen() {
   }
 
   return (
-    <CatalogShell currentDestination="brands" settings={view.settings}>
+    <CatalogShell currentDestination="brands" settings={view.settings} helpMeChoose={{}}>
       <CatalogGrid
         data={brands}
         renderItem={renderBrandCard}
@@ -126,6 +128,7 @@ export function BrandsScreen() {
         minItemWidth={250}
         maxColumns={4}
         horizontalPadding={gutter}
+        bottomInset={pillClearance}
         listHeaderComponent={header}
         listEmptyComponent={
           <EmptyState

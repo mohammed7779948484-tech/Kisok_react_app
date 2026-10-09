@@ -18,6 +18,7 @@ import { BrowseResults } from "../../components/browse-results";
 import { CatalogHero } from "../../components/catalog-hero";
 import { CatalogShell } from "../../components/catalog-shell";
 import { CategoryCard } from "../../components/category-card";
+import { useHelpMeChoosePillLayout } from "../../components/help-me-choose-pill";
 import {
   CatalogEmptyState,
   CatalogErrorState,
@@ -39,6 +40,7 @@ export type CategoryDetailScreenProps = {
  * category shows its products directly.
  */
 export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) {
+  const pillClearance = useHelpMeChoosePillLayout().clearance;
   const router = useRouter();
   const catalog = useCatalog();
   const { isExpanded } = useLayout();
@@ -113,8 +115,12 @@ export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) 
 
   if (children.length > 0) {
     return (
-      <CatalogShell currentDestination="categories" settings={view.settings}>
-        <ScrollView contentContainerClassName="pb-16">
+      <CatalogShell
+        currentDestination="categories"
+        settings={view.settings}
+        helpMeChoose={{ categoryId: category.id }}
+      >
+        <ScrollView contentContainerStyle={{ paddingBottom: 64 + pillClearance }}>
           <ContentContainer className="gap-10">
             <CatalogHero
               wide={isExpanded}
@@ -161,7 +167,11 @@ export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) 
   }
 
   return (
-    <CatalogShell currentDestination="categories" settings={view.settings}>
+    <CatalogShell
+      currentDestination="categories"
+      settings={view.settings}
+      helpMeChoose={{ categoryId: category.id }}
+    >
       <BrowseResults
         view={view}
         products={products}
@@ -169,6 +179,7 @@ export function CategoryDetailScreen({ categoryId }: CategoryDetailScreenProps) 
         showCategoryFacet={false}
         scopeLabel={`${category.name} products`}
         onProductPress={handleProductPress}
+        bottomInset={pillClearance}
         testID="category-products-grid"
         header={
           <CatalogHero

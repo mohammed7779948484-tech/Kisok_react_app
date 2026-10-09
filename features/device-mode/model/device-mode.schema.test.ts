@@ -37,11 +37,8 @@ describe("deriveDeviceMode", () => {
     expect(deriveDeviceMode({})).toBe("standard");
   });
 
-  // BEHAVIOUR CHANGE. These rows previously asserted "standard", which was a
-  // fail-OPEN: a present-but-unrecognised value only ever comes from an MDM
-  // that manages this device, and calling that an ordinary employee tablet is
-  // the one wrong answer. An ordinary tablet has NO managed configuration at
-  // all, so absence — not a wrong value — is what means "standard".
+  // A present but unrecognised value describes an unknown configuration.
+  // Only absence means "standard"; classification never determines access.
   it("is unknown for any other PRESENT value of the key, including a wrong type", () => {
     expect(deriveDeviceMode({ kiosk_device_role: "employee" })).toBe("unknown");
     expect(deriveDeviceMode({ kiosk_device_role: "CUSTOMER_KIOSK" })).toBe("unknown");
@@ -81,36 +78,16 @@ describe("deriveDeviceMode", () => {
   });
 });
 
-describe("deviceRoleAccess", () => {
-  it("always allows a customer profile, on every device mode", () => {
-    expect(deviceRoleAccess("customer", "standard")).toBe("allowed");
-    expect(deviceRoleAccess("customer", "customer-kiosk")).toBe("allowed");
-    expect(deviceRoleAccess("customer", "unknown")).toBe("allowed");
-  });
+const deviceModes = ["standard", "customer-kiosk", "unknown", "unavailable"] as const;
 
-  it("allows preparation on an ordinary device — today's routing is unchanged", () => {
-    expect(deviceRoleAccess("preparation", "standard")).toBe("allowed");
-  });
-
-  it("blocks preparation on a customer kiosk device", () => {
-    expect(deviceRoleAccess("preparation", "customer-kiosk")).toBe("blocked");
-  });
-
-  it("holds preparation while the device mode is not known yet", () => {
-    expect(deviceRoleAccess("preparation", "unknown")).toBe("pending");
-  });
-
-  it("blocks any role with no tablet experience, whatever the device", () => {
-    expect(deviceRoleAccess("admin", "standard")).toBe("blocked");
+describe.each(["customer", "preparation"] as const)("deviceRoleAccess — %s", (role) => {
+  it.each(deviceModes)("allows the account's experience when device mode is %s", (mode) => {
+    expect(deviceRoleAccess(role, mode)).toBe("allowed");
   });
 });
 
-describe("deviceRoleAccess — a device whose configuration could not be read", () => {
-  it("blocks preparation instead of holding it forever", () => {
-    expect(deviceRoleAccess("preparation", "unavailable")).toBe("blocked");
-  });
-
-  it("still lets a customer use the tablet — the customer experience needs no device context", () => {
-    expect(deviceRoleAccess("customer", "unavailable")).toBe("allowed");
+describe("deviceRoleAccess — other roles", () => {
+  it.each(deviceModes)("blocks admin when device mode is %s", (mode) => {
+    expect(deviceRoleAccess("admin", mode)).toBe("blocked");
   });
 });

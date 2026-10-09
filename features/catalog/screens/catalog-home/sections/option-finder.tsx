@@ -1,34 +1,36 @@
 import { Pressable, View } from "react-native";
-import { LayoutGrid, Search, SlidersHorizontal, Tag, type LucideIcon } from "lucide-react-native";
+import { ArrowRight, Compass, Search } from "lucide-react-native";
 
-import { Eyebrow, Icon, Text } from "@/design-system";
+import { Button, Eyebrow, Icon, Text } from "@/design-system";
 import { cn } from "@/core/utils";
 
-import type { DiscoveryOptionType } from "../../../model/discovery-presentation";
+import type { CatalogCategoryView } from "../../../model/catalog-view";
+import { productCountLabel } from "../../../model/labels";
+
+/** At most this many category quick starts; the panel never grows with the catalog. */
+const QUICK_START_LIMIT = 4;
 
 /**
- * Guided discovery: search, or start from how the store is organised. The
- * option types offered are the ones customers actually choose between in this
- * catalog; tapping one searches for products that offer that choice.
+ * Guided discovery: the way into Help Me Choose for a customer who does not
+ * know what a thing is called — a few quick questions, or a quick start inside
+ * one of the store's stocked root categories. Search stays one tap away for a
+ * customer who does know.
  */
 export function OptionFinder({
-  optionTypes,
+  categories,
   split,
   onSearch,
-  onSearchFor,
-  onBrands,
-  onCategories,
+  onHelpMeChoose,
+  onHelpMeChooseIn,
 }: {
-  optionTypes: DiscoveryOptionType[];
+  /** Root categories that have products. */
+  categories: CatalogCategoryView[];
   split: boolean;
   onSearch: () => void;
-  onSearchFor: (query: string) => void;
-  onBrands: () => void;
-  onCategories: () => void;
+  onHelpMeChoose: () => void;
+  onHelpMeChooseIn: (category: CatalogCategoryView) => void;
 }) {
-  const [leadType, ...moreTypes] = optionTypes;
-  const typeNames = optionTypes.slice(0, 3).map((type) => type.name.toLowerCase());
-  const description = `Explore by ${[...typeNames, "brand", "or category"].join(", ")}.`;
+  const quickStarts = categories.slice(0, QUICK_START_LIMIT);
 
   return (
     <View
@@ -47,10 +49,23 @@ export function OptionFinder({
             aria-level={2}
             className="font-display text-display-md text-primary-foreground"
           >
-            Find Your Option
+            Help me choose
+          </Text>
+          <Text className="text-body text-primary-foreground/75">
+            Not sure what it&apos;s called? Answer a few quick questions and we&apos;ll narrow the
+            store to what&apos;s in stock.
           </Text>
         </View>
-        <Text className="text-body text-primary-foreground/75">{description}</Text>
+        <Button
+          testID="home-help-me-choose"
+          variant="inverse"
+          size="large"
+          accessibilityHint="Answer a few quick questions to narrow the products"
+          onPress={onHelpMeChoose}
+        >
+          <Icon as={Compass} size={20} className="text-primary" />
+          <Text>Help me choose</Text>
+        </Button>
       </View>
 
       <View className="min-w-0 flex-1 gap-3">
@@ -58,50 +73,27 @@ export function OptionFinder({
           accessibilityRole="search"
           accessibilityLabel="Search the store"
           onPress={onSearch}
-          className="h-[56px] flex-row items-center gap-3 rounded-lg border border-primary-foreground/15 bg-primary-foreground/[0.07] px-5 active:bg-primary-foreground/10"
+          className="min-h-control-lg flex-row items-center gap-3 rounded-lg border border-primary-foreground/15 bg-primary-foreground/[0.07] px-5 py-2 active:bg-primary-foreground/10"
         >
           <Icon as={Search} size={18} className="text-primary-foreground/80" />
-          <Text className="text-body-lg text-primary-foreground/70">
+          <Text className="shrink text-body-lg text-primary-foreground/70">
             Search products, brands, categories, or options…
           </Text>
         </Pressable>
-        <View className="flex-row gap-3">
-          {leadType ? (
-            <FinderTile
-              icon={SlidersHorizontal}
-              title={leadType.name}
-              caption={`Products with ${leadType.name.toLowerCase()} choices`}
-              onPress={() => onSearchFor(leadType.name)}
-            />
-          ) : null}
-          <FinderTile
-            icon={Tag}
-            title="Brand"
-            caption="Explore brand families"
-            onPress={onBrands}
-          />
-          <FinderTile
-            icon={LayoutGrid}
-            title="Category"
-            caption="Start from the store map"
-            onPress={onCategories}
-          />
-        </View>
-        {moreTypes.length > 0 ? (
-          <View className="flex-row flex-wrap gap-2">
-            {moreTypes.slice(0, 4).map((type) => (
-              <Pressable
-                key={type.id}
-                accessibilityRole="button"
-                accessibilityLabel={`Products with ${type.name} choices`}
-                onPress={() => onSearchFor(type.name)}
-                className="h-touch justify-center rounded-full border border-primary-foreground/20 px-5 active:bg-primary-foreground/10"
-              >
-                <Text className="font-sans-bold text-meta text-primary-foreground">
-                  {type.name}
-                </Text>
-              </Pressable>
-            ))}
+        {quickStarts.length > 0 ? (
+          <View className="gap-3 pt-3">
+            <Text className="font-sans-bold text-meta text-primary-foreground/75">
+              Or start in a category
+            </Text>
+            <View className="flex-row flex-wrap gap-3">
+              {quickStarts.map((category) => (
+                <QuickStartTile
+                  key={category.id}
+                  category={category}
+                  onPress={() => onHelpMeChooseIn(category)}
+                />
+              ))}
+            </View>
           </View>
         ) : null}
       </View>
@@ -109,33 +101,29 @@ export function OptionFinder({
   );
 }
 
-function FinderTile({
-  icon,
-  title,
-  caption,
+function QuickStartTile({
+  category,
   onPress,
 }: {
-  icon: LucideIcon;
-  title: string;
-  caption: string;
+  category: CatalogCategoryView;
   onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${title}, ${caption}`}
+      accessibilityLabel={`Help me choose in ${category.name}`}
       onPress={onPress}
-      className="min-h-[124px] flex-1 justify-between gap-4 rounded-lg border border-primary-foreground/15 bg-primary-foreground/[0.06] p-4 active:bg-primary-foreground/10"
+      className="min-h-[96px] min-w-[160px] grow basis-[40%] justify-between gap-3 rounded-lg border border-primary-foreground/15 bg-primary-foreground/[0.06] p-4 active:bg-primary-foreground/10"
     >
-      <View className="h-9 w-9 items-center justify-center rounded-md bg-primary-foreground/10">
-        <Icon as={icon} size={16} className="text-primary-foreground" />
-      </View>
-      <View className="gap-1">
-        <Text className="font-sans-bold text-body-lg text-primary-foreground">{title}</Text>
-        <Text numberOfLines={2} className="text-caption text-primary-foreground/70">
-          {caption}
+      <View className="flex-row items-start justify-between gap-3">
+        <Text className="shrink font-sans-bold text-body-lg text-primary-foreground">
+          {category.name}
         </Text>
+        <Icon as={ArrowRight} size={18} className="text-primary-foreground/80" />
       </View>
+      <Text className="text-caption text-primary-foreground/70">
+        {productCountLabel(category.productCount)}
+      </Text>
     </Pressable>
   );
 }

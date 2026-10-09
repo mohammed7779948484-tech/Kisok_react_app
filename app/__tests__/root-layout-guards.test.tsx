@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react-native";
+import { renderWithProviders, screen } from "@/core/testing";
+import type { AppRole, AuthStatus } from "@/core/auth";
 
 import type { DeviceMode } from "@/features/device-mode";
 
@@ -54,58 +55,64 @@ const { useDeviceMode } = require("@/features/device-mode") as { useDeviceMode: 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { RootNavigator } = require("../_layout") as { RootNavigator: () => React.ReactElement };
 
-async function renderNavigator(role: "customer" | "preparation", mode: DeviceMode) {
+const deviceModes = ["standard", "customer-kiosk", "unknown", "unavailable"] as const;
+
+async function renderNavigator(status: AuthStatus, role: AppRole | null, mode: DeviceMode) {
   useAuth.mockReturnValue({
-    status: "ready",
-    profile: { id: "p", display_name: "P", role, is_active: true },
+    status,
+    profile: role ? { id: "p", display_name: "P", role, is_active: status === "ready" } : null,
   });
   useDeviceMode.mockReturnValue(mode);
-  return render(<RootNavigator />);
+  return renderWithProviders(<RootNavigator />);
 }
 
-it("keeps the preparation group on an ordinary tablet — today's navigator is unchanged", async () => {
-  await renderNavigator("preparation", "standard");
+describe.each(["customer", "preparation"] as const)("ready %s account", (role) => {
+  it.each(deviceModes)(
+    "keeps only its experience reachable when device mode is %s",
+    async (mode) => {
+      await renderNavigator("ready", role, mode);
 
-  expect(screen.getByText("screen:(preparation)")).toBeTruthy();
-  expect(screen.queryByText("screen:device-mismatch")).toBeNull();
+      expect(screen.getByText(`screen:(${role})`)).toBeOnTheScreen();
+      const otherRole = role === "customer" ? "preparation" : "customer";
+      expect(screen.queryByText(`screen:(${otherRole})`)).toBeNull();
+      expect(screen.queryByText("screen:device-mismatch")).toBeNull();
+    },
+  );
 });
 
-it("removes the preparation group entirely on a customer kiosk tablet", async () => {
-  await renderNavigator("preparation", "customer-kiosk");
+describe("accounts without tablet access", () => {
+  it.each(deviceModes)(
+    "keeps a drifted ready admin out of both experiences in %s mode",
+    async (mode) => {
+      await renderNavigator("ready", "admin", mode);
 
-  expect(screen.queryByText("screen:(preparation)")).toBeNull();
-  expect(screen.getByText("screen:device-mismatch")).toBeTruthy();
-});
+      expect(screen.queryByText("screen:(customer)")).toBeNull();
+      expect(screen.queryByText("screen:(preparation)")).toBeNull();
+    },
+  );
 
-it("removes the preparation group while the device mode is not known yet", async () => {
-  await renderNavigator("preparation", "unknown");
+  it.each(["signedOut", "unauthorized", "resolving", "error"] as const)(
+    "retains the %s session guard even with a preparation profile",
+    async (status) => {
+      await renderNavigator(status, "preparation", "unknown");
 
-  expect(screen.queryByText("screen:(preparation)")).toBeNull();
-  // Not a mismatch either — nothing has been decided against this account yet.
-  expect(screen.queryByText("screen:device-mismatch")).toBeNull();
-});
+      expect(screen.queryByText("screen:(customer)")).toBeNull();
+      expect(screen.queryByText("screen:(preparation)")).toBeNull();
+      expect(screen.queryByText("screen:device-mismatch")).toBeNull();
+      if (status === "resolving" || status === "error") {
+        expect(screen.getByText("startup")).toBeOnTheScreen();
+      } else {
+        const route = status === "signedOut" ? "sign-in" : "unauthorized";
+        expect(screen.getByText(`screen:${route}`)).toBeOnTheScreen();
+      }
+    },
+  );
 
-it("keeps the customer group on both device kinds", async () => {
-  await renderNavigator("customer", "standard");
-  expect(screen.getByText("screen:(customer)")).toBeTruthy();
+  it("keeps a ready session without a profile out of both experiences", async () => {
+    await renderNavigator("ready", null, "standard");
 
-  await renderNavigator("customer", "customer-kiosk");
-  expect(screen.getByText("screen:(customer)")).toBeTruthy();
-  expect(screen.queryByText("screen:device-mismatch")).toBeNull();
-});
-
-it("removes the preparation group when the device configuration could not be read", async () => {
-  await renderNavigator("preparation", "unavailable");
-
-  expect(screen.queryByText("screen:(preparation)")).toBeNull();
-  // Terminal, not a hold: the employee gets a screen with a way out.
-  expect(screen.getByText("screen:device-mismatch")).toBeTruthy();
-});
-
-it("never shows the device-mismatch screen to a customer, on any device mode", async () => {
-  for (const mode of ["standard", "customer-kiosk", "unknown", "unavailable"] as const) {
-    await renderNavigator("customer", mode);
+    expect(screen.queryByText("screen:(customer)")).toBeNull();
+    expect(screen.queryByText("screen:(preparation)")).toBeNull();
     expect(screen.queryByText("screen:device-mismatch")).toBeNull();
-    expect(screen.getByText("screen:(customer)")).toBeTruthy();
-  }
+  });
 });

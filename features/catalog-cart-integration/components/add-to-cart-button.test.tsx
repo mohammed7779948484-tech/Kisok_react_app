@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { ReactNode } from "react";
-import { Dimensions } from "react-native";
+import { useState, type ReactNode } from "react";
+import { Dimensions, Pressable, Text } from "react-native";
 
 import { useAuth } from "@/core/auth";
 import { resetLogging, setLogSink } from "@/core/logging";
@@ -56,6 +56,8 @@ const ORDER_OWNER = "e5f6a7b8-c9d0-4e1f-8a2b-4c5d6e7f8a9b";
 const STEPPER_OWNER = "f6a7b8c9-d0e1-4f2a-9b3c-5d6e7f8a9b0c";
 const STOCK_OWNER = "07b8c9d0-e1f2-4a3b-8c4d-6e7f8a9b0c1d";
 const LIMIT_OWNER = "18c9d0e1-f2a3-4b4c-9d5e-7f8a9b0c1d2e";
+const CONTROLLED_OWNER = "29d0e1f2-a3b4-4c5d-8e6f-8a9b0c1d2e3f";
+const READ_ONLY_OWNER = "3ae1f2a3-b4c5-4d6e-9f7a-9b0c1d2e3f4a";
 
 const flavorOption = {
   optionTypeId: "f1a2b3c4-d5e6-4789-8abc-def012345678",
@@ -149,6 +151,47 @@ async function renderButton(
     </AuthedHarness>,
     { withAuth: true },
   );
+}
+
+/**
+ * Product Detail's side of the controlled pair: it owns the quantity, and a
+ * "Remount" control swaps the button for a fresh instance — what happens when
+ * the screen moves between its split layout and the Option Browser.
+ */
+function ControlledQuantityHost({
+  source,
+  initial,
+  onQuantityChange,
+}: {
+  source: CatalogCartSource;
+  initial: number;
+  onQuantityChange: (next: number) => void;
+}) {
+  const [quantity, setQuantity] = useState(initial);
+  const [mount, setMount] = useState(0);
+  return (
+    <>
+      <AddToCartButton
+        key={mount}
+        source={source}
+        withQuantity
+        quantity={quantity}
+        onQuantityChange={(next) => {
+          onQuantityChange(next);
+          setQuantity(next);
+        }}
+      />
+      <Pressable accessibilityRole="button" onPress={() => setMount((count) => count + 1)}>
+        <Text>Remount</Text>
+      </Pressable>
+    </>
+  );
+}
+
+async function renderControlled(ui: ReactNode, ownerId: string) {
+  setLandscape();
+  mockAuthHolder.current = installMockAuth({ profile: { ...TEST_PROFILE, id: ownerId } });
+  return renderWithProviders(<AuthedHarness>{ui}</AuthedHarness>, { withAuth: true });
 }
 
 const totalQuantity = () =>
@@ -349,5 +392,58 @@ describe("AddToCartButton", () => {
 
     expect(totalQuantity()).toBe(99);
     expect(screen.getByText("This option is already at the cart's limit.")).toBeOnTheScreen();
+  });
+
+  describe("with a controlled quantity", () => {
+    it("shows the owner's quantity, reports stepper changes, survives a remount, and asks for 1 after an add", async () => {
+      const user = userEvent.setup();
+      const onQuantityChange = jest.fn();
+      await renderControlled(
+        <ControlledQuantityHost
+          source={availableSource}
+          initial={3}
+          onQuantityChange={onQuantityChange}
+        />,
+        CONTROLLED_OWNER,
+      );
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Add 3 to cart" })).not.toBeDisabled(),
+      );
+
+      await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+      expect(onQuantityChange).toHaveBeenLastCalledWith(4);
+      expect(screen.getByRole("button", { name: "Add 4 to cart" })).toBeOnTheScreen();
+
+      // A fresh button instance still shows the owner's quantity.
+      await user.press(screen.getByRole("button", { name: "Remount" }));
+      expect(screen.getByRole("button", { name: "Add 4 to cart" })).toBeOnTheScreen();
+
+      await user.press(screen.getByRole("button", { name: "Add 4 to cart" }));
+      await settleDurableWrites();
+
+      expect(getCartSnapshot().lines[0]).toMatchObject({ ...expectedInput, quantity: 4 });
+      expect(screen.getByText("Added 4 to your cart.")).toBeOnTheScreen();
+      expect(onQuantityChange).toHaveBeenLastCalledWith(1);
+      expect(screen.getByRole("button", { name: "Add 1 to cart" })).toBeOnTheScreen();
+    });
+
+    it("treats a quantity without a change handler as read-only", async () => {
+      const user = userEvent.setup();
+      await renderControlled(
+        <AddToCartButton source={availableSource} withQuantity quantity={2} />,
+        READ_ONLY_OWNER,
+      );
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Add 2 to cart" })).not.toBeDisabled(),
+      );
+
+      await user.press(screen.getByRole("button", { name: "Increase quantity" }));
+      expect(screen.getByRole("button", { name: "Add 2 to cart" })).toBeOnTheScreen();
+
+      await user.press(screen.getByRole("button", { name: "Add 2 to cart" }));
+      await settleDurableWrites();
+      expect(totalQuantity()).toBe(2);
+      expect(screen.getByRole("button", { name: "Add 2 to cart" })).toBeOnTheScreen();
+    });
   });
 });

@@ -14,8 +14,8 @@ import type { DeviceMode } from "../model/device-mode.schema";
  * that is neither client-edited nor shared across screens as state.
  *
  * Default `"unknown"` is deliberate. A consumer rendered outside the provider
- * gets the honest "not known yet" answer, which the role guard treats as
- * "hold", never as "ordinary device".
+ * gets the honest "not known yet" answer. This classification does not delay
+ * workspace access for either authorized tablet role.
  */
 const DeviceModeContext = createContext<DeviceMode>("unknown");
 
@@ -23,12 +23,8 @@ const DeviceModeContext = createContext<DeviceMode>("unknown");
  * How many times an unresolved read is retried before the mode settles on
  * `unavailable`, and the delay before each retry.
  *
- * Nothing re-reads on its own unless the MDM changes something, so without
- * this a single failed read — or a `restrictions_pending` that never settles —
- * would hold a preparation employee on the startup screen indefinitely, with
- * no way to hand a kiosk tablet back. Giving up is what makes the state
- * explainable and the sign-out reachable; it does not fail open, because
- * `unavailable` still blocks preparation.
+ * A failed read or persistent `restrictions_pending` eventually becomes a
+ * terminal descriptive state. Workspace access never waits for these retries.
  */
 const RETRY_DELAYS_MS = [500, 1000, 2000] as const;
 
@@ -36,12 +32,11 @@ export function DeviceModeProvider({ children }: { children: React.ReactNode }) 
   const [mode, setMode] = useState<DeviceMode>("unknown");
   // Reads are disk I/O with no ordering guarantee, and two change broadcasts
   // in quick succession can resolve out of order. Only the newest read may
-  // publish: a late earlier one would silently downgrade a kiosk tablet to
-  // "standard", which is the one failure this feature exists to prevent.
+  // publish, so a late earlier result cannot overwrite current classification.
   const latestRead = useRef(0);
   // The last verdict a read actually produced, or null before the first one.
-  // Used to avoid dropping a working session back to `unknown` for a transient
-  // re-read failure — but only when holding it is the SAFE direction.
+  // The existing classification retention policy keeps a kiosk verdict during
+  // transient re-read failures. It does not control account-role access.
   const lastSettled = useRef<DeviceMode | null>(null);
 
   useEffect(() => {
@@ -63,21 +58,15 @@ export function DeviceModeProvider({ children }: { children: React.ReactNode }) 
 
         const delay = RETRY_DELAYS_MS[attempt];
         if (delay === undefined) {
-          // Out of attempts. Settle somewhere the UI can explain — and do NOT
-          // keep trusting an earlier reading: a change broadcast is exactly
-          // the event that can turn an ordinary tablet into a kiosk one.
+          // Out of attempts. Stop trusting an earlier classification: a change
+          // broadcast can mean that the managed configuration changed.
           setMode("unavailable");
           return;
         }
 
-        // Retention is DOWNGRADE-ONLY. Holding a settled verdict through the
-        // retry window avoids unmounting the preparation stack under an
-        // employee for a transient blip — but only a DPC broadcast can trigger
-        // a re-read, so this only ever happens on a MANAGED device, and there
-        // a retained `standard` is retained on exactly the tablet where it is
-        // the wrong answer (one being converted to the kiosk, say). So keep a
-        // verdict that WITHHOLDS preparation, and publish `unknown` at once
-        // when the retained one would grant it.
+        // Preserve the existing classification policy: retain a kiosk verdict
+        // while retrying; replace other stale verdicts with `unknown`.
+        // Authorized workspaces remain available through either result.
         if (lastSettled.current !== "customer-kiosk") setMode("unknown");
         retryTimer = setTimeout(() => refresh(attempt + 1), delay);
       });

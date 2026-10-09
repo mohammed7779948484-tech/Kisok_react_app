@@ -1,5 +1,10 @@
 appId: com.kisok.kiosk
-name: Catalog — review cart and reopen without losing selections
+name: Catalog — choose from the Option Browser, review cart and reopen without losing selections
+env:
+  # TEST catalog: "UT 50K", 46 variants (41 in stock when this flow was pinned).
+  # A product with more than six variants, so Product Detail must open the
+  # Option Browser. If TEST data changes, see .maestro/README.md.
+  LARGE_PRODUCT_ID: 7a7ed8a8-eeba-433d-abc2-0930c2f19593
 ---
 - launchApp:
     clearState: true
@@ -29,25 +34,27 @@ name: Catalog — review cart and reopen without losing selections
     timeout: 60000
 - scrollUntilVisible:
     element:
-      id: "catalog-product-available-.*"
-      index: 0
+      id: "catalog-product-available-${LARGE_PRODUCT_ID}"
     direction: DOWN
     timeout: 60000
     centerElement: true
 - tapOn:
-    id: "catalog-product-available-.*"
-    index: 0
+    id: "catalog-product-available-${LARGE_PRODUCT_ID}"
 - extendedWaitUntil:
     visible:
       id: "catalog-option-rack"
     timeout: 60000
-- runFlow:
-    when:
-      visible:
-        id: "catalog-option-show-all"
-    commands:
-      - tapOn:
-          id: "catalog-option-show-all"
+# More than six variants: the preview always offers "Browse all", and the
+# choice below is made inside the Option Browser, never the preview.
+- tapOn:
+    id: "catalog-option-show-all"
+- extendedWaitUntil:
+    visible:
+      id: "catalog-option-browser"
+    timeout: 30000
+- assertNotVisible:
+    id: "catalog-option-rack"
+- takeScreenshot: catalog-review-cart-option-browser
 - scrollUntilVisible:
     element:
       id: "catalog-option-available-.*"
@@ -58,12 +65,17 @@ name: Catalog — review cart and reopen without losing selections
 - tapOn:
     id: "catalog-option-available-.*"
     index: 0
+- assertVisible:
+    id: "catalog-option-browser"
+- takeScreenshot: catalog-review-cart-option-selected
 - scrollUntilVisible:
     element:
       id: "catalog-add-to-cart"
     direction: DOWN
     timeout: 30000
     centerElement: true
+- assertVisible:
+    id: "catalog-option-browser"
 - tapOn:
     id: "catalog-add-to-cart"
 - extendedWaitUntil:
@@ -163,6 +175,9 @@ name: Catalog — review cart and reopen without losing selections
                 visible:
                   id: "catalog-cart-access"
                 timeout: 30000
+            # Back on Product Detail, still in the Option Browser.
+            - assertVisible:
+                id: "catalog-option-browser"
             - tapOn:
                 id: "catalog-cart-access"
             - extendedWaitUntil:

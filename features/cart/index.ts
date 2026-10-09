@@ -11,7 +11,8 @@
  *   restores the active customer's cart.
  * - Plain functions for Checkout and event handlers: `getCartSnapshot`,
  *   `hydrateCart`, `lockCart`/`unlockCart` around an order submission, and
- *   `clearCartAfterOrder` once the store confirms it.
+ *   `clearCartAfterOrder` once the store confirms it; `discardCart` for staff
+ *   sign-out on a shared account.
  * - `cartLineSchema` and the line types, because a submitted order keeps the
  *   lines it was placed with.
  * - `FullCartScreen`, which Checkout composes with its confirm action.
@@ -27,6 +28,7 @@ export {
   addItem,
   clearCart,
   clearCartAfterOrder,
+  discardCart,
   getCartSnapshot,
   hydrateCart,
   lockCart,

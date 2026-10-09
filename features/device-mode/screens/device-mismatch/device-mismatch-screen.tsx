@@ -6,22 +6,12 @@ import { useSignOutAction } from "@/core/auth";
 import { useDeviceMode } from "../../state/device-mode-context";
 
 /**
- * Shown when a signed-in role has no experience on THIS tablet.
+ * Retained legacy fallback for a role blocked by the routing decision.
+ * Valid Customer and Preparation accounts cannot reach this screen, regardless
+ * of device mode. The legacy device-specific copy and shared sign-out pipeline
+ * are kept here to avoid unrelated screen or navigation changes.
  *
- * Two device states reach it, and they need different words:
- *
- *  - the managed configuration says this is the Customer Kiosk tablet, and a
- *    preparation employee has signed in;
- *  - the managed configuration could not be read at all, and the retries gave
- *    up. Saying "this is the kiosk" there would be a claim we cannot make.
- *
- * Either way the account is perfectly valid, so the wording blames the device
- * rather than the person, and both states offer the same way out.
- *
- * Like `UnauthorizedScreen`, this is UX protection rather than a security
- * boundary: Supabase RLS decides what the account may actually do. Signing out
- * goes through the shared `useSignOutAction()` pipeline, so the kiosk handoff
- * safety that protects the next customer applies here unchanged.
+ * Supabase authorization and RLS remain the security boundary.
  */
 export function DeviceMismatchScreen() {
   const signOut = useSignOutAction();

@@ -64,6 +64,11 @@ const RELEASE_NOTES: Record<string, readonly string[]> = {
     "Product options and variants are easier to browse and select, including products with large option sets.",
     "Cart, checkout, offline feedback, and the overall kiosk experience have been refined.",
   ],
+  "1.2.0+7": [
+    "New: Help me choose. Answer a few quick questions and see only the products that have an option matching everything you picked.",
+    "Products with many flavors or options now open into a full, searchable list, with available options shown first.",
+    "Your chosen option and quantity stay put while you browse, and Help me choose points you straight to the options that match.",
+  ],
 };
 
 /**

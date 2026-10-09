@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
+  type AccessibilityRole,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -55,6 +56,16 @@ export type CatalogGridProps<ItemT> = {
    * which resets its scroll position without a scroll event.
    */
   onScrollOffset?: (offsetY: number) => void;
+  /**
+   * Anything outside `data` that rows render from (a selected id). FlashList
+   * re-renders rows only when this or `data` changes.
+   */
+  extraData?: unknown;
+  /** Space below the last row; raise it when something floats over the list's foot. */
+  bottomInset?: number;
+  /** Announce the grid as one group, e.g. a `radiogroup` of choices. */
+  accessibilityRole?: AccessibilityRole;
+  accessibilityLabel?: string;
   testID?: string;
   className?: string;
 };
@@ -73,6 +84,10 @@ export function CatalogGrid<ItemT>({
   listEmptyComponent,
   listFooterComponent,
   onScrollOffset,
+  extraData,
+  bottomInset = 40,
+  accessibilityRole,
+  accessibilityLabel,
   testID,
   className,
 }: CatalogGridProps<ItemT>) {
@@ -130,9 +145,9 @@ export function CatalogGrid<ItemT>({
     () => ({
       paddingLeft: Math.max(0, horizontalPadding - halfGap) + leadingInset,
       paddingRight: Math.max(0, horizontalPadding - halfGap),
-      paddingBottom: 40,
+      paddingBottom: bottomInset,
     }),
-    [horizontalPadding, halfGap, leadingInset],
+    [horizontalPadding, halfGap, leadingInset, bottomInset],
   );
 
   const inset = (element?: React.ReactElement) =>
@@ -148,6 +163,7 @@ export function CatalogGrid<ItemT>({
           numColumns={columns}
           renderItem={renderRow}
           keyExtractor={keyExtractor}
+          extraData={extraData}
           ListHeaderComponent={inset(listHeaderComponent)}
           ListEmptyComponent={inset(listEmptyComponent)}
           ListFooterComponent={inset(listFooterComponent)}
@@ -155,6 +171,8 @@ export function CatalogGrid<ItemT>({
           keyboardShouldPersistTaps="handled"
           onScroll={onScrollOffset ? handleScroll : undefined}
           scrollEventThrottle={16}
+          accessibilityRole={accessibilityRole}
+          accessibilityLabel={accessibilityLabel}
           testID={testID}
         />
       ) : null}

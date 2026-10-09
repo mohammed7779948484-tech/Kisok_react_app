@@ -111,3 +111,112 @@ CI on the exact final HEAD pending the push — closed by the Lead
 immediately after pushing (recorded in the worklog). Two trivial record
 notes (19→21 ahead at final HEAD; 52→51 feature files precision) applied by
 the Lead while recording.
+
+## Phase 4 — independent review (fresh `code-reviewer`, scope `git diff fd77e4f..366aa46`)
+
+Shared with `features/maintenance/docs/review.md` (one review covered both deliveries).
+Result: 0 blocking, 1 major, 7 minor (plus one informational). External review on PR #42 by
+CodeRabbit: 1 minor (AC-07 evidence path, fixed in 9200a74), 1 trivial optional (see m-04).
+
+| ID   | Severity | Finding                                                                                                                             | Disposition                | Remediation                                                                                                                                                                                                                                                                |
+| ---- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M-01 | major    | Stacked Option Browser hid the Order Bar on search focus; Android can hide the keyboard without blurring → bar stays hidden (GD-02) | fix                        | Bar hidden only between `keyboardDidShow`/`keyboardDidHide`; RED test: show → hidden, hide without blur → back (failed on focus-driven code)                                                                                                                               |
+| m-01 | minor    | First-open reconcile of a sold-out/unknown scope announced "catalog was updated"                                                    | fix                        | Announce only after a previous view existed; RED test with an unknown `categoryId`                                                                                                                                                                                         |
+| m-02 | minor    | Staff page: Back during sign-out could drop a later failure; success briefly re-enabled the button                                  | fix (maintenance)          | BackHandler held while pending; on `ok` the action stays spent; RED test                                                                                                                                                                                                   |
+| m-03 | minor    | Pill offset grows with `insets.bottom` but reserved clearance was fixed at 96                                                       | fix                        | `useHelpMeChoosePillLayout()` returns both `bottom` and `clearance` from the insets; shell + 5 screens use it; tests at inset 0 and 48                                                                                                                                     |
+| m-04 | minor    | Teardown test uses hand-built layouts, not the real `RootNavigator`                                                                 | accept                     | Real-router test is mutation-checked; the real customer tree's teardown is runtime-evidenced (web: staff sign-out → `/sign-in`, zero errors); a full RootNavigator mount needs device-mode/auth/catalog fakes for little gain. Same disposition given to CodeRabbit on #42 |
+| m-05 | minor    | Four screen-private components under `help-me-choose/components/` lack a SCAFFOLD record                                            | fix (record)               | Superseded by the quality audit below (unplanned, accepted by the Lead). Was: recorded in the worklog as planned manual artifacts inside B2's screen scope (no capability was run per component; `component --screen` would have produced the same placement)              |
+| m-06 | minor    | `model/discovery-presentation.ts` dead after the Home rework                                                                        | fix                        | Deleted; no remaining references; typecheck 0                                                                                                                                                                                                                              |
+| m-07 | minor    | Constant-only pill test; style-prop grid test                                                                                       | fix (pill) / accept (grid) | Pill test replaced by inset-aware layout tests; the grid `bottomInset` test pins a prop contract and stays                                                                                                                                                                 |
+| m-08 | info     | Silent log sink in maintenance tests                                                                                                | no action                  | —                                                                                                                                                                                                                                                                          |
+
+### Phase 4 — re-review (fresh `code-reviewer`, scope `git diff 366aa46..0435b51`)
+
+Result: all original findings resolved or properly accepted (M-01, m-01, m-02, m-03/m-07,
+m-06 RESOLVED; m-04 ACCEPT; m-05 recorded). 0 blocking, 0 major, 4 new minor. Reviewer
+re-ran `pnpm typecheck` (0), eslint (clean), jest catalog + maintenance (32 suites / 388).
+
+| ID   | Severity | Finding                                                                                                | Disposition | Remediation                                                                                                  |
+| ---- | -------- | ------------------------------------------------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------------------------------------ |
+| N-01 | minor    | Stacked Order Bar keyboard state could go stale across a rotation through split (M-01 symptom returns) | fix         | Seed from `Keyboard.isVisible()`, reset on cleanup; RED rotation test in `option-browser.test.tsx` (bdc874a) |
+| N-02 | minor    | M-01 test never focused the field, so a focus-driven regression would pass                             | fix         | Test focuses "Search flavors" first; spy restored in `afterEach` (bdc874a)                                   |
+| N-03 | minor    | Orphan doc comments in `categories-screen.tsx` and `category-detail-screen.tsx`                        | fix         | Removed (747d8dd)                                                                                            |
+| N-04 | minor    | Maintenance: no test that Back is released after a failed sign-out; spies restored only at test end    | fix         | `afterEach` restores mocks; failure-path release test (9e1204c)                                              |
+| R-01 | minor    | (Lead, runtime) stacked Help Me Choose repeated the no-match sentence in the panel and the results     | fix         | Results repeat it only in split; RED "says no-match once…" (80bec6e)                                         |
+
+Still open after re-review: none. Each fix is narrow, test-covered and runtime-checked on
+747d8dd (worklog "Feature gate"); no further re-review round was judged necessary.
+
+### Phase 4 — quality audit (fresh `quality-auditor`, scope `fd77e4f..0435b51`)
+
+Verdict on 0435b51: **NOT CLEAN** — "the work itself looks sound; what blocks the gate is
+the record and the final-HEAD evidence". Auditor re-ran typecheck, `test:ci` (103 / 1348),
+lint, format:check, check:docs. Findings and the Lead's resolutions (records only, no
+product code):
+
+| Category      | Finding                                                                         | Resolution                                                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| not delivered | GD-09 Home option-type chips became root-category quick starts without an amend | GD-09 amended in `phase-4-guided-discovery.md` with the reason (206 Flavor values); confirmation requested on #42 (issuecomment-6047459985) |
+| not delivered | 1024×768 runtime size missing                                                   | Run on 747d8dd with all scenarios (worklog "Feature gate")                                                                                  |
+| not evidenced | CI on the final HEAD                                                            | CI run 37690946342 on 6dedba1: success (worklog "Feature gate — CI")                                                                        |
+| not evidenced | No `pnpm verify` after the last change                                          | Run on 747d8dd: exit 0, 104 / 1351 (worklog)                                                                                                |
+| not evidenced | "All round gates PASS" with no round gate recorded                              | Round gates and feature gate sections added to `phase-4-guided-discovery.md`                                                                |
+| not evidenced | No runtime after remediation (M-01, m-03, 4e87d78)                              | All scenarios × 4 sizes on 747d8dd, zero page errors                                                                                        |
+| not evidenced | HMC "skip brand → bubblegum → Clear" runtime path not in the worklog            | Recorded (worklog "Feature gate")                                                                                                           |
+| not planned   | Four hand-written HMC components called "planned"                               | Relabelled: unplanned manual artifacts inside B2's screen scope, accepted by the Lead (B2 row); m-05 wording superseded                     |
+| not planned   | `bottomInset` on `CatalogGrid` beyond A2's scope                                | Added to A2's scope line (justified by D6)                                                                                                  |
+| stale record  | PR #42 body ("review running", "366aa46")                                       | PR body rewritten after the re-audit (gate state, reviews, verify 104/1351, 4 sizes, unverified items, GD-09)                               |
+| stale record  | No re-review entry                                                              | Re-review section above                                                                                                                     |
+| open (DoD)    | Text scaling to 200% not checked                                                | Recorded UNVERIFIED with the reason (no faithful web emulation); moved to the Android device check                                          |
+
+Maintenance-specific findings (AC-06 wording, SCAFFOLD record, T01 mode, todo gate) are
+resolved in `features/maintenance/docs/review.md`.
+
+Re-audit (fresh `quality-auditor`, scope `fd77e4f..6dedba1`): **NOT CLEAN — very close**. It
+independently reproduced `pnpm verify` (104 / 1351), the RED of both new fix tests, and the
+runtime screenshots, and confirmed every code fix. It found two resolutions recorded but not
+done (GD-09 flag on #42, PR body) and five small record issues:
+
+| Finding                                                    | Resolution                                                          |
+| ---------------------------------------------------------- | ------------------------------------------------------------------- |
+| GD-09 not actually flagged on #42                          | Comment posted: issuecomment-6047459985; both records now cite it   |
+| PR #42 body not updated                                    | Rewritten                                                           |
+| CI resolution pointed at a worklog line that did not exist | CI run 37690946342 recorded in both worklogs; boxes ticked          |
+| Catalog audit box ticked while the audit was pending       | Ticked only after these resolutions                                 |
+| Round gates' "4 sizes" back-filled silently                | Rows now say they were recorded at the feature gate against 747d8dd |
+| T01 still labelled `bug`                                   | Relabelled `characterization` in `plan.md` and `todo.md`            |
+| Template "_None yet._"; m-05 lacked a forward pointer      | Removed; m-05 row points at this audit                              |
+
+Auditor's observation (not a finding): N-01/N-02/N-04/R-01 had Lead review plus RED/GREEN
+and runtime evidence, not a further fresh code review — accepted by the Lead as all minor.
+
+Audit result: `CLEAN AFTER RESOLUTIONS` — the auditor stated these record-only fixes would make
+it so; no code changed after the re-audit.
+
+### Phase 4 — pre-merge human review of #42 (on a051f0b)
+
+Independent human review. Direction stays approved. Confirmed: the Android Dialog
+exit-animation mitigation from the Review Cart hotfix is intact, and neither the Option
+Browser nor the Staff page adds a Portal/Dialog/exiting-animation teardown path.
+
+| ID   | Severity  | Finding                                                                                                                                 | Disposition | Remediation                                                                                                                                |
+| ---- | --------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| H-01 | pre-merge | `catalog-review-cart.yaml` opened the first available product (Float 3k, ≤6 variants in TEST) and entered the browser only when offered | fix         | Pinned TEST product with 46 variants; unconditional Browse all; asserts `catalog-option-browser`; Android E2E passed (C3, 1dfc1e9/48b6820) |
+| H-02 | pre-merge | Quantity could carry over to a different effective variant after a refresh left one other option                                        | fix         | Quantity bound to its variant; stale selection cleared; regression tests (C1, b324e81; hardened by R-01–R-03)                              |
+| H-03 | minor     | Help Me Choose text ignored product `search_keywords`, unlike catalog search                                                            | fix         | Product keywords matched, still per available variant (C2, 2fa4c34; R-04)                                                                  |
+
+### Phase 4 — Round C focused review (fresh `code-reviewer`, `a051f0b..1dfc1e9`)
+
+0 blocking, 0 major. Reviewer re-ran typecheck, lint, prettier, 10 suites / 132 tests, check:e2e-appid.
+
+| ID   | Severity | Finding                                                                                                | Disposition     | Remediation                                                                                             |
+| ---- | -------- | ------------------------------------------------------------------------------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------- |
+| R-01 | minor    | A refreshed-away quantity was hidden, not dropped: A×3 → only B → only A showed 3 again                | fix             | Reset in render; RED test A → B → A (6f4ac4d)                                                           |
+| R-02 | minor    | The render-phase `setSelectedId(null)` reconcile had no test                                           | fix             | Two tests; mutation-checked (6f4ac4d)                                                                   |
+| R-03 | minor    | Two survival tests could pass with a no-op refresh (structural sharing; no proof the new data arrived) | fix             | Different snapshot + "15 available now"; "Browse all 10 flavors" (6f4ac4d)                              |
+| R-04 | minor    | Keyword test's "per available variant" part could not fail                                             | fix             | Asserts `matchingVariantIds` in the result and through the `match` hand-off; mutation-checked (ff2d7d2) |
+| R-05 | info     | H-01 unproven until Android E2E passes                                                                 | closed          | Run 37696791985 on 48b6820 passed (worklog)                                                             |
+| R-06 | info     | Optional: assert the browser after Keep browsing; `scrollUntilVisible` to Add never needs to scroll    | fix / no action | Assertion added (48b6820); the harmless scroll stays                                                    |
+| R-07 | info     | Rotation keeps the quantity by construction but has no test (pre-existing gap)                         | accept          | State lives in the screen and the button is controlled; device rotation stays on the Android checklist  |
+
+Still open: none. CodeRabbit on bfd916a and 48b6820: no actionable comments.

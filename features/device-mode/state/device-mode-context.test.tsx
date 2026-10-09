@@ -86,9 +86,8 @@ it("unsubscribes from the native event when unmounted", async () => {
 });
 
 it("never lets a slow earlier read overwrite a newer one", async () => {
-  // Two change broadcasts in quick succession: the FIRST read is slow and
-  // resolves LAST. Publishing it would silently downgrade a kiosk tablet to
-  // "standard" — the exact fail-open this feature exists to prevent.
+  // Two broadcasts in quick succession: the first read resolves last and
+  // must not overwrite the more recent device classification.
   let resolveFirst: (mode: string) => void = () => {};
   nativeSource.readDeviceMode
     .mockReturnValueOnce(Promise.resolve("standard"))
@@ -183,11 +182,9 @@ describe("a read that keeps failing", () => {
 });
 
 describe("a settled device whose re-read starts failing", () => {
-  // SUPERSEDED: this originally asserted that a settled `standard` was held
-  // through the retry window too. That was a fail-open — see the
-  // downgrade-only tests below — so the retained-verdict case is now pinned
-  // with `customer-kiosk`, the verdict it is safe to hold.
-  it("keeps a withholding verdict while retrying, instead of flashing unknown", async () => {
+  // Preserve the existing classification retention policy independently of
+  // the account-role access policy.
+  it("keeps a customer-kiosk classification while retrying, instead of flashing unknown", async () => {
     jest.useFakeTimers();
     nativeSource.readDeviceMode.mockResolvedValue("customer-kiosk");
     await renderProvider();
@@ -226,11 +223,10 @@ describe("a settled device whose re-read starts failing", () => {
   });
 });
 
-describe("retention during retries is downgrade-only", () => {
+describe("classification retention during retries", () => {
   it("does NOT keep a settled `standard` when a re-read starts failing", async () => {
-    // Only a DPC broadcast can trigger a re-read, so this only ever happens on
-    // a MANAGED device — exactly where holding on to `standard` is the wrong
-    // answer. A tablet being converted to the kiosk is the live case.
+    // A DPC broadcast may indicate changed policy; preserve the existing rule
+    // that replaces a stale standard classification with unknown.
     jest.useFakeTimers();
     nativeSource.readDeviceMode.mockResolvedValue("standard");
     await renderProvider();
@@ -247,7 +243,7 @@ describe("retention during retries is downgrade-only", () => {
     jest.useRealTimers();
   });
 
-  it("DOES keep a settled `customer-kiosk` while retrying — that verdict withholds preparation", async () => {
+  it("keeps a settled customer-kiosk classification while retrying", async () => {
     jest.useFakeTimers();
     nativeSource.readDeviceMode.mockResolvedValue("customer-kiosk");
     await renderProvider();

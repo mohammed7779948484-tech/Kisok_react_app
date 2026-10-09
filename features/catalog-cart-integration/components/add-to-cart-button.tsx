@@ -24,6 +24,18 @@ export type AddToCartButtonProps = {
    * already in the cart); until then no stock figure is shown or implied.
    */
   withQuantity?: boolean;
+  /**
+   * Controlled quantity (plan D5). When set, the caller owns the chosen
+   * amount, so it survives this button remounting (Product Detail switching
+   * to the Option Browser and back). Still clamped to what can be added.
+   * Omit it and the button keeps its own quantity, exactly as before.
+   */
+  quantity?: number;
+  /**
+   * Called with the next quantity on stepper changes, and with `1` after a
+   * successful add. Without it, a controlled `quantity` is read-only.
+   */
+  onQuantityChange?: (next: number) => void;
   /** `inverse` draws the action for an evergreen panel. */
   tone?: "default" | "inverse";
 };
@@ -65,10 +77,18 @@ export function AddToCartButton({
   source,
   withQuantity = false,
   tone = "default",
+  quantity: controlledQuantity,
+  onQuantityChange,
 }: AddToCartButtonProps) {
   const cart = useCart();
   const { openQuickCart } = useQuickCart();
-  const [quantity, setQuantity] = useState(1);
+  const [internalQuantity, setInternalQuantity] = useState(1);
+  const controlled = controlledQuantity !== undefined;
+  const quantity = controlled ? controlledQuantity : internalQuantity;
+  const setQuantity = (next: number) => {
+    if (controlled) onQuantityChange?.(next);
+    else setInternalQuantity(next);
+  };
   const [feedback, setFeedback] = useState<string | null>(null);
 
   // Units of this variant already in the cart, across every line that holds it.
